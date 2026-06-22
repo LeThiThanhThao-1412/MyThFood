@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+.next/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cache
+.turbo/
+.cache/
+tmp/
+temp/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Docker
+.docker/
+
+# Helm
+charts/*.tgz
+
+# Misc
+*.pem
+*.key
+*.cert
+
+# npm (we use pnpm — keep pnpm-lock.yaml only)
+package-lock.json
+
+# Dev tools (local scripts)
+test-api.js
+start-service.bat
+init-db.sql
+SETUP_GUIDE.md
+
+# Docker volumes
+docker/

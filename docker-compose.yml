@@ -1,0 +1,136 @@
+version: '3.9'
+
+services:
+  # ============================================================================
+  # PostgreSQL - Primary relational database (Identity Service + others)
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: mythfood-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mythfood
+      POSTGRES_PASSWORD: mythfood_secret
+      POSTGRES_DB: mythfood_identity
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mythfood -d mythfood_identity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mythfood-network
+
+  # ============================================================================
+  # Redis - Cache, distributed lock, session store
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: mythfood-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass mythfood_redis_secret
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mythfood-network
+
+  # ============================================================================
+  # Identity Service (NestJS)
+  # ============================================================================
+  identity-service:
+    build:
+      context: .
+      dockerfile: apps/identity-service/Dockerfile
+    container_name: mythfood-identity-service
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: mythfood_identity
+      DATABASE_USER: mythfood
+      DATABASE_PASSWORD: mythfood_secret
+      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      JWT_EXPIRATION: 1h
+      REDIS_URL: redis://default:mythfood_redis_secret@redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - mythfood-network
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/apps/identity-service/node_modules
+
+  # ============================================================================
+  # Kafka (Optional - for event-driven communication in production)
+  # ============================================================================
+  # Uncomment the block below if you need Kafka/Zookeeper for local dev
+  #
+  # zookeeper:
+  #   image: confluentinc/cp-zookeeper:7.6.0
+  #   container_name: mythfood-zookeeper
+  #   restart: unless-stopped
+  #   environment:
+  #     ZOOKEEPER_CLIENT_PORT: 2181
+  #     ZOOKEEPER_TICK_TIME: 2000
+  #   ports:
+  #     - "2181:2181"
+  #   volumes:
+  #     - zookeeper_data:/var/lib/zookeeper/data
+  #   networks:
+  #     - mythfood-network
+  #
+  # kafka:
+  #   image: confluentinc/cp-kafka:7.6.0
+  #   container_name: mythfood-kafka
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9092:9092"
+  #     - "29092:29092"
+  #   environment:
+  #     KAFKA_BROKER_ID: 1
+  #     KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_HOST://localhost:29092
+  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+  #     KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+  #     KAFKA_LOG_RETENTION_HOURS: 168
+  #   volumes:
+  #     - kafka_data:/var/lib/kafka/data
+  #   depends_on:
+  #     - zookeeper
+  #   networks:
+  #     - mythfood-network
+
+volumes:
+  postgres_data:
+    name: mythfood_postgres_data
+  redis_data:
+    name: mythfood_redis_data
+  # zookeeper_data:
+  #   name: mythfood_zookeeper_data
+  # kafka_data:
+  #   name: mythfood_kafka_data
+
+networks:
+  mythfood-network:
+    name: mythfood-network
+    driver: bridge
