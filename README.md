@@ -22,7 +22,8 @@
 ```
 mythfood/
 ├── apps/
-│   └── identity-service/       # Auth & User Management (NestJS)
+│   ├── identity-service/       # Auth & User Management (NestJS)
+│   └── consumer-service/       # Customer Profile, Addresses, Payment Methods (NestJS)
 ├── packages/
 │   ├── shared-kernel/          # DDD building blocks (Result, Entity, AggregateRoot, etc.)
 │   ├── event-contracts/        # Domain event contracts (CloudEvents)
@@ -56,6 +57,7 @@ docker compose up -d postgres redis
 
 # 4. Copy environment variables
 cp .env.example apps/identity-service/.env
+cp .env.example apps/consumer-service/.env
 # Edit .env with your values if needed
 
 # 5. Build shared packages
@@ -63,15 +65,19 @@ pnpm --filter @mythfood/shared-kernel build
 pnpm --filter @mythfood/event-contracts build
 pnpm --filter @mythfood/common build
 
-# 6. Start Identity Service (development)
+# 6. Start services (development)
 pnpm --filter @mythfood/identity-service dev
+pnpm --filter @mythfood/consumer-service dev
 ```
 
-Service will be available at: **http://localhost:3001**
+| Service | Port |
+|---|---|
+| Identity Service | **http://localhost:3001** |
+| Consumer Service | **http://localhost:3002** |
 
 ## 📡 API Documentation
 
-### Auth Endpoints
+### Identity Service - Auth Endpoints
 
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
@@ -133,9 +139,40 @@ GET /api/v1/auth/me
 Authorization: Bearer <accessToken>
 ```
 
+### Consumer Service Endpoints (JWT required)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/api/v1/consumers` | Create consumer profile |
+| `GET` | `/api/v1/consumers/:id` | Get consumer by ID |
+| `GET` | `/api/v1/consumers/user/:userId` | Get consumer by user ID |
+| `PUT` | `/api/v1/consumers/:id` | Update consumer profile |
+| `POST` | `/api/v1/consumers/:id/addresses` | Add delivery address |
+| `DELETE` | `/api/v1/consumers/:id/addresses/:addressId` | Remove address |
+| `PATCH` | `/api/v1/consumers/:id/addresses/:addressId/default` | Set default address |
+| `POST` | `/api/v1/consumers/:id/payment-methods` | Add payment method |
+| `DELETE` | `/api/v1/consumers/:id/payment-methods/:pmId` | Remove payment method |
+| `PATCH` | `/api/v1/consumers/:id/payment-methods/:pmId/default` | Set default payment method |
+
+### Create Consumer Request
+
+```http
+POST /api/v1/consumers
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "userId": "uuid-from-identity-service",
+  "fullName": "Nguyen Van A",
+  "avatar": "https://example.com/avatar.jpg",
+  "dateOfBirth": "1990-01-15",
+  "gender": "MALE"
+}
+```
+
 ## 📊 Domain Model
 
-### User Aggregate
+### Identity Service - User Aggregate
 
 - **Root**: `User` (extends `AggregateRoot<UserId>`)
 - **Identity**: `UserId` (UUID v4)
@@ -143,23 +180,41 @@ Authorization: Bearer <accessToken>
 - **Roles**: `CONSUMER`, `DRIVER`, `MERCHANT_OWNER`, `MERCHANT_STAFF`, `ADMIN`
 - **Status**: `ACTIVE`, `INACTIVE`, `SUSPENDED`, `BANNED`
 
+### Consumer Service - Consumer Aggregate
+
+- **Root**: `Consumer` (extends `AggregateRoot<ConsumerId>`)
+- **Identity**: `ConsumerId` (UUID v4)
+- **Value Objects**: `Address` (with GPS coordinates, address type), `PaymentMethod` (credit/debit card, e-wallet)
+- **Business Rules**:
+  - Max 10 addresses per consumer
+  - Max 10 payment methods per consumer
+  - First address/payment method auto-set as default
+  - Default address/payment method auto-reassign on removal
+
 ### Domain Events
 
-| Event | Description |
-|---|---|
-| `UserRegisteredEvent` | Emitted when a new user registers |
+| Event | Service | Description |
+|---|---|---|
+| `UserRegisteredEvent` | Identity | Emitted when a new user registers |
+| `ConsumerProfileUpdatedEvent` | Consumer | Emitted when consumer profile is created/updated |
 
 ## 🧪 Testing
 
 ```bash
-# Run all tests
+# Run all tests for all services
+pnpm test
+
+# Run tests for a specific service
 pnpm --filter @mythfood/identity-service test
+pnpm --filter @mythfood/consumer-service test
 
 # Run with coverage
 pnpm --filter @mythfood/identity-service test:coverage
+pnpm --filter @mythfood/consumer-service test:coverage
 
 # Run specific test file
 pnpm --filter @mythfood/identity-service test -- user.aggregate.spec.ts
+pnpm --filter @mythfood/consumer-service test -- consumer.aggregate.spec.ts
 ```
 
 ## 🐳 Docker
@@ -170,6 +225,10 @@ docker compose up -d
 
 # Start only infrastructure
 docker compose up -d postgres redis
+
+# Build individual service
+docker build -f apps/identity-service/Dockerfile -t mythfood-identity .
+docker build -f apps/consumer-service/Dockerfile -t mythfood-consumer .
 
 # View logs
 docker compose logs -f identity-service
@@ -193,8 +252,24 @@ src/
 │   ├── *.entity.ts
 │   ├── *.mapper.ts
 │   └── *.repository.ts
+├── presentation/     # Presentation Layer — NestJS controllers
+│   └── *.controller.ts
 └── *.module.ts       # NestJS Module
 ```
+
+## 🔄 CI/CD Pipeline
+
+| Pipeline | Trigger | Actions |
+|---|---|---|
+| **CI** (`ci.yml`) | Push/PR to `main` | Lint → Test → Build both services |
+| **Deploy** (`deploy.yml`) | Tag `v*` push | Build & push Docker images to GHCR |
+
+### Docker Images
+
+| Image | Registry |
+|---|---|
+| `ghcr.io/LeThiThanhThao-1412/MyThFood/identity-service` | GitHub Container Registry |
+| `ghcr.io/LeThiThanhThao-1412/MyThFood/consumer-service` | GitHub Container Registry |
 
 ## 📄 License
 
