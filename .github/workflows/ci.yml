@@ -34,6 +34,9 @@ jobs:
       - name: Lint identity-service
         run: pnpm --filter @mythfood/identity-service lint || echo "No ESLint script defined"
 
+      - name: Lint consumer-service
+        run: pnpm --filter @mythfood/consumer-service lint || echo "No ESLint script defined"
+
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -73,12 +76,22 @@ jobs:
           pnpm --filter @mythfood/event-contracts build
           pnpm --filter @mythfood/common build
 
-      - name: Run unit tests
+      - name: Run identity-service unit tests
         run: pnpm --filter @mythfood/identity-service test -- --passWithNoTests
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
           DATABASE_NAME: mythfood_identity
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run consumer-service unit tests
+        run: pnpm --filter @mythfood/consumer-service test -- --passWithNoTests
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_consumer
           DATABASE_USER: mythfood
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
@@ -111,11 +124,20 @@ jobs:
       - name: Build identity-service
         run: pnpm --filter @mythfood/identity-service build
 
-      - name: Upload build artifacts
+      - name: Build consumer-service
+        run: pnpm --filter @mythfood/consumer-service build
+
+      - name: Upload identity-service build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: identity-dist
           path: apps/identity-service/dist/
+
+      - name: Upload consumer-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: consumer-dist
+          path: apps/consumer-service/dist/
 
   security:
     name: Security Audit
