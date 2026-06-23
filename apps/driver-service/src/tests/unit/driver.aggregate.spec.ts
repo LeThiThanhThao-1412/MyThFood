@@ -209,6 +209,7 @@ describe("Driver Aggregate", () => {
       driver.goOnline();
       driver.assignOrder("order-1");
       driver.completeOrder();
+      driver.goOffline();
 
       // First rating at score 4: (0*0 + 4) / 1 = 4
       driver.addRating(4);
@@ -219,6 +220,7 @@ describe("Driver Aggregate", () => {
       driver.goOnline();
       driver.assignOrder("order-2");
       driver.completeOrder();
+      driver.goOffline();
 
       // Second rating at score 5: (4*1 + 5) / 2 = 4.5
       driver.addRating(5);
