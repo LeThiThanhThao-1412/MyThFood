@@ -94,6 +94,9 @@ export class DriverEntity {
   @Column({ type: "decimal", precision: 3, scale: 2, default: 0 })
   rating!: number;
 
+  @Column({ type: "int", default: 0 })
+  totalRatings!: number;
+
   @Column({ type: "uuid", nullable: true })
   currentOrderId!: string | null;
 

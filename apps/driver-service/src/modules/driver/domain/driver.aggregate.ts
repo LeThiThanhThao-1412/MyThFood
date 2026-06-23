@@ -50,6 +50,7 @@ export class Driver extends AggregateRoot<DriverId> {
   private _lastGoHomeAt: Date | null;
   private _totalOrders: number;
   private _rating: number;
+  private _totalRatings: number;
   private _currentOrderId: string | null;
   private _isTrainingCompleted: boolean;
   private _depositAmount: number;
@@ -82,6 +83,7 @@ export class Driver extends AggregateRoot<DriverId> {
       lastGoHomeAt: Date | null;
       totalOrders: number;
       rating: number;
+      totalRatings: number;
       currentOrderId: string | null;
       isTrainingCompleted: boolean;
       depositAmount: number;
@@ -113,6 +115,7 @@ export class Driver extends AggregateRoot<DriverId> {
     this._lastGoHomeAt = props.lastGoHomeAt;
     this._totalOrders = props.totalOrders;
     this._rating = props.rating;
+    this._totalRatings = props.totalRatings;
     this._currentOrderId = props.currentOrderId;
     this._isTrainingCompleted = props.isTrainingCompleted;
     this._depositAmount = props.depositAmount;
@@ -134,7 +137,6 @@ export class Driver extends AggregateRoot<DriverId> {
     criminalRecordUrl?: string;
   }): Driver {
     const driverId = DriverId.create();
-    const now = new Date();
 
     return new Driver(driverId, {
       userId: props.userId,
@@ -160,6 +162,7 @@ export class Driver extends AggregateRoot<DriverId> {
       lastGoHomeAt: null,
       totalOrders: 0,
       rating: 0,
+      totalRatings: 0,
       currentOrderId: null,
       isTrainingCompleted: false,
       depositAmount: 0,
@@ -194,6 +197,7 @@ export class Driver extends AggregateRoot<DriverId> {
       lastGoHomeAt: Date | null;
       totalOrders: number;
       rating: number;
+      totalRatings: number;
       currentOrderId: string | null;
       isTrainingCompleted: boolean;
       depositAmount: number;
@@ -364,9 +368,6 @@ export class Driver extends AggregateRoot<DriverId> {
     this.markUpdated();
   }
 
-  /**
-   * Take a voluntary break. Resets fatigue after sufficient rest.
-   */
   public takeBreak(): void {
     if (this._fatigueLevel !== FatigueLevel.CRITICAL) {
       throw new BusinessRuleViolationError(
@@ -380,9 +381,6 @@ export class Driver extends AggregateRoot<DriverId> {
     this.markUpdated();
   }
 
-  /**
-   * Force-break by system when driver hits 6 hours continuous driving.
-   */
   public forceBreak(): void {
     this._onlineStatus = DriverOnlineStatus.OFFLINE;
     this._releaseCurrentSession();
@@ -466,98 +464,44 @@ export class Driver extends AggregateRoot<DriverId> {
     if (rating < 1 || rating > 5) {
       throw new BusinessRuleViolationError("Rating must be between 1 and 5");
     }
-    // Weighted average update
-    const totalScore = this._rating * this._totalOrders;
-    this._rating = (totalScore + rating) / (this._totalOrders + 1);
+    const totalScore = this._rating * this._totalRatings;
+    this._totalRatings += 1;
+    this._rating = Number(((totalScore + rating) / this._totalRatings).toFixed(2));
     this.markUpdated();
   }
 
   // ---- Queries / Accessors ----
 
-  get driverUserId(): string {
-    return this._userId;
-  }
-  get driverFullName(): string {
-    return this._fullName;
-  }
-  get driverPhoneNumber(): string {
-    return this._phoneNumber;
-  }
-  get driverEmail(): string {
-    return this._email;
-  }
-  get driverAvatar(): string | null {
-    return this._avatar;
-  }
-  get driverIdCardNumber(): string {
-    return this._idCardNumber;
-  }
-  get driverLicenseNumber(): string {
-    return this._driverLicenseNumber;
-  }
-  get driverVehicleRegistrationNumber(): string {
-    return this._vehicleRegistrationNumber;
-  }
-  get driverInsuranceNumber(): string {
-    return this._insuranceNumber;
-  }
-  get driverCriminalRecordUrl(): string | null {
-    return this._criminalRecordUrl;
-  }
-  get driverStatus(): DriverStatus {
-    return this._status;
-  }
-  get driverOnlineStatus(): DriverOnlineStatus {
-    return this._onlineStatus;
-  }
-  get driverCurrentLatitude(): number | null {
-    return this._currentLatitude;
-  }
-  get driverCurrentLongitude(): number | null {
-    return this._currentLongitude;
-  }
-  get driverLastLocationUpdateAt(): Date | null {
-    return this._lastLocationUpdateAt;
-  }
-  get driverTotalDrivingMinutesToday(): number {
-    return this._totalDrivingMinutesToday;
-  }
-  get driverCurrentSessionStartAt(): Date | null {
-    return this._currentSessionStartAt;
-  }
-  get driverConsecutiveDrivingMinutes(): number {
-    return this._consecutiveDrivingMinutes;
-  }
-  get driverFatigueLevel(): FatigueLevel {
-    return this._fatigueLevel;
-  }
-  get driverGoHomeCountToday(): number {
-    return this._goHomeCountToday;
-  }
-  get driverLastGoHomeAt(): Date | null {
-    return this._lastGoHomeAt;
-  }
-  get driverTotalOrders(): number {
-    return this._totalOrders;
-  }
-  get driverRating(): number {
-    return this._rating;
-  }
-  get driverCurrentOrderId(): string | null {
-    return this._currentOrderId;
-  }
-  get driverIsTrainingCompleted(): boolean {
-    return this._isTrainingCompleted;
-  }
-  get driverDepositAmount(): number {
-    return this._depositAmount;
-  }
-  get driverCreditWalletBalance(): number {
-    return this._creditWalletBalance;
-  }
-  get driverIncomeWalletBalance(): number {
-    return this._incomeWalletBalance;
-  }
+  get driverUserId(): string { return this._userId; }
+  get driverFullName(): string { return this._fullName; }
+  get driverPhoneNumber(): string { return this._phoneNumber; }
+  get driverEmail(): string { return this._email; }
+  get driverAvatar(): string | null { return this._avatar; }
+  get driverIdCardNumber(): string { return this._idCardNumber; }
+  get driverLicenseNumber(): string { return this._driverLicenseNumber; }
+  get driverVehicleRegistrationNumber(): string { return this._vehicleRegistrationNumber; }
+  get driverInsuranceNumber(): string { return this._insuranceNumber; }
+  get driverCriminalRecordUrl(): string | null { return this._criminalRecordUrl; }
+  get driverStatus(): DriverStatus { return this._status; }
+  get driverOnlineStatus(): DriverOnlineStatus { return this._onlineStatus; }
+  get driverCurrentLatitude(): number | null { return this._currentLatitude; }
+  get driverCurrentLongitude(): number | null { return this._currentLongitude; }
+  get driverLastLocationUpdateAt(): Date | null { return this._lastLocationUpdateAt; }
+  get driverTotalDrivingMinutesToday(): number { return this._totalDrivingMinutesToday; }
+  get driverCurrentSessionStartAt(): Date | null { return this._currentSessionStartAt; }
+  get driverConsecutiveDrivingMinutes(): number { return this._consecutiveDrivingMinutes; }
+  get driverFatigueLevel(): FatigueLevel { return this._fatigueLevel; }
+  get driverGoHomeCountToday(): number { return this._goHomeCountToday; }
+  get driverLastGoHomeAt(): Date | null { return this._lastGoHomeAt; }
+  get driverTotalOrders(): number { return this._totalOrders; }
+  get driverRating(): number { return this._rating; }
+  get driverTotalRatings(): number { return this._totalRatings; }
+  get driverCurrentOrderId(): string | null { return this._currentOrderId; }
+  get driverIsTrainingCompleted(): boolean { return this._isTrainingCompleted; }
+  get driverDepositAmount(): number { return this._depositAmount; }
+  get driverCreditWalletBalance(): number { return this._creditWalletBalance; }
+  get driverIncomeWalletBalance(): number { return this._incomeWalletBalance; }
+
   get isAvailable(): boolean {
     return (
       this._status === DriverStatus.ACTIVE &&

@@ -210,9 +210,10 @@ describe("Driver Aggregate", () => {
       driver.assignOrder("order-1");
       driver.completeOrder();
 
-      // First rating at score 4: (0*1 + 4) / 1 = 4
+      // First rating at score 4: (0*0 + 4) / 1 = 4
       driver.addRating(4);
       expect(driver.driverRating).toBe(4);
+      expect(driver.driverTotalRatings).toBe(1);
 
       // Need second order to test weighted average
       driver.goOnline();
@@ -222,6 +223,7 @@ describe("Driver Aggregate", () => {
       // Second rating at score 5: (4*1 + 5) / 2 = 4.5
       driver.addRating(5);
       expect(driver.driverRating).toBe(4.5);
+      expect(driver.driverTotalRatings).toBe(2);
     });
   });
 

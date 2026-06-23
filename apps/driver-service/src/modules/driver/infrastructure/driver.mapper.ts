@@ -35,6 +35,7 @@ export class DriverMapper {
       lastGoHomeAt: entity.lastGoHomeAt,
       totalOrders: entity.totalOrders,
       rating: entity.rating,
+      totalRatings: entity.totalRatings,
       currentOrderId: entity.currentOrderId,
       isTrainingCompleted: entity.isTrainingCompleted,
       depositAmount: entity.depositAmount,
@@ -69,6 +70,7 @@ export class DriverMapper {
     entity.lastGoHomeAt = domain.driverLastGoHomeAt;
     entity.totalOrders = domain.driverTotalOrders;
     entity.rating = domain.driverRating;
+    entity.totalRatings = domain.driverTotalRatings;
     entity.currentOrderId = domain.driverCurrentOrderId;
     entity.isTrainingCompleted = domain.driverIsTrainingCompleted;
     entity.depositAmount = domain.driverDepositAmount;
