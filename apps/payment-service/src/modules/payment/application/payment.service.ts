@@ -1,9 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import {
-  DomainError,
-  BusinessRuleViolationError,
-  EntityNotFoundError,
-} from "@mythfood/shared-kernel";
+import { EntityNotFoundError } from "@mythfood/shared-kernel";
 import { Payment, PaymentMethod } from "../domain/payment.aggregate";
 import { PaymentId } from "../domain/payment-id";
 import { PaymentRepository } from "../infrastructure/payment.repository";
