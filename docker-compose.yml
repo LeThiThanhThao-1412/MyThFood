@@ -200,6 +200,37 @@ services:
       - /app/apps/inventory-service/node_modules
 
   # ============================================================================
+  # Payment Service (NestJS)
+  # ============================================================================
+  payment-service:
+    build:
+      context: .
+      dockerfile: apps/payment-service/Dockerfile
+    container_name: mythfood-payment-service
+    restart: unless-stopped
+    ports:
+      - "3006:3006"
+    environment:
+      NODE_ENV: development
+      PORT: 3006
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: mythfood_payment
+      DATABASE_USER: mythfood
+      DATABASE_PASSWORD: mythfood_secret
+      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      JWT_EXPIRATION: 1h
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mythfood-network
+    volumes:
+      - ./:/app
+      - /app/node_modules
+      - /app/apps/payment-service/node_modules
+
+  # ============================================================================
   # Kafka (Optional - for event-driven communication in production)
   # ============================================================================
   # Uncomment the block below if you need Kafka/Zookeeper for local dev

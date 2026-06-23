@@ -45,6 +45,12 @@ jobs:
 
       - name: Lint inventory-service
         run: pnpm --filter @mythfood/inventory-service lint
+
+      - name: Lint payment-service
+        run: pnpm --filter @mythfood/payment-service lint
+
+      - name: Lint driver-service
+        run: pnpm --filter @mythfood/driver-service lint
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -136,6 +142,26 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
+      - name: Run payment-service unit tests
+        run: pnpm --filter @mythfood/payment-service test
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_payment
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run driver-service unit tests
+        run: pnpm --filter @mythfood/driver-service test
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_driver
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -173,6 +199,15 @@ jobs:
       - name: Build order-service
         run: pnpm --filter @mythfood/order-service build
 
+      - name: Build inventory-service
+        run: pnpm --filter @mythfood/inventory-service build
+
+      - name: Build payment-service
+        run: pnpm --filter @mythfood/payment-service build
+
+      - name: Build driver-service
+        run: pnpm --filter @mythfood/driver-service build
+
       - name: Upload identity-service build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -196,6 +231,24 @@ jobs:
         with:
           name: order-dist
           path: apps/order-service/dist/
+
+      - name: Upload inventory-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: inventory-dist
+          path: apps/inventory-service/dist/
+
+      - name: Upload payment-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: payment-dist
+          path: apps/payment-service/dist/
+
+      - name: Upload driver-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: driver-dist
+          path: apps/driver-service/dist/
 
   test-coverage:
     name: Test Coverage
@@ -275,6 +328,36 @@ jobs:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
           DATABASE_NAME: mythfood_order
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run inventory-service test coverage
+        run: pnpm --filter @mythfood/inventory-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_inventory
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run payment-service test coverage
+        run: pnpm --filter @mythfood/payment-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_payment
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run driver-service test coverage
+        run: pnpm --filter @mythfood/driver-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_driver
           DATABASE_USER: mythfood
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret

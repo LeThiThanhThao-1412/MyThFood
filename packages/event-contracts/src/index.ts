@@ -45,3 +45,33 @@ export {
   INVENTORY_RELEASED_EVENT_TYPE,
   INVENTORY_CONSUMED_EVENT_TYPE,
 } from "./inventory";
+
+// Payment events
+export type {
+  PaymentCreatedPayload,
+  PaymentCompletedPayload,
+  PaymentFailedPayload,
+  PaymentRefundedPayload,
+} from "./payment";
+export {
+  PAYMENT_CREATED,
+  PAYMENT_COMPLETED,
+  PAYMENT_FAILED,
+  PAYMENT_REFUNDED,
+} from "./payment";
+
+// Driver events
+export type {
+  DriverOnlineStatusChangedPayload,
+  DriverLocationUpdatedPayload,
+  DriverFatigueAlertPayload,
+  DriverActivatedPayload,
+  DriverDeactivatedPayload,
+} from "./driver";
+export {
+  DRIVER_ONLINE_STATUS_CHANGED_EVENT_TYPE,
+  DRIVER_LOCATION_UPDATED_EVENT_TYPE,
+  DRIVER_FATIGUE_ALERT_EVENT_TYPE,
+  DRIVER_ACTIVATED_EVENT_TYPE,
+  DRIVER_DEACTIVATED_EVENT_TYPE,
+} from "./driver";
