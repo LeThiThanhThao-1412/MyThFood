@@ -80,7 +80,7 @@ jobs:
           pnpm --filter @mythfood/common build
 
       - name: Run identity-service unit tests
-        run: pnpm --filter @mythfood/identity-service test -- --passWithNoTests
+        run: pnpm --filter @mythfood/identity-service test
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -91,7 +91,7 @@ jobs:
           REDIS_URL: redis://localhost:6379
 
       - name: Run consumer-service unit tests
-        run: pnpm --filter @mythfood/consumer-service test -- --passWithNoTests
+        run: pnpm --filter @mythfood/consumer-service test
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -102,7 +102,7 @@ jobs:
           REDIS_URL: redis://localhost:6379
 
       - name: Run merchant-service unit tests
-        run: pnpm --filter @mythfood/merchant-service test -- --passWithNoTests
+        run: pnpm --filter @mythfood/merchant-service test
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -204,7 +204,7 @@ jobs:
           pnpm --filter @mythfood/common build
 
       - name: Run identity-service test coverage
-        run: pnpm --filter @mythfood/identity-service test:coverage -- --passWithNoTests
+        run: pnpm --filter @mythfood/identity-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -215,7 +215,7 @@ jobs:
           REDIS_URL: redis://localhost:6379
 
       - name: Run consumer-service test coverage
-        run: pnpm --filter @mythfood/consumer-service test:coverage -- --passWithNoTests
+        run: pnpm --filter @mythfood/consumer-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -226,7 +226,7 @@ jobs:
           REDIS_URL: redis://localhost:6379
 
       - name: Run merchant-service test coverage
-        run: pnpm --filter @mythfood/merchant-service test:coverage -- --passWithNoTests
+        run: pnpm --filter @mythfood/merchant-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
