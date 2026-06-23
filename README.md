@@ -4,18 +4,18 @@
 
 ## 🛠 Tech Stack
 
-| Layer | Technology |
-|---|---|
-| **Runtime** | Node.js 20, TypeScript 5.x |
-| **Framework** | NestJS 10 |
+| Layer            | Technology                        |
+| ---------------- | --------------------------------- |
+| **Runtime**      | Node.js 20, TypeScript 5.x        |
+| **Framework**    | NestJS 10                         |
 | **Architecture** | Domain-Driven Design (DDD) + CQRS |
-| **Database** | PostgreSQL 16 via TypeORM |
-| **Cache** | Redis 7 |
-| **Auth** | JWT + Passport, bcrypt |
-| **Build** | pnpm 9 + Turborepo |
-| **Container** | Docker & Docker Compose |
-| **Testing** | Jest |
-| **CI/CD** | GitHub Actions |
+| **Database**     | PostgreSQL 16 via TypeORM         |
+| **Cache**        | Redis 7                           |
+| **Auth**         | JWT + Passport, bcrypt            |
+| **Build**        | pnpm 9 + Turborepo                |
+| **Container**    | Docker & Docker Compose           |
+| **Testing**      | Jest                              |
+| **CI/CD**        | GitHub Actions                    |
 
 ## 📦 Monorepo Structure
 
@@ -70,8 +70,8 @@ pnpm --filter @mythfood/identity-service dev
 pnpm --filter @mythfood/consumer-service dev
 ```
 
-| Service | Port |
-|---|---|
+| Service          | Port                      |
+| ---------------- | ------------------------- |
 | Identity Service | **http://localhost:3001** |
 | Consumer Service | **http://localhost:3002** |
 
@@ -79,11 +79,11 @@ pnpm --filter @mythfood/consumer-service dev
 
 ### Identity Service - Auth Endpoints
 
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/v1/auth/register` | No | Register a new user |
-| `POST` | `/api/v1/auth/login` | No | Login (phone + password) → JWT |
-| `GET` | `/api/v1/auth/me` | JWT | Get current user profile |
+| Method | Endpoint                | Auth | Description                    |
+| ------ | ----------------------- | ---- | ------------------------------ |
+| `POST` | `/api/v1/auth/register` | No   | Register a new user            |
+| `POST` | `/api/v1/auth/login`    | No   | Login (phone + password) → JWT |
+| `GET`  | `/api/v1/auth/me`       | JWT  | Get current user profile       |
 
 ### Register Request
 
@@ -141,18 +141,18 @@ Authorization: Bearer <accessToken>
 
 ### Consumer Service Endpoints (JWT required)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/v1/consumers` | Create consumer profile |
-| `GET` | `/api/v1/consumers/:id` | Get consumer by ID |
-| `GET` | `/api/v1/consumers/user/:userId` | Get consumer by user ID |
-| `PUT` | `/api/v1/consumers/:id` | Update consumer profile |
-| `POST` | `/api/v1/consumers/:id/addresses` | Add delivery address |
-| `DELETE` | `/api/v1/consumers/:id/addresses/:addressId` | Remove address |
-| `PATCH` | `/api/v1/consumers/:id/addresses/:addressId/default` | Set default address |
-| `POST` | `/api/v1/consumers/:id/payment-methods` | Add payment method |
-| `DELETE` | `/api/v1/consumers/:id/payment-methods/:pmId` | Remove payment method |
-| `PATCH` | `/api/v1/consumers/:id/payment-methods/:pmId/default` | Set default payment method |
+| Method   | Endpoint                                              | Description                |
+| -------- | ----------------------------------------------------- | -------------------------- |
+| `POST`   | `/api/v1/consumers`                                   | Create consumer profile    |
+| `GET`    | `/api/v1/consumers/:id`                               | Get consumer by ID         |
+| `GET`    | `/api/v1/consumers/user/:userId`                      | Get consumer by user ID    |
+| `PUT`    | `/api/v1/consumers/:id`                               | Update consumer profile    |
+| `POST`   | `/api/v1/consumers/:id/addresses`                     | Add delivery address       |
+| `DELETE` | `/api/v1/consumers/:id/addresses/:addressId`          | Remove address             |
+| `PATCH`  | `/api/v1/consumers/:id/addresses/:addressId/default`  | Set default address        |
+| `POST`   | `/api/v1/consumers/:id/payment-methods`               | Add payment method         |
+| `DELETE` | `/api/v1/consumers/:id/payment-methods/:pmId`         | Remove payment method      |
+| `PATCH`  | `/api/v1/consumers/:id/payment-methods/:pmId/default` | Set default payment method |
 
 ### Create Consumer Request
 
@@ -193,9 +193,9 @@ Content-Type: application/json
 
 ### Domain Events
 
-| Event | Service | Description |
-|---|---|---|
-| `UserRegisteredEvent` | Identity | Emitted when a new user registers |
+| Event                         | Service  | Description                                      |
+| ----------------------------- | -------- | ------------------------------------------------ |
+| `UserRegisteredEvent`         | Identity | Emitted when a new user registers                |
 | `ConsumerProfileUpdatedEvent` | Consumer | Emitted when consumer profile is created/updated |
 
 ## 🧪 Testing
@@ -259,15 +259,15 @@ src/
 
 ## 🔄 CI/CD Pipeline
 
-| Pipeline | Trigger | Actions |
-|---|---|---|
-| **CI** (`ci.yml`) | Push/PR to `main` | Lint → Test → Build both services |
-| **Deploy** (`deploy.yml`) | Tag `v*` push | Build & push Docker images to GHCR |
+| Pipeline                  | Trigger           | Actions                            |
+| ------------------------- | ----------------- | ---------------------------------- |
+| **CI** (`ci.yml`)         | Push/PR to `main` | Lint → Test → Build both services  |
+| **Deploy** (`deploy.yml`) | Tag `v*` push     | Build & push Docker images to GHCR |
 
 ### Docker Images
 
-| Image | Registry |
-|---|---|
+| Image                                                   | Registry                  |
+| ------------------------------------------------------- | ------------------------- |
 | `ghcr.io/LeThiThanhThao-1412/MyThFood/identity-service` | GitHub Container Registry |
 | `ghcr.io/LeThiThanhThao-1412/MyThFood/consumer-service` | GitHub Container Registry |
 

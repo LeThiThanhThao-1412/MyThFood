@@ -3,18 +3,18 @@ import {
   Result,
   DomainError,
   BusinessRuleViolationError,
-} from '@mythfood/shared-kernel';
-import { MerchantId } from './merchant-id';
-import { MerchantRegisteredEvent } from './events/merchant-registered.event';
-import { MenuItem, MenuItemCategory } from './menu-item.entity';
-import { MenuItemId } from './menu-item-id';
-import { OperatingHours, OperatingHoursProps } from './operating-hours.vo';
-import { MerchantDocument } from './merchant-document.entity';
-import { MenuUpdatedEvent } from './events/menu-updated.event';
+} from "@mythfood/shared-kernel";
+import { MerchantId } from "./merchant-id";
+import { MerchantRegisteredEvent } from "./events/merchant-registered.event";
+import { MenuItem, MenuItemCategory } from "./menu-item.entity";
+import { MenuItemId } from "./menu-item-id";
+import { OperatingHours, OperatingHoursProps } from "./operating-hours.vo";
+import { MerchantDocument } from "./merchant-document.entity";
+import { MenuUpdatedEvent } from "./events/menu-updated.event";
 
-export type MerchantStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
+export type MerchantStatus = "PENDING" | "APPROVED" | "REJECTED" | "SUSPENDED";
 
-export type CapacityStatus = 'NORMAL' | 'BUSY' | 'OVERLOADED' | 'CRITICAL';
+export type CapacityStatus = "NORMAL" | "BUSY" | "OVERLOADED" | "CRITICAL";
 
 export interface CapacityConfig {
   maxConcurrentOrders: number;
@@ -104,16 +104,20 @@ export class Merchant extends AggregateRoot<MerchantId> {
     capacityConfig?: CapacityConfig;
   }): Result<Merchant, DomainError> {
     if (!props.name || props.name.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Merchant name is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Merchant name is required"),
+      );
     }
     if (!props.phone || props.phone.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Phone number is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Phone number is required"),
+      );
     }
     if (!props.address || props.address.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Address is required'));
+      return Result.fail(new BusinessRuleViolationError("Address is required"));
     }
     if (!props.userId || props.userId.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('User ID is required'));
+      return Result.fail(new BusinessRuleViolationError("User ID is required"));
     }
 
     const defaultCapacity: CapacityConfig = {
@@ -132,11 +136,11 @@ export class Merchant extends AggregateRoot<MerchantId> {
       address: props.address,
       latitude: props.latitude ?? null,
       longitude: props.longitude ?? null,
-      status: 'PENDING',
+      status: "PENDING",
       rating: 0,
       totalOrders: 0,
       capacityConfig: defaultCapacity,
-      capacityStatus: 'NORMAL',
+      capacityStatus: "NORMAL",
       menuItems: [],
       operatingHours: [],
       documents: [],
@@ -151,7 +155,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
         email: props.email ?? null,
         phone: props.phone,
         address: props.address,
-        status: 'PENDING',
+        status: "PENDING",
       }),
     );
 
@@ -183,26 +187,27 @@ export class Merchant extends AggregateRoot<MerchantId> {
   }): void {
     if (props.name !== undefined) {
       if (!props.name.trim()) {
-        throw new BusinessRuleViolationError('Merchant name cannot be empty');
+        throw new BusinessRuleViolationError("Merchant name cannot be empty");
       }
       this.name = props.name;
     }
     if (props.description !== undefined) this.description = props.description;
     if (props.phone !== undefined) {
       if (!props.phone.trim()) {
-        throw new BusinessRuleViolationError('Phone cannot be empty');
+        throw new BusinessRuleViolationError("Phone cannot be empty");
       }
       this.phone = props.phone;
     }
     if (props.email !== undefined) this.email = props.email;
     if (props.address !== undefined) {
       if (!props.address.trim()) {
-        throw new BusinessRuleViolationError('Address cannot be empty');
+        throw new BusinessRuleViolationError("Address cannot be empty");
       }
       this.address = props.address;
     }
     if (props.logoUrl !== undefined) this.logoUrl = props.logoUrl;
-    if (props.coverImageUrl !== undefined) this.coverImageUrl = props.coverImageUrl;
+    if (props.coverImageUrl !== undefined)
+      this.coverImageUrl = props.coverImageUrl;
     if (props.latitude !== undefined) this.latitude = props.latitude;
     if (props.longitude !== undefined) this.longitude = props.longitude;
     this.markUpdated();
@@ -212,13 +217,15 @@ export class Merchant extends AggregateRoot<MerchantId> {
    * Approve the merchant (admin action).
    */
   public approve(): void {
-    if (this.status === 'APPROVED') {
-      throw new BusinessRuleViolationError('Merchant is already approved');
+    if (this.status === "APPROVED") {
+      throw new BusinessRuleViolationError("Merchant is already approved");
     }
-    if (this.status === 'SUSPENDED') {
-      throw new BusinessRuleViolationError('Cannot approve a suspended merchant. Reactivate first.');
+    if (this.status === "SUSPENDED") {
+      throw new BusinessRuleViolationError(
+        "Cannot approve a suspended merchant. Reactivate first.",
+      );
     }
-    this.status = 'APPROVED';
+    this.status = "APPROVED";
     this.markUpdated();
   }
 
@@ -226,10 +233,12 @@ export class Merchant extends AggregateRoot<MerchantId> {
    * Reject the merchant (admin action).
    */
   public reject(): void {
-    if (this.status === 'APPROVED') {
-      throw new BusinessRuleViolationError('Cannot reject an approved merchant');
+    if (this.status === "APPROVED") {
+      throw new BusinessRuleViolationError(
+        "Cannot reject an approved merchant",
+      );
     }
-    this.status = 'REJECTED';
+    this.status = "REJECTED";
     this.markUpdated();
   }
 
@@ -237,13 +246,15 @@ export class Merchant extends AggregateRoot<MerchantId> {
    * Suspend the merchant.
    */
   public suspend(): void {
-    if (this.status === 'SUSPENDED') {
-      throw new BusinessRuleViolationError('Merchant is already suspended');
+    if (this.status === "SUSPENDED") {
+      throw new BusinessRuleViolationError("Merchant is already suspended");
     }
-    if (this.status === 'REJECTED') {
-      throw new BusinessRuleViolationError('Cannot suspend a rejected merchant');
+    if (this.status === "REJECTED") {
+      throw new BusinessRuleViolationError(
+        "Cannot suspend a rejected merchant",
+      );
     }
-    this.status = 'SUSPENDED';
+    this.status = "SUSPENDED";
     this.markUpdated();
   }
 
@@ -251,10 +262,12 @@ export class Merchant extends AggregateRoot<MerchantId> {
    * Reactivate a suspended merchant.
    */
   public reactivate(): void {
-    if (this.status !== 'SUSPENDED') {
-      throw new BusinessRuleViolationError('Only suspended merchants can be reactivated');
+    if (this.status !== "SUSPENDED") {
+      throw new BusinessRuleViolationError(
+        "Only suspended merchants can be reactivated",
+      );
     }
-    this.status = 'APPROVED';
+    this.status = "APPROVED";
     this.markUpdated();
   }
 
@@ -273,10 +286,10 @@ export class Merchant extends AggregateRoot<MerchantId> {
     preparationTime?: number;
   }): MenuItem {
     if (!props.name || props.name.trim().length === 0) {
-      throw new BusinessRuleViolationError('Menu item name is required');
+      throw new BusinessRuleViolationError("Menu item name is required");
     }
     if (props.price < 0) {
-      throw new BusinessRuleViolationError('Price cannot be negative');
+      throw new BusinessRuleViolationError("Price cannot be negative");
     }
 
     const menuItem = MenuItem.create({
@@ -301,7 +314,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
         name: props.name,
         price: props.price,
         isAvailable: true,
-        action: 'CREATED',
+        action: "CREATED",
       }),
     );
 
@@ -336,7 +349,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
           name: menuItem.itemName,
           price: props.price,
           isAvailable: menuItem.available,
-          action: 'PRICE_CHANGED',
+          action: "PRICE_CHANGED",
           oldPrice,
           newPrice: props.price,
         }),
@@ -361,7 +374,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
         name: menuItem.itemName,
         price: menuItem.itemPrice,
         isAvailable: menuItem.available,
-        action: 'TOGGLED',
+        action: "TOGGLED",
       }),
     );
 
@@ -383,7 +396,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
         name: menuItem.itemName,
         price: menuItem.itemPrice,
         isAvailable: menuItem.available,
-        action: 'DELETED',
+        action: "DELETED",
       }),
     );
 
@@ -393,7 +406,9 @@ export class Merchant extends AggregateRoot<MerchantId> {
   private findMenuItemOrThrow(menuItemId: MenuItemId): MenuItem {
     const menuItem = this.menuItems.find((mi) => mi.id.equals(menuItemId));
     if (!menuItem) {
-      throw new BusinessRuleViolationError(`Menu item ${menuItemId.toString()} not found`);
+      throw new BusinessRuleViolationError(
+        `Menu item ${menuItemId.toString()} not found`,
+      );
     }
     return menuItem;
   }
@@ -405,7 +420,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
    */
   public setOperatingHours(hours: OperatingHoursProps[]): void {
     if (hours.length === 0) {
-      throw new BusinessRuleViolationError('Operating hours cannot be empty');
+      throw new BusinessRuleViolationError("Operating hours cannot be empty");
     }
     this.operatingHours = hours.map((h) => OperatingHours.create(h));
     this.markUpdated();
@@ -415,7 +430,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
    * Check if the merchant is currently open.
    */
   public isOpen(now: Date = new Date()): boolean {
-    if (this.status !== 'APPROVED') return false;
+    if (this.status !== "APPROVED") return false;
 
     const todayHours = this.getTodayHours(now);
     if (!todayHours) return false;
@@ -426,7 +441,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
 
   private getTodayHours(now: Date): OperatingHours | undefined {
     // First check for special date
-    const dateStr = now.toISOString().split('T')[0];
+    const dateStr = now.toISOString().split("T")[0];
     const specialHours = this.operatingHours.find(
       (oh) => oh.specialDate === dateStr,
     );
@@ -448,13 +463,17 @@ export class Merchant extends AggregateRoot<MerchantId> {
   }): void {
     if (config.maxConcurrentOrders !== undefined) {
       if (config.maxConcurrentOrders < 1) {
-        throw new BusinessRuleViolationError('Max concurrent orders must be at least 1');
+        throw new BusinessRuleViolationError(
+          "Max concurrent orders must be at least 1",
+        );
       }
       this.capacityConfig.maxConcurrentOrders = config.maxConcurrentOrders;
     }
     if (config.prepTimePerOrder !== undefined) {
       if (config.prepTimePerOrder < 1) {
-        throw new BusinessRuleViolationError('Prep time must be at least 1 minute');
+        throw new BusinessRuleViolationError(
+          "Prep time must be at least 1 minute",
+        );
       }
       this.capacityConfig.prepTimePerOrder = config.prepTimePerOrder;
     }
@@ -483,15 +502,16 @@ export class Merchant extends AggregateRoot<MerchantId> {
   }
 
   private recalculateCapacity(): void {
-    const ratio = this.currentOrderCount / this.capacityConfig.maxConcurrentOrders;
+    const ratio =
+      this.currentOrderCount / this.capacityConfig.maxConcurrentOrders;
     if (ratio >= 1.0) {
-      this.capacityStatus = 'CRITICAL';
+      this.capacityStatus = "CRITICAL";
     } else if (ratio >= 0.8) {
-      this.capacityStatus = 'OVERLOADED';
+      this.capacityStatus = "OVERLOADED";
     } else if (ratio >= 0.6) {
-      this.capacityStatus = 'BUSY';
+      this.capacityStatus = "BUSY";
     } else {
-      this.capacityStatus = 'NORMAL';
+      this.capacityStatus = "NORMAL";
     }
   }
 
@@ -500,10 +520,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
   /**
    * Add a legal document to the merchant.
    */
-  public addDocument(props: {
-    type: string;
-    url: string;
-  }): MerchantDocument {
+  public addDocument(props: { type: string; url: string }): MerchantDocument {
     const doc = MerchantDocument.create({
       merchantId: this.id,
       type: props.type,
@@ -520,7 +537,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
   public verifyDocument(documentId: string): void {
     const doc = this.documents.find((d) => d.id.toString() === documentId);
     if (!doc) {
-      throw new BusinessRuleViolationError('Document not found');
+      throw new BusinessRuleViolationError("Document not found");
     }
     doc.verify();
     this.markUpdated();
@@ -609,10 +626,10 @@ export class Merchant extends AggregateRoot<MerchantId> {
   }
 
   public isApproved(): boolean {
-    return this.status === 'APPROVED';
+    return this.status === "APPROVED";
   }
 
   public isPending(): boolean {
-    return this.status === 'PENDING';
+    return this.status === "PENDING";
   }
 }

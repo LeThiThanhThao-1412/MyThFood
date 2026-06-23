@@ -46,11 +46,11 @@ src/
 
 ## API Endpoints
 
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| `POST` | `/api/v1/auth/register` | No | Register a new user |
-| `POST` | `/api/v1/auth/login` | No | Login (phone + password) → JWT token |
-| `GET` | `/api/v1/auth/me` | JWT | Get current user profile |
+| Method | Endpoint                | Auth | Description                          |
+| ------ | ----------------------- | ---- | ------------------------------------ |
+| `POST` | `/api/v1/auth/register` | No   | Register a new user                  |
+| `POST` | `/api/v1/auth/login`    | No   | Login (phone + password) → JWT token |
+| `GET`  | `/api/v1/auth/me`       | JWT  | Get current user profile             |
 
 ### Register Request
 
@@ -108,8 +108,8 @@ Content-Type: application/json
 
 ### Domain Events
 
-| Event | Description |
-|---|---|
+| Event                 | Description                       |
+| --------------------- | --------------------------------- |
 | `UserRegisteredEvent` | Emitted when a new user registers |
 
 ## Environment Variables
@@ -158,6 +158,7 @@ pnpm test
 ```
 
 Tests cover:
+
 - User registration (with/without roles)
 - Domain event emission
 - Password verification (correct + incorrect)

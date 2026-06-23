@@ -10,18 +10,18 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-} from '@nestjs/common';
-import { ConsumerService } from '../application/consumer.service';
-import { Consumer } from '../domain/consumer.aggregate';
-import { Address } from '../domain/address.vo';
-import { PaymentMethod } from '../domain/payment-method.vo';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { CreateConsumerDto } from '../application/dtos/create-consumer.dto';
-import { UpdateConsumerProfileDto } from '../application/dtos/update-consumer-profile.dto';
-import { CreateAddressDto } from '../application/dtos/address.dto';
-import { CreatePaymentMethodDto } from '../application/dtos/payment-method.dto';
+} from "@nestjs/common";
+import { ConsumerService } from "../application/consumer.service";
+import { Consumer } from "../domain/consumer.aggregate";
+import { Address } from "../domain/address.vo";
+import { PaymentMethod } from "../domain/payment-method.vo";
+import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { CreateConsumerDto } from "../application/dtos/create-consumer.dto";
+import { UpdateConsumerProfileDto } from "../application/dtos/update-consumer-profile.dto";
+import { CreateAddressDto } from "../application/dtos/address.dto";
+import { CreatePaymentMethodDto } from "../application/dtos/payment-method.dto";
 
-@Controller('consumers')
+@Controller("consumers")
 @UseGuards(JwtAuthGuard)
 export class ConsumerController {
   constructor(private readonly consumerService: ConsumerService) {}
@@ -34,94 +34,135 @@ export class ConsumerController {
       fullName: dto.fullName,
       avatar: dto.avatar,
       dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
-      gender: dto.gender as 'MALE' | 'FEMALE' | 'OTHER' | undefined,
+      gender: dto.gender as "MALE" | "FEMALE" | "OTHER" | undefined,
     });
 
     if (result.isFailure) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: result.error.message };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
     }
 
-    return { statusCode: HttpStatus.CREATED, data: this.toResponse(result.value) };
+    return {
+      statusCode: HttpStatus.CREATED,
+      data: this.toResponse(result.value),
+    };
   }
 
-  @Get(':id')
-  async getById(@Param('id') id: string) {
+  @Get(":id")
+  async getById(@Param("id") id: string) {
     const consumer = await this.consumerService.getById(id);
     if (!consumer) {
-      return { statusCode: HttpStatus.NOT_FOUND, message: 'Consumer not found' };
+      return {
+        statusCode: HttpStatus.NOT_FOUND,
+        message: "Consumer not found",
+      };
     }
     return { statusCode: HttpStatus.OK, data: this.toResponse(consumer) };
   }
 
-  @Get('user/:userId')
-  async getByUserId(@Param('userId') userId: string) {
+  @Get("user/:userId")
+  async getByUserId(@Param("userId") userId: string) {
     const consumer = await this.consumerService.getByUserId(userId);
     if (!consumer) {
-      return { statusCode: HttpStatus.NOT_FOUND, message: 'Consumer not found' };
+      return {
+        statusCode: HttpStatus.NOT_FOUND,
+        message: "Consumer not found",
+      };
     }
     return { statusCode: HttpStatus.OK, data: this.toResponse(consumer) };
   }
 
-  @Put(':id')
-  async updateProfile(@Param('id') id: string, @Body() dto: UpdateConsumerProfileDto) {
+  @Put(":id")
+  async updateProfile(
+    @Param("id") id: string,
+    @Body() dto: UpdateConsumerProfileDto,
+  ) {
     const result = await this.consumerService.updateProfile(id, {
       fullName: dto.fullName,
       avatar: dto.avatar,
       dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
-      gender: dto.gender as 'MALE' | 'FEMALE' | 'OTHER' | undefined,
+      gender: dto.gender as "MALE" | "FEMALE" | "OTHER" | undefined,
     });
 
     if (result.isFailure) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: result.error.message };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
     }
 
     return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
   }
 
-  @Post(':id/addresses')
+  @Post(":id/addresses")
   @HttpCode(HttpStatus.CREATED)
-  async addAddress(@Param('id') id: string, @Body() dto: CreateAddressDto) {
+  async addAddress(@Param("id") id: string, @Body() dto: CreateAddressDto) {
     const result = await this.consumerService.addAddress(id, {
       label: dto.label,
       fullAddress: dto.fullAddress,
       city: dto.city,
-      district: dto.district ?? '',
-      ward: dto.ward ?? '',
-      street: dto.street ?? '',
-      gps: dto.gps ? { latitude: dto.gps.latitude, longitude: dto.gps.longitude } : undefined,
+      district: dto.district ?? "",
+      ward: dto.ward ?? "",
+      street: dto.street ?? "",
+      gps: dto.gps
+        ? { latitude: dto.gps.latitude, longitude: dto.gps.longitude }
+        : undefined,
       type: dto.type,
     });
 
     if (result.isFailure) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: result.error.message };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
     }
 
-    return { statusCode: HttpStatus.CREATED, data: this.toResponse(result.value) };
+    return {
+      statusCode: HttpStatus.CREATED,
+      data: this.toResponse(result.value),
+    };
   }
 
-  @Delete(':id/addresses/:addressId')
-  async removeAddress(@Param('id') id: string, @Param('addressId') addressId: string) {
+  @Delete(":id/addresses/:addressId")
+  async removeAddress(
+    @Param("id") id: string,
+    @Param("addressId") addressId: string,
+  ) {
     const result = await this.consumerService.removeAddress(id, addressId);
     if (result.isFailure) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: result.error.message };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
     }
     return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
   }
 
-  @Patch(':id/addresses/:addressId/default')
-  async setDefaultAddress(@Param('id') id: string, @Param('addressId') addressId: string) {
+  @Patch(":id/addresses/:addressId/default")
+  async setDefaultAddress(
+    @Param("id") id: string,
+    @Param("addressId") addressId: string,
+  ) {
     const result = await this.consumerService.setDefaultAddress(id, addressId);
     if (result.isFailure) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: result.error.message };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
     }
     return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
   }
 
-  @Post(':id/payment-methods')
+  @Post(":id/payment-methods")
   @HttpCode(HttpStatus.CREATED)
-  async addPaymentMethod(@Param('id') id: string, @Body() dto: CreatePaymentMethodDto) {
+  async addPaymentMethod(
+    @Param("id") id: string,
+    @Body() dto: CreatePaymentMethodDto,
+  ) {
     const result = await this.consumerService.addPaymentMethod(id, {
-      type: dto.type as 'CREDIT_CARD' | 'DEBIT_CARD' | 'E_WALLET',
+      type: dto.type as "CREDIT_CARD" | "DEBIT_CARD" | "E_WALLET",
       provider: dto.provider,
       token: dto.token,
       lastFourDigits: dto.lastFourDigits,
@@ -129,26 +170,44 @@ export class ConsumerController {
     });
 
     if (result.isFailure) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: result.error.message };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
     }
 
-    return { statusCode: HttpStatus.CREATED, data: this.toResponse(result.value) };
+    return {
+      statusCode: HttpStatus.CREATED,
+      data: this.toResponse(result.value),
+    };
   }
 
-  @Delete(':id/payment-methods/:pmId')
-  async removePaymentMethod(@Param('id') id: string, @Param('pmId') pmId: string) {
+  @Delete(":id/payment-methods/:pmId")
+  async removePaymentMethod(
+    @Param("id") id: string,
+    @Param("pmId") pmId: string,
+  ) {
     const result = await this.consumerService.removePaymentMethod(id, pmId);
     if (result.isFailure) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: result.error.message };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
     }
     return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
   }
 
-  @Patch(':id/payment-methods/:pmId/default')
-  async setDefaultPaymentMethod(@Param('id') id: string, @Param('pmId') pmId: string) {
+  @Patch(":id/payment-methods/:pmId/default")
+  async setDefaultPaymentMethod(
+    @Param("id") id: string,
+    @Param("pmId") pmId: string,
+  ) {
     const result = await this.consumerService.setDefaultPaymentMethod(id, pmId);
     if (result.isFailure) {
-      return { statusCode: HttpStatus.BAD_REQUEST, message: result.error.message };
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
     }
     return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
   }
@@ -169,7 +228,9 @@ export class ConsumerController {
         district: a.district,
         ward: a.ward,
         street: a.street,
-        gps: a.gps ? { latitude: a.gps.latitude, longitude: a.gps.longitude } : null,
+        gps: a.gps
+          ? { latitude: a.gps.latitude, longitude: a.gps.longitude }
+          : null,
         type: a.type,
         isDefault: a.isDefault,
       })),

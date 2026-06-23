@@ -1,5 +1,10 @@
-import { ValueObject, BusinessRuleViolationError, Result, DomainError } from '@mythfood/shared-kernel';
-import { AddressId } from './address-id';
+import {
+  ValueObject,
+  BusinessRuleViolationError,
+  Result,
+  DomainError,
+} from "@mythfood/shared-kernel";
+import { AddressId } from "./address-id";
 
 export interface GpsCoordinatesProps {
   latitude: number;
@@ -12,12 +17,21 @@ export class GpsCoordinates extends ValueObject<GpsCoordinatesProps> {
     super(value);
   }
 
-  public static create(latitude: number, longitude: number): Result<GpsCoordinates, DomainError> {
+  public static create(
+    latitude: number,
+    longitude: number,
+  ): Result<GpsCoordinates, DomainError> {
     if (latitude < -90 || latitude > 90) {
-      return Result.fail(new BusinessRuleViolationError('Latitude must be between -90 and 90'));
+      return Result.fail(
+        new BusinessRuleViolationError("Latitude must be between -90 and 90"),
+      );
     }
     if (longitude < -180 || longitude > 180) {
-      return Result.fail(new BusinessRuleViolationError('Longitude must be between -180 and 180'));
+      return Result.fail(
+        new BusinessRuleViolationError(
+          "Longitude must be between -180 and 180",
+        ),
+      );
     }
     return Result.ok(new GpsCoordinates({ latitude, longitude }));
   }
@@ -39,7 +53,7 @@ export class GpsCoordinates extends ValueObject<GpsCoordinatesProps> {
   }
 }
 
-export type AddressType = 'HOME' | 'WORK' | 'OTHER';
+export type AddressType = "HOME" | "WORK" | "OTHER";
 
 export interface AddressProps {
   id: AddressId;
@@ -71,27 +85,33 @@ export class Address extends ValueObject<AddressProps> {
     type?: AddressType;
   }): Result<Address, DomainError> {
     if (!props.label || props.label.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Address label is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Address label is required"),
+      );
     }
     if (!props.fullAddress || props.fullAddress.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Full address is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Full address is required"),
+      );
     }
     if (!props.city || props.city.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('City is required'));
+      return Result.fail(new BusinessRuleViolationError("City is required"));
     }
 
-    return Result.ok(new Address({
-      id: AddressId.create(),
-      label: props.label,
-      fullAddress: props.fullAddress,
-      city: props.city,
-      district: props.district,
-      ward: props.ward,
-      street: props.street,
-      gps: props.gps ?? null,
-      type: props.type ?? 'HOME',
-      isDefault: false,
-    }));
+    return Result.ok(
+      new Address({
+        id: AddressId.create(),
+        label: props.label,
+        fullAddress: props.fullAddress,
+        city: props.city,
+        district: props.district,
+        ward: props.ward,
+        street: props.street,
+        gps: props.gps ?? null,
+        type: props.type ?? "HOME",
+        isDefault: false,
+      }),
+    );
   }
 
   public static rehydrate(props: AddressProps): Address {
@@ -108,7 +128,9 @@ export class Address extends ValueObject<AddressProps> {
 
   public updateLabel(label: string): Result<Address, DomainError> {
     if (!label || label.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Address label is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Address label is required"),
+      );
     }
     return Result.ok(new Address({ ...this.props, label }));
   }

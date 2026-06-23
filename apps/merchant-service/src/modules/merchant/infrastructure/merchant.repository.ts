@@ -1,14 +1,14 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository as TypeOrmRepo } from 'typeorm';
-import { IRepository } from '@mythfood/shared-kernel';
-import { Merchant } from '../domain/merchant.aggregate';
-import { MerchantId } from '../domain/merchant-id';
-import { MerchantEntity } from './merchant.entity';
-import { MenuItemEntity } from './menu-item.entity';
-import { OperatingHoursEntity } from './operating-hours.entity';
-import { MerchantDocumentEntity } from './merchant-document.entity';
-import { MerchantMapper } from './merchant.mapper';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository as TypeOrmRepo } from "typeorm";
+import { IRepository } from "@mythfood/shared-kernel";
+import { Merchant } from "../domain/merchant.aggregate";
+import { MerchantId } from "../domain/merchant-id";
+import { MerchantEntity } from "./merchant.entity";
+import { MenuItemEntity } from "./menu-item.entity";
+import { OperatingHoursEntity } from "./operating-hours.entity";
+import { MerchantDocumentEntity } from "./merchant-document.entity";
+import { MerchantMapper } from "./merchant.mapper";
 
 @Injectable()
 export class MerchantRepository implements IRepository<Merchant, MerchantId> {
@@ -39,7 +39,9 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
   }
 
   async findById(id: MerchantId): Promise<Merchant | null> {
-    const entity = await this.repository.findOne({ where: { id: id.toString() } });
+    const entity = await this.repository.findOne({
+      where: { id: id.toString() },
+    });
     if (!entity) {
       return null;
     }
@@ -55,7 +57,9 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
   }
 
   async findByUserId(userId: string): Promise<Merchant | null> {
-    const entity = await this.repository.findOne({ where: { user_id: userId } });
+    const entity = await this.repository.findOne({
+      where: { user_id: userId },
+    });
     if (!entity) {
       return null;
     }
@@ -70,17 +74,18 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
   }): Promise<{ items: Merchant[]; total: number }> {
     const where: Record<string, unknown> = {};
     if (options?.status) {
-      where['status'] = options.status;
+      where["status"] = options.status;
     }
 
-    const queryBuilder = this.repository.createQueryBuilder('merchant')
+    const queryBuilder = this.repository
+      .createQueryBuilder("merchant")
       .where(where)
-      .andWhere('merchant.deleted_at IS NULL')
-      .orderBy('merchant.created_at', 'DESC');
+      .andWhere("merchant.deleted_at IS NULL")
+      .orderBy("merchant.created_at", "DESC");
 
     if (options?.search) {
       queryBuilder.andWhere(
-        '(merchant.name ILIKE :search OR merchant.address ILIKE :search)',
+        "(merchant.name ILIKE :search OR merchant.address ILIKE :search)",
         { search: `%${options.search}%` },
       );
     }
@@ -94,7 +99,9 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
 
     const [entities, total] = await queryBuilder.getManyAndCount();
 
-    const items = await Promise.all(entities.map((e) => this.loadRelatedAndMap(e)));
+    const items = await Promise.all(
+      entities.map((e) => this.loadRelatedAndMap(e)),
+    );
     return { items, total };
   }
 
@@ -122,6 +129,11 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
       where: { merchant_id: entity.id },
     });
 
-    return MerchantMapper.toDomain(entity, menuItems, operatingHours, documents);
+    return MerchantMapper.toDomain(
+      entity,
+      menuItems,
+      operatingHours,
+      documents,
+    );
   }
 }

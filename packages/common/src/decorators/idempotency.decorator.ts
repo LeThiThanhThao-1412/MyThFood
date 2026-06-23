@@ -1,4 +1,4 @@
-import 'reflect-metadata';
+import "reflect-metadata";
 
 /**
  * Idempotency decorator interface.
@@ -15,7 +15,7 @@ export interface IdempotencyOptions {
   ttlSeconds?: number;
 }
 
-export const IDEMPOTENCY_METADATA_KEY = Symbol('idempotency');
+export const IDEMPOTENCY_METADATA_KEY = Symbol("idempotency");
 
 /**
  * Decorator to mark a method as idempotent.
@@ -35,7 +35,7 @@ export function Idempotency(options: IdempotencyOptions = {}): MethodDecorator {
     Reflect.defineMetadata(
       IDEMPOTENCY_METADATA_KEY,
       {
-        keyField: options.keyField ?? 'idempotency_key',
+        keyField: options.keyField ?? "idempotency_key",
         ttlSeconds: options.ttlSeconds ?? 86400, // 24 hours default
       },
       descriptor.value,

@@ -40,6 +40,8 @@ jobs:
       - name: Lint merchant-service
         run: pnpm --filter @mythfood/merchant-service lint
 
+      - name: Lint order-service
+        run: pnpm --filter @mythfood/order-service lint
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -111,6 +113,16 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
+      - name: Run order-service unit tests
+        run: pnpm --filter @mythfood/order-service test
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_order
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -145,6 +157,9 @@ jobs:
       - name: Build merchant-service
         run: pnpm --filter @mythfood/merchant-service build
 
+      - name: Build order-service
+        run: pnpm --filter @mythfood/order-service build
+
       - name: Upload identity-service build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -162,6 +177,12 @@ jobs:
         with:
           name: merchant-dist
           path: apps/merchant-service/dist/
+
+      - name: Upload order-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: order-dist
+          path: apps/order-service/dist/
 
   test-coverage:
     name: Test Coverage
@@ -231,6 +252,16 @@ jobs:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
           DATABASE_NAME: mythfood_merchant
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run order-service test coverage
+        run: pnpm --filter @mythfood/order-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_order
           DATABASE_USER: mythfood
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret

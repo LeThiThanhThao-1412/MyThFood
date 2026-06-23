@@ -3,13 +3,13 @@ import {
   Result,
   DomainError,
   BusinessRuleViolationError,
-} from '@mythfood/shared-kernel';
-import { ConsumerId } from './consumer-id';
-import { Address } from './address.vo';
-import { PaymentMethod } from './payment-method.vo';
-import { ConsumerProfileUpdatedEvent } from './events/consumer-profile-updated.event';
+} from "@mythfood/shared-kernel";
+import { ConsumerId } from "./consumer-id";
+import { Address } from "./address.vo";
+import { PaymentMethod } from "./payment-method.vo";
+import { ConsumerProfileUpdatedEvent } from "./events/consumer-profile-updated.event";
 
-export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
+export type Gender = "MALE" | "FEMALE" | "OTHER";
 
 export interface ConsumerProps {
   userId: string;
@@ -49,10 +49,12 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     gender?: Gender;
   }): Result<Consumer, DomainError> {
     if (!props.userId || props.userId.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('User ID is required'));
+      return Result.fail(new BusinessRuleViolationError("User ID is required"));
     }
     if (!props.fullName || props.fullName.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Full name is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Full name is required"),
+      );
     }
 
     const consumer = new Consumer(ConsumerId.create(), {
@@ -90,7 +92,9 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     gender?: Gender;
   }): Result<void, DomainError> {
     if (props.fullName !== undefined && props.fullName.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Full name cannot be empty'));
+      return Result.fail(
+        new BusinessRuleViolationError("Full name cannot be empty"),
+      );
     }
     if (props.fullName !== undefined) this.fullName = props.fullName;
     if (props.avatar !== undefined) this.avatar = props.avatar;
@@ -112,7 +116,9 @@ export class Consumer extends AggregateRoot<ConsumerId> {
 
   public addAddress(address: Address): Result<void, DomainError> {
     if (this.addresses.length >= 10) {
-      return Result.fail(new BusinessRuleViolationError('Maximum 10 addresses allowed'));
+      return Result.fail(
+        new BusinessRuleViolationError("Maximum 10 addresses allowed"),
+      );
     }
     if (this.addresses.length === 0) {
       address = address.setAsDefault();
@@ -123,9 +129,11 @@ export class Consumer extends AggregateRoot<ConsumerId> {
   }
 
   public removeAddress(addressId: string): Result<void, DomainError> {
-    const index = this.addresses.findIndex(a => a.id.toString() === addressId);
+    const index = this.addresses.findIndex(
+      (a) => a.id.toString() === addressId,
+    );
     if (index === -1) {
-      return Result.fail(new BusinessRuleViolationError('Address not found'));
+      return Result.fail(new BusinessRuleViolationError("Address not found"));
     }
     const removed = this.addresses[index]!;
     this.addresses.splice(index, 1);
@@ -137,9 +145,9 @@ export class Consumer extends AggregateRoot<ConsumerId> {
   }
 
   public setDefaultAddress(addressId: string): Result<void, DomainError> {
-    const found = this.addresses.some(a => a.id.toString() === addressId);
+    const found = this.addresses.some((a) => a.id.toString() === addressId);
     if (!found) {
-      return Result.fail(new BusinessRuleViolationError('Address not found'));
+      return Result.fail(new BusinessRuleViolationError("Address not found"));
     }
     this.addresses = this.addresses.map((a) =>
       a.id.toString() === addressId ? a.setAsDefault() : a.unsetDefault(),
@@ -150,7 +158,9 @@ export class Consumer extends AggregateRoot<ConsumerId> {
 
   public addPaymentMethod(method: PaymentMethod): Result<void, DomainError> {
     if (this.paymentMethods.length >= 10) {
-      return Result.fail(new BusinessRuleViolationError('Maximum 10 payment methods allowed'));
+      return Result.fail(
+        new BusinessRuleViolationError("Maximum 10 payment methods allowed"),
+      );
     }
     if (this.paymentMethods.length === 0) {
       method = method.setAsDefault();
@@ -160,10 +170,16 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     return Result.ok(undefined);
   }
 
-  public removePaymentMethod(paymentMethodId: string): Result<void, DomainError> {
-    const index = this.paymentMethods.findIndex(p => p.id.toString() === paymentMethodId);
+  public removePaymentMethod(
+    paymentMethodId: string,
+  ): Result<void, DomainError> {
+    const index = this.paymentMethods.findIndex(
+      (p) => p.id.toString() === paymentMethodId,
+    );
     if (index === -1) {
-      return Result.fail(new BusinessRuleViolationError('Payment method not found'));
+      return Result.fail(
+        new BusinessRuleViolationError("Payment method not found"),
+      );
     }
     const removed = this.paymentMethods[index]!;
     this.paymentMethods.splice(index, 1);
@@ -174,10 +190,16 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     return Result.ok(undefined);
   }
 
-  public setDefaultPaymentMethod(paymentMethodId: string): Result<void, DomainError> {
-    const found = this.paymentMethods.some(p => p.id.toString() === paymentMethodId);
+  public setDefaultPaymentMethod(
+    paymentMethodId: string,
+  ): Result<void, DomainError> {
+    const found = this.paymentMethods.some(
+      (p) => p.id.toString() === paymentMethodId,
+    );
     if (!found) {
-      return Result.fail(new BusinessRuleViolationError('Payment method not found'));
+      return Result.fail(
+        new BusinessRuleViolationError("Payment method not found"),
+      );
     }
     this.paymentMethods = this.paymentMethods.map((p) =>
       p.id.toString() === paymentMethodId ? p.setAsDefault() : p.unsetDefault(),
@@ -186,14 +208,34 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     return Result.ok(undefined);
   }
 
-  get userIdValue(): string { return this.userId; }
-  get displayName(): string { return this.fullName; }
-  get avatarUrl(): string | null { return this.avatar; }
-  get birthDate(): Date | null { return this.dateOfBirth; }
-  get consumerGender(): Gender | null { return this.gender; }
-  get addressList(): Address[] { return [...this.addresses]; }
-  get paymentMethodList(): PaymentMethod[] { return [...this.paymentMethods]; }
-  get defaultAddress(): Address | null { return this.addresses.find(a => a.isDefault) ?? null; }
-  get defaultPaymentMethod(): PaymentMethod | null { return this.paymentMethods.find(p => p.isDefault) ?? null; }
-  get addressCount(): number { return this.addresses.length; }
+  get userIdValue(): string {
+    return this.userId;
+  }
+  get displayName(): string {
+    return this.fullName;
+  }
+  get avatarUrl(): string | null {
+    return this.avatar;
+  }
+  get birthDate(): Date | null {
+    return this.dateOfBirth;
+  }
+  get consumerGender(): Gender | null {
+    return this.gender;
+  }
+  get addressList(): Address[] {
+    return [...this.addresses];
+  }
+  get paymentMethodList(): PaymentMethod[] {
+    return [...this.paymentMethods];
+  }
+  get defaultAddress(): Address | null {
+    return this.addresses.find((a) => a.isDefault) ?? null;
+  }
+  get defaultPaymentMethod(): PaymentMethod | null {
+    return this.paymentMethods.find((p) => p.isDefault) ?? null;
+  }
+  get addressCount(): number {
+    return this.addresses.length;
+  }
 }

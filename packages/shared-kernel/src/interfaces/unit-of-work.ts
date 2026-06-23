@@ -1,6 +1,6 @@
-import { AggregateRoot } from '../domain/aggregate-root';
-import { Identifier } from '../domain/identifier';
-import { IRepository } from './repository';
+import { AggregateRoot } from "../domain/aggregate-root";
+import { Identifier } from "../domain/identifier";
+import { IRepository } from "./repository";
 
 /**
  * Unit of Work pattern for managing transactions across multiple repositories.

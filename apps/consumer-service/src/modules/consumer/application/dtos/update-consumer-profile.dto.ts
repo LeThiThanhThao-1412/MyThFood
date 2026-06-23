@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsEnum, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsDateString } from "class-validator";
 
 export class UpdateConsumerProfileDto {
   @IsString()
@@ -13,7 +13,7 @@ export class UpdateConsumerProfileDto {
   @IsOptional()
   dateOfBirth?: string;
 
-  @IsEnum(['MALE', 'FEMALE', 'OTHER'])
+  @IsEnum(["MALE", "FEMALE", "OTHER"])
   @IsOptional()
   gender?: string;
 }

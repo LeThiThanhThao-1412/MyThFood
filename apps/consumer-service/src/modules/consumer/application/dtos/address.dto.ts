@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsNumber, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEnum,
+  IsNumber,
+  Min,
+  Max,
+} from "class-validator";
 
 export class GpsCoordinatesDto {
   @IsNumber()
@@ -40,7 +48,7 @@ export class CreateAddressDto {
   @IsOptional()
   gps?: GpsCoordinatesDto;
 
-  @IsEnum(['HOME', 'WORK', 'OTHER'])
+  @IsEnum(["HOME", "WORK", "OTHER"])
   @IsOptional()
   type?: string;
 }

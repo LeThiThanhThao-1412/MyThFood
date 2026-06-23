@@ -1,4 +1,4 @@
-import { ValueObject } from '@mythfood/shared-kernel';
+import { ValueObject } from "@mythfood/shared-kernel";
 
 export interface OperatingHoursProps {
   dayOfWeek: number; // 0-6 (Sun-Sat)
@@ -16,14 +16,14 @@ export class OperatingHours extends ValueObject<OperatingHoursProps> {
 
   public static create(props: OperatingHoursProps): OperatingHours {
     if (props.dayOfWeek < 0 || props.dayOfWeek > 6) {
-      throw new Error('Day of week must be between 0 and 6');
+      throw new Error("Day of week must be between 0 and 6");
     }
     if (!props.isClosed) {
       if (!props.openTime) {
-        throw new Error('Open time is required when not closed');
+        throw new Error("Open time is required when not closed");
       }
       if (!props.closeTime) {
-        throw new Error('Close time is required when not closed');
+        throw new Error("Close time is required when not closed");
       }
     }
     return new OperatingHours(props);
@@ -37,8 +37,14 @@ export class OperatingHours extends ValueObject<OperatingHoursProps> {
 
     const currentTime = now.getHours() * 60 + now.getMinutes();
 
-    const [openH, openM] = this.openTime.split(':').map(Number) as [number, number];
-    const [closeH, closeM] = this.closeTime.split(':').map(Number) as [number, number];
+    const [openH, openM] = this.openTime.split(":").map(Number) as [
+      number,
+      number,
+    ];
+    const [closeH, closeM] = this.closeTime.split(":").map(Number) as [
+      number,
+      number,
+    ];
 
     const openMinutes = openH * 60 + openM;
     const closeMinutes = closeH * 60 + closeM;
@@ -74,6 +80,12 @@ export class OperatingHours extends ValueObject<OperatingHoursProps> {
   }
 
   protected getEqualityComponents(): unknown[] {
-    return [this.props.dayOfWeek, this.props.openTime, this.props.closeTime, this.props.isClosed, this.props.specialDate];
+    return [
+      this.props.dayOfWeek,
+      this.props.openTime,
+      this.props.closeTime,
+      this.props.isClosed,
+      this.props.specialDate,
+    ];
   }
 }

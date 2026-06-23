@@ -1,11 +1,11 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository as TypeOrmRepo } from 'typeorm';
-import { IRepository } from '@mythfood/shared-kernel';
-import { User } from '../domain/user.aggregate';
-import { UserId } from '../domain/user-id';
-import { UserEntity } from './user.entity';
-import { UserMapper } from './user.mapper';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository as TypeOrmRepo } from "typeorm";
+import { IRepository } from "@mythfood/shared-kernel";
+import { User } from "../domain/user.aggregate";
+import { UserId } from "../domain/user-id";
+import { UserEntity } from "./user.entity";
+import { UserMapper } from "./user.mapper";
 
 @Injectable()
 export class UserRepository implements IRepository<User, UserId> {
@@ -20,7 +20,9 @@ export class UserRepository implements IRepository<User, UserId> {
   }
 
   async findById(id: UserId): Promise<User | null> {
-    const entity = await this.repository.findOne({ where: { id: id.toString() } });
+    const entity = await this.repository.findOne({
+      where: { id: id.toString() },
+    });
     if (!entity) {
       return null;
     }

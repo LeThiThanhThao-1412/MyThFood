@@ -13,13 +13,29 @@ export class AppError extends Error {
     metadata?: Record<string, unknown>,
   ) {
     super(message);
-    this.name = 'AppError';
+    this.name = "AppError";
     this.code = code;
     this.statusCode = statusCode;
     this.metadata = metadata;
 
-    if (typeof (Error as unknown as { captureStackTrace?: (target: object, constructorOpt?: Function) => void }).captureStackTrace === 'function') {
-      (Error as unknown as { captureStackTrace: (target: object, constructorOpt?: Function) => void }).captureStackTrace(this, this.constructor);
+    if (
+      typeof (
+        Error as unknown as {
+          captureStackTrace?: (
+            target: object,
+            constructorOpt?: Function,
+          ) => void;
+        }
+      ).captureStackTrace === "function"
+    ) {
+      (
+        Error as unknown as {
+          captureStackTrace: (
+            target: object,
+            constructorOpt?: Function,
+          ) => void;
+        }
+      ).captureStackTrace(this, this.constructor);
     }
   }
 
@@ -40,30 +56,39 @@ export class AppError extends Error {
  */
 export class BadRequestError extends AppError {
   constructor(message: string, metadata?: Record<string, unknown>) {
-    super(message, 'BAD_REQUEST', 400, metadata);
+    super(message, "BAD_REQUEST", 400, metadata);
   }
 }
 
 export class ConflictError extends AppError {
   constructor(message: string, metadata?: Record<string, unknown>) {
-    super(message, 'CONFLICT', 409, metadata);
+    super(message, "CONFLICT", 409, metadata);
   }
 }
 
 export class InternalServerError extends AppError {
-  constructor(message: string = 'Internal Server Error', metadata?: Record<string, unknown>) {
-    super(message, 'INTERNAL_SERVER_ERROR', 500, metadata);
+  constructor(
+    message: string = "Internal Server Error",
+    metadata?: Record<string, unknown>,
+  ) {
+    super(message, "INTERNAL_SERVER_ERROR", 500, metadata);
   }
 }
 
 export class TooManyRequestsError extends AppError {
-  constructor(message: string = 'Too Many Requests', metadata?: Record<string, unknown>) {
-    super(message, 'TOO_MANY_REQUESTS', 429, metadata);
+  constructor(
+    message: string = "Too Many Requests",
+    metadata?: Record<string, unknown>,
+  ) {
+    super(message, "TOO_MANY_REQUESTS", 429, metadata);
   }
 }
 
 export class ServiceUnavailableError extends AppError {
-  constructor(message: string = 'Service Unavailable', metadata?: Record<string, unknown>) {
-    super(message, 'SERVICE_UNAVAILABLE', 503, metadata);
+  constructor(
+    message: string = "Service Unavailable",
+    metadata?: Record<string, unknown>,
+  ) {
+    super(message, "SERVICE_UNAVAILABLE", 503, metadata);
   }
 }

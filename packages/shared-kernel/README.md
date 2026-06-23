@@ -33,7 +33,7 @@ import {
   Result,
   DomainError,
   IRepository,
-} from '@mythfood/shared-kernel';
+} from "@mythfood/shared-kernel";
 
 // Create a strongly-typed ID
 class UserId extends Identifier {
@@ -56,9 +56,11 @@ interface PhoneNumberProps {
   number: string;
 }
 class PhoneNumber extends ValueObject<PhoneNumberProps> {
-  public static create(props: PhoneNumberProps): Result<PhoneNumber, DomainError> {
+  public static create(
+    props: PhoneNumberProps,
+  ): Result<PhoneNumber, DomainError> {
     if (!/^\d{10}$/.test(props.number)) {
-      return Result.fail(new ValidationError('Invalid phone number'));
+      return Result.fail(new ValidationError("Invalid phone number"));
     }
     return Result.ok(new PhoneNumber(props));
   }
@@ -67,13 +69,14 @@ class PhoneNumber extends ValueObject<PhoneNumberProps> {
 // Create an Aggregate Root
 class User extends AggregateRoot<UserId> {
   private phoneNumber: PhoneNumber;
-  private status: 'ACTIVE' | 'INACTIVE';
+  private status: "ACTIVE" | "INACTIVE";
 
   public static register(phoneNumber: PhoneNumber): Result<User, DomainError> {
     const user = new User(UserId.create());
     user.phoneNumber = phoneNumber;
-    user.status = 'ACTIVE';
+    user.status = "ACTIVE";
     user.addDomainEvent(new UserRegisteredEvent(user.id));
     return Result.ok(user);
   }
 }
+```

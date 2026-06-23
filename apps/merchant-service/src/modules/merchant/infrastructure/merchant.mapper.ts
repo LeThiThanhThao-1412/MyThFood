@@ -1,13 +1,21 @@
-import { MerchantId } from '../domain/merchant-id';
-import { MenuItemId } from '../domain/menu-item-id';
-import { Merchant, CapacityConfig, MerchantStatus, CapacityStatus } from '../domain/merchant.aggregate';
-import { MenuItem, MenuItemCategory } from '../domain/menu-item.entity';
-import { OperatingHours } from '../domain/operating-hours.vo';
-import { MerchantDocument, MerchantDocumentId } from '../domain/merchant-document.entity';
-import { MerchantEntity } from './merchant.entity';
-import { MenuItemEntity } from './menu-item.entity';
-import { OperatingHoursEntity } from './operating-hours.entity';
-import { MerchantDocumentEntity } from './merchant-document.entity';
+import { MerchantId } from "../domain/merchant-id";
+import { MenuItemId } from "../domain/menu-item-id";
+import {
+  Merchant,
+  CapacityConfig,
+  MerchantStatus,
+  CapacityStatus,
+} from "../domain/merchant.aggregate";
+import { MenuItem, MenuItemCategory } from "../domain/menu-item.entity";
+import { OperatingHours } from "../domain/operating-hours.vo";
+import {
+  MerchantDocument,
+  MerchantDocumentId,
+} from "../domain/merchant-document.entity";
+import { MerchantEntity } from "./merchant.entity";
+import { MenuItemEntity } from "./menu-item.entity";
+import { OperatingHoursEntity } from "./operating-hours.entity";
+import { MerchantDocumentEntity } from "./merchant-document.entity";
 
 /**
  * Maps between Domain (Merchant aggregate) and Persistence (TypeORM entities).
@@ -24,9 +32,15 @@ export class MerchantMapper {
   ): Merchant {
     const id = MerchantId.from(entity.id);
 
-    const domainMenuItems = menuItems.map((mi) => MerchantMapper.menuItemToDomain(mi));
-    const domainHours = operatingHours.map((oh) => MerchantMapper.operatingHoursToDomain(oh));
-    const domainDocs = documents.map((doc) => MerchantMapper.documentToDomain(doc));
+    const domainMenuItems = menuItems.map((mi) =>
+      MerchantMapper.menuItemToDomain(mi),
+    );
+    const domainHours = operatingHours.map((oh) =>
+      MerchantMapper.operatingHoursToDomain(oh),
+    );
+    const domainDocs = documents.map((doc) =>
+      MerchantMapper.documentToDomain(doc),
+    );
 
     const capacityConfig: CapacityConfig = entity.capacity_config ?? {
       maxConcurrentOrders: 10,
@@ -100,10 +114,12 @@ export class MerchantMapper {
     });
   }
 
-  public static operatingHoursToPersistence(merchant: Merchant): OperatingHoursEntity[] {
+  public static operatingHoursToPersistence(
+    merchant: Merchant,
+  ): OperatingHoursEntity[] {
     return merchant.operatingHoursList.map((oh) => {
       const entity = new OperatingHoursEntity();
-      entity.id = ''; // Will be auto-generated, or we can track existing
+      entity.id = ""; // Will be auto-generated, or we can track existing
       entity.merchant_id = merchant.id.toString();
       entity.day_of_week = oh.dayOfWeek;
       entity.open_time = oh.openTime;
@@ -114,7 +130,9 @@ export class MerchantMapper {
     });
   }
 
-  public static documentsToPersistence(merchant: Merchant): MerchantDocumentEntity[] {
+  public static documentsToPersistence(
+    merchant: Merchant,
+  ): MerchantDocumentEntity[] {
     return merchant.documentList.map((doc) => {
       const entity = new MerchantDocumentEntity();
       entity.id = doc.id.toString();
@@ -137,7 +155,9 @@ export class MerchantMapper {
       name: entity.name,
       description: entity.description,
       price: Number(entity.price),
-      originalPrice: entity.original_price ? Number(entity.original_price) : null,
+      originalPrice: entity.original_price
+        ? Number(entity.original_price)
+        : null,
       imageUrl: entity.image_url,
       isAvailable: entity.is_available,
       isFeatured: entity.is_featured,
@@ -146,23 +166,27 @@ export class MerchantMapper {
     });
   }
 
-  private static operatingHoursToDomain(entity: OperatingHoursEntity): OperatingHours {
+  private static operatingHoursToDomain(
+    entity: OperatingHoursEntity,
+  ): OperatingHours {
     return OperatingHours.create({
       dayOfWeek: entity.day_of_week,
-      openTime: entity.open_time ?? '00:00:00',
-      closeTime: entity.close_time ?? '00:00:00',
+      openTime: entity.open_time ?? "00:00:00",
+      closeTime: entity.close_time ?? "00:00:00",
       isClosed: entity.is_closed,
       specialDate: entity.special_date ?? undefined,
     });
   }
 
-  private static documentToDomain(entity: MerchantDocumentEntity): MerchantDocument {
+  private static documentToDomain(
+    entity: MerchantDocumentEntity,
+  ): MerchantDocument {
     const id = MerchantDocumentId.from(entity.id);
     return MerchantDocument.rehydrate(id, {
       merchantId: MerchantId.from(entity.merchant_id),
       type: entity.type,
       url: entity.url,
-      status: entity.status as 'PENDING' | 'VERIFIED' | 'REJECTED',
+      status: entity.status as "PENDING" | "VERIFIED" | "REJECTED",
       verifiedAt: entity.verified_at,
     });
   }

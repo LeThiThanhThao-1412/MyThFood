@@ -1,5 +1,5 @@
-import { ValueObject, Result, ValidationError } from '@mythfood/shared-kernel';
-import * as bcrypt from 'bcrypt';
+import { ValueObject, Result, ValidationError } from "@mythfood/shared-kernel";
+import * as bcrypt from "bcrypt";
 
 export interface PasswordProps {
   hash: string;
@@ -17,10 +17,14 @@ export class Password extends ValueObject<PasswordProps> {
   /**
    * Create a Password from a plaintext value (hashes it).
    */
-  public static async create(plainText: string): Promise<Result<Password, ValidationError>> {
+  public static async create(
+    plainText: string,
+  ): Promise<Result<Password, ValidationError>> {
     if (!plainText || plainText.length < Password.MIN_LENGTH) {
       return Result.fail(
-        new ValidationError(`Password must be at least ${Password.MIN_LENGTH} characters`),
+        new ValidationError(
+          `Password must be at least ${Password.MIN_LENGTH} characters`,
+        ),
       );
     }
 

@@ -1,11 +1,14 @@
-import { Identifier } from '../domain/identifier';
-import { AggregateRoot } from '../domain/aggregate-root';
+import { Identifier } from "../domain/identifier";
+import { AggregateRoot } from "../domain/aggregate-root";
 
 /**
  * Generic Repository interface for Domain-Driven Design.
  * Provides basic CRUD operations for aggregate roots.
  */
-export interface IRepository<T extends AggregateRoot, ID extends Identifier = Identifier> {
+export interface IRepository<
+  T extends AggregateRoot,
+  ID extends Identifier = Identifier,
+> {
   /**
    * Save an aggregate (create or update).
    */
@@ -40,8 +43,10 @@ export interface IRepository<T extends AggregateRoot, ID extends Identifier = Id
 /**
  * Repository that supports finding by criteria.
  */
-export interface IQueryableRepository<T extends AggregateRoot, ID extends Identifier = Identifier>
-  extends IRepository<T, ID> {
+export interface IQueryableRepository<
+  T extends AggregateRoot,
+  ID extends Identifier = Identifier,
+> extends IRepository<T, ID> {
   /**
    * Find all aggregates matching the criteria.
    */

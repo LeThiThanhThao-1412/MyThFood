@@ -5,33 +5,33 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
-} from 'typeorm';
-import { MerchantEntity } from './merchant.entity';
+} from "typeorm";
+import { MerchantEntity } from "./merchant.entity";
 
-@Entity('merchant_documents')
+@Entity("merchant_documents")
 export class MerchantDocumentEntity {
-  @PrimaryColumn({ type: 'uuid' })
+  @PrimaryColumn({ type: "uuid" })
   id!: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: "uuid" })
   merchant_id!: string;
 
-  @Column({ type: 'varchar', length: 50 })
+  @Column({ type: "varchar", length: 50 })
   type!: string;
 
-  @Column({ type: 'varchar', length: 500 })
+  @Column({ type: "varchar", length: 500 })
   url!: string;
 
-  @Column({ type: 'varchar', length: 20, default: 'PENDING' })
+  @Column({ type: "varchar", length: 20, default: "PENDING" })
   status!: string;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: "timestamptz", nullable: true })
   verified_at!: Date | null;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn({ type: "timestamptz" })
   created_at!: Date;
 
   @ManyToOne(() => MerchantEntity)
-  @JoinColumn({ name: 'merchant_id' })
+  @JoinColumn({ name: "merchant_id" })
   merchant!: MerchantEntity;
 }

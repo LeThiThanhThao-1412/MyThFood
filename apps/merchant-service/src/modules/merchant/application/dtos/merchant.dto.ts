@@ -1,5 +1,13 @@
-import { IsString, IsOptional, IsNotEmpty, IsNumber, IsEnum, IsUUID, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsString,
+  IsOptional,
+  IsNotEmpty,
+  IsNumber,
+  IsEnum,
+  IsUUID,
+  Min,
+} from "class-validator";
+import { Type } from "class-transformer";
 
 // ===================== Register Merchant =====================
 
@@ -87,7 +95,7 @@ export class UpdateMerchantDto {
 
 export class MerchantQueryDto {
   @IsOptional()
-  @IsEnum(['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'])
+  @IsEnum(["PENDING", "APPROVED", "REJECTED", "SUSPENDED"])
   status?: string;
 
   @IsOptional()

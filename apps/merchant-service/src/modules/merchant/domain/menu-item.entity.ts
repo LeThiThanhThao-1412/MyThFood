@@ -1,16 +1,19 @@
-import { Entity as DomainEntity, BusinessRuleViolationError } from '@mythfood/shared-kernel';
-import { MenuItemId } from './menu-item-id';
-import { MerchantId } from './merchant-id';
+import {
+  Entity as DomainEntity,
+  BusinessRuleViolationError,
+} from "@mythfood/shared-kernel";
+import { MenuItemId } from "./menu-item-id";
+import { MerchantId } from "./merchant-id";
 
 export type MenuItemCategory =
-  | 'APPETIZER'
-  | 'MAIN_COURSE'
-  | 'DESSERT'
-  | 'BEVERAGE'
-  | 'DRINK'
-  | 'SIDE_DISH'
-  | 'COMBO'
-  | 'OTHER';
+  | "APPETIZER"
+  | "MAIN_COURSE"
+  | "DESSERT"
+  | "BEVERAGE"
+  | "DRINK"
+  | "SIDE_DISH"
+  | "COMBO"
+  | "OTHER";
 
 export interface MenuItemProps {
   id?: MenuItemId;
@@ -101,7 +104,7 @@ export class MenuItem extends DomainEntity<MenuItemId> {
   }): void {
     if (props.name !== undefined) {
       if (!props.name.trim()) {
-        throw new BusinessRuleViolationError('Menu item name cannot be empty');
+        throw new BusinessRuleViolationError("Menu item name cannot be empty");
       }
       this.name = props.name;
     }
@@ -111,7 +114,9 @@ export class MenuItem extends DomainEntity<MenuItemId> {
     if (props.isFeatured !== undefined) this.isFeatured = props.isFeatured;
     if (props.preparationTime !== undefined) {
       if (props.preparationTime < 0) {
-        throw new BusinessRuleViolationError('Preparation time cannot be negative');
+        throw new BusinessRuleViolationError(
+          "Preparation time cannot be negative",
+        );
       }
       this.preparationTime = props.preparationTime;
     }
@@ -119,7 +124,7 @@ export class MenuItem extends DomainEntity<MenuItemId> {
     // Track price change for audit
     if (props.price !== undefined) {
       if (props.price < 0) {
-        throw new BusinessRuleViolationError('Price cannot be negative');
+        throw new BusinessRuleViolationError("Price cannot be negative");
       }
       if (this.price !== props.price) {
         this.originalPrice = this.price;

@@ -1,5 +1,11 @@
-import { ValueObject, BusinessRuleViolationError, Result, DomainError, Identifier } from '@mythfood/shared-kernel';
-import { v4 as uuidv4 } from 'uuid';
+import {
+  ValueObject,
+  BusinessRuleViolationError,
+  Result,
+  DomainError,
+  Identifier,
+} from "@mythfood/shared-kernel";
+import { v4 as uuidv4 } from "uuid";
 
 export class PaymentMethodId extends Identifier<string> {
   private constructor(value: string) {
@@ -12,13 +18,13 @@ export class PaymentMethodId extends Identifier<string> {
 
   public static from(value: string): PaymentMethodId {
     if (!value || value.trim().length === 0) {
-      throw new Error('PaymentMethodId cannot be empty');
+      throw new Error("PaymentMethodId cannot be empty");
     }
     return new PaymentMethodId(value);
   }
 }
 
-export type PaymentMethodType = 'CREDIT_CARD' | 'DEBIT_CARD' | 'E_WALLET';
+export type PaymentMethodType = "CREDIT_CARD" | "DEBIT_CARD" | "E_WALLET";
 
 export interface PaymentMethodProps {
   id: PaymentMethodId;
@@ -44,27 +50,37 @@ export class PaymentMethod extends ValueObject<PaymentMethodProps> {
     expiryDate?: Date;
   }): Result<PaymentMethod, DomainError> {
     if (!props.type) {
-      return Result.fail(new BusinessRuleViolationError('Payment method type is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Payment method type is required"),
+      );
     }
     if (!props.provider || props.provider.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Payment provider is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Payment provider is required"),
+      );
     }
     if (!props.token || props.token.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Payment token is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Payment token is required"),
+      );
     }
     if (!props.lastFourDigits || props.lastFourDigits.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Last four digits are required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Last four digits are required"),
+      );
     }
 
-    return Result.ok(new PaymentMethod({
-      id: PaymentMethodId.create(),
-      type: props.type,
-      provider: props.provider,
-      token: props.token,
-      lastFourDigits: props.lastFourDigits,
-      isDefault: false,
-      expiryDate: props.expiryDate ?? null,
-    }));
+    return Result.ok(
+      new PaymentMethod({
+        id: PaymentMethodId.create(),
+        type: props.type,
+        provider: props.provider,
+        token: props.token,
+        lastFourDigits: props.lastFourDigits,
+        isDefault: false,
+        expiryDate: props.expiryDate ?? null,
+      }),
+    );
   }
 
   public static rehydrate(props: PaymentMethodProps): PaymentMethod {

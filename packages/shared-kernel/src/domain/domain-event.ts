@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { Identifier } from './identifier';
+import { randomUUID } from "node:crypto";
+import { Identifier } from "./identifier";
 
 /**
  * Base Domain Event interface for Domain-Driven Design.
@@ -64,5 +64,4 @@ export abstract class BaseDomainEvent implements DomainEvent {
       correlationId: this.correlationId,
     };
   }
-
 }

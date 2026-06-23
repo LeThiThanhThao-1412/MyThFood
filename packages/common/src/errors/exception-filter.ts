@@ -1,5 +1,5 @@
-import { DomainError } from '@mythfood/shared-kernel';
-import { AppError } from './app-error';
+import { DomainError } from "@mythfood/shared-kernel";
+import { AppError } from "./app-error";
 
 /**
  * Standardized error response shape for all API errors.
@@ -52,7 +52,7 @@ export function mapErrorToResponse(
   if (error instanceof Error) {
     return {
       statusCode: 500,
-      code: 'INTERNAL_SERVER_ERROR',
+      code: "INTERNAL_SERVER_ERROR",
       message: error.message,
       timestamp: new Date().toISOString(),
       path,
@@ -63,8 +63,8 @@ export function mapErrorToResponse(
   // Unknown error type
   return {
     statusCode: 500,
-    code: 'UNKNOWN_ERROR',
-    message: 'An unexpected error occurred',
+    code: "UNKNOWN_ERROR",
+    message: "An unexpected error occurred",
     timestamp: new Date().toISOString(),
     path,
     correlationId,

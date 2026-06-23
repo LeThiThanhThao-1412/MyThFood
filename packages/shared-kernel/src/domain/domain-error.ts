@@ -16,8 +16,24 @@ export abstract class DomainError extends Error {
     this.code = code;
     this.statusCode = statusCode;
     // Preserve the stack trace (works in V8)
-    if (typeof (Error as unknown as { captureStackTrace?: (target: object, constructorOpt?: Function) => void }).captureStackTrace === 'function') {
-      (Error as unknown as { captureStackTrace: (target: object, constructorOpt?: Function) => void }).captureStackTrace(this, this.constructor);
+    if (
+      typeof (
+        Error as unknown as {
+          captureStackTrace?: (
+            target: object,
+            constructorOpt?: Function,
+          ) => void;
+        }
+      ).captureStackTrace === "function"
+    ) {
+      (
+        Error as unknown as {
+          captureStackTrace: (
+            target: object,
+            constructorOpt?: Function,
+          ) => void;
+        }
+      ).captureStackTrace(this, this.constructor);
     }
   }
 }
@@ -40,7 +56,7 @@ export class EntityNotFoundError extends DomainError {
  */
 export class BusinessRuleViolationError extends DomainError {
   constructor(message: string) {
-    super(message, 'BUSINESS_RULE_VIOLATION', 409);
+    super(message, "BUSINESS_RULE_VIOLATION", 409);
   }
 }
 
@@ -49,7 +65,7 @@ export class BusinessRuleViolationError extends DomainError {
  */
 export class ValidationError extends DomainError {
   constructor(message: string) {
-    super(message, 'VALIDATION_ERROR', 422);
+    super(message, "VALIDATION_ERROR", 422);
   }
 }
 
@@ -57,8 +73,8 @@ export class ValidationError extends DomainError {
  * Error thrown when an unauthorized action is attempted.
  */
 export class UnauthorizedError extends DomainError {
-  constructor(message: string = 'Unauthorized') {
-    super(message, 'UNAUTHORIZED', 401);
+  constructor(message: string = "Unauthorized") {
+    super(message, "UNAUTHORIZED", 401);
   }
 }
 
@@ -66,7 +82,7 @@ export class UnauthorizedError extends DomainError {
  * Error thrown when a forbidden action is attempted.
  */
 export class ForbiddenError extends DomainError {
-  constructor(message: string = 'Forbidden') {
-    super(message, 'FORBIDDEN', 403);
+  constructor(message: string = "Forbidden") {
+    super(message, "FORBIDDEN", 403);
   }
 }

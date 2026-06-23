@@ -3,14 +3,19 @@ import {
   Result,
   DomainError,
   BusinessRuleViolationError,
-} from '@mythfood/shared-kernel';
-import { UserId } from './user-id';
-import { Password } from './password.vo';
-import { UserRegisteredEvent } from './events/user-registered.event';
+} from "@mythfood/shared-kernel";
+import { UserId } from "./user-id";
+import { Password } from "./password.vo";
+import { UserRegisteredEvent } from "./events/user-registered.event";
 
-export type UserRole = 'CONSUMER' | 'DRIVER' | 'MERCHANT_OWNER' | 'MERCHANT_STAFF' | 'ADMIN';
+export type UserRole =
+  | "CONSUMER"
+  | "DRIVER"
+  | "MERCHANT_OWNER"
+  | "MERCHANT_STAFF"
+  | "ADMIN";
 
-export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'BANNED';
+export type UserStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED" | "BANNED";
 
 export interface UserProps {
   phoneNumber: string;
@@ -59,11 +64,14 @@ export class User extends AggregateRoot<UserId> {
   }): Result<User, DomainError> {
     // Business rule: phone number is mandatory
     if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
-      return Result.fail(new BusinessRuleViolationError('Phone number is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Phone number is required"),
+      );
     }
 
     // Business rule: default role is CONSUMER
-    const roles: UserRole[] = props.roles && props.roles.length > 0 ? props.roles : ['CONSUMER'];
+    const roles: UserRole[] =
+      props.roles && props.roles.length > 0 ? props.roles : ["CONSUMER"];
 
     const user = new User(UserId.create(), {
       phoneNumber: props.phoneNumber,
@@ -71,7 +79,7 @@ export class User extends AggregateRoot<UserId> {
       fullName: props.fullName,
       password: props.password,
       roles,
-      status: 'ACTIVE',
+      status: "ACTIVE",
       deviceId: props.deviceId ?? null,
       lastLoginAt: null,
     });
@@ -126,10 +134,10 @@ export class User extends AggregateRoot<UserId> {
    * Suspend the user account.
    */
   public suspend(): void {
-    if (this.status === 'BANNED') {
-      throw new BusinessRuleViolationError('Cannot suspend a banned user');
+    if (this.status === "BANNED") {
+      throw new BusinessRuleViolationError("Cannot suspend a banned user");
     }
-    this.status = 'SUSPENDED';
+    this.status = "SUSPENDED";
     this.markUpdated();
   }
 
@@ -137,7 +145,7 @@ export class User extends AggregateRoot<UserId> {
    * Ban the user account permanently.
    */
   public ban(): void {
-    this.status = 'BANNED';
+    this.status = "BANNED";
     this.markUpdated();
   }
 
@@ -145,7 +153,7 @@ export class User extends AggregateRoot<UserId> {
    * Activate the user account.
    */
   public activate(): void {
-    this.status = 'ACTIVE';
+    this.status = "ACTIVE";
     this.markUpdated();
   }
 
@@ -187,6 +195,6 @@ export class User extends AggregateRoot<UserId> {
   }
 
   public isActive(): boolean {
-    return this.status === 'ACTIVE';
+    return this.status === "ACTIVE";
   }
 }

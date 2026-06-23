@@ -1,19 +1,19 @@
-import { Injectable } from '@nestjs/common';
-import { EventBus } from '@nestjs/cqrs';
-import { Merchant } from '../domain/merchant.aggregate';
-import { MerchantId } from '../domain/merchant-id';
-import { MenuItemId } from '../domain/menu-item-id';
-import { MenuItem, MenuItemCategory } from '../domain/menu-item.entity';
-import { OperatingHoursProps } from '../domain/operating-hours.vo';
-import { MerchantRepository } from '../infrastructure/merchant.repository';
+import { Injectable } from "@nestjs/common";
+import { EventBus } from "@nestjs/cqrs";
+import { Merchant } from "../domain/merchant.aggregate";
+import { MerchantId } from "../domain/merchant-id";
+import { MenuItemId } from "../domain/menu-item-id";
+import { MenuItem, MenuItemCategory } from "../domain/menu-item.entity";
+import { OperatingHoursProps } from "../domain/operating-hours.vo";
+import { MerchantRepository } from "../infrastructure/merchant.repository";
 import {
   RegisterMerchantDto,
   UpdateMerchantDto,
   MerchantQueryDto,
-} from './dtos/merchant.dto';
-import { CreateMenuItemDto, UpdateMenuItemDto } from './dtos/menu.dto';
-import { SetOperatingHoursDto } from './dtos/operating-hours.dto';
-import { UpdateCapacityDto } from './dtos/capacity.dto';
+} from "./dtos/merchant.dto";
+import { CreateMenuItemDto, UpdateMenuItemDto } from "./dtos/menu.dto";
+import { SetOperatingHoursDto } from "./dtos/operating-hours.dto";
+import { UpdateCapacityDto } from "./dtos/capacity.dto";
 
 @Injectable()
 export class MerchantService {
@@ -53,7 +53,9 @@ export class MerchantService {
   }
 
   async update(id: string, dto: UpdateMerchantDto): Promise<Merchant> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(id));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(id),
+    );
 
     merchant.updateInfo({
       name: dto.name,
@@ -75,7 +77,9 @@ export class MerchantService {
     return this.merchantRepository.findByIdOrFail(MerchantId.from(id));
   }
 
-  async findAll(query: MerchantQueryDto): Promise<{ items: Merchant[]; total: number }> {
+  async findAll(
+    query: MerchantQueryDto,
+  ): Promise<{ items: Merchant[]; total: number }> {
     return this.merchantRepository.findAll({
       status: query.status,
       search: query.search,
@@ -85,21 +89,27 @@ export class MerchantService {
   }
 
   async softDelete(id: string): Promise<void> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(id));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(id),
+    );
     await this.merchantRepository.delete(merchant);
   }
 
   // ===================== Admin Actions =====================
 
   async approve(id: string): Promise<Merchant> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(id));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(id),
+    );
     merchant.approve();
     await this.merchantRepository.save(merchant);
     return merchant;
   }
 
   async reject(id: string): Promise<Merchant> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(id));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(id),
+    );
     merchant.reject();
     await this.merchantRepository.save(merchant);
     return merchant;
@@ -107,8 +117,13 @@ export class MerchantService {
 
   // ===================== Menu Management =====================
 
-  async addMenuItem(merchantId: string, dto: CreateMenuItemDto): Promise<MenuItem> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+  async addMenuItem(
+    merchantId: string,
+    dto: CreateMenuItemDto,
+  ): Promise<MenuItem> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
 
     const menuItem = merchant.addMenuItem({
       category: dto.category as MenuItemCategory,
@@ -132,21 +147,33 @@ export class MerchantService {
   }
 
   async getMenuItems(merchantId: string): Promise<MenuItem[]> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
     return [...merchant.activeMenuItems];
   }
 
   async getMenuItem(merchantId: string, itemId: string): Promise<MenuItem> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
-    const menuItem = merchant.menuItemList.find((mi) => mi.id.toString() === itemId);
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
+    const menuItem = merchant.menuItemList.find(
+      (mi) => mi.id.toString() === itemId,
+    );
     if (!menuItem) {
       throw new Error(`Menu item ${itemId} not found`);
     }
     return menuItem;
   }
 
-  async updateMenuItem(merchantId: string, itemId: string, dto: UpdateMenuItemDto): Promise<MenuItem> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+  async updateMenuItem(
+    merchantId: string,
+    itemId: string,
+    dto: UpdateMenuItemDto,
+  ): Promise<MenuItem> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
 
     const menuItem = merchant.updateMenuItem(MenuItemId.from(itemId), {
       category: dto.category as MenuItemCategory,
@@ -169,7 +196,9 @@ export class MerchantService {
   }
 
   async deleteMenuItem(merchantId: string, itemId: string): Promise<void> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
     merchant.removeMenuItem(MenuItemId.from(itemId));
     await this.merchantRepository.save(merchant);
 
@@ -180,7 +209,9 @@ export class MerchantService {
   }
 
   async toggleMenuItem(merchantId: string, itemId: string): Promise<MenuItem> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
     const menuItem = merchant.toggleMenuItem(MenuItemId.from(itemId));
     await this.merchantRepository.save(merchant);
 
@@ -194,8 +225,13 @@ export class MerchantService {
 
   // ===================== Operating Hours =====================
 
-  async setOperatingHours(merchantId: string, dto: SetOperatingHoursDto): Promise<void> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+  async setOperatingHours(
+    merchantId: string,
+    dto: SetOperatingHoursDto,
+  ): Promise<void> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
 
     const hours: OperatingHoursProps[] = dto.hours.map((h) => ({
       dayOfWeek: h.dayOfWeek,
@@ -210,7 +246,9 @@ export class MerchantService {
   }
 
   async getOperatingHours(merchantId: string) {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
     return merchant.operatingHoursList.map((oh) => ({
       dayOfWeek: oh.dayOfWeek,
       openTime: oh.openTime,
@@ -221,14 +259,18 @@ export class MerchantService {
   }
 
   async isOpen(merchantId: string): Promise<{ isOpen: boolean }> {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
     return { isOpen: merchant.isOpen() };
   }
 
   // ===================== Capacity Management =====================
 
   async updateCapacity(merchantId: string, dto: UpdateCapacityDto) {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
     merchant.updateCapacityConfig({
       maxConcurrentOrders: dto.maxConcurrentOrders,
       prepTimePerOrder: dto.prepTimePerOrder,
@@ -238,12 +280,16 @@ export class MerchantService {
   }
 
   async getCapacity(merchantId: string) {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
     return this.getCapacityInfo(merchant);
   }
 
   async getCapacityStatus(merchantId: string) {
-    const merchant = await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
     return {
       status: merchant.merchantCapacityStatus,
       currentOrderCount: merchant.merchantCurrentOrderCount,

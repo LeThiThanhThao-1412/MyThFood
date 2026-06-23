@@ -1,5 +1,5 @@
-import { BaseDomainEvent } from '@mythfood/shared-kernel';
-import { MerchantId } from '../merchant-id';
+import { BaseDomainEvent } from "@mythfood/shared-kernel";
+import { MerchantId } from "../merchant-id";
 
 export interface MerchantRegisteredEventPayload {
   merchantId: string;
@@ -11,12 +11,17 @@ export interface MerchantRegisteredEventPayload {
   status: string;
 }
 
-export const MERCHANT_REGISTERED_EVENT_TYPE = 'com.mythfood.merchant.registered';
+export const MERCHANT_REGISTERED_EVENT_TYPE =
+  "com.mythfood.merchant.registered";
 
 export class MerchantRegisteredEvent extends BaseDomainEvent {
   public readonly payload: MerchantRegisteredEventPayload;
 
-  constructor(aggregateId: MerchantId, payload: MerchantRegisteredEventPayload, correlationId?: string) {
+  constructor(
+    aggregateId: MerchantId,
+    payload: MerchantRegisteredEventPayload,
+    correlationId?: string,
+  ) {
     super(aggregateId, MERCHANT_REGISTERED_EVENT_TYPE, 1, correlationId);
     this.payload = payload;
   }

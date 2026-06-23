@@ -1,13 +1,15 @@
-import { DomainEvent } from './domain-event';
-import { Entity } from './entity';
-import { Identifier } from './identifier';
+import { DomainEvent } from "./domain-event";
+import { Entity } from "./entity";
+import { Identifier } from "./identifier";
 
 /**
  * Base Aggregate Root class for Domain-Driven Design.
  * Aggregate Roots are Entities that act as the entry point to an aggregate.
  * They are responsible for maintaining invariants and publishing domain events.
  */
-export abstract class AggregateRoot<T extends Identifier = Identifier> extends Entity<T> {
+export abstract class AggregateRoot<
+  T extends Identifier = Identifier,
+> extends Entity<T> {
   private _domainEvents: DomainEvent[] = [];
   private _version: number = 0;
 

@@ -1,5 +1,5 @@
-import { BaseDomainEvent } from '@mythfood/shared-kernel';
-import { UserId } from '../user-id';
+import { BaseDomainEvent } from "@mythfood/shared-kernel";
+import { UserId } from "../user-id";
 
 export interface UserRegisteredEventPayload {
   userId: string;
@@ -11,12 +11,17 @@ export interface UserRegisteredEventPayload {
   ipAddress?: string;
 }
 
-export const USER_REGISTERED_EVENT_TYPE = 'com.mythfood.identity.user.registered';
+export const USER_REGISTERED_EVENT_TYPE =
+  "com.mythfood.identity.user.registered";
 
 export class UserRegisteredEvent extends BaseDomainEvent {
   public readonly payload: UserRegisteredEventPayload;
 
-  constructor(aggregateId: UserId, payload: UserRegisteredEventPayload, correlationId?: string) {
+  constructor(
+    aggregateId: UserId,
+    payload: UserRegisteredEventPayload,
+    correlationId?: string,
+  ) {
     super(aggregateId, USER_REGISTERED_EVENT_TYPE, 1, correlationId);
     this.payload = payload;
   }

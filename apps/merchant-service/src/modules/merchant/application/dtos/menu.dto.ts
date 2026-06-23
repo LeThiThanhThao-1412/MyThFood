@@ -1,8 +1,24 @@
-import { IsString, IsOptional, IsNotEmpty, IsNumber, IsEnum, Min, IsBoolean } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsString,
+  IsOptional,
+  IsNotEmpty,
+  IsNumber,
+  IsEnum,
+  Min,
+  IsBoolean,
+} from "class-validator";
+import { Type } from "class-transformer";
 
 export class CreateMenuItemDto {
-  @IsEnum(['APPETIZER', 'MAIN_COURSE', 'DESSERT', 'BEVERAGE', 'SIDE_DISH', 'COMBO', 'OTHER'])
+  @IsEnum([
+    "APPETIZER",
+    "MAIN_COURSE",
+    "DESSERT",
+    "BEVERAGE",
+    "SIDE_DISH",
+    "COMBO",
+    "OTHER",
+  ])
   category!: string;
 
   @IsString()
@@ -36,7 +52,15 @@ export class CreateMenuItemDto {
 
 export class UpdateMenuItemDto {
   @IsOptional()
-  @IsEnum(['APPETIZER', 'MAIN_COURSE', 'DESSERT', 'BEVERAGE', 'SIDE_DISH', 'COMBO', 'OTHER'])
+  @IsEnum([
+    "APPETIZER",
+    "MAIN_COURSE",
+    "DESSERT",
+    "BEVERAGE",
+    "SIDE_DISH",
+    "COMBO",
+    "OTHER",
+  ])
   category?: string;
 
   @IsOptional()

@@ -1,7 +1,7 @@
-import { UserId } from '../domain/user-id';
-import { Password } from '../domain/password.vo';
-import { User, UserRole, UserStatus } from '../domain/user.aggregate';
-import { UserEntity } from './user.entity';
+import { UserId } from "../domain/user-id";
+import { Password } from "../domain/password.vo";
+import { User, UserRole, UserStatus } from "../domain/user.aggregate";
+import { UserEntity } from "./user.entity";
 
 /**
  * Maps between Domain (User aggregate) and Persistence (UserEntity).
@@ -14,7 +14,11 @@ export class UserMapper {
   public static toDomain(entity: UserEntity): User {
     const id = UserId.from(entity.id);
     const password = Password.fromHash(entity.password_hash);
-    const roles = (Array.isArray(entity.roles) ? entity.roles : (entity.roles ?? '').split(',').filter(Boolean)) as UserRole[];
+    const roles = (
+      Array.isArray(entity.roles)
+        ? entity.roles
+        : (entity.roles ?? "").split(",").filter(Boolean)
+    ) as UserRole[];
 
     return User.rehydrate(id, {
       phoneNumber: entity.phone_number,
@@ -38,7 +42,7 @@ export class UserMapper {
     entity.email = user.emailAddress;
     entity.full_name = user.displayName;
     entity.password_hash = user.passwordHash;
-    entity.roles = user.userRoles.join(',');
+    entity.roles = user.userRoles.join(",");
     entity.status = user.currentStatus;
     entity.device_id = user.device;
     entity.last_login_at = user.lastLogin;

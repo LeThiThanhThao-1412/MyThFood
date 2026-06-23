@@ -1,7 +1,13 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsDateString } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+} from "class-validator";
 
 export class CreatePaymentMethodDto {
-  @IsEnum(['CREDIT_CARD', 'DEBIT_CARD', 'E_WALLET'])
+  @IsEnum(["CREDIT_CARD", "DEBIT_CARD", "E_WALLET"])
   @IsNotEmpty()
   type!: string;
 

@@ -1,4 +1,4 @@
-import { DomainEvent } from '../domain/domain-event';
+import { DomainEvent } from "../domain/domain-event";
 
 /**
  * Interface for publishing domain events to the message broker.

@@ -1,5 +1,5 @@
-import { Identifier } from '@mythfood/shared-kernel';
-import { v4 as uuidv4 } from 'uuid';
+import { Identifier } from "@mythfood/shared-kernel";
+import { v4 as uuidv4 } from "uuid";
 
 export class MenuItemId extends Identifier<string> {
   private constructor(value: string) {
@@ -12,7 +12,7 @@ export class MenuItemId extends Identifier<string> {
 
   public static from(value: string): MenuItemId {
     if (!value || value.trim().length === 0) {
-      throw new Error('MenuItemId cannot be empty');
+      throw new Error("MenuItemId cannot be empty");
     }
     return new MenuItemId(value);
   }

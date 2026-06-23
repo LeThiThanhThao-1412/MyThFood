@@ -7,29 +7,29 @@ exports.ValueObject = void 0;
  * Two Value Objects are equal when all their properties are equal.
  */
 class ValueObject {
-    props;
-    constructor(props) {
-        this.props = Object.freeze({ ...props });
+  props;
+  constructor(props) {
+    this.props = Object.freeze({ ...props });
+  }
+  equals(other) {
+    if (other === null || other === undefined) {
+      return false;
     }
-    equals(other) {
-        if (other === null || other === undefined) {
-            return false;
-        }
-        if (other.constructor !== this.constructor) {
-            return false;
-        }
-        return JSON.stringify(this.props) === JSON.stringify(other.props);
+    if (other.constructor !== this.constructor) {
+      return false;
     }
-    getProps() {
-        return this.props;
-    }
-    /**
-     * Serialize the value object for persistence or transfer.
-     * Override in subclasses for custom serialization logic.
-     */
-    toJSON() {
-        return { ...this.props };
-    }
+    return JSON.stringify(this.props) === JSON.stringify(other.props);
+  }
+  getProps() {
+    return this.props;
+  }
+  /**
+   * Serialize the value object for persistence or transfer.
+   * Override in subclasses for custom serialization logic.
+   */
+  toJSON() {
+    return { ...this.props };
+  }
 }
 exports.ValueObject = ValueObject;
 //# sourceMappingURL=value-object.js.map

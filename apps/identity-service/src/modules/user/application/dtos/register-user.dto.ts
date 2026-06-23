@@ -1,9 +1,16 @@
-import { IsString, IsPhoneNumber, IsOptional, IsEmail, IsArray, IsEnum } from 'class-validator';
-import { UserRole } from '../../domain/user.aggregate';
+import {
+  IsString,
+  IsPhoneNumber,
+  IsOptional,
+  IsEmail,
+  IsArray,
+  IsEnum,
+} from "class-validator";
+import { UserRole } from "../../domain/user.aggregate";
 
 export class RegisterUserDto {
   @IsString()
-  @IsPhoneNumber('VN')
+  @IsPhoneNumber("VN")
   phoneNumber!: string;
 
   @IsOptional()
@@ -18,7 +25,9 @@ export class RegisterUserDto {
 
   @IsOptional()
   @IsArray()
-  @IsEnum(['CONSUMER', 'DRIVER', 'MERCHANT_OWNER', 'MERCHANT_STAFF', 'ADMIN'], { each: true })
+  @IsEnum(["CONSUMER", "DRIVER", "MERCHANT_OWNER", "MERCHANT_STAFF", "ADMIN"], {
+    each: true,
+  })
   roles?: UserRole[];
 
   @IsOptional()

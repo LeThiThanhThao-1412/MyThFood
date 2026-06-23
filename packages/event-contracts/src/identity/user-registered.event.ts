@@ -27,4 +27,5 @@ export interface UserRegisteredEventData {
   ipAddress?: string;
 }
 
-export const USER_REGISTERED_EVENT_TYPE = 'com.mythfood.identity.user.registered';
+export const USER_REGISTERED_EVENT_TYPE =
+  "com.mythfood.identity.user.registered";

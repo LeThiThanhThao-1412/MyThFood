@@ -1,6 +1,10 @@
-import { Entity as DomainEntity, Identifier, BusinessRuleViolationError } from '@mythfood/shared-kernel';
-import { MerchantId } from './merchant-id';
-import { v4 as uuidv4 } from 'uuid';
+import {
+  Entity as DomainEntity,
+  Identifier,
+  BusinessRuleViolationError,
+} from "@mythfood/shared-kernel";
+import { MerchantId } from "./merchant-id";
+import { v4 as uuidv4 } from "uuid";
 
 export class MerchantDocumentId extends Identifier<string> {
   private constructor(value: string) {
@@ -16,8 +20,8 @@ export class MerchantDocumentId extends Identifier<string> {
   }
 }
 
-export type DocumentType = 'BUSINESS_LICENSE' | 'FOOD_SAFETY' | 'TAX';
-export type DocumentStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
+export type DocumentType = "BUSINESS_LICENSE" | "FOOD_SAFETY" | "TAX";
+export type DocumentStatus = "PENDING" | "VERIFIED" | "REJECTED";
 
 export interface MerchantDocumentProps {
   id?: string;
@@ -52,12 +56,15 @@ export class MerchantDocument extends DomainEntity<MerchantDocumentId> {
       merchantId: props.merchantId,
       type: props.type,
       url: props.url,
-      status: 'PENDING',
+      status: "PENDING",
       verifiedAt: null,
     });
   }
 
-  public static rehydrate(id: MerchantDocumentId, props: MerchantDocumentProps): MerchantDocument {
+  public static rehydrate(
+    id: MerchantDocumentId,
+    props: MerchantDocumentProps,
+  ): MerchantDocument {
     return new MerchantDocument(id, props);
   }
 
@@ -65,10 +72,10 @@ export class MerchantDocument extends DomainEntity<MerchantDocumentId> {
    * Verify the document (admin action).
    */
   public verify(): void {
-    if (this.status === 'VERIFIED') {
-      throw new BusinessRuleViolationError('Document is already verified');
+    if (this.status === "VERIFIED") {
+      throw new BusinessRuleViolationError("Document is already verified");
     }
-    this.status = 'VERIFIED';
+    this.status = "VERIFIED";
     this.verifiedAt = new Date();
     this.markUpdated();
   }
@@ -77,10 +84,10 @@ export class MerchantDocument extends DomainEntity<MerchantDocumentId> {
    * Reject the document (admin action).
    */
   public reject(): void {
-    if (this.status === 'VERIFIED') {
-      throw new BusinessRuleViolationError('Cannot reject a verified document');
+    if (this.status === "VERIFIED") {
+      throw new BusinessRuleViolationError("Cannot reject a verified document");
     }
-    this.status = 'REJECTED';
+    this.status = "REJECTED";
     this.markUpdated();
   }
 
@@ -102,6 +109,6 @@ export class MerchantDocument extends DomainEntity<MerchantDocumentId> {
   }
 
   public isVerified(): boolean {
-    return this.status === 'VERIFIED';
+    return this.status === "VERIFIED";
   }
 }

@@ -1,5 +1,12 @@
-import { IsNumber, IsString, IsOptional, IsBoolean, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsNumber,
+  IsString,
+  IsOptional,
+  IsBoolean,
+  Min,
+  Max,
+} from "class-validator";
+import { Type } from "class-transformer";
 
 export class OperatingHoursDto {
   @IsNumber()

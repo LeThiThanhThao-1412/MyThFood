@@ -1,11 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { CommandBus } from '@nestjs/cqrs';
-import { Result, DomainError } from '@mythfood/shared-kernel';
-import { UserRepository } from '../user/infrastructure/user.repository';
-import { User } from '../user/domain/user.aggregate';
-import { UserId } from '../user/domain/user-id';
-import { RegisterUserCommand } from '../user/application/commands/register-user.command';
+import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import { CommandBus } from "@nestjs/cqrs";
+import { Result, DomainError } from "@mythfood/shared-kernel";
+import { UserRepository } from "../user/infrastructure/user.repository";
+import { User } from "../user/domain/user.aggregate";
+import { UserId } from "../user/domain/user-id";
+import { RegisterUserCommand } from "../user/application/commands/register-user.command";
 
 export interface AuthTokens {
   accessToken: string;
@@ -45,10 +45,15 @@ export class AuthService {
       dto.ipAddress,
     );
 
-    const result = await this.commandBus.execute<RegisterUserCommand, Result<User, DomainError>>(command);
+    const result = await this.commandBus.execute<
+      RegisterUserCommand,
+      Result<User, DomainError>
+    >(command);
 
     if (result.isFailure || !result.value) {
-      throw new UnauthorizedException(result.error?.message ?? 'Registration failed');
+      throw new UnauthorizedException(
+        result.error?.message ?? "Registration failed",
+      );
     }
 
     return result.value;
@@ -57,16 +62,16 @@ export class AuthService {
   async login(phoneNumber: string, password: string): Promise<AuthTokens> {
     const user = await this.userRepository.findByPhone(phoneNumber);
     if (!user) {
-      throw new UnauthorizedException('Invalid phone number or password');
+      throw new UnauthorizedException("Invalid phone number or password");
     }
 
     if (!user.isActive()) {
-      throw new UnauthorizedException('Account is not active');
+      throw new UnauthorizedException("Account is not active");
     }
 
     const isValid = await user.verifyPassword(password);
     if (!isValid) {
-      throw new UnauthorizedException('Invalid phone number or password');
+      throw new UnauthorizedException("Invalid phone number or password");
     }
 
     user.recordLogin();

@@ -15,7 +15,7 @@ export interface CloudEvent<T = Record<string, unknown>> {
   source: string;
 
   /** CloudEvents spec version */
-  specversion: '1.0';
+  specversion: "1.0";
 
   /** Timestamp in ISO 8601 format */
   time: string;
@@ -24,7 +24,7 @@ export interface CloudEvent<T = Record<string, unknown>> {
   subject: string;
 
   /** Content type of data */
-  datacontenttype: 'application/json';
+  datacontenttype: "application/json";
 
   /** Correlation ID for distributed tracing */
   correlationid: string;
@@ -52,20 +52,23 @@ export class CloudEventFactory {
       id: crypto.randomUUID?.() ?? CloudEventFactory.generateUUID(),
       type: params.type,
       source: params.source,
-      specversion: '1.0',
+      specversion: "1.0",
       time: new Date().toISOString(),
       subject: params.subject,
-      datacontenttype: 'application/json',
-      correlationid: params.correlationId ?? crypto.randomUUID?.() ?? CloudEventFactory.generateUUID(),
+      datacontenttype: "application/json",
+      correlationid:
+        params.correlationId ??
+        crypto.randomUUID?.() ??
+        CloudEventFactory.generateUUID(),
       sequencenumber: params.sequenceNumber ?? 1,
       data: params.data,
     };
   }
 
   private static generateUUID(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
       const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      const v = c === "x" ? r : (r & 0x3) | 0x8;
       return v.toString(16);
     });
   }

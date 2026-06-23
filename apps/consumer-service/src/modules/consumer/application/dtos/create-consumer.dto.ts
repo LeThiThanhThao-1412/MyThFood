@@ -1,7 +1,14 @@
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsDateString, IsUUID } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsEnum,
+  IsDateString,
+  IsUUID,
+} from "class-validator";
 
 export class CreateConsumerDto {
-  @IsUUID('4')
+  @IsUUID("4")
   @IsNotEmpty()
   userId!: string;
 
@@ -17,7 +24,7 @@ export class CreateConsumerDto {
   @IsOptional()
   dateOfBirth?: string;
 
-  @IsEnum(['MALE', 'FEMALE', 'OTHER'])
+  @IsEnum(["MALE", "FEMALE", "OTHER"])
   @IsOptional()
   gender?: string;
 }
