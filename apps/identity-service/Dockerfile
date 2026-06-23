@@ -22,7 +22,7 @@ COPY apps/identity-service/package.json apps/identity-service/tsconfig.json apps
 # Install pnpm globally
 RUN npm install -g pnpm@9.4.0
 
-# Install dependencies (only prod deps for build stage)
+# Install dependencies
 RUN pnpm install --frozen-lockfile --filter @mythfood/identity-service --prod false
 
 # Copy source code
@@ -31,7 +31,12 @@ COPY packages/event-contracts/src packages/event-contracts/src/
 COPY packages/common/src packages/common/src/
 COPY apps/identity-service/src apps/identity-service/src/
 
-# Build
+# Build dependency packages first
+RUN pnpm --filter @mythfood/shared-kernel build
+RUN pnpm --filter @mythfood/event-contracts build
+RUN pnpm --filter @mythfood/common build
+
+# Build identity-service
 RUN pnpm --filter @mythfood/identity-service build
 
 # Production stage

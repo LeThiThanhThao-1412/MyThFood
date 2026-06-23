@@ -22,7 +22,7 @@ COPY apps/consumer-service/package.json apps/consumer-service/tsconfig.json apps
 # Install pnpm globally
 RUN npm install -g pnpm@9.4.0
 
-# Install dependencies (only prod deps for build stage)
+# Install dependencies
 RUN pnpm install --frozen-lockfile --filter @mythfood/consumer-service --prod false
 
 # Copy source code
@@ -31,7 +31,12 @@ COPY packages/event-contracts/src packages/event-contracts/src/
 COPY packages/common/src packages/common/src/
 COPY apps/consumer-service/src apps/consumer-service/src/
 
-# Build
+# Build dependency packages first
+RUN pnpm --filter @mythfood/shared-kernel build
+RUN pnpm --filter @mythfood/event-contracts build
+RUN pnpm --filter @mythfood/common build
+
+# Build consumer-service
 RUN pnpm --filter @mythfood/consumer-service build
 
 # Production stage

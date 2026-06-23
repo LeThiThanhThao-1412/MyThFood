@@ -1,0 +1,4 @@
+pnpm format:check &&
+pnpm --filter @mythfood/identity-service lint &&
+pnpm --filter @mythfood/consumer-service lint &&
+pnpm --filter @mythfood/merchant-service lint
