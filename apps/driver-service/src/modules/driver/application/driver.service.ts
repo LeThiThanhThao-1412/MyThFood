@@ -4,7 +4,7 @@ import {
   EntityNotFoundError,
 } from "@mythfood/shared-kernel";
 import { DriverRepository } from "../infrastructure/driver.repository";
-import { Driver, DriverStatus } from "../domain/driver.aggregate";
+import { Driver } from "../domain/driver.aggregate";
 import { DriverId } from "../domain/driver-id";
 import {
   CreateDriverDto,
