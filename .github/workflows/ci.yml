@@ -42,6 +42,9 @@ jobs:
 
       - name: Lint order-service
         run: pnpm --filter @mythfood/order-service lint
+
+      - name: Lint inventory-service
+        run: pnpm --filter @mythfood/inventory-service lint
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -119,6 +122,16 @@ jobs:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
           DATABASE_NAME: mythfood_order
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run inventory-service unit tests
+        run: pnpm --filter @mythfood/inventory-service test
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_inventory
           DATABASE_USER: mythfood
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret

@@ -33,3 +33,15 @@ export {
   ORDER_PLACED_EVENT_TYPE,
   ORDER_STATUS_CHANGED_EVENT_TYPE,
 } from "./order";
+
+// Inventory events
+export type {
+  InventoryReservedEventData,
+  InventoryReleasedEventData,
+  InventoryConsumedEventData,
+} from "./inventory";
+export {
+  INVENTORY_RESERVED_EVENT_TYPE,
+  INVENTORY_RELEASED_EVENT_TYPE,
+  INVENTORY_CONSUMED_EVENT_TYPE,
+} from "./inventory";
