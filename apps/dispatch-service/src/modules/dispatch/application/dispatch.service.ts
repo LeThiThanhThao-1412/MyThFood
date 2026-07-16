@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { BusinessRuleViolationError } from "@mythfood/shared-kernel";
 import { DispatchRepository } from "../infrastructure/dispatch.repository";
-import { Dispatch, DispatchDeclineReason } from "../domain/dispatch.aggregate";
+import { Dispatch } from "../domain/dispatch.aggregate";
 import { DispatchId } from "../domain/dispatch-id";
 import {
   CreateDispatchDto,
