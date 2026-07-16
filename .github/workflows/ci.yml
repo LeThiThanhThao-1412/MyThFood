@@ -51,6 +51,9 @@ jobs:
 
       - name: Lint driver-service
         run: pnpm --filter @mythfood/driver-service lint
+
+      - name: Lint dispatch-service
+        run: pnpm --filter @mythfood/dispatch-service lint
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -162,6 +165,16 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
+      - name: Run dispatch-service unit tests
+        run: pnpm --filter @mythfood/dispatch-service test
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_dispatch
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -208,6 +221,9 @@ jobs:
       - name: Build driver-service
         run: pnpm --filter @mythfood/driver-service build
 
+      - name: Build dispatch-service
+        run: pnpm --filter @mythfood/dispatch-service build
+
       - name: Upload identity-service build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -249,6 +265,12 @@ jobs:
         with:
           name: driver-dist
           path: apps/driver-service/dist/
+
+      - name: Upload dispatch-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dispatch-dist
+          path: apps/dispatch-service/dist/
 
   test-coverage:
     name: Test Coverage
@@ -358,6 +380,16 @@ jobs:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
           DATABASE_NAME: mythfood_driver
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run dispatch-service test coverage
+        run: pnpm --filter @mythfood/dispatch-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_dispatch
           DATABASE_USER: mythfood
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret

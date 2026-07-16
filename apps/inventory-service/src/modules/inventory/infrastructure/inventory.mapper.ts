@@ -1,7 +1,7 @@
-import { Inventory, Reservation } from '../domain/inventory.aggregate';
-import { InventoryId } from '../domain/inventory-id';
-import { InventoryEntity } from './inventory.entity';
-import { InventoryReservationEntity } from './inventory-reservation.entity';
+import { Inventory, Reservation } from "../domain/inventory.aggregate";
+import { InventoryId } from "../domain/inventory-id";
+import { InventoryEntity } from "./inventory.entity";
+import { InventoryReservationEntity } from "./inventory-reservation.entity";
 
 export class InventoryMapper {
   static toPersistence(aggregate: Inventory): InventoryEntity {

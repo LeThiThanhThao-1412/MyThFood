@@ -3,11 +3,11 @@ import {
   Result,
   DomainError,
   BusinessRuleViolationError,
-} from '@mythfood/shared-kernel';
-import { InventoryId } from './inventory-id';
-import { InventoryReservedEvent } from './events/inventory-reserved.event';
-import { InventoryReleasedEvent } from './events/inventory-released.event';
-import { InventoryConsumedEvent } from './events/inventory-consumed.event';
+} from "@mythfood/shared-kernel";
+import { InventoryId } from "./inventory-id";
+import { InventoryReservedEvent } from "./events/inventory-reserved.event";
+import { InventoryReleasedEvent } from "./events/inventory-released.event";
+import { InventoryConsumedEvent } from "./events/inventory-consumed.event";
 
 /** Mỗi một reservation đại diện cho lượng hàng đang được giữ cho 1 order */
 export interface Reservation {
@@ -56,13 +56,19 @@ export class Inventory extends AggregateRoot<InventoryId> {
     lowStockThreshold?: number;
   }): Result<Inventory, DomainError> {
     if (!props.menuItemId?.trim()) {
-      return Result.fail(new BusinessRuleViolationError('Menu item ID is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Menu item ID is required"),
+      );
     }
     if (!props.merchantId?.trim()) {
-      return Result.fail(new BusinessRuleViolationError('Merchant ID is required'));
+      return Result.fail(
+        new BusinessRuleViolationError("Merchant ID is required"),
+      );
     }
     if (props.totalQuantity < 0) {
-      return Result.fail(new BusinessRuleViolationError('Total quantity cannot be negative'));
+      return Result.fail(
+        new BusinessRuleViolationError("Total quantity cannot be negative"),
+      );
     }
 
     const inv = new Inventory(InventoryId.create(), {
@@ -87,9 +93,15 @@ export class Inventory extends AggregateRoot<InventoryId> {
    * Reserve (đặt chỗ): order tạo → reserved += quantity, available -= quantity.
    * Timeout mặc định 5 phút.
    */
-  public reserve(orderId: string, quantity: number, timeoutMinutes: number = 5): void {
-    if (!orderId?.trim()) throw new BusinessRuleViolationError('Order ID is required');
-    if (quantity <= 0) throw new BusinessRuleViolationError('Reserve quantity must be positive');
+  public reserve(
+    orderId: string,
+    quantity: number,
+    timeoutMinutes: number = 5,
+  ): void {
+    if (!orderId?.trim())
+      throw new BusinessRuleViolationError("Order ID is required");
+    if (quantity <= 0)
+      throw new BusinessRuleViolationError("Reserve quantity must be positive");
     if (quantity > this.availableQuantity) {
       throw new BusinessRuleViolationError(
         `Insufficient stock: requested ${quantity}, available ${this.availableQuantity}`,
@@ -127,12 +139,16 @@ export class Inventory extends AggregateRoot<InventoryId> {
    * Release: hủy/reject order → reserved -= quantity, available += quantity.
    */
   public release(orderId: string, reason: string): void {
-    if (!orderId?.trim()) throw new BusinessRuleViolationError('Order ID is required');
-    if (!reason?.trim()) throw new BusinessRuleViolationError('Release reason is required');
+    if (!orderId?.trim())
+      throw new BusinessRuleViolationError("Order ID is required");
+    if (!reason?.trim())
+      throw new BusinessRuleViolationError("Release reason is required");
 
     const reservation = this.reservations.find((r) => r.orderId === orderId);
     if (!reservation) {
-      throw new BusinessRuleViolationError(`No reservation found for order ${orderId}`);
+      throw new BusinessRuleViolationError(
+        `No reservation found for order ${orderId}`,
+      );
     }
 
     this.reservations = this.reservations.filter((r) => r.orderId !== orderId);
@@ -159,11 +175,14 @@ export class Inventory extends AggregateRoot<InventoryId> {
    * Tổng quantity giảm theo.
    */
   public consume(orderId: string): void {
-    if (!orderId?.trim()) throw new BusinessRuleViolationError('Order ID is required');
+    if (!orderId?.trim())
+      throw new BusinessRuleViolationError("Order ID is required");
 
     const reservation = this.reservations.find((r) => r.orderId === orderId);
     if (!reservation) {
-      throw new BusinessRuleViolationError(`No reservation found for order ${orderId}`);
+      throw new BusinessRuleViolationError(
+        `No reservation found for order ${orderId}`,
+      );
     }
 
     this.reservations = this.reservations.filter((r) => r.orderId !== orderId);
@@ -195,7 +214,7 @@ export class Inventory extends AggregateRoot<InventoryId> {
 
   public updateTotal(newTotal: number): void {
     if (newTotal < 0) {
-      throw new BusinessRuleViolationError('Total quantity cannot be negative');
+      throw new BusinessRuleViolationError("Total quantity cannot be negative");
     }
     const diff = newTotal - this.totalQuantity;
     this.totalQuantity = newTotal;
@@ -205,7 +224,8 @@ export class Inventory extends AggregateRoot<InventoryId> {
   }
 
   public setLowStockThreshold(threshold: number): void {
-    if (threshold < 0) throw new BusinessRuleViolationError('Threshold cannot be negative');
+    if (threshold < 0)
+      throw new BusinessRuleViolationError("Threshold cannot be negative");
     this.lowStockThreshold = threshold;
     this.markUpdated();
   }
@@ -226,11 +246,25 @@ export class Inventory extends AggregateRoot<InventoryId> {
 
   // ===================== Getters =====================
 
-  get inventoryMenuItemId(): string { return this.menuItemId; }
-  get inventoryMerchantId(): string { return this.merchantId; }
-  get inventoryTotalQuantity(): number { return this.totalQuantity; }
-  get inventoryAvailableQuantity(): number { return this.availableQuantity; }
-  get inventoryReservedQuantity(): number { return this.reservedQuantity; }
-  get inventoryReservations(): ReadonlyArray<Reservation> { return [...this.reservations]; }
-  get inventoryLowStockThreshold(): number { return this.lowStockThreshold; }
+  get inventoryMenuItemId(): string {
+    return this.menuItemId;
+  }
+  get inventoryMerchantId(): string {
+    return this.merchantId;
+  }
+  get inventoryTotalQuantity(): number {
+    return this.totalQuantity;
+  }
+  get inventoryAvailableQuantity(): number {
+    return this.availableQuantity;
+  }
+  get inventoryReservedQuantity(): number {
+    return this.reservedQuantity;
+  }
+  get inventoryReservations(): ReadonlyArray<Reservation> {
+    return [...this.reservations];
+  }
+  get inventoryLowStockThreshold(): number {
+    return this.lowStockThreshold;
+  }
 }

@@ -466,41 +466,101 @@ export class Driver extends AggregateRoot<DriverId> {
     }
     const totalScore = this._rating * this._totalRatings;
     this._totalRatings += 1;
-    this._rating = Number(((totalScore + rating) / this._totalRatings).toFixed(2));
+    this._rating = Number(
+      ((totalScore + rating) / this._totalRatings).toFixed(2),
+    );
     this.markUpdated();
   }
 
   // ---- Queries / Accessors ----
 
-  get driverUserId(): string { return this._userId; }
-  get driverFullName(): string { return this._fullName; }
-  get driverPhoneNumber(): string { return this._phoneNumber; }
-  get driverEmail(): string { return this._email; }
-  get driverAvatar(): string | null { return this._avatar; }
-  get driverIdCardNumber(): string { return this._idCardNumber; }
-  get driverLicenseNumber(): string { return this._driverLicenseNumber; }
-  get driverVehicleRegistrationNumber(): string { return this._vehicleRegistrationNumber; }
-  get driverInsuranceNumber(): string { return this._insuranceNumber; }
-  get driverCriminalRecordUrl(): string | null { return this._criminalRecordUrl; }
-  get driverStatus(): DriverStatus { return this._status; }
-  get driverOnlineStatus(): DriverOnlineStatus { return this._onlineStatus; }
-  get driverCurrentLatitude(): number | null { return this._currentLatitude; }
-  get driverCurrentLongitude(): number | null { return this._currentLongitude; }
-  get driverLastLocationUpdateAt(): Date | null { return this._lastLocationUpdateAt; }
-  get driverTotalDrivingMinutesToday(): number { return this._totalDrivingMinutesToday; }
-  get driverCurrentSessionStartAt(): Date | null { return this._currentSessionStartAt; }
-  get driverConsecutiveDrivingMinutes(): number { return this._consecutiveDrivingMinutes; }
-  get driverFatigueLevel(): FatigueLevel { return this._fatigueLevel; }
-  get driverGoHomeCountToday(): number { return this._goHomeCountToday; }
-  get driverLastGoHomeAt(): Date | null { return this._lastGoHomeAt; }
-  get driverTotalOrders(): number { return this._totalOrders; }
-  get driverRating(): number { return this._rating; }
-  get driverTotalRatings(): number { return this._totalRatings; }
-  get driverCurrentOrderId(): string | null { return this._currentOrderId; }
-  get driverIsTrainingCompleted(): boolean { return this._isTrainingCompleted; }
-  get driverDepositAmount(): number { return this._depositAmount; }
-  get driverCreditWalletBalance(): number { return this._creditWalletBalance; }
-  get driverIncomeWalletBalance(): number { return this._incomeWalletBalance; }
+  get driverUserId(): string {
+    return this._userId;
+  }
+  get driverFullName(): string {
+    return this._fullName;
+  }
+  get driverPhoneNumber(): string {
+    return this._phoneNumber;
+  }
+  get driverEmail(): string {
+    return this._email;
+  }
+  get driverAvatar(): string | null {
+    return this._avatar;
+  }
+  get driverIdCardNumber(): string {
+    return this._idCardNumber;
+  }
+  get driverLicenseNumber(): string {
+    return this._driverLicenseNumber;
+  }
+  get driverVehicleRegistrationNumber(): string {
+    return this._vehicleRegistrationNumber;
+  }
+  get driverInsuranceNumber(): string {
+    return this._insuranceNumber;
+  }
+  get driverCriminalRecordUrl(): string | null {
+    return this._criminalRecordUrl;
+  }
+  get driverStatus(): DriverStatus {
+    return this._status;
+  }
+  get driverOnlineStatus(): DriverOnlineStatus {
+    return this._onlineStatus;
+  }
+  get driverCurrentLatitude(): number | null {
+    return this._currentLatitude;
+  }
+  get driverCurrentLongitude(): number | null {
+    return this._currentLongitude;
+  }
+  get driverLastLocationUpdateAt(): Date | null {
+    return this._lastLocationUpdateAt;
+  }
+  get driverTotalDrivingMinutesToday(): number {
+    return this._totalDrivingMinutesToday;
+  }
+  get driverCurrentSessionStartAt(): Date | null {
+    return this._currentSessionStartAt;
+  }
+  get driverConsecutiveDrivingMinutes(): number {
+    return this._consecutiveDrivingMinutes;
+  }
+  get driverFatigueLevel(): FatigueLevel {
+    return this._fatigueLevel;
+  }
+  get driverGoHomeCountToday(): number {
+    return this._goHomeCountToday;
+  }
+  get driverLastGoHomeAt(): Date | null {
+    return this._lastGoHomeAt;
+  }
+  get driverTotalOrders(): number {
+    return this._totalOrders;
+  }
+  get driverRating(): number {
+    return this._rating;
+  }
+  get driverTotalRatings(): number {
+    return this._totalRatings;
+  }
+  get driverCurrentOrderId(): string | null {
+    return this._currentOrderId;
+  }
+  get driverIsTrainingCompleted(): boolean {
+    return this._isTrainingCompleted;
+  }
+  get driverDepositAmount(): number {
+    return this._depositAmount;
+  }
+  get driverCreditWalletBalance(): number {
+    return this._creditWalletBalance;
+  }
+  get driverIncomeWalletBalance(): number {
+    return this._incomeWalletBalance;
+  }
 
   get isAvailable(): boolean {
     return (

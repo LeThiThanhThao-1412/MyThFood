@@ -1,12 +1,19 @@
-import { IsUUID, IsNotEmpty, IsNumber, Min, IsOptional, IsString } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsUUID,
+  IsNotEmpty,
+  IsNumber,
+  Min,
+  IsOptional,
+  IsString,
+} from "class-validator";
+import { Type } from "class-transformer";
 
 export class CreateInventoryDto {
-  @IsUUID('4')
+  @IsUUID("4")
   @IsNotEmpty()
   menuItemId!: string;
 
-  @IsUUID('4')
+  @IsUUID("4")
   @IsNotEmpty()
   merchantId!: string;
 
@@ -23,7 +30,7 @@ export class CreateInventoryDto {
 }
 
 export class ReserveDto {
-  @IsUUID('4')
+  @IsUUID("4")
   @IsNotEmpty()
   orderId!: string;
 
@@ -39,7 +46,7 @@ export class ReserveDto {
 }
 
 export class ReleaseDto {
-  @IsUUID('4')
+  @IsUUID("4")
   @IsNotEmpty()
   orderId!: string;
 
@@ -49,7 +56,7 @@ export class ReleaseDto {
 }
 
 export class ConsumeDto {
-  @IsUUID('4')
+  @IsUUID("4")
   @IsNotEmpty()
   orderId!: string;
 }

@@ -75,3 +75,10 @@ export {
   DRIVER_ACTIVATED_EVENT_TYPE,
   DRIVER_DEACTIVATED_EVENT_TYPE,
 } from "./driver";
+
+// Dispatch events
+export type {
+  DispatchCreatedPayload,
+  DispatchStatusChangedPayload,
+} from "./dispatch";
+export { DISPATCH_CREATED, DISPATCH_STATUS_CHANGED } from "./dispatch";

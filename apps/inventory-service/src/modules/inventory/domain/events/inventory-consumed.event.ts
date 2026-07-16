@@ -1,5 +1,5 @@
-import { BaseDomainEvent } from '@mythfood/shared-kernel';
-import { InventoryId } from '../inventory-id';
+import { BaseDomainEvent } from "@mythfood/shared-kernel";
+import { InventoryId } from "../inventory-id";
 
 export interface InventoryConsumedPayload {
   inventoryId: string;
@@ -11,7 +11,7 @@ export interface InventoryConsumedPayload {
   reservedQuantity: number;
 }
 
-export const INVENTORY_CONSUMED_EVENT_TYPE = 'com.mythfood.inventory.consumed';
+export const INVENTORY_CONSUMED_EVENT_TYPE = "com.mythfood.inventory.consumed";
 
 export class InventoryConsumedEvent extends BaseDomainEvent {
   public readonly payload: InventoryConsumedPayload;

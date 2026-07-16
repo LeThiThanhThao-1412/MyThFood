@@ -12,6 +12,7 @@ import { PaymentRefundedEvent } from "./events/payment-refunded.event";
 
 export enum PaymentStatus {
   PENDING = "PENDING",
+  HELD = "HELD",
   COMPLETED = "COMPLETED",
   FAILED = "FAILED",
   REFUNDED = "REFUNDED",
@@ -29,9 +30,13 @@ export interface PaymentProps {
   orderId: string;
   consumerId: string;
   merchantId: string;
+  driverId: string | null;
   amount: number;
   paymentMethod: PaymentMethod;
   status: PaymentStatus;
+  stripePaymentIntentId: string | null;
+  stripeTransferMerchantId: string | null;
+  stripeTransferDriverId: string | null;
   transactionId: string | null;
   failureReason: string | null;
   refundReason: string | null;
@@ -42,9 +47,13 @@ export class Payment extends AggregateRoot<PaymentId> {
   private orderId: string;
   private consumerId: string;
   private merchantId: string;
+  private driverId: string | null;
   private amount: number;
   private paymentMethod: PaymentMethod;
   private status: PaymentStatus;
+  private stripePaymentIntentId: string | null;
+  private stripeTransferMerchantId: string | null;
+  private stripeTransferDriverId: string | null;
   private transactionId: string | null;
   private failureReason: string | null;
   private refundReason: string | null;
@@ -55,9 +64,13 @@ export class Payment extends AggregateRoot<PaymentId> {
     this.orderId = props.orderId;
     this.consumerId = props.consumerId;
     this.merchantId = props.merchantId;
+    this.driverId = props.driverId;
     this.amount = props.amount;
     this.paymentMethod = props.paymentMethod;
     this.status = props.status;
+    this.stripePaymentIntentId = props.stripePaymentIntentId;
+    this.stripeTransferMerchantId = props.stripeTransferMerchantId;
+    this.stripeTransferDriverId = props.stripeTransferDriverId;
     this.transactionId = props.transactionId;
     this.failureReason = props.failureReason;
     this.refundReason = props.refundReason;
@@ -98,9 +111,13 @@ export class Payment extends AggregateRoot<PaymentId> {
       orderId: props.orderId,
       consumerId: props.consumerId,
       merchantId: props.merchantId,
+      driverId: null,
       amount: props.amount,
       paymentMethod: props.paymentMethod,
       status: PaymentStatus.PENDING,
+      stripePaymentIntentId: null,
+      stripeTransferMerchantId: null,
+      stripeTransferDriverId: null,
       transactionId: null,
       failureReason: null,
       refundReason: null,
@@ -127,7 +144,67 @@ export class Payment extends AggregateRoot<PaymentId> {
   // ===================== State Machine =====================
 
   /**
-   * Complete payment - only from PENDING
+   * Assign driver to the payment (when order is assigned).
+   */
+  public assignDriver(driverId: string): void {
+    if (!driverId?.trim()) {
+      throw new BusinessRuleViolationError("Driver ID is required");
+    }
+    this.driverId = driverId;
+    this.markUpdated();
+  }
+
+  /**
+   * Set the Stripe PaymentIntent ID and move from PENDING to HELD.
+   * This happens after Stripe confirms the PaymentIntent is created and funds are authorized.
+   */
+  public hold(stripePaymentIntentId: string): void {
+    if (this.status !== PaymentStatus.PENDING) {
+      throw new BusinessRuleViolationError(
+        `Cannot hold payment in status ${this.status}. Only PENDING payments can be held.`,
+      );
+    }
+    if (!stripePaymentIntentId?.trim()) {
+      throw new BusinessRuleViolationError(
+        "Stripe PaymentIntent ID is required to hold payment",
+      );
+    }
+
+    this.status = PaymentStatus.HELD;
+    this.stripePaymentIntentId = stripePaymentIntentId;
+    this.markUpdated();
+  }
+
+  /**
+   * Record transfers after splitting payment to merchant and driver.
+   * This is called when the order is delivered and funds are captured & split.
+   */
+  public splitAndComplete(
+    stripeTransferMerchantId: string,
+    stripeTransferDriverId: string,
+  ): void {
+    if (this.status !== PaymentStatus.HELD) {
+      throw new BusinessRuleViolationError(
+        `Cannot complete payment in status ${this.status}. Only HELD payments can be completed.`,
+      );
+    }
+
+    this.status = PaymentStatus.COMPLETED;
+    this.stripeTransferMerchantId = stripeTransferMerchantId;
+    this.stripeTransferDriverId = stripeTransferDriverId;
+    this.transactionId = this.stripePaymentIntentId!;
+    this.markUpdated();
+
+    this.addDomainEvent(
+      new PaymentCompletedEvent(this.id, {
+        orderId: this.orderId,
+        transactionId: this.stripePaymentIntentId!,
+      }),
+    );
+  }
+
+  /**
+   * Complete payment - only from PENDING (for non-Stripe payments like CASH).
    */
   public complete(transactionId: string): void {
     if (this.status !== PaymentStatus.PENDING) {
@@ -154,12 +231,16 @@ export class Payment extends AggregateRoot<PaymentId> {
   }
 
   /**
-   * Fail payment - only from PENDING
+   * Fail payment - from PENDING or HELD.
+   * When a HELD payment fails, Stripe will release the authorized funds.
    */
   public fail(reason: string): void {
-    if (this.status !== PaymentStatus.PENDING) {
+    if (
+      this.status !== PaymentStatus.PENDING &&
+      this.status !== PaymentStatus.HELD
+    ) {
       throw new BusinessRuleViolationError(
-        `Cannot fail payment in status ${this.status}. Only PENDING payments can be failed.`,
+        `Cannot fail payment in status ${this.status}. Only PENDING or HELD payments can be failed.`,
       );
     }
     if (!reason?.trim()) {
@@ -179,12 +260,16 @@ export class Payment extends AggregateRoot<PaymentId> {
   }
 
   /**
-   * Refund payment - only from COMPLETED
+   * Refund payment directly to customer's bank account (not via wallet).
+   * Only from COMPLETED or HELD.
    */
   public refund(reason: string): void {
-    if (this.status !== PaymentStatus.COMPLETED) {
+    if (
+      this.status !== PaymentStatus.COMPLETED &&
+      this.status !== PaymentStatus.HELD
+    ) {
       throw new BusinessRuleViolationError(
-        `Cannot refund payment in status ${this.status}. Only COMPLETED payments can be refunded.`,
+        `Cannot refund payment in status ${this.status}. Only COMPLETED or HELD payments can be refunded.`,
       );
     }
     if (!reason?.trim()) {
@@ -215,12 +300,23 @@ export class Payment extends AggregateRoot<PaymentId> {
     return this.status === PaymentStatus.PENDING;
   }
 
+  public isHeld(): boolean {
+    return this.status === PaymentStatus.HELD;
+  }
+
   public isFailed(): boolean {
     return this.status === PaymentStatus.FAILED;
   }
 
   public isRefunded(): boolean {
     return this.status === PaymentStatus.REFUNDED;
+  }
+
+  public canBeRefunded(): boolean {
+    return (
+      this.status === PaymentStatus.COMPLETED ||
+      this.status === PaymentStatus.HELD
+    );
   }
 
   // ===================== Getters =====================
@@ -234,6 +330,9 @@ export class Payment extends AggregateRoot<PaymentId> {
   get paymentMerchantId(): string {
     return this.merchantId;
   }
+  get paymentDriverId(): string | null {
+    return this.driverId;
+  }
   get paymentAmount(): number {
     return this.amount;
   }
@@ -242,6 +341,15 @@ export class Payment extends AggregateRoot<PaymentId> {
   }
   get paymentStatus(): PaymentStatus {
     return this.status;
+  }
+  get paymentStripePaymentIntentId(): string | null {
+    return this.stripePaymentIntentId;
+  }
+  get paymentStripeTransferMerchantId(): string | null {
+    return this.stripeTransferMerchantId;
+  }
+  get paymentStripeTransferDriverId(): string | null {
+    return this.stripeTransferDriverId;
   }
   get paymentTransactionId(): string | null {
     return this.transactionId;

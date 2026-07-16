@@ -107,7 +107,7 @@ try {
 # Step 7: Add Menu Item
 Write-Host "`n[7] Adding menu item..." -ForegroundColor Yellow
 $menuBody = @{
-    category = "FOOD"
+    category = "MAIN_COURSE"
     name = "Pho Bo Tai"
     description = "Rare beef pho"
     price = 50000

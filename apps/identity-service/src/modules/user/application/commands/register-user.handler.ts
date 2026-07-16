@@ -42,7 +42,19 @@ export class RegisterUserHandler implements ICommandHandler<RegisterUserCommand>
     const user = userResult.value;
 
     // Persist the aggregate
-    await this.userRepository.save(user);
+    try {
+      await this.userRepository.save(user);
+    } catch (error: any) {
+      if (error?.code === "23505" || error?.message?.includes("duplicate")) {
+        return Result.fail(
+          new DomainError(
+            "Conflict",
+            `Phone number ${command.phoneNumber} already exists`,
+          ),
+        );
+      }
+      throw error;
+    }
 
     return Result.ok(user);
   }

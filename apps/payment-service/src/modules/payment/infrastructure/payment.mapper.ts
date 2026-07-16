@@ -13,9 +13,13 @@ export class PaymentMapper {
       orderId: entity.orderId,
       consumerId: entity.consumerId,
       merchantId: entity.merchantId,
+      driverId: entity.driverId,
       amount: Number(entity.amount),
       paymentMethod: entity.paymentMethod as PaymentMethod,
       status: entity.status as PaymentStatus,
+      stripePaymentIntentId: entity.stripePaymentIntentId,
+      stripeTransferMerchantId: entity.stripeTransferMerchantId,
+      stripeTransferDriverId: entity.stripeTransferDriverId,
       transactionId: entity.transactionId,
       failureReason: entity.failureReason,
       refundReason: entity.refundReason,
@@ -33,9 +37,13 @@ export class PaymentMapper {
     entity.orderId = payment.paymentOrderId;
     entity.consumerId = payment.paymentConsumerId;
     entity.merchantId = payment.paymentMerchantId;
+    entity.driverId = payment.paymentDriverId;
     entity.amount = payment.paymentAmount;
     entity.paymentMethod = payment.paymentMethodType;
     entity.status = payment.paymentStatus;
+    entity.stripePaymentIntentId = payment.paymentStripePaymentIntentId;
+    entity.stripeTransferMerchantId = payment.paymentStripeTransferMerchantId;
+    entity.stripeTransferDriverId = payment.paymentStripeTransferDriverId;
     entity.transactionId = payment.paymentTransactionId;
     entity.failureReason = payment.paymentFailureReason;
     entity.refundReason = payment.paymentRefundReason;

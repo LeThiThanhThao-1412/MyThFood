@@ -24,6 +24,10 @@ export class PaymentEntity {
   @Column("uuid")
   merchantId!: string;
 
+  @Index()
+  @Column("uuid", { nullable: true })
+  driverId!: string | null;
+
   @Column("decimal", { precision: 12, scale: 2 })
   amount!: number;
 
@@ -33,6 +37,15 @@ export class PaymentEntity {
   @Index()
   @Column({ type: "varchar", length: 20, default: "PENDING" })
   status!: string;
+
+  @Column({ type: "varchar", length: 255, nullable: true })
+  stripePaymentIntentId!: string | null;
+
+  @Column({ type: "varchar", length: 255, nullable: true })
+  stripeTransferMerchantId!: string | null;
+
+  @Column({ type: "varchar", length: 255, nullable: true })
+  stripeTransferDriverId!: string | null;
 
   @Column({ type: "varchar", length: 255, nullable: true })
   transactionId!: string | null;

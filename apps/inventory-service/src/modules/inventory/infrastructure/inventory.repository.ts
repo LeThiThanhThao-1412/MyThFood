@@ -1,16 +1,19 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository as TypeOrmRepo } from 'typeorm';
-import { v4 as uuid } from 'uuid';
-import { IRepository } from '@mythfood/shared-kernel';
-import { Inventory } from '../domain/inventory.aggregate';
-import { InventoryId } from '../domain/inventory-id';
-import { InventoryEntity } from './inventory.entity';
-import { InventoryReservationEntity } from './inventory-reservation.entity';
-import { InventoryMapper } from './inventory.mapper';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository as TypeOrmRepo } from "typeorm";
+import { v4 as uuid } from "uuid";
+import { IRepository } from "@mythfood/shared-kernel";
+import { Inventory } from "../domain/inventory.aggregate";
+import { InventoryId } from "../domain/inventory-id";
+import { InventoryEntity } from "./inventory.entity";
+import { InventoryReservationEntity } from "./inventory-reservation.entity";
+import { InventoryMapper } from "./inventory.mapper";
 
 @Injectable()
-export class InventoryRepository implements IRepository<Inventory, InventoryId> {
+export class InventoryRepository implements IRepository<
+  Inventory,
+  InventoryId
+> {
   constructor(
     @InjectRepository(InventoryEntity)
     private readonly repository: TypeOrmRepo<InventoryEntity>,
@@ -23,7 +26,9 @@ export class InventoryRepository implements IRepository<Inventory, InventoryId> 
     await this.repository.save(entity);
 
     // Sync reservations: delete old, insert current
-    await this.reservationRepo.delete({ inventory_id: aggregate.id.toString() });
+    await this.reservationRepo.delete({
+      inventory_id: aggregate.id.toString(),
+    });
     const reservationEntities = aggregate.inventoryReservations.map((r) => {
       const e = new InventoryReservationEntity();
       e.id = uuid();
@@ -40,7 +45,9 @@ export class InventoryRepository implements IRepository<Inventory, InventoryId> 
   }
 
   async findById(id: InventoryId): Promise<Inventory | null> {
-    const entity = await this.repository.findOne({ where: { id: id.toString() } });
+    const entity = await this.repository.findOne({
+      where: { id: id.toString() },
+    });
     if (!entity) return null;
     return this.loadRelatedAndMap(entity);
   }
@@ -52,13 +59,17 @@ export class InventoryRepository implements IRepository<Inventory, InventoryId> 
   }
 
   async findByMenuItemId(menuItemId: string): Promise<Inventory | null> {
-    const entity = await this.repository.findOne({ where: { menu_item_id: menuItemId } });
+    const entity = await this.repository.findOne({
+      where: { menu_item_id: menuItemId },
+    });
     if (!entity) return null;
     return this.loadRelatedAndMap(entity);
   }
 
   async findByMerchantId(merchantId: string): Promise<Inventory[]> {
-    const entities = await this.repository.find({ where: { merchant_id: merchantId } });
+    const entities = await this.repository.find({
+      where: { merchant_id: merchantId },
+    });
     return Promise.all(entities.map((e) => this.loadRelatedAndMap(e)));
   }
 
@@ -73,7 +84,9 @@ export class InventoryRepository implements IRepository<Inventory, InventoryId> 
   }
 
   async delete(aggregate: Inventory): Promise<void> {
-    await this.reservationRepo.delete({ inventory_id: aggregate.id.toString() });
+    await this.reservationRepo.delete({
+      inventory_id: aggregate.id.toString(),
+    });
     await this.repository.delete(aggregate.id.toString());
   }
 
@@ -82,11 +95,13 @@ export class InventoryRepository implements IRepository<Inventory, InventoryId> 
     await this.repository.delete(id.toString());
   }
 
-  async findExpiredReservations(): Promise<{ inventory: Inventory; expiredOrderIds: string[] }[]> {
+  async findExpiredReservations(): Promise<
+    { inventory: Inventory; expiredOrderIds: string[] }[]
+  > {
     const now = new Date();
     const expiredReservations = await this.reservationRepo
-      .createQueryBuilder('r')
-      .where('r.expires_at <= :now', { now })
+      .createQueryBuilder("r")
+      .where("r.expires_at <= :now", { now })
       .getMany();
 
     const grouped = new Map<string, string[]>();
@@ -98,7 +113,9 @@ export class InventoryRepository implements IRepository<Inventory, InventoryId> 
 
     const result: { inventory: Inventory; expiredOrderIds: string[] }[] = [];
     for (const [inventoryId, orderIds] of grouped) {
-      const entity = await this.repository.findOne({ where: { id: inventoryId } });
+      const entity = await this.repository.findOne({
+        where: { id: inventoryId },
+      });
       if (entity) {
         const inventory = await this.loadRelatedAndMap(entity);
         result.push({ inventory, expiredOrderIds: orderIds });

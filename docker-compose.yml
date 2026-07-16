@@ -74,10 +74,6 @@ services:
         condition: service_healthy
     networks:
       - mythfood-network
-    volumes:
-      - ./:/app
-      - /app/node_modules
-      - /app/apps/identity-service/node_modules
 
   # ============================================================================
   # Consumer Service (NestJS)
@@ -105,10 +101,6 @@ services:
         condition: service_healthy
     networks:
       - mythfood-network
-    volumes:
-      - ./:/app
-      - /app/node_modules
-      - /app/apps/consumer-service/node_modules
 
   # ============================================================================
   # Merchant Service (NestJS)
@@ -163,10 +155,6 @@ services:
         condition: service_healthy
     networks:
       - mythfood-network
-    volumes:
-      - ./:/app
-      - /app/node_modules
-      - /app/apps/order-service/node_modules
 
   # ============================================================================
   # Inventory Service (NestJS)
@@ -194,10 +182,6 @@ services:
         condition: service_healthy
     networks:
       - mythfood-network
-    volumes:
-      - ./:/app
-      - /app/node_modules
-      - /app/apps/inventory-service/node_modules
 
   # ============================================================================
   # Payment Service (NestJS)
@@ -225,10 +209,60 @@ services:
         condition: service_healthy
     networks:
       - mythfood-network
-    volumes:
-      - ./:/app
-      - /app/node_modules
-      - /app/apps/payment-service/node_modules
+
+  # ============================================================================
+  # Driver Service (NestJS)
+  # ============================================================================
+  driver-service:
+    build:
+      context: .
+      dockerfile: apps/driver-service/Dockerfile
+    container_name: mythfood-driver-service
+    restart: unless-stopped
+    ports:
+      - "3007:3007"
+    environment:
+      NODE_ENV: development
+      PORT: 3007
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: mythfood_driver
+      DATABASE_USER: mythfood
+      DATABASE_PASSWORD: mythfood_secret
+      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      JWT_EXPIRATION: 1h
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mythfood-network
+
+  # ============================================================================
+  # Dispatch Service (NestJS)
+  # ============================================================================
+  dispatch-service:
+    build:
+      context: .
+      dockerfile: apps/dispatch-service/Dockerfile
+    container_name: mythfood-dispatch-service
+    restart: unless-stopped
+    ports:
+      - "3008:3008"
+    environment:
+      NODE_ENV: development
+      PORT: 3008
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: mythfood_dispatch
+      DATABASE_USER: mythfood
+      DATABASE_PASSWORD: mythfood_secret
+      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      JWT_EXPIRATION: 1h
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mythfood-network
 
   # ============================================================================
   # Kafka (Optional - for event-driven communication in production)

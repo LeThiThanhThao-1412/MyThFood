@@ -21,6 +21,9 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     const entity = OrderMapper.toPersistence(aggregate);
     await this.repository.save(entity);
 
+    // Delete old items first to avoid duplicates on update
+    await this.orderItemRepo.delete({ order_id: entity.id });
+
     // Save order items
     const itemEntities = OrderMapper.itemsToPersistence(aggregate);
     await this.orderItemRepo.save(itemEntities);

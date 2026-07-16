@@ -65,6 +65,9 @@ COPY --from=builder /app/packages/common/dist packages/common/dist/
 COPY --from=builder /app/apps/identity-service/package.json apps/identity-service/
 COPY --from=builder /app/apps/identity-service/dist apps/identity-service/dist/
 
+# Remove prepare script (husky) to avoid it failing in production
+RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
+
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --filter @mythfood/identity-service --prod
 

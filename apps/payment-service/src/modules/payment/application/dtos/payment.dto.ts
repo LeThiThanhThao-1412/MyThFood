@@ -8,7 +8,8 @@ import {
   IsEnum,
 } from "class-validator";
 import { Type } from "class-transformer";
-import { PaymentMethod } from "../../domain/payment.aggregate";
+import { PaymentMethod, PaymentStatus } from "../../domain/payment.aggregate";
+import { OwnerType } from "../../../wallet/domain/wallet.aggregate";
 
 export class CreatePaymentDto {
   @IsUUID("4")
@@ -33,22 +34,71 @@ export class CreatePaymentDto {
   paymentMethod!: PaymentMethod;
 }
 
-export class CompletePaymentDto {
+export class CreateStripePaymentDto extends CreatePaymentDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  transactionId!: string;
+  currency?: string;
 }
 
-export class FailPaymentDto {
+export class AssignDriverDto {
+  @IsUUID("4")
+  @IsNotEmpty()
+  driverId!: string;
+}
+
+export class SplitAndCompletePaymentDto {
   @IsString()
   @IsNotEmpty()
-  reason!: string;
+  merchantStripeAccountId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  driverStripeAccountId!: string;
 }
 
 export class RefundPaymentDto {
   @IsString()
   @IsNotEmpty()
   reason!: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  refundAmount?: number;
+}
+
+export class WalletWithdrawalDto {
+  @IsUUID("4")
+  @IsNotEmpty()
+  ownerId!: string;
+
+  @IsEnum(OwnerType)
+  @IsNotEmpty()
+  ownerType!: OwnerType;
+
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  amount!: number;
+
+  @IsString()
+  @IsNotEmpty()
+  stripeAccountId!: string;
+}
+
+export class CreateConnectedAccountDto {
+  @IsString()
+  @IsNotEmpty()
+  email!: string;
+
+  @IsOptional()
+  @IsString()
+  country?: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
 }
 
 export class PaymentResponseDto {
@@ -56,15 +106,45 @@ export class PaymentResponseDto {
   orderId!: string;
   consumerId!: string;
   merchantId!: string;
+  driverId!: string | null;
   amount!: number;
   paymentMethod!: string;
   status!: string;
+  stripePaymentIntentId!: string | null;
+  stripeTransferMerchantId!: string | null;
+  stripeTransferDriverId!: string | null;
   transactionId!: string | null;
   failureReason!: string | null;
   refundReason!: string | null;
   refundedAmount!: number | null;
   createdAt!: Date;
   updatedAt!: Date;
+}
+
+export class WalletResponseDto {
+  id!: string;
+  ownerId!: string;
+  ownerType!: string;
+  balance!: number;
+  currency!: string;
+  createdAt!: Date;
+  updatedAt!: Date;
+}
+
+export class WalletTransactionResponseDto {
+  id!: string;
+  walletId!: string;
+  ownerId!: string;
+  ownerType!: string;
+  type!: string;
+  amount!: number;
+  balanceBefore!: number;
+  balanceAfter!: number;
+  description!: string | null;
+  orderId!: string | null;
+  stripeTransferId!: string | null;
+  stripePayoutId!: string | null;
+  createdAt!: Date;
 }
 
 export class PaymentQueryDto {
@@ -81,6 +161,6 @@ export class PaymentQueryDto {
   orderId?: string;
 
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(PaymentStatus)
+  status?: PaymentStatus;
 }
