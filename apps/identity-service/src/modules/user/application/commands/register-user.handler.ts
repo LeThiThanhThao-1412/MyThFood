@@ -1,6 +1,11 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { CommandHandler, ICommandHandler } from "@nestjs/cqrs";
-import { IRepository, Result, DomainError } from "@mythfood/shared-kernel";
+import {
+  IRepository,
+  Result,
+  DomainError,
+  BusinessRuleViolationError,
+} from "@mythfood/shared-kernel";
 import { User, UserRole } from "../../domain/user.aggregate";
 import { UserId } from "../../domain/user-id";
 import { Password } from "../../domain/password.vo";
@@ -47,8 +52,7 @@ export class RegisterUserHandler implements ICommandHandler<RegisterUserCommand>
     } catch (error: any) {
       if (error?.code === "23505" || error?.message?.includes("duplicate")) {
         return Result.fail(
-          new DomainError(
-            "Conflict",
+          new BusinessRuleViolationError(
             `Phone number ${command.phoneNumber} already exists`,
           ),
         );
