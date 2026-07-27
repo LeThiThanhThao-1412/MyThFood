@@ -52,9 +52,13 @@ jobs:
 
       - name: Build Docker image for ${{ matrix.service }}
         run: |
-          docker compose build ${{ matrix.service }}
+          docker compose build ${{ matrix.service }} 2>&1 | tail -30
         env:
           DOCKER_BUILDKIT: 1
+          STRIPE_SECRET_KEY: "sk_test_placeholder"
+          STRIPE_WEBHOOK_SECRET: "whsec_placeholder"
+          DB_PASSWORD: "ci_build_password"
+          REDIS_PASSWORD: "ci_build_redis"
 
       - name: Verify image exists
         run: |
