@@ -371,10 +371,10 @@ volumes:
     name: mythfood_redis_data
   upload_data:
     name: mythfood_upload_data
-  # zookeeper_data:
-  #   name: mythfood_zookeeper_data
-  # kafka_data:
-  #   name: mythfood_kafka_data
+  zookeeper_data:
+    name: mythfood_zookeeper_data
+  kafka_data:
+    name: mythfood_kafka_data
 
 networks:
   mythfood-network:
