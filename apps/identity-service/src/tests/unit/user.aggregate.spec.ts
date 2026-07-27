@@ -1,3 +1,5 @@
+/// <reference types="jest" />
+
 import { User } from "../../modules/user/domain/user.aggregate";
 import { Password } from "../../modules/user/domain/password.vo";
 import { UserId } from "../../modules/user/domain/user-id";

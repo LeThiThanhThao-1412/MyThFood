@@ -54,6 +54,12 @@ jobs:
 
       - name: Lint dispatch-service
         run: pnpm --filter @mythfood/dispatch-service lint
+
+      - name: Lint wallet-service
+        run: pnpm --filter @mythfood/wallet-service lint
+
+      - name: Lint upload-service
+        run: pnpm --filter @mythfood/upload-service lint
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -175,6 +181,26 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
+      - name: Run wallet-service unit tests
+        run: pnpm --filter @mythfood/wallet-service test
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_wallet
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run upload-service unit tests
+        run: pnpm --filter @mythfood/upload-service test
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_upload
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -224,6 +250,12 @@ jobs:
       - name: Build dispatch-service
         run: pnpm --filter @mythfood/dispatch-service build
 
+      - name: Build wallet-service
+        run: pnpm --filter @mythfood/wallet-service build
+
+      - name: Build upload-service
+        run: pnpm --filter @mythfood/upload-service build
+
       - name: Upload identity-service build artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -271,6 +303,18 @@ jobs:
         with:
           name: dispatch-dist
           path: apps/dispatch-service/dist/
+
+      - name: Upload wallet-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wallet-dist
+          path: apps/wallet-service/dist/
+
+      - name: Upload upload-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: upload-dist
+          path: apps/upload-service/dist/
 
   test-coverage:
     name: Test Coverage
@@ -390,6 +434,26 @@ jobs:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
           DATABASE_NAME: mythfood_dispatch
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run wallet-service test coverage
+        run: pnpm --filter @mythfood/wallet-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_wallet
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run upload-service test coverage
+        run: pnpm --filter @mythfood/upload-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_upload
           DATABASE_USER: mythfood
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
