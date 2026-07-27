@@ -77,7 +77,7 @@ jobs:
 
       - name: Start all services
         run: |
-          docker compose up -d --wait --wait-timeout 120
+          docker compose up -d --wait --wait-timeout 300
         env:
           DB_PASSWORD: ci_test_password
           REDIS_PASSWORD: ci_redis_password

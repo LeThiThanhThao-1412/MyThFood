@@ -70,7 +70,7 @@ RUN pnpm install --frozen-lockfile --filter @mythfood/merchant-service --prod --
 
 EXPOSE 3003
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 \
+HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3003/api/v1/health || exit 1
 
 CMD ["node", "apps/merchant-service/dist/main.js"]
