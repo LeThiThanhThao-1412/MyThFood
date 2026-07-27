@@ -6,7 +6,8 @@ describe("User Aggregate", () => {
   let password: Password;
 
   beforeAll(async () => {
-    const result = await Password.create("TestPass123");
+    // FIX #13: Password now requires uppercase, lowercase, digit, AND special character
+    const result = await Password.create("Test@Pass123");
     password = result.isSuccess
       ? result.value
       : (() => {
@@ -84,7 +85,7 @@ describe("User Aggregate", () => {
       });
 
       const user = result.value;
-      const isValid = await user.verifyPassword("TestPass123");
+      const isValid = await user.verifyPassword("Test@Pass123");
       expect(isValid).toBe(true);
     });
 
