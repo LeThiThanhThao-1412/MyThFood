@@ -44,8 +44,8 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
-# Install pnpm
-RUN npm install -g pnpm@9.4.0
+# Install pnpm and wget for healthcheck
+RUN npm install -g pnpm@9.4.0 && apk add --no-cache wget
 
 # Copy root configs
 COPY --from=builder /app/pnpm-lock.yaml ./
@@ -73,7 +73,7 @@ RUN pnpm install --frozen-lockfile --filter @mythfood/identity-service --prod
 
 EXPOSE 3001
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=5 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
 
 CMD ["node", "apps/identity-service/dist/main.js"]
