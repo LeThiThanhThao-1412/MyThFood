@@ -142,6 +142,17 @@ export class User extends AggregateRoot<UserId> {
   }
 
   /**
+   * Deactivate the user account (temporary).
+   */
+  public deactivate(): void {
+    if (this.status === "BANNED") {
+      throw new BusinessRuleViolationError("Cannot deactivate a banned user");
+    }
+    this.status = "INACTIVE";
+    this.markUpdated();
+  }
+
+  /**
    * Ban the user account permanently.
    */
   public ban(): void {

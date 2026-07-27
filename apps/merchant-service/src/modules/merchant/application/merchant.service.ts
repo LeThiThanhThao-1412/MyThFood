@@ -43,7 +43,6 @@ export class MerchantService {
     const merchant = result.value;
     await this.merchantRepository.save(merchant);
 
-    // Publish events
     const events = merchant.pullDomainEvents();
     for (const event of events) {
       this.eventBus.publish(event);
@@ -137,7 +136,6 @@ export class MerchantService {
 
     await this.merchantRepository.save(merchant);
 
-    // Publish domain events
     const events = merchant.pullDomainEvents();
     for (const event of events) {
       this.eventBus.publish(event);
@@ -296,6 +294,18 @@ export class MerchantService {
       maxConcurrentOrders: merchant.merchantCapacityConfig.maxConcurrentOrders,
       prepTimePerOrder: merchant.merchantCapacityConfig.prepTimePerOrder,
     };
+  }
+
+  // ---- Stats (B7) ----
+  async getStats(id: string, period: string): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(id));
+    return { merchantId: id, period, totalOrders: 0, totalRevenue: 0, averageRating: 0, pendingOrders: 0, revenueByDay: [], topItems: [] };
+  }
+
+  // ---- Reviews (B7) ----
+  async getReviews(id: string, params: { skip: number; take: number; rating?: number }): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(id));
+    return { items: [], total: 0, averageRating: 0, ratingDistribution: {} };
   }
 
   private getCapacityInfo(merchant: Merchant) {

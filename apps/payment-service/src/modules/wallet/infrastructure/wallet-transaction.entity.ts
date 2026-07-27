@@ -6,11 +6,6 @@ import {
   Index,
 } from "typeorm";
 
-export enum WalletTransactionType {
-  CREDIT = "CREDIT",
-  DEBIT = "DEBIT",
-}
-
 @Entity("wallet_transactions")
 export class WalletTransactionEntity {
   @PrimaryColumn("uuid")
@@ -28,8 +23,8 @@ export class WalletTransactionEntity {
   @Column({ type: "varchar", length: 20 })
   ownerType!: string;
 
-  @Column({ type: "varchar", length: 20 })
-  type!: string;
+  @Column({ type: "varchar", length: 10 })
+  type!: string; // CREDIT | DEBIT
 
   @Column("decimal", { precision: 14, scale: 2 })
   amount!: number;
@@ -43,7 +38,7 @@ export class WalletTransactionEntity {
   @Column({ type: "varchar", length: 255, nullable: true })
   description!: string | null;
 
-  @Column("uuid", { nullable: true })
+  @Column({ type: "varchar", length: 50, nullable: true })
   orderId!: string | null;
 
   @Column({ type: "varchar", length: 255, nullable: true })

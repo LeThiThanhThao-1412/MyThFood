@@ -1,45 +1,51 @@
 FROM node:20-alpine AS builder
-
 WORKDIR /app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
-
-# Copy root workspace files
-COPY pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
-COPY tsconfig.base.json ./
+COPY .npmrc ./
+COPY pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml ./
 COPY package.json ./
+COPY turbo.json ./
+COPY tsconfig.base.json ./
 
-# Copy packages
-COPY packages/shared-kernel ./packages/shared-kernel
-COPY packages/event-contracts ./packages/event-contracts
-COPY packages/common ./packages/common
+COPY packages/shared-kernel/package.json packages/shared-kernel/tsconfig.json packages/shared-kernel/
+COPY packages/event-contracts/package.json packages/event-contracts/tsconfig.json packages/event-contracts/
+COPY packages/common/package.json packages/common/tsconfig.json packages/common/
+COPY apps/dispatch-service/package.json apps/dispatch-service/tsconfig.json apps/dispatch-service/tsconfig.build.json apps/dispatch-service/nest-cli.json apps/dispatch-service/
 
-# Copy dispatch service
-COPY apps/dispatch-service ./apps/dispatch-service
+RUN npm install -g pnpm@9.4.0
+RUN pnpm install --frozen-lockfile --filter @mythfood/dispatch-service --prod false
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+COPY packages/shared-kernel/src packages/shared-kernel/src/
+COPY packages/event-contracts/src packages/event-contracts/src/
+COPY packages/common/src packages/common/src/
+COPY apps/dispatch-service/src apps/dispatch-service/src/
 
-# Build shared packages
 RUN pnpm --filter @mythfood/shared-kernel build
 RUN pnpm --filter @mythfood/event-contracts build
 RUN pnpm --filter @mythfood/common build
-
-# Build dispatch service
 RUN pnpm --filter @mythfood/dispatch-service build
 
-FROM node:20-alpine AS runner
-
+FROM node:20-alpine AS production
 WORKDIR /app
 
-# Copy built artifacts
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/apps/dispatch-service/dist ./apps/dispatch-service/dist
-COPY --from=builder /app/apps/dispatch-service/node_modules ./apps/dispatch-service/node_modules
-COPY --from=builder /app/apps/dispatch-service/package.json ./apps/dispatch-service/package.json
+COPY --from=builder /app/pnpm-lock.yaml ./
+COPY --from=builder /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/.npmrc ./
+
+COPY --from=builder /app/packages/shared-kernel/package.json packages/shared-kernel/
+COPY --from=builder /app/packages/shared-kernel/dist packages/shared-kernel/dist/
+COPY --from=builder /app/packages/event-contracts/package.json packages/event-contracts/
+COPY --from=builder /app/packages/event-contracts/dist packages/event-contracts/dist/
+COPY --from=builder /app/packages/common/package.json packages/common/
+COPY --from=builder /app/packages/common/dist packages/common/dist/
+COPY --from=builder /app/apps/dispatch-service/package.json apps/dispatch-service/
+COPY --from=builder /app/apps/dispatch-service/dist apps/dispatch-service/dist/
+
+RUN npm install -g pnpm@9.4.0
+RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
+RUN pnpm install --frozen-lockfile --filter @mythfood/dispatch-service --prod
 
 EXPOSE 3008
-
 CMD ["node", "apps/dispatch-service/dist/main.js"]

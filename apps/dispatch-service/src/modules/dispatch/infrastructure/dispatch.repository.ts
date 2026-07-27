@@ -98,4 +98,38 @@ export class DispatchRepository {
   async deleteById(id: DispatchId): Promise<void> {
     await this.repo.delete({ id: id.value });
   }
+
+  // ═══════════════════════════════════════════════════════
+  // Matching Engine Queries
+  // ═══════════════════════════════════════════════════════
+
+  async findAvailableDriversNearLocation(
+    lat: number,
+    lng: number,
+    radiusKm: number,
+  ): Promise<{ driverId: string; distanceKm: number; latitude: number; longitude: number }[]> {
+    // Query all ONLINE drivers from driver-service DB (shared postgres)
+    const result = await this.repo.query(
+      `SELECT d.id as "driverId",
+              d."currentLatitude" as latitude,
+              d."currentLongitude" as longitude,
+              (6371 * acos(
+                cos(radians($1)) * cos(radians(d."currentLatitude")) *
+                cos(radians(d."currentLongitude") - radians($2)) +
+                sin(radians($1)) * sin(radians(d."currentLatitude"))
+              )) as "distanceKm"
+       FROM drivers d
+       WHERE d.status = 'ACTIVE'
+         AND d."onlineStatus" = 'ONLINE'
+         AND d."fatigueLevel" != 'CRITICAL'
+         AND d."currentOrderId" IS NULL
+         AND d."currentLatitude" IS NOT NULL
+         AND d."currentLongitude" IS NOT NULL
+         ${radiusKm < 9999 ? 'AND (6371 * acos(cos(radians($1)) * cos(radians(d."currentLatitude")) * cos(radians(d."currentLongitude") - radians($2)) + sin(radians($1)) * sin(radians(d."currentLatitude")))) <= $3' : ''}
+       ORDER BY "distanceKm" ASC
+       LIMIT 20`,
+      radiusKm < 9999 ? [lat, lng, radiusKm] : [lat, lng],
+    );
+    return result;
+  }
 }

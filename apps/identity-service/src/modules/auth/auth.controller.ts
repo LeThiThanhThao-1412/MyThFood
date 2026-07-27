@@ -57,4 +57,22 @@ export class AuthController {
       },
     };
   }
+
+  // ---- B11: Change Password ----
+  @Post("change-password")
+  @UseGuards(JwtAuthGuard)
+  async changePassword(
+    @Req() req: { user: { userId: string } },
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    await this.authService.changePassword(req.user.userId, body.currentPassword, body.newPassword);
+    return { statusCode: 200, message: "Password changed successfully" };
+  }
+
+  // ---- B11: Refresh Token ----
+  @Post("refresh")
+  async refreshToken(@Body() body: { refreshToken: string }) {
+    const tokens = await this.authService.refreshToken(body.refreshToken);
+    return { statusCode: 200, data: tokens };
+  }
 }

@@ -9,9 +9,9 @@ services:
     container_name: mythfood-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: mythfood
-      POSTGRES_PASSWORD: mythfood_secret
-      POSTGRES_DB: mythfood_identity
+      POSTGRES_USER: ${DB_USER:-mythfood}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      POSTGRES_DB: ${DB_NAME:-mythfood_identity}
     ports:
       - "5432:5432"
     volumes:
@@ -36,7 +36,7 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --requirepass mythfood_redis_secret
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-mythfood_redis_secret_dev}
     healthcheck:
       test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 10s
@@ -61,12 +61,14 @@ services:
       PORT: 3001
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: mythfood_identity
-      DATABASE_USER: mythfood
-      DATABASE_PASSWORD: mythfood_secret
-      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      DATABASE_NAME: ${DB_NAME_IDENTITY:-mythfood_identity}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      JWT_SECRET: ${JWT_SECRET_IDENTITY:-dev_jwt_secret_change_me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET_IDENTITY:-dev_refresh_secret_change_me}
       JWT_EXPIRATION: 1h
-      REDIS_URL: redis://default:mythfood_redis_secret@redis:6379
+      JWT_REFRESH_EXPIRATION: 7d
+      REDIS_URL: redis://default:${REDIS_PASSWORD:-mythfood_redis_secret_dev}@redis:6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,10 +93,10 @@ services:
       PORT: 3002
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: mythfood_consumer
-      DATABASE_USER: mythfood
-      DATABASE_PASSWORD: mythfood_secret
-      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      DATABASE_NAME: ${DB_NAME_CONSUMER:-mythfood_consumer}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      JWT_SECRET: ${JWT_SECRET_CONSUMER:-dev_jwt_secret_change_me}
       JWT_EXPIRATION: 1h
     depends_on:
       postgres:
@@ -118,10 +120,10 @@ services:
       PORT: 3003
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: mythfood_merchant
-      DATABASE_USER: mythfood
-      DATABASE_PASSWORD: mythfood_secret
-      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      DATABASE_NAME: ${DB_NAME_MERCHANT:-mythfood_merchant}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      JWT_SECRET: ${JWT_SECRET_MERCHANT:-dev_jwt_secret_change_me}
       JWT_EXPIRATION: 1h
     depends_on:
       postgres:
@@ -145,10 +147,10 @@ services:
       PORT: 3004
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: mythfood_order
-      DATABASE_USER: mythfood
-      DATABASE_PASSWORD: mythfood_secret
-      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      DATABASE_NAME: ${DB_NAME_ORDER:-mythfood_order}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      JWT_SECRET: ${JWT_SECRET_ORDER:-dev_jwt_secret_change_me}
       JWT_EXPIRATION: 1h
     depends_on:
       postgres:
@@ -172,10 +174,10 @@ services:
       PORT: 3005
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: mythfood_inventory
-      DATABASE_USER: mythfood
-      DATABASE_PASSWORD: mythfood_secret
-      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      DATABASE_NAME: ${DB_NAME_INVENTORY:-mythfood_inventory}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      JWT_SECRET: ${JWT_SECRET_INVENTORY:-dev_jwt_secret_change_me}
       JWT_EXPIRATION: 1h
     depends_on:
       postgres:
@@ -199,11 +201,13 @@ services:
       PORT: 3006
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: mythfood_payment
-      DATABASE_USER: mythfood
-      DATABASE_PASSWORD: mythfood_secret
-      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      DATABASE_NAME: ${DB_NAME_PAYMENT:-mythfood_payment}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      JWT_SECRET: ${JWT_SECRET_PAYMENT:-dev_jwt_secret_change_me}
       JWT_EXPIRATION: 1h
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -226,10 +230,10 @@ services:
       PORT: 3007
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: mythfood_driver
-      DATABASE_USER: mythfood
-      DATABASE_PASSWORD: mythfood_secret
-      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      DATABASE_NAME: ${DB_NAME_DRIVER:-mythfood_driver}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      JWT_SECRET: ${JWT_SECRET_DRIVER:-dev_jwt_secret_change_me}
       JWT_EXPIRATION: 1h
     depends_on:
       postgres:
@@ -253,10 +257,10 @@ services:
       PORT: 3008
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: mythfood_dispatch
-      DATABASE_USER: mythfood
-      DATABASE_PASSWORD: mythfood_secret
-      JWT_SECRET: mythfood_jwt_super_secret_key_change_in_production
+      DATABASE_NAME: ${DB_NAME_DISPATCH:-mythfood_dispatch}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      JWT_SECRET: ${JWT_SECRET_DISPATCH:-dev_jwt_secret_change_me}
       JWT_EXPIRATION: 1h
     depends_on:
       postgres:
@@ -265,51 +269,108 @@ services:
       - mythfood-network
 
   # ============================================================================
-  # Kafka (Optional - for event-driven communication in production)
+  # Wallet Service (NestJS) - Quản lý ví Driver, Consumer, Merchant, Platform, Tax
   # ============================================================================
-  # Uncomment the block below if you need Kafka/Zookeeper for local dev
-  #
-  # zookeeper:
-  #   image: confluentinc/cp-zookeeper:7.6.0
-  #   container_name: mythfood-zookeeper
-  #   restart: unless-stopped
-  #   environment:
-  #     ZOOKEEPER_CLIENT_PORT: 2181
-  #     ZOOKEEPER_TICK_TIME: 2000
-  #   ports:
-  #     - "2181:2181"
-  #   volumes:
-  #     - zookeeper_data:/var/lib/zookeeper/data
-  #   networks:
-  #     - mythfood-network
-  #
-  # kafka:
-  #   image: confluentinc/cp-kafka:7.6.0
-  #   container_name: mythfood-kafka
-  #   restart: unless-stopped
-  #   ports:
-  #     - "9092:9092"
-  #     - "29092:29092"
-  #   environment:
-  #     KAFKA_BROKER_ID: 1
-  #     KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_HOST://localhost:29092
-  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-  #     KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-  #     KAFKA_LOG_RETENTION_HOURS: 168
-  #   volumes:
-  #     - kafka_data:/var/lib/kafka/data
-  #   depends_on:
-  #     - zookeeper
-  #   networks:
-  #     - mythfood-network
+  wallet-service:
+    build:
+      context: .
+      dockerfile: apps/wallet-service/Dockerfile
+    container_name: mythfood-wallet-service
+    restart: unless-stopped
+    ports:
+      - "3009:3009"
+    environment:
+      NODE_ENV: development
+      PORT: 3009
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${DB_NAME_WALLET:-mythfood_wallet}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      JWT_SECRET: ${JWT_SECRET_WALLET:-dev_jwt_secret_change_me}
+      JWT_EXPIRATION: 1h
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_API_VERSION: ${STRIPE_API_VERSION:-2023-10-16}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mythfood-network
+
+  # ============================================================================
+  # Upload Service (NestJS) - File upload handling (local/S3)
+  # ============================================================================
+  upload-service:
+    build:
+      context: .
+      dockerfile: apps/upload-service/Dockerfile
+    container_name: mythfood-upload-service
+    restart: unless-stopped
+    ports:
+      - "3010:3010"
+    environment:
+      NODE_ENV: development
+      PORT: 3010
+      JWT_SECRET: ${JWT_SECRET_UPLOAD:-dev_jwt_secret_change_me}
+      JWT_EXPIRATION: 1h
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_PATH: ./uploads
+      STORAGE_MAX_FILE_SIZE: 5242880
+      STORAGE_ALLOWED_TYPES: image/jpeg,image/png,image/webp
+      UPLOAD_BASE_URL: http://localhost:3010
+    volumes:
+      - upload_data:/app/uploads
+    networks:
+      - mythfood-network
+
+  # =============================================================================
+  # Kafka - Event-driven communication between services (FIX #15)
+  # Uncomment to enable. Requires 4GB+ RAM free.
+  # =============================================================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: mythfood-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+    networks:
+      - mythfood-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: mythfood-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_RETENTION_HOURS: 168
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    depends_on:
+      - zookeeper
+    networks:
+      - mythfood-network
 
 volumes:
   postgres_data:
     name: mythfood_postgres_data
   redis_data:
     name: mythfood_redis_data
+  upload_data:
+    name: mythfood_upload_data
   # zookeeper_data:
   #   name: mythfood_zookeeper_data
   # kafka_data:

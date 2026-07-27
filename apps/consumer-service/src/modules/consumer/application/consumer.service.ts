@@ -170,4 +170,60 @@ export class ConsumerService {
     await this.repository.save(consumer);
     return Result.ok(consumer);
   }
+
+  // ---- B10: Update Address (FIX #16: in-place update) ----
+  async updateAddress(
+    consumerId: string,
+    addressId: string,
+    props: {
+      label?: string;
+      fullAddress?: string;
+      city?: string;
+      district?: string;
+      ward?: string;
+      street?: string;
+      gps?: { latitude: number; longitude: number };
+      type?: string;
+    },
+  ): Promise<Result<Consumer, DomainError>> {
+    const consumer = await this.repository.findById(ConsumerId.from(consumerId));
+    if (!consumer) return Result.fail(new EntityNotFoundError("Consumer", consumerId));
+    const result = consumer.updateAddress(addressId, {
+      label: props.label,
+      fullAddress: props.fullAddress,
+      city: props.city,
+      district: props.district,
+      ward: props.ward,
+      street: props.street,
+      gps: props.gps,
+      type: props.type,
+    });
+    if (result.isFailure) return Result.fail(result.error);
+    await this.repository.save(consumer);
+    return Result.ok(consumer);
+  }
+
+  // ---- B10: Update Payment Method ----
+  async updatePaymentMethod(
+    consumerId: string,
+    pmId: string,
+    props: {
+      type: PaymentMethodType;
+      provider: string;
+      token: string;
+      lastFourDigits: string;
+      expiryDate?: Date;
+    },
+  ): Promise<Result<Consumer, DomainError>> {
+    const consumer = await this.repository.findById(ConsumerId.from(consumerId));
+    if (!consumer) return Result.fail(new EntityNotFoundError("Consumer", consumerId));
+    const r = consumer.removePaymentMethod(pmId);
+    if (r.isFailure) return Result.fail(r.error);
+    const mr = PaymentMethod.create(props);
+    if (mr.isFailure) return Result.fail(mr.error);
+    const addR = consumer.addPaymentMethod(mr.value);
+    if (addR.isFailure) return Result.fail(addR.error);
+    await this.repository.save(consumer);
+    return Result.ok(consumer);
+  }
 }

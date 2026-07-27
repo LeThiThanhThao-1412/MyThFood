@@ -135,6 +135,33 @@ export class Address extends ValueObject<AddressProps> {
     return Result.ok(new Address({ ...this.props, label }));
   }
 
+  /**
+   * FIX #16: Create a new Address with updated fields while preserving the original ID.
+   * Enables in-place update on consumer aggregate without delete+create pattern.
+   */
+  public withUpdatedFields(updates: {
+    label?: string;
+    fullAddress?: string;
+    city?: string;
+    district?: string;
+    ward?: string;
+    street?: string;
+    gps?: GpsCoordinates;
+    type?: AddressType;
+  }): Address {
+    return new Address({
+      ...this.props,
+      label: updates.label ?? (this.props.label as string),
+      fullAddress: updates.fullAddress ?? (this.props.fullAddress as string),
+      city: updates.city ?? (this.props.city as string),
+      district: updates.district ?? (this.props.district as string),
+      ward: updates.ward ?? (this.props.ward as string),
+      street: updates.street ?? (this.props.street as string),
+      gps: (updates.gps ?? this.props.gps) as GpsCoordinates | null,
+      type: updates.type ?? (this.props.type as AddressType),
+    });
+  }
+
   // Getters
   get id(): AddressId {
     return this.props.id as AddressId;

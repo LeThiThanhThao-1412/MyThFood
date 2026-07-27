@@ -32,6 +32,8 @@ const MAX_MATCHING_ATTEMPTS = 3;
 export class Dispatch extends AggregateRoot<DispatchId> {
   private _orderId: string;
   private _merchantId: string;
+  private _merchantLatitude: number;
+  private _merchantLongitude: number;
   private _deliveryAddress: string;
   private _deliveryLatitude: number;
   private _deliveryLongitude: number;
@@ -71,6 +73,8 @@ export class Dispatch extends AggregateRoot<DispatchId> {
     super(id);
     this._orderId = props.orderId;
     this._merchantId = props.merchantId;
+    this._merchantLatitude = (props as any).merchantLatitude ?? 10.77;
+    this._merchantLongitude = (props as any).merchantLongitude ?? 106.7;
     this._deliveryAddress = props.deliveryAddress;
     this._deliveryLatitude = props.deliveryLatitude;
     this._deliveryLongitude = props.deliveryLongitude;
@@ -137,6 +141,8 @@ export class Dispatch extends AggregateRoot<DispatchId> {
     props: {
       orderId: string;
       merchantId: string;
+      merchantLatitude?: number;
+      merchantLongitude?: number;
       deliveryAddress: string;
       deliveryLatitude: number;
       deliveryLongitude: number;
@@ -416,6 +422,12 @@ export class Dispatch extends AggregateRoot<DispatchId> {
   }
   get dispatchMerchantId(): string {
     return this._merchantId;
+  }
+  get dispatchMerchantLatitude(): number {
+    return this._merchantLatitude;
+  }
+  get dispatchMerchantLongitude(): number {
+    return this._merchantLongitude;
   }
   get dispatchDeliveryAddress(): string {
     return this._deliveryAddress;

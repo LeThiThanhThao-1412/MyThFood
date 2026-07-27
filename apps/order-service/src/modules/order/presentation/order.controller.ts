@@ -141,6 +141,33 @@ export class OrderController {
     return this.toOrderResponse(order);
   }
 
+  // ===================== Review (B6) =====================
+
+  @Post(":id/review")
+  async addReview(
+    @Param("id") id: string,
+    @Body() body: { rating: number; comment?: string; tags?: string[] },
+  ): Promise<any> {
+    return this.orderService.addReview(id, body);
+  }
+
+  // ===================== Timeline (B6) =====================
+
+  @Get(":id/timeline")
+  async getTimeline(@Param("id") id: string): Promise<any> {
+    return this.orderService.getTimeline(id);
+  }
+
+  // ===================== Stats Daily (B6) =====================
+
+  @Get("stats/daily")
+  async getDailyStats(
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+  ): Promise<any> {
+    return this.orderService.getDailyStats(startDate, endDate);
+  }
+
   // ===================== Delete =====================
 
   @Delete(":id")

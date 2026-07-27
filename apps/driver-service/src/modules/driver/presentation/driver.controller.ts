@@ -21,7 +21,7 @@ import {
   UpdateFatigueDto,
 } from "../application/dtos/driver.dto";
 
-@Controller("api/v1/drivers")
+@Controller("drivers")
 @UseGuards(AuthGuard("jwt"))
 export class DriverController {
   constructor(private readonly driverService: DriverService) {}
@@ -190,6 +190,23 @@ export class DriverController {
   async endShift(@Param("id") id: string) {
     const driver = await this.driverService.endShift(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  // ---- Earnings & Stats (B4) ----
+
+  @Get("stats")
+  async getDriverStats() {
+    const stats = await this.driverService.getDriverStats();
+    return { statusCode: HttpStatus.OK, data: stats };
+  }
+
+  @Get(":id/earnings")
+  async getEarnings(
+    @Param("id") id: string,
+    @Query("period") period?: string,
+  ) {
+    const earnings = await this.driverService.getEarnings(id, period || "today");
+    return { statusCode: HttpStatus.OK, data: earnings };
   }
 
   // ---- Helper ----

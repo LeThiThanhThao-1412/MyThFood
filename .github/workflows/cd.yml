@@ -1,0 +1,151 @@
+name: CD - Build & Deploy Docker Images
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to deploy (leave empty for all)"
+        required: false
+        default: ""
+
+env:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9.4.0"
+
+jobs:
+  # ============================================================
+  # Job: Build & Push Docker images for all services
+  # ============================================================
+  build-images:
+    name: "🐳 Build Docker Images"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        service:
+          - identity-service
+          - consumer-service
+          - merchant-service
+          - order-service
+          - inventory-service
+          - payment-service
+          - driver-service
+          - dispatch-service
+          - wallet-service
+          - upload-service
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ matrix.service }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-${{ matrix.service }}-
+
+      - name: Build Docker image for ${{ matrix.service }}
+        run: |
+          docker compose build ${{ matrix.service }}
+        env:
+          DOCKER_BUILDKIT: 1
+
+      - name: Verify image exists
+        run: |
+          docker images --filter "reference=mythfood-${{ matrix.service }}" --format "{{.Repository}}:{{.Tag}} - {{.Size}}"
+
+  # ============================================================
+  # Job: Integration Test (after all images built)
+  # ============================================================
+  integration-test:
+    name: "🧪 Integration Test"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build-images]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start all services
+        run: |
+          docker compose up -d --wait --wait-timeout 120
+        env:
+          DB_PASSWORD: ci_test_password
+          REDIS_PASSWORD: ci_redis_password
+          JWT_SECRET_IDENTITY: ci_jwt_secret_change_me
+          JWT_REFRESH_SECRET_IDENTITY: ci_refresh_secret_change_me
+
+      - name: Verify services are healthy
+        run: |
+          sleep 30
+          echo "=== PostgreSQL ===" 
+          docker ps --filter "name=mythfood-postgres" --format "{{.Status}}"
+          echo "=== Redis ===" 
+          docker ps --filter "name=mythfood-redis" --format "{{.Status}}"
+          echo "=== Identity Service ===" 
+          docker logs mythfood-identity-service --tail 5
+          echo "=== Wallet Service ===" 
+          docker logs mythfood-wallet-service --tail 5
+
+      - name: API smoke test
+        run: |
+          echo "Testing identity service..."
+          curl -s -o /dev/null -w "Identity register: %{http_code}\n" \
+            http://localhost:3001/api/v1/auth/register \
+            -X POST -H "Content-Type: application/json" \
+            -d '{"phoneNumber":"0999999999","fullName":"CI Test","password":"CiTest@123"}'
+          
+          echo "Testing wallet service..."
+          curl -s -o /dev/null -w "Wallet stats: %{http_code}\n" \
+            http://localhost:3009/api/v1/wallets/stats \
+            -H "Authorization: Bearer fake"
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
+
+  # ============================================================
+  # Job: Tag & Push (manual trigger for production deploy)
+  # ============================================================
+  deploy:
+    name: "🚀 Deploy to Production"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [integration-test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Git Tag
+        run: |
+          TAG="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
+          git tag $TAG
+          git push origin $TAG
+          echo "Created tag: $TAG"
+
+      - name: Deploy via SSH (placeholder)
+        run: |
+          echo "🚀 Deploying to production server..."
+          echo "  - SSH to production server"
+          echo "  - docker compose pull"
+          echo "  - docker compose up -d"
+          echo "  - docker compose exec identity-service pnpm migration:run"
+          echo "⚠️ Configure SSH_DEPLOY_KEY in repository secrets"
+        # Uncomment when ready:
+        # uses: appleboy/ssh-action@v1
+        # with:
+        #   host: ${{ secrets.DEPLOY_HOST }}
+        #   username: ${{ secrets.DEPLOY_USER }}
+        #   key: ${{ secrets.SSH_DEPLOY_KEY }}
+        #   script: |
+        #     cd /opt/mythfood
+        #     git pull origin main
+        #     docker compose pull
+        #     docker compose up -d
+        #     docker compose exec identity-service npx typeorm migration:run

@@ -22,12 +22,9 @@ import {
   AssignDriverDto,
   SplitAndCompletePaymentDto,
   RefundPaymentDto,
-  WalletWithdrawalDto,
   CreateConnectedAccountDto,
   PaymentResponseDto,
   PaymentQueryDto,
-  WalletResponseDto,
-  WalletTransactionResponseDto,
 } from "../application/dtos/payment.dto";
 
 @Controller("payments")
@@ -116,37 +113,6 @@ export class PaymentController {
     return this.paymentService.refund(id, dto.reason, dto.refundAmount);
   }
 
-  // ===================== Wallet Operations =====================
-
-  @Get("wallet/:ownerId")
-  @UseGuards(AuthGuard("jwt"))
-  async getWallet(
-    @Param("ownerId") ownerId: string,
-  ): Promise<WalletResponseDto | null> {
-    return this.paymentService.getWallet(ownerId);
-  }
-
-  @Get("wallet/:walletId/transactions")
-  @UseGuards(AuthGuard("jwt"))
-  async getWalletTransactions(
-    @Param("walletId") walletId: string,
-  ): Promise<WalletTransactionResponseDto[]> {
-    return this.paymentService.getWalletTransactions(walletId);
-  }
-
-  @Post("wallet/withdraw")
-  @UseGuards(AuthGuard("jwt"))
-  async withdrawFromWallet(
-    @Body() dto: WalletWithdrawalDto,
-  ): Promise<{ payoutId: string; newBalance: number }> {
-    return this.paymentService.withdrawFromWallet({
-      ownerId: dto.ownerId,
-      ownerType: dto.ownerType,
-      amount: dto.amount,
-      stripeAccountId: dto.stripeAccountId,
-    });
-  }
-
   // ===================== Stripe Connected Accounts =====================
 
   @Post("stripe/connected-account")
@@ -221,6 +187,17 @@ export class PaymentController {
   @UseGuards(AuthGuard("jwt"))
   async findById(@Param("id") id: string): Promise<PaymentResponseDto> {
     return this.paymentService.findById(id);
+  }
+
+  // ===================== Stats Daily (B8) =====================
+
+  @Get("stats/daily")
+  @UseGuards(AuthGuard("jwt"))
+  async getDailyStats(
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+  ) {
+    return this.paymentService.getDailyStats(startDate, endDate);
   }
 
   // ===================== Delete =====================

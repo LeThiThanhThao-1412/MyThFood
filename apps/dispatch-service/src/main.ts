@@ -24,6 +24,7 @@ async function bootstrap() {
     }),
   );
 
+  app.setGlobalPrefix("api/v1");
   await app.listen(port);
   console.log(`🚛 Dispatch Service running at http://localhost:${port}`);
   console.log(`📍 API Base: http://localhost:${port}/api/v1/dispatches`);

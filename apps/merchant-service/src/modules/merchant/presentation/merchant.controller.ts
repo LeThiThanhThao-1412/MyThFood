@@ -195,6 +195,30 @@ export class MerchantController {
     return this.merchantService.getCapacityStatus(id);
   }
 
+  // ===================== Stats & Reviews (B7) =====================
+
+  @Get(":id/stats")
+  async getMerchantStats(
+    @Param("id") id: string,
+    @Query("period") period?: string,
+  ) {
+    return this.merchantService.getStats(id, period || "today");
+  }
+
+  @Get(":id/reviews")
+  async getMerchantReviews(
+    @Param("id") id: string,
+    @Query("skip") skip?: string,
+    @Query("take") take?: string,
+    @Query("rating") rating?: string,
+  ) {
+    return this.merchantService.getReviews(id, {
+      skip: skip ? parseInt(skip, 10) : 0,
+      take: take ? parseInt(take, 10) : 20,
+      rating: rating ? parseInt(rating, 10) : undefined,
+    });
+  }
+
   // ===================== Mapping Helpers =====================
 
   private toMerchantResponse(merchant: Merchant): MerchantResponseDto {

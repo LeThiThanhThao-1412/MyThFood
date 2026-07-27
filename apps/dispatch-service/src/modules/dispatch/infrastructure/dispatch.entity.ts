@@ -20,6 +20,12 @@ export class DispatchEntity {
   @Index("idx_dispatch_merchant_id")
   merchantId!: string;
 
+  @Column({ type: "double precision", default: 10.77 })
+  merchantLatitude!: number;
+
+  @Column({ type: "double precision", default: 106.7 })
+  merchantLongitude!: number;
+
   @Column({ type: "text" })
   deliveryAddress!: string;
 

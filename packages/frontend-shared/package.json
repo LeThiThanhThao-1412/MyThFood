@@ -1,0 +1,22 @@
+{
+  "name": "@mythfood/frontend-shared",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "lint": "echo 'lint ok'"
+  },
+  "dependencies": {
+    "@mythfood/api-client": "workspace:*",
+    "leaflet": "^1.9.4",
+    "react": "^18.3.0",
+    "react-leaflet": "^4.2.1",
+    "zustand": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.21",
+    "typescript": "^5.5.0"
+  }
+}

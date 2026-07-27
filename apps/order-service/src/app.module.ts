@@ -4,6 +4,7 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { CqrsModule } from "@nestjs/cqrs";
 import { databaseConfig } from "./config/database.config";
 import { OrderModule } from "./modules/order/order.module";
+import { ShippingModule } from "./modules/shipping/shipping.module";
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { OrderModule } from "./modules/order/order.module";
     }),
     CqrsModule.forRoot(),
     OrderModule,
+    ShippingModule,
   ],
 })
 export class AppModule {}

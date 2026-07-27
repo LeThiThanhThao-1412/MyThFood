@@ -1,115 +1,103 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository as TypeOrmRepo } from "typeorm";
-import { v4 as uuidv4 } from "uuid";
-import { IRepository } from "@mythfood/shared-kernel";
-import { Wallet, OwnerType } from "../domain/wallet.aggregate";
-import { WalletId } from "../domain/wallet-id";
+import { Repository } from "typeorm";
+import { randomUUID } from "crypto";
 import { WalletEntity } from "./wallet.entity";
-import { WalletMapper } from "./wallet.mapper";
-import {
-  WalletTransactionEntity,
-  WalletTransactionType,
-} from "./wallet-transaction.entity";
+import { WalletTransactionEntity } from "./wallet-transaction.entity";
+import { Wallet } from "../domain/wallet.aggregate";
+
+export { WalletTransactionEntity };
 
 @Injectable()
-export class WalletRepository implements IRepository<Wallet, WalletId> {
+export class WalletRepository {
   constructor(
     @InjectRepository(WalletEntity)
-    private readonly walletRepo: TypeOrmRepo<WalletEntity>,
+    private readonly walletRepo: Repository<WalletEntity>,
     @InjectRepository(WalletTransactionEntity)
-    private readonly txRepo: TypeOrmRepo<WalletTransactionEntity>,
+    private readonly txRepo: Repository<WalletTransactionEntity>,
   ) {}
-
-  async save(aggregate: Wallet): Promise<void> {
-    const entity = WalletMapper.toPersistence(aggregate);
-    await this.walletRepo.save(entity);
-  }
-
-  async findById(id: WalletId): Promise<Wallet | null> {
-    const entity = await this.walletRepo.findOne({
-      where: { id: id.toString() },
-    });
-    if (!entity) return null;
-    return WalletMapper.toDomain(entity);
-  }
-
-  async findByIdOrFail(id: WalletId): Promise<Wallet> {
-    const wallet = await this.findById(id);
-    if (!wallet) throw new Error(`Wallet with id ${id.toString()} not found`);
-    return wallet;
-  }
 
   async findByOwnerId(ownerId: string): Promise<Wallet | null> {
     const entity = await this.walletRepo.findOne({ where: { ownerId } });
     if (!entity) return null;
-    return WalletMapper.toDomain(entity);
+    return this.entityToDomain(entity);
   }
 
-  async findByOwnerIdOrCreate(
-    ownerId: string,
-    ownerType: OwnerType,
-  ): Promise<Wallet> {
-    let wallet = await this.findByOwnerId(ownerId);
-    if (!wallet) {
-      const result = Wallet.create({ ownerId, ownerType });
-      if (result.isFailure) throw result.error;
-      wallet = result.value;
-      await this.save(wallet);
+  async findByOwnerIdOrCreate(ownerId: string, ownerType: string): Promise<Wallet> {
+    let entity = await this.walletRepo.findOne({ where: { ownerId, ownerType } });
+    if (!entity) {
+      const wallet = Wallet.create({ ownerId, ownerType });
+      entity = this.walletRepo.create({
+        id: wallet.id,
+        ownerId: wallet.walletOwnerId,
+        ownerType: wallet.walletOwnerType,
+        balance: wallet.walletBalance,
+        currency: wallet.walletCurrency,
+      });
+      await this.walletRepo.save(entity);
     }
-    return wallet;
+    return this.entityToDomain(entity);
+  }
+
+  async save(wallet: Wallet): Promise<void> {
+    const entity = this.domainToEntity(wallet);
+    await this.walletRepo.save(entity);
   }
 
   async recordTransaction(params: {
     walletId: string;
     ownerId: string;
     ownerType: string;
-    type: WalletTransactionType;
+    type: string;
     amount: number;
     balanceBefore: number;
     balanceAfter: number;
-    description?: string;
+    description: string;
     orderId?: string;
     stripeTransferId?: string;
     stripePayoutId?: string;
   }): Promise<void> {
-    const tx = new WalletTransactionEntity();
-    tx.id = uuidv4();
-    tx.walletId = params.walletId;
-    tx.ownerId = params.ownerId;
-    tx.ownerType = params.ownerType;
-    tx.type = params.type;
-    tx.amount = params.amount;
-    tx.balanceBefore = params.balanceBefore;
-    tx.balanceAfter = params.balanceAfter;
-    tx.description = params.description ?? null;
-    tx.orderId = params.orderId ?? null;
-    tx.stripeTransferId = params.stripeTransferId ?? null;
-    tx.stripePayoutId = params.stripePayoutId ?? null;
-    await this.txRepo.save(tx);
+    await this.txRepo.save({
+      id: randomUUID(),
+      walletId: params.walletId,
+      ownerId: params.ownerId,
+      ownerType: params.ownerType,
+      type: params.type,
+      amount: params.amount,
+      balanceBefore: params.balanceBefore,
+      balanceAfter: params.balanceAfter,
+      description: params.description,
+      orderId: params.orderId || null,
+      stripeTransferId: params.stripeTransferId || null,
+      stripePayoutId: params.stripePayoutId || null,
+      createdAt: new Date(),
+    } as any);
   }
 
-  async getTransactionsByWalletId(
-    walletId: string,
-  ): Promise<WalletTransactionEntity[]> {
+  async getTransactionsByWalletId(walletId: string): Promise<WalletTransactionEntity[]> {
     return this.txRepo.find({
       where: { walletId },
       order: { createdAt: "DESC" },
     });
   }
 
-  async exists(id: WalletId): Promise<boolean> {
-    const count = await this.walletRepo.count({
-      where: { id: id.toString() },
+  private entityToDomain(entity: WalletEntity): Wallet {
+    return Wallet.create({
+      id: entity.id,
+      ownerId: entity.ownerId,
+      ownerType: entity.ownerType,
+      balance: Number(entity.balance),
+      currency: entity.currency,
     });
-    return count > 0;
   }
 
-  async delete(aggregate: Wallet): Promise<void> {
-    await this.walletRepo.delete(aggregate.id.toString());
-  }
-
-  async deleteById(id: WalletId): Promise<void> {
-    await this.walletRepo.delete(id.toString());
+  private domainToEntity(wallet: Wallet): WalletEntity {
+    const entity = new WalletEntity();
+    entity.id = wallet.id;
+    entity.ownerId = wallet.walletOwnerId;
+    entity.ownerType = wallet.walletOwnerType;
+    entity.balance = wallet.walletBalance;
+    entity.currency = wallet.walletCurrency;
+    return entity;
   }
 }

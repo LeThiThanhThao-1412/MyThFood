@@ -1,45 +1,51 @@
 FROM node:20-alpine AS builder
-
 WORKDIR /app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
-
-# Copy root workspace files
-COPY pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
-COPY tsconfig.base.json ./
+COPY .npmrc ./
+COPY pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml ./
 COPY package.json ./
+COPY turbo.json ./
+COPY tsconfig.base.json ./
 
-# Copy packages
-COPY packages/shared-kernel ./packages/shared-kernel
-COPY packages/event-contracts ./packages/event-contracts
-COPY packages/common ./packages/common
+COPY packages/shared-kernel/package.json packages/shared-kernel/tsconfig.json packages/shared-kernel/
+COPY packages/event-contracts/package.json packages/event-contracts/tsconfig.json packages/event-contracts/
+COPY packages/common/package.json packages/common/tsconfig.json packages/common/
+COPY apps/order-service/package.json apps/order-service/tsconfig.json apps/order-service/tsconfig.build.json apps/order-service/nest-cli.json apps/order-service/
 
-# Copy order service
-COPY apps/order-service ./apps/order-service
+RUN npm install -g pnpm@9.4.0
+RUN pnpm install --frozen-lockfile --filter @mythfood/order-service --prod false
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+COPY packages/shared-kernel/src packages/shared-kernel/src/
+COPY packages/event-contracts/src packages/event-contracts/src/
+COPY packages/common/src packages/common/src/
+COPY apps/order-service/src apps/order-service/src/
 
-# Build shared packages
 RUN pnpm --filter @mythfood/shared-kernel build
 RUN pnpm --filter @mythfood/event-contracts build
 RUN pnpm --filter @mythfood/common build
-
-# Build order service
 RUN pnpm --filter @mythfood/order-service build
 
-FROM node:20-alpine AS runner
-
+FROM node:20-alpine AS production
 WORKDIR /app
 
-# Copy built artifacts
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/apps/order-service/dist ./apps/order-service/dist
-COPY --from=builder /app/apps/order-service/node_modules ./apps/order-service/node_modules
-COPY --from=builder /app/apps/order-service/package.json ./apps/order-service/package.json
+COPY --from=builder /app/pnpm-lock.yaml ./
+COPY --from=builder /app/pnpm-workspace.yaml ./
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/.npmrc ./
+
+COPY --from=builder /app/packages/shared-kernel/package.json packages/shared-kernel/
+COPY --from=builder /app/packages/shared-kernel/dist packages/shared-kernel/dist/
+COPY --from=builder /app/packages/event-contracts/package.json packages/event-contracts/
+COPY --from=builder /app/packages/event-contracts/dist packages/event-contracts/dist/
+COPY --from=builder /app/packages/common/package.json packages/common/
+COPY --from=builder /app/packages/common/dist packages/common/dist/
+COPY --from=builder /app/apps/order-service/package.json apps/order-service/
+COPY --from=builder /app/apps/order-service/dist apps/order-service/dist/
+
+RUN npm install -g pnpm@9.4.0
+RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
+RUN pnpm install --frozen-lockfile --filter @mythfood/order-service --prod
 
 EXPOSE 3004
-
 CMD ["node", "apps/order-service/dist/main.js"]

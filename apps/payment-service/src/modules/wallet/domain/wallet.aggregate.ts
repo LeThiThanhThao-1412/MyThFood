@@ -1,128 +1,63 @@
-import {
-  AggregateRoot,
-  Result,
-  DomainError,
-  BusinessRuleViolationError,
-} from "@mythfood/shared-kernel";
-import { WalletId } from "./wallet-id";
-import { WalletCreditedEvent } from "./events/wallet-credited.event";
-import { WalletDebitedEvent } from "./events/wallet-debited.event";
+import { randomUUID } from "crypto";
 
-export enum OwnerType {
-  MERCHANT = "MERCHANT",
-  DRIVER = "DRIVER",
-}
+export { OwnerType } from "./owner-type.enum";
 
 export interface WalletProps {
+  id?: string;
   ownerId: string;
-  ownerType: OwnerType;
-  balance: number;
-  currency: string;
+  ownerType: string;
+  balance?: number;
+  currency?: string;
 }
 
-export class Wallet extends AggregateRoot<WalletId> {
-  private ownerId: string;
-  private ownerType: OwnerType;
-  private balance: number;
-  private currency: string;
+export class Wallet {
+  readonly id: string;
+  readonly ownerId: string;
+  readonly ownerType: string;
+  private _balance: number;
+  readonly currency: string;
 
-  private constructor(id: WalletId, props: WalletProps) {
-    super(id);
+  private constructor(props: Required<WalletProps>) {
+    this.id = props.id!;
     this.ownerId = props.ownerId;
     this.ownerType = props.ownerType;
-    this.balance = props.balance;
-    this.currency = props.currency;
+    this._balance = props.balance!;
+    this.currency = props.currency!;
   }
 
-  // ===================== Factory Methods =====================
-
-  public static create(props: {
-    ownerId: string;
-    ownerType: OwnerType;
-    currency?: string;
-  }): Result<Wallet, DomainError> {
-    if (!props.ownerId?.trim()) {
-      return Result.fail(
-        new BusinessRuleViolationError("Owner ID is required"),
-      );
-    }
-    if (!Object.values(OwnerType).includes(props.ownerType)) {
-      return Result.fail(new BusinessRuleViolationError("Invalid owner type"));
-    }
-
-    const wallet = new Wallet(WalletId.create(), {
+  static create(props: WalletProps): Wallet {
+    return new Wallet({
+      id: props.id || randomUUID(),
       ownerId: props.ownerId,
       ownerType: props.ownerType,
-      balance: 0,
+      balance: props.balance || 0,
       currency: props.currency || "VND",
     });
-
-    return Result.ok(wallet);
   }
 
-  public static rehydrate(id: WalletId, props: WalletProps): Wallet {
-    return new Wallet(id, props);
+  get walletBalance(): number {
+    return this._balance;
   }
 
-  // ===================== Commands =====================
-
-  public credit(
-    amount: number,
-    orderId: string,
-    stripeTransferId: string,
-  ): void {
-    if (amount <= 0) {
-      throw new BusinessRuleViolationError("Credit amount must be positive");
-    }
-
-    this.balance += amount;
-    this.markUpdated();
-
-    this.addDomainEvent(
-      new WalletCreditedEvent(this.id, {
-        ownerId: this.ownerId,
-        ownerType: this.ownerType,
-        amount,
-        orderId,
-        stripeTransferId,
-      }),
-    );
+  credit(amount: number): void {
+    if (amount <= 0) throw new Error("Credit amount must be positive");
+    this._balance += amount;
   }
 
-  public debit(amount: number, stripePayoutId: string): void {
-    if (amount <= 0) {
-      throw new BusinessRuleViolationError("Debit amount must be positive");
-    }
-    if (amount > this.balance) {
-      throw new BusinessRuleViolationError(
-        `Insufficient balance: requested ${amount}, available ${this.balance}`,
-      );
-    }
-
-    this.balance -= amount;
-    this.markUpdated();
-
-    this.addDomainEvent(
-      new WalletDebitedEvent(this.id, {
-        ownerId: this.ownerId,
-        ownerType: this.ownerType,
-        amount,
-        stripePayoutId,
-      }),
-    );
+  debit(amount: number): void {
+    if (amount <= 0) throw new Error("Debit amount must be positive");
+    if (amount > this._balance) throw new Error("Insufficient balance");
+    this._balance -= amount;
   }
-
-  // ===================== Queries =====================
 
   get walletOwnerId(): string {
     return this.ownerId;
   }
-  get walletOwnerType(): OwnerType {
+
+  get walletOwnerType(): string {
     return this.ownerType;
   }
-  get walletBalance(): number {
-    return this.balance;
-  }
+
   get walletCurrency(): string {
     return this.currency;
   }

@@ -11,6 +11,8 @@ export class DispatchMapper {
     return Dispatch.rehydrate(DispatchId.from(entity.id), {
       orderId: entity.orderId,
       merchantId: entity.merchantId,
+      merchantLatitude: entity.merchantLatitude,
+      merchantLongitude: entity.merchantLongitude,
       deliveryAddress: entity.deliveryAddress,
       deliveryLatitude: entity.deliveryLatitude,
       deliveryLongitude: entity.deliveryLongitude,
@@ -35,6 +37,8 @@ export class DispatchMapper {
     entity.id = dispatch.id.value;
     entity.orderId = dispatch.dispatchOrderId;
     entity.merchantId = dispatch.dispatchMerchantId;
+    entity.merchantLatitude = dispatch.dispatchMerchantLatitude;
+    entity.merchantLongitude = dispatch.dispatchMerchantLongitude;
     entity.deliveryAddress = dispatch.dispatchDeliveryAddress;
     entity.deliveryLatitude = dispatch.dispatchDeliveryLatitude;
     entity.deliveryLongitude = dispatch.dispatchDeliveryLongitude;

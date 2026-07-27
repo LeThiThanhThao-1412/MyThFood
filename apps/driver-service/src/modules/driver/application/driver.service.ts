@@ -1,7 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import {
   BusinessRuleViolationError,
-  EntityNotFoundError,
 } from "@mythfood/shared-kernel";
 import { DriverRepository } from "../infrastructure/driver.repository";
 import { Driver } from "../domain/driver.aggregate";
@@ -36,12 +35,8 @@ export class DriverService {
     return this.driverRepo.findByIdOrFail(driverId);
   }
 
-  async getByUserId(userId: string): Promise<Driver> {
-    const driver = await this.driverRepo.findByUserId(userId);
-    if (!driver) {
-      throw new EntityNotFoundError("Driver", userId);
-    }
-    return driver;
+  async getByUserId(userId: string): Promise<Driver | null> {
+    return this.driverRepo.findByUserId(userId);
   }
 
   async getAll(filter?: {
@@ -186,5 +181,27 @@ export class DriverService {
     driver.endShift();
     await this.driverRepo.save(driver);
     return driver;
+  }
+
+  // ---- Earnings (B4) ----
+  async getEarnings(id: string, period: string): Promise<any> {
+    const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
+    return {
+      driverId: driver.id.toString(),
+      period,
+      totalEarnings: 0,
+      totalOrders: driver.driverTotalOrders ?? 0,
+      averagePerOrder: 0,
+    };
+  }
+
+  // ---- Stats (B4) ----
+  async getDriverStats(): Promise<any> {
+    const all = await this.driverRepo.findAll({});
+    return {
+      totalDrivers: all.length,
+      activeDrivers: all.filter((d) => d.driverStatus === "ACTIVE").length,
+      onlineDrivers: all.filter((d) => d.driverOnlineStatus === "ONLINE").length,
+    };
   }
 }

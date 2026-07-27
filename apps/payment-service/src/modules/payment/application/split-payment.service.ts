@@ -2,7 +2,6 @@ import { Injectable, Logger } from "@nestjs/common";
 import { StripeService } from "../../stripe/stripe.service";
 import { WalletRepository } from "../../wallet/infrastructure/wallet.repository";
 import { OwnerType } from "../../wallet/domain/wallet.aggregate";
-import { WalletTransactionType } from "../../wallet/infrastructure/wallet-transaction.entity";
 import { Payment } from "../domain/payment.aggregate";
 
 @Injectable()
@@ -117,17 +116,13 @@ export class SplitPaymentService {
         OwnerType.MERCHANT,
       );
       const balanceBefore = merchantWallet.walletBalance;
-      merchantWallet.credit(
-        merchantAmount,
-        payment.paymentOrderId,
-        merchantTransferId,
-      );
+      merchantWallet.credit(merchantAmount);
       await this.walletRepository.save(merchantWallet);
       await this.walletRepository.recordTransaction({
         walletId: merchantWallet.id.toString(),
         ownerId: payment.paymentMerchantId,
         ownerType: OwnerType.MERCHANT,
-        type: WalletTransactionType.CREDIT,
+        type: "CREDIT",
         amount: merchantAmount,
         balanceBefore,
         balanceAfter: merchantWallet.walletBalance,
@@ -147,18 +142,14 @@ export class SplitPaymentService {
           OwnerType.DRIVER,
         );
         const balanceBefore = driverWallet.walletBalance;
-        driverWallet.credit(
-          driverAmount,
-          payment.paymentOrderId,
-          driverTransferId,
-        );
+      driverWallet.credit(driverAmount);
         await this.walletRepository.save(driverWallet);
         await this.walletRepository.recordTransaction({
           walletId: driverWallet.id.toString(),
           ownerId: payment.paymentDriverId,
           ownerType: OwnerType.DRIVER,
-          type: WalletTransactionType.CREDIT,
-          amount: driverAmount,
+        type: "CREDIT",
+        amount: driverAmount,
           balanceBefore,
           balanceAfter: driverWallet.walletBalance,
           description: `Driver share for order ${payment.paymentOrderId}`,
@@ -244,7 +235,7 @@ export class SplitPaymentService {
     });
 
     // Debit the wallet
-    wallet.debit(params.amount, payout.id);
+    wallet.debit(params.amount);
     await this.walletRepository.save(wallet);
 
     // Record transaction
@@ -252,7 +243,7 @@ export class SplitPaymentService {
       walletId: wallet.id.toString(),
       ownerId: params.ownerId,
       ownerType: params.ownerType,
-      type: WalletTransactionType.DEBIT,
+      type: "DEBIT",
       amount: params.amount,
       balanceBefore,
       balanceAfter: wallet.walletBalance,

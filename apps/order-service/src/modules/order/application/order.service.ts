@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotImplementedException } from "@nestjs/common";
 import { EventBus } from "@nestjs/cqrs";
 import { Order } from "../domain/order.aggregate";
 import { OrderId } from "../domain/order-id";
@@ -50,7 +50,6 @@ export class OrderService {
     const order = result.value;
     await this.orderRepository.save(order);
 
-    // Publish domain events
     const events = order.pullDomainEvents();
     for (const event of events) {
       this.eventBus.publish(event);
@@ -119,7 +118,6 @@ export class OrderService {
     for (const event of events) {
       this.eventBus.publish(event);
     }
-
     return order;
   }
 
@@ -132,7 +130,6 @@ export class OrderService {
     for (const event of events) {
       this.eventBus.publish(event);
     }
-
     return order;
   }
 
@@ -145,7 +142,6 @@ export class OrderService {
     for (const event of events) {
       this.eventBus.publish(event);
     }
-
     return order;
   }
 
@@ -154,11 +150,9 @@ export class OrderService {
     dto: StatusTransitionDto,
   ): Promise<Order> {
     const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
-
     if (!dto.driverId) {
       throw new Error("Driver ID is required for out-for-delivery transition");
     }
-
     order.markOutForDelivery(dto.driverId);
     await this.orderRepository.save(order);
 
@@ -166,7 +160,6 @@ export class OrderService {
     for (const event of events) {
       this.eventBus.publish(event);
     }
-
     return order;
   }
 
@@ -179,17 +172,14 @@ export class OrderService {
     for (const event of events) {
       this.eventBus.publish(event);
     }
-
     return order;
   }
 
   async cancel(id: string, dto: StatusTransitionDto): Promise<Order> {
     const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
-
     if (!dto.reason) {
       throw new Error("Cancellation reason is required");
     }
-
     order.cancel(dto.reason);
     await this.orderRepository.save(order);
 
@@ -197,17 +187,14 @@ export class OrderService {
     for (const event of events) {
       this.eventBus.publish(event);
     }
-
     return order;
   }
 
   async reject(id: string, dto: StatusTransitionDto): Promise<Order> {
     const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
-
     if (!dto.reason) {
       throw new Error("Rejection reason is required");
     }
-
     order.reject(dto.reason);
     await this.orderRepository.save(order);
 
@@ -215,8 +202,28 @@ export class OrderService {
     for (const event of events) {
       this.eventBus.publish(event);
     }
-
     return order;
+  }
+
+  // ===================== Review (FIX #10: throw NotImplementedException) =====================
+
+  async addReview(
+    _id: string,
+    _body: { rating: number; comment?: string; tags?: string[] },
+  ): Promise<any> {
+    throw new NotImplementedException("Review feature is not yet implemented. See issue #10.");
+  }
+
+  // ===================== Timeline (FIX #10) =====================
+
+  async getTimeline(_id: string): Promise<any> {
+    throw new NotImplementedException("Timeline feature is not yet implemented. See issue #10.");
+  }
+
+  // ===================== Stats Daily (FIX #10) =====================
+
+  async getDailyStats(_startDate?: string, _endDate?: string): Promise<any> {
+    throw new NotImplementedException("Daily stats feature is not yet implemented. See issue #10.");
   }
 
   // ===================== Delete =====================

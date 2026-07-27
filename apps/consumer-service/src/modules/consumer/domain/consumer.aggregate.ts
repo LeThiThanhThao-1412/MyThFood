@@ -114,6 +114,44 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     return Result.ok(undefined);
   }
 
+  /**
+   * FIX #16: Update an existing address in-place instead of delete+create.
+   * Preserves the original address ID and referential integrity.
+   */
+  public updateAddress(
+    addressId: string,
+    props: {
+      label?: string;
+      fullAddress?: string;
+      city?: string;
+      district?: string;
+      ward?: string;
+      street?: string;
+      gps?: { latitude: number; longitude: number };
+      type?: string;
+    },
+  ): Result<void, DomainError> {
+    const index = this.addresses.findIndex(
+      (a) => a.id.toString() === addressId,
+    );
+    if (index === -1) {
+      return Result.fail(new BusinessRuleViolationError("Address not found"));
+    }
+    const existing = this.addresses[index]!;
+    const updated = existing.withUpdatedFields({
+      label: props.label,
+      fullAddress: props.fullAddress,
+      city: props.city,
+      district: props.district,
+      ward: props.ward,
+      street: props.street,
+      type: props.type as "HOME" | "WORK" | "OTHER" | undefined,
+    });
+    this.addresses[index] = updated;
+    this.markUpdated();
+    return Result.ok(undefined);
+  }
+
   public addAddress(address: Address): Result<void, DomainError> {
     if (this.addresses.length >= 10) {
       return Result.fail(

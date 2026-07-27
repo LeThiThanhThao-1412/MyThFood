@@ -14,7 +14,7 @@ import {
 import { ConsumerService } from "../application/consumer.service";
 import { Consumer } from "../domain/consumer.aggregate";
 import { Address } from "../domain/address.vo";
-import { PaymentMethod } from "../domain/payment-method.vo";
+import { PaymentMethod, PaymentMethodType } from "../domain/payment-method.vo";
 import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
 import { CreateConsumerDto } from "../application/dtos/create-consumer.dto";
 import { UpdateConsumerProfileDto } from "../application/dtos/update-consumer-profile.dto";
@@ -162,7 +162,7 @@ export class ConsumerController {
     @Body() dto: CreatePaymentMethodDto,
   ) {
     const result = await this.consumerService.addPaymentMethod(id, {
-      type: dto.type as "CREDIT_CARD" | "DEBIT_CARD" | "E_WALLET",
+      type: dto.type as PaymentMethodType,
       provider: dto.provider,
       token: dto.token,
       lastFourDigits: dto.lastFourDigits,
@@ -208,6 +208,40 @@ export class ConsumerController {
         statusCode: HttpStatus.BAD_REQUEST,
         message: result.error.message,
       };
+    }
+    return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
+  }
+
+  // ---- B10: Update Address ----
+  @Put(":id/addresses/:addressId")
+  async updateAddress(
+    @Param("id") id: string,
+    @Param("addressId") addressId: string,
+    @Body() dto: CreateAddressDto,
+  ) {
+    const result = await this.consumerService.updateAddress(id, addressId, dto);
+    if (result.isFailure) {
+      return { statusCode: HttpStatus.BAD_REQUEST, message: result.error.message };
+    }
+    return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
+  }
+
+  // ---- B10: Update Payment Method ----
+  @Put(":id/payment-methods/:pmId")
+  async updatePaymentMethod(
+    @Param("id") id: string,
+    @Param("pmId") pmId: string,
+    @Body() dto: CreatePaymentMethodDto,
+  ) {
+    const result = await this.consumerService.updatePaymentMethod(id, pmId, {
+      type: dto.type as PaymentMethodType,
+      provider: dto.provider,
+      token: dto.token,
+      lastFourDigits: dto.lastFourDigits,
+      expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+    });
+    if (result.isFailure) {
+      return { statusCode: HttpStatus.BAD_REQUEST, message: result.error.message };
     }
     return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
   }

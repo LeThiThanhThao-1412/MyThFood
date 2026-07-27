@@ -184,4 +184,56 @@ export class DispatchService {
 
     return expiredCount;
   }
+
+  // ---- Nearby (B3) ----
+  async getNearbyDispatches(
+    lat: number,
+    lng: number,
+    radiusKm: number,
+  ): Promise<Dispatch[]> {
+    const matching = await this.dispatchRepo.findMatchingDispatches();
+    return matching.filter((d) => {
+      if (!d.dispatchDeliveryLatitude || !d.dispatchDeliveryLongitude) {
+        return false;
+      }
+      const distance = this._haversineDistance(
+        lat,
+        lng,
+        d.dispatchDeliveryLatitude,
+        d.dispatchDeliveryLongitude,
+      );
+      return distance <= radiusKm;
+    });
+  }
+
+  // ---- Location (B3) ----
+  async getDispatchLocation(id: string): Promise<any> {
+    const dispatch = await this.dispatchRepo.findByIdOrFail(DispatchId.from(id));
+    return {
+      dispatchId: dispatch.id.value,
+      status: dispatch.dispatchStatus,
+      driverId: dispatch.dispatchDriverId,
+      deliveryLatitude: dispatch.dispatchDeliveryLatitude,
+      deliveryLongitude: dispatch.dispatchDeliveryLongitude,
+    };
+  }
+
+  private _haversineDistance(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+  ): number {
+    const R = 6371; // Earth radius in km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
 }

@@ -23,7 +23,7 @@ import {
   QueryDispatchDto,
 } from "../application/dtos/dispatch.dto";
 
-@Controller("api/v1/dispatches")
+@Controller("dispatches")
 @UseGuards(AuthGuard("jwt"))
 export class DispatchController {
   constructor(private readonly dispatchService: DispatchService) {}
@@ -66,6 +66,45 @@ export class DispatchController {
       statusCode: HttpStatus.OK,
       data: dispatches.map((d) => this._toResponse(d)),
       total: dispatches.length,
+    };
+  }
+
+  // ---- Nearby (B3) ----
+  @Get("nearby")
+  async listNearby(
+    @Query("latitude") latitude: string,
+    @Query("longitude") longitude: string,
+    @Query("radiusKm") radiusKm?: string,
+  ) {
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+    const radius = radiusKm ? parseFloat(radiusKm) : 5;
+
+    if (isNaN(lat) || isNaN(lng)) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: "latitude and longitude are required",
+      };
+    }
+
+    const dispatches = await this.dispatchService.getNearbyDispatches(lat, lng, radius);
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        driverLocation: { latitude: lat, longitude: lng },
+        nearbyDispatches: dispatches.map((d) => this._toResponse(d)),
+        total: dispatches.length,
+      },
+    };
+  }
+
+  // ---- Location (B3) ----
+  @Get(":id/location")
+  async getDispatchLocation(@Param("id") id: string) {
+    const location = await this.dispatchService.getDispatchLocation(id);
+    return {
+      statusCode: HttpStatus.OK,
+      data: location,
     };
   }
 
