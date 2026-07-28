@@ -1,0 +1,592 @@
+{
+  "info": {
+    "name": "MyThFood - Full API Collection",
+    "description": "Complete API test collection for MyThFood (10 services). Generated after code review fixes (23/29 resolved).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "mythfood-code-review"
+  },
+  "variable": [
+    {
+      "key": "base_url_identity",
+      "value": "http://localhost:3001/api/v1"
+    },
+    {
+      "key": "base_url_consumer",
+      "value": "http://localhost:3002/api/v1"
+    },
+    {
+      "key": "base_url_merchant",
+      "value": "http://localhost:3003/api/v1"
+    },
+    {
+      "key": "base_url_order",
+      "value": "http://localhost:3004/api/v1"
+    },
+    {
+      "key": "base_url_inventory",
+      "value": "http://localhost:3005/api/v1"
+    },
+    {
+      "key": "base_url_payment",
+      "value": "http://localhost:3006/api/v1"
+    },
+    {
+      "key": "base_url_driver",
+      "value": "http://localhost:3007/api/v1"
+    },
+    {
+      "key": "base_url_dispatch",
+      "value": "http://localhost:3008/api/v1"
+    },
+    {
+      "key": "base_url_wallet",
+      "value": "http://localhost:3009/api/v1"
+    },
+    {
+      "key": "base_url_upload",
+      "value": "http://localhost:3010/api/v1"
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Identity Service (3001)",
+      "item": [
+        {
+          "name": "POST /auth/register - Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test('Status 201', () => pm.response.to.have.status(201));", "pm.test('Has user data', () => pm.response.json().data.id !== undefined);", "pm.test('Roles sanitized (FIX #19)', () => { const roles = pm.response.json().data.roles; pm.expect(roles).to.not.include('ADMIN'); });"],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"0910100010\",\n  \"fullName\": \"Test User\",\n  \"password\": \"Strong@Pass1\",\n  \"roles\": [\"ADMIN\"]\n}"
+            },
+            "url": {
+              "raw": "{{base_url_identity}}/auth/register",
+              "host": ["{{base_url_identity}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "POST /auth/register - Weak Password (FIX #13)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"0990000001\",\n  \"fullName\": \"Weak\",\n  \"password\": \"12345\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_identity}}/auth/register",
+              "host": ["{{base_url_identity}}"],
+              "path": ["auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "POST /auth/login - Login (FIX #7)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test('Status 200', () => pm.response.to.have.status(200));", "pm.test('Has refreshToken (FIX #7)', () => { const data = pm.response.json().data; pm.expect(data.refreshToken).to.exist; pm.environment.set('access_token', data.accessToken); });"],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"0910100010\",\n  \"password\": \"Strong@Pass1\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_identity}}/auth/login",
+              "host": ["{{base_url_identity}}"],
+              "path": ["auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "POST /auth/refresh - Refresh Token (FIX #7)",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_identity}}/auth/refresh",
+              "host": ["{{base_url_identity}}"],
+              "path": ["auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "POST /auth/change-password - Change Password (FIX #18)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Strong@Pass1\",\n  \"newPassword\": \"NewStrong@Pass2\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_identity}}/auth/change-password",
+              "host": ["{{base_url_identity}}"],
+              "path": ["auth", "change-password"]
+            }
+          }
+        },
+        {
+          "name": "GET /auth/me - Profile",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {
+              "raw": "{{base_url_identity}}/auth/me",
+              "host": ["{{base_url_identity}}"],
+              "path": ["auth", "me"]
+            }
+          }
+        },
+        {
+          "name": "GET /auth/users - Admin User List",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {
+              "raw": "{{base_url_identity}}/auth/users",
+              "host": ["{{base_url_identity}}"],
+              "path": ["auth", "users"]
+            }
+          }
+        },
+        {
+          "name": "PATCH /auth/users/:id/status - Update User Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url_identity}}/auth/users/:id/status",
+              "host": ["{{base_url_identity}}"],
+              "path": ["auth", "users", ":id", "status"],
+              "variable": [{"key": "id", "value": "user-uuid-here"}]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "🛒 Consumer Service (3002)",
+      "item": [
+        {
+          "name": "POST /consumers - Create Consumer Profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"userId\": \"user-uuid\",\n  \"fullName\": \"Consumer Name\"\n}"},
+            "url": {"raw": "{{base_url_consumer}}/consumers", "host": ["{{base_url_consumer}}"], "path": ["consumers"]}
+          }
+        },
+        {
+          "name": "GET /consumers/user/:userId - Get by UserId",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_consumer}}/consumers/user/:userId", "host": ["{{base_url_consumer}}"], "path": ["consumers", "user", ":userId"]}
+          }
+        },
+        {
+          "name": "GET /consumers/:id - Get by ID",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_consumer}}/consumers/:id", "host": ["{{base_url_consumer}}"], "path": ["consumers", ":id"]}
+          }
+        },
+        {
+          "name": "POST /consumers/:id/addresses - Add Address",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"label\": \"Home\",\n  \"fullAddress\": \"123 Main St\",\n  \"city\": \"HCM\",\n  \"district\": \"Quan 1\",\n  \"ward\": \"Ben Nghe\",\n  \"street\": \"Nguyen Hue\"\n}"},
+            "url": {"raw": "{{base_url_consumer}}/consumers/:id/addresses", "host": ["{{base_url_consumer}}"], "path": ["consumers", ":id", "addresses"]}
+          }
+        },
+        {
+          "name": "POST /consumers/:id/payment-methods - Add Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"type\": \"CREDIT_CARD\",\n  \"provider\": \"VISA\",\n  \"token\": \"tok_xxx\",\n  \"lastFourDigits\": \"4242\"\n}"},
+            "url": {"raw": "{{base_url_consumer}}/consumers/:id/payment-methods", "host": ["{{base_url_consumer}}"], "path": ["consumers", ":id", "payment-methods"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "🏪 Merchant Service (3003)",
+      "item": [
+        {
+          "name": "POST /merchants - Create Merchant",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"name\": \"My Restaurant\",\n  \"userId\": \"user-uuid\"\n}"},
+            "url": {"raw": "{{base_url_merchant}}/merchants", "host": ["{{base_url_merchant}}"], "path": ["merchants"]}
+          }
+        },
+        {
+          "name": "GET /merchants - List Merchants",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_merchant}}/merchants?skip=0&take=10", "host": ["{{base_url_merchant}}"], "path": ["merchants"], "query": [{"key": "skip", "value": "0"}, {"key": "take", "value": "10"}]}
+          }
+        },
+        {
+          "name": "GET /merchants/:id/menu - Get Menu",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_merchant}}/merchants/:id/menu", "host": ["{{base_url_merchant}}"], "path": ["merchants", ":id", "menu"]}
+          }
+        },
+        {
+          "name": "POST /merchants/:id/menu/items - Add Menu Item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"name\": \"Pho Bo\",\n  \"price\": 45000,\n  \"description\": \"Delicious beef pho\"\n}"},
+            "url": {"raw": "{{base_url_merchant}}/merchants/:id/menu/items", "host": ["{{base_url_merchant}}"], "path": ["merchants", ":id", "menu", "items"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "📦 Order Service (3004)",
+      "item": [
+        {
+          "name": "POST /orders - Place Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"consumerId\": \"consumer-uuid\",\n  \"merchantId\": \"merchant-uuid\",\n  \"orderType\": \"DELIVERY\",\n  \"items\": [{\"menuItemId\": \"item-uuid\", \"name\": \"Pho\", \"quantity\": 1, \"unitPrice\": 45000}],\n  \"deliveryFee\": 15000,\n  \"serviceFee\": 5000,\n  \"discount\": 0\n}"},
+            "url": {"raw": "{{base_url_order}}/orders", "host": ["{{base_url_order}}"], "path": ["orders"]}
+          }
+        },
+        {
+          "name": "GET /orders - List Orders",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_order}}/orders?skip=0&take=10", "host": ["{{base_url_order}}"], "path": ["orders"], "query": [{"key": "skip", "value": "0"}, {"key": "take", "value": "10"}]}
+          }
+        },
+        {
+          "name": "GET /orders/:id - Get Order",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_order}}/orders/:id", "host": ["{{base_url_order}}"], "path": ["orders", ":id"]}
+          }
+        },
+        {
+          "name": "PATCH /orders/:id/confirm - Confirm Order",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_order}}/orders/:id/confirm", "host": ["{{base_url_order}}"], "path": ["orders", ":id", "confirm"]}
+          }
+        },
+        {
+          "name": "PATCH /orders/:id/preparing - Start Preparing",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_order}}/orders/:id/preparing", "host": ["{{base_url_order}}"], "path": ["orders", ":id", "preparing"]}
+          }
+        },
+        {
+          "name": "PATCH /orders/:id/delivered - Mark Delivered",
+          "request": {
+            "method": "PATCH",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_order}}/orders/:id/delivered", "host": ["{{base_url_order}}"], "path": ["orders", ":id", "delivered"]}
+          }
+        },
+        {
+          "name": "PATCH /orders/:id/cancel - Cancel Order",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"reason\": \"Customer changed mind\"\n}"},
+            "url": {"raw": "{{base_url_order}}/orders/:id/cancel", "host": ["{{base_url_order}}"], "path": ["orders", ":id", "cancel"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "💳 Payment Service (3006)",
+      "item": [
+        {
+          "name": "POST /payments - Create Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"orderId\": \"order-uuid\",\n  \"consumerId\": \"consumer-uuid\",\n  \"merchantId\": \"merchant-uuid\",\n  \"amount\": 65000,\n  \"paymentMethod\": \"CREDIT_CARD\"\n}"},
+            "url": {"raw": "{{base_url_payment}}/payments", "host": ["{{base_url_payment}}"], "path": ["payments"]}
+          }
+        },
+        {
+          "name": "GET /payments - List Payments",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_payment}}/payments", "host": ["{{base_url_payment}}"], "path": ["payments"]}
+          }
+        },
+        {
+          "name": "GET /payments/:id - Get Payment",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_payment}}/payments/:id", "host": ["{{base_url_payment}}"], "path": ["payments", ":id"]}
+          }
+        },
+        {
+          "name": "POST /payments/stripe - Stripe Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"orderId\": \"order-uuid\",\n  \"consumerId\": \"consumer-uuid\",\n  \"merchantId\": \"merchant-uuid\",\n  \"amount\": 65000,\n  \"currency\": \"VND\",\n  \"paymentMethod\": \"CREDIT_CARD\"\n}"},
+            "url": {"raw": "{{base_url_payment}}/payments/stripe", "host": ["{{base_url_payment}}"], "path": ["payments", "stripe"]}
+          }
+        },
+        {
+          "name": "POST /payments/:id/complete - Complete Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"transactionId\": \"txn-123456\"\n}"},
+            "url": {"raw": "{{base_url_payment}}/payments/:id/complete", "host": ["{{base_url_payment}}"], "path": ["payments", ":id", "complete"]}
+          }
+        },
+        {
+          "name": "POST /payments/:id/refund - Refund Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"reason\": \"Order cancelled\",\n  \"refundAmount\": 65000\n}"},
+            "url": {"raw": "{{base_url_payment}}/payments/:id/refund", "host": ["{{base_url_payment}}"], "path": ["payments", ":id", "refund"]}
+          }
+        },
+        {
+          "name": "GET /payments/stripe/account - Create Stripe Account",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {"mode": "raw", "raw": "{\n  \"email\": \"merchant@example.com\"\n}"},
+            "url": {"raw": "{{base_url_payment}}/payments/stripe/account", "host": ["{{base_url_payment}}"], "path": ["payments", "stripe", "account"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "💼 Wallet Service (3009)",
+      "item": [
+        {
+          "name": "GET /wallets/:ownerId/wallet - Get Wallet Balance",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_wallet}}/wallets/:ownerId/wallet", "host": ["{{base_url_wallet}}"], "path": ["wallets", ":ownerId", "wallet"]}
+          }
+        },
+        {
+          "name": "POST /wallets/:ownerId/credit - Credit (Top-up)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"amount\": 1000000,\n  \"description\": \"Nạp tiền test\"\n}"},
+            "url": {"raw": "{{base_url_wallet}}/wallets/:ownerId/credit", "host": ["{{base_url_wallet}}"], "path": ["wallets", ":ownerId", "credit"]}
+          }
+        },
+        {
+          "name": "POST /wallets/:ownerId/debit - Debit (Withdraw)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"amount\": 50000,\n  \"description\": \"Rút tiền test\"\n}"},
+            "url": {"raw": "{{base_url_wallet}}/wallets/:ownerId/debit", "host": ["{{base_url_wallet}}"], "path": ["wallets", ":ownerId", "debit"]}
+          }
+        },
+        {
+          "name": "GET /wallets/:ownerId/cod-eligibility - COD Check",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_wallet}}/wallets/:ownerId/cod-eligibility", "host": ["{{base_url_wallet}}"], "path": ["wallets", ":ownerId", "cod-eligibility"]}
+          }
+        },
+        {
+          "name": "GET /wallets/stats - Wallet Stats (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_wallet}}/wallets/stats", "host": ["{{base_url_wallet}}"], "path": ["wallets", "stats"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "🚗 Driver Service (3007)",
+      "item": [
+        {
+          "name": "POST /drivers - Register Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"userId\": \"user-uuid\",\n  \"fullName\": \"Driver Name\",\n  \"licenseNumber\": \"LIC123456\"\n}"},
+            "url": {"raw": "{{base_url_driver}}/drivers", "host": ["{{base_url_driver}}"], "path": ["drivers"]}
+          }
+        },
+        {
+          "name": "GET /drivers - List Drivers",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_driver}}/drivers", "host": ["{{base_url_driver}}"], "path": ["drivers"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "🛵 Dispatch Service (3008)",
+      "item": [
+        {
+          "name": "POST /dispatches - Create Dispatch",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"orderId\": \"order-uuid\",\n  \"merchantId\": \"merchant-uuid\",\n  \"deliveryLatitude\": 10.762622,\n  \"deliveryLongitude\": 106.660172\n}"},
+            "url": {"raw": "{{base_url_dispatch}}/dispatches", "host": ["{{base_url_dispatch}}"], "path": ["dispatches"]}
+          }
+        },
+        {
+          "name": "GET /dispatches - List Dispatches",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "url": {"raw": "{{base_url_dispatch}}/dispatches", "host": ["{{base_url_dispatch}}"], "path": ["dispatches"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "📤 Upload Service (3010)",
+      "item": [
+        {
+          "name": "POST /upload - Upload File",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{access_token}}"}],
+            "body": {
+              "mode": "formdata",
+              "formdata": [{"key": "file", "type": "file", "src": "sample-image.jpg"}]
+            },
+            "url": {"raw": "{{base_url_upload}}/upload", "host": ["{{base_url_upload}}"], "path": ["upload"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "🏷 Inventory Service (3005)",
+      "item": [
+        {
+          "name": "POST /inventory - Create Inventory",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{access_token}}"}
+            ],
+            "body": {"mode": "raw", "raw": "{\n  \"merchantId\": \"merchant-uuid\",\n  \"menuItemId\": \"item-uuid\",\n  \"availableStock\": 100\n}"},
+            "url": {"raw": "{{base_url_inventory}}/inventory", "host": ["{{base_url_inventory}}"], "path": ["inventory"]}
+          }
+        }
+      ]
+    }
+  ]
+}
