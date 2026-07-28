@@ -190,7 +190,6 @@ pnpm test
 ## 🔗 Links
 
 - **GitHub:** [github.com/LeThiThanhThao-1412/MyThFood](https://github.com/LeThiThanhThao-1412/MyThFood)
-- **Portfolio CV:** [`test/CV-CONTENT.md`](test/CV-CONTENT.md)
 - **Test Documents:** [`test/`](test/)
 
 ---
