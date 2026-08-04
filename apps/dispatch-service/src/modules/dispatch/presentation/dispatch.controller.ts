@@ -8,6 +8,7 @@ import {
   Param,
   Body,
   Query,
+  Headers,
   HttpCode,
   HttpStatus,
   UseGuards,
@@ -167,8 +168,24 @@ export class DispatchController {
   // ---- Matching Engine ----
 
   @Patch(":id/assign-driver")
-  async assignDriver(@Param("id") id: string, @Body() dto: AssignDriverDto) {
-    const dispatch = await this.dispatchService.assignDriver(id, dto);
+  async assignDriver(
+    @Param("id") id: string,
+    @Body() dto: AssignDriverDto,
+    @Headers("authorization") authHeader?: string,
+    @Query("isCodOrder") isCodOrderQuery?: string,
+  ) {
+    // Extract token from "Bearer <token>"
+    const authToken = authHeader?.startsWith("Bearer ")
+      ? authHeader.substring(7)
+      : authHeader;
+    const isCodOrder = isCodOrderQuery === "true" || isCodOrderQuery === "1";
+
+    const dispatch = await this.dispatchService.assignDriver(
+      id,
+      dto,
+      isCodOrder,
+      authToken,
+    );
     return {
       statusCode: HttpStatus.OK,
       data: this._toResponse(dispatch),

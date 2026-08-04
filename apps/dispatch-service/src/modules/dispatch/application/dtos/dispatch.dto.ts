@@ -25,6 +25,14 @@ export class CreateDispatchDto {
 
   @IsNumber()
   deliveryLongitude!: number;
+
+  @IsOptional()
+  @IsNumber()
+  merchantLatitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  merchantLongitude?: number;
 }
 
 export class UpdateDispatchNotesDto {

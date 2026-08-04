@@ -5,17 +5,13 @@ import { PaymentRepository } from "./infrastructure/payment.repository";
 import { PaymentService } from "./application/payment.service";
 import { SplitPaymentService } from "./application/split-payment.service";
 import { PaymentController } from "./presentation/payment.controller";
-import { WalletEntity } from "../wallet/infrastructure/wallet.entity";
-import { WalletTransactionEntity } from "../wallet/infrastructure/wallet-transaction.entity";
-import { WalletRepository } from "../wallet/infrastructure/wallet.repository";
-import { WalletService } from "../wallet/application/wallet.service";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([PaymentEntity, WalletEntity, WalletTransactionEntity]),
+    TypeOrmModule.forFeature([PaymentEntity]),
   ],
   controllers: [PaymentController],
-  providers: [PaymentRepository, PaymentService, SplitPaymentService, WalletRepository, WalletService],
+  providers: [PaymentRepository, PaymentService, SplitPaymentService],
   exports: [PaymentService],
 })
 export class PaymentModule {}

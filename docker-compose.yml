@@ -206,8 +206,8 @@ services:
       DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
       JWT_SECRET: ${JWT_SECRET_PAYMENT:-dev_jwt_secret_change_me}
       JWT_EXPIRATION: 1h
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
     depends_on:
       postgres:
         condition: service_healthy
@@ -289,8 +289,8 @@ services:
       DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
       JWT_SECRET: ${JWT_SECRET_WALLET:-dev_jwt_secret_change_me}
       JWT_EXPIRATION: 1h
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
       STRIPE_API_VERSION: ${STRIPE_API_VERSION:-2023-10-16}
     depends_on:
       postgres:

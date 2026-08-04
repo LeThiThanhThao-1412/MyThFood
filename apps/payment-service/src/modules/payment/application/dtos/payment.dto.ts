@@ -9,7 +9,6 @@ import {
 } from "class-validator";
 import { Type } from "class-transformer";
 import { PaymentMethod, PaymentStatus } from "../../domain/payment.aggregate";
-import { OwnerType } from "../../../wallet/domain/wallet.aggregate";
 
 export class CreatePaymentDto {
   @IsUUID("4")
@@ -73,9 +72,9 @@ export class WalletWithdrawalDto {
   @IsNotEmpty()
   ownerId!: string;
 
-  @IsEnum(OwnerType)
+  @IsString()
   @IsNotEmpty()
-  ownerType!: OwnerType;
+  ownerType!: string;
 
   @IsNumber()
   @Min(1)

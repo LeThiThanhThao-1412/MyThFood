@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { driverApi, orderApi } from '@mythfood/api-client';
+import { driverApi, orderApi, walletApi } from '@mythfood/api-client';
 import { useAuthStore } from '@mythfood/frontend-shared';
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -73,13 +73,58 @@ export default function DriverDashboardPage() {
     } catch { /* ignore */ }
   }
 
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [codEligible, setCodEligible] = useState(false);
+  const [codCheckLoading, setCodCheckLoading] = useState(false);
+
+  // Check COD eligibility when driver loads
+  useEffect(() => {
+    if (!driver) return;
+    async function checkWallet() {
+      try {
+        const eligibility = await walletApi.checkCodEligibility(driver.id);
+        setWalletBalance(eligibility.balance || 0);
+        setCodEligible(eligibility.eligible || false);
+      } catch { /* wallet service unavailable - assume not eligible */ }
+    }
+    checkWallet();
+  }, [driver]);
+
   async function acceptOrder(orderId: string) {
     if (!driver) return;
+    setCodCheckLoading(true);
     try {
+      // Re-check COD eligibility before accepting
+      let eligible = codEligible;
+      try {
+        const eligibility = await walletApi.checkCodEligibility(driver.id);
+        eligible = eligibility.eligible || false;
+        setWalletBalance(eligibility.balance || 0);
+        setCodEligible(eligible);
+      } catch {
+        // If wallet service unavailable, REJECT (fail-safe)
+        alert('⚠️ Không thể kiểm tra số dư ví. Vui lòng thử lại sau.');
+        return;
+      }
+
+      if (!eligible) {
+        const required = 2_000_000;
+        const deficit = required - walletBalance;
+        alert(
+          `⚠️ Số dư ví không đủ để nhận đơn COD!\n\n` +
+          `💰 Số dư hiện tại: ${walletBalance.toLocaleString('vi-VN')}₫\n` +
+          `📌 Yêu cầu tối thiểu: ${required.toLocaleString('vi-VN')}₫\n` +
+          `💸 Cần nạp thêm: ${deficit.toLocaleString('vi-VN')}₫\n\n` +
+          `Vui lòng nạp thêm tiền vào ví trước khi nhận đơn.`
+        );
+        return;
+      }
+
       await orderApi.outForDelivery(orderId, { driverId: driver.id });
       setAvailableOrders(availableOrders.filter(o => o.id !== orderId));
       router.push(`/delivery/${orderId}`);
     } catch { /* ignore */ }
+    finally { setCodCheckLoading(false); }
   }
 
   async function declineOrder(orderId: string) {

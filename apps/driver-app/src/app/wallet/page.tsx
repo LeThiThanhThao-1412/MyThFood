@@ -20,6 +20,9 @@ import { loadStripe } from '@stripe/stripe-js';
 import { useAuthStore } from '@mythfood/frontend-shared';
 import { driverApi, orderApi, walletApi } from '@mythfood/api-client';
 
+const MIN_COD_BALANCE = 2_000_000;
+const MIN_WITHDRAW = 50_000;
+
 function toNum(v: unknown): number {
   if (typeof v === 'number') return v;
   if (typeof v === 'string') return parseFloat(v) || 0;
@@ -70,11 +73,9 @@ function StripeTopupForm({
     setProcessing(true);
 
     try {
-      // Topup via backend wallet API
       const result = await walletApi.topup(ownerId, 'DRIVER', amount);
       onSuccess(result.balance);
     } catch (err: any) {
-      // Backend may return error — try direct call
       try {
         const result = await walletApi.topup(ownerId, 'DRIVER', amount);
         onSuccess(result.balance);
@@ -131,7 +132,6 @@ export default function DriverWalletPage() {
   const { isAuthenticated, user, clearAuth } = useAuthStore();
   const [driver, setDriver] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'credit' | 'income'>('credit');
 
   const [topupAmount, setTopupAmount] = useState('');
   const [topupStatus, setTopupStatus] = useState('');
@@ -139,7 +139,7 @@ export default function DriverWalletPage() {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawStatus, setWithdrawStatus] = useState('');
 
-  // Real wallet data from backend
+  // Real wallet data from wallet-service
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletTx, setWalletTx] = useState<any[]>([]);
   const [allOrders, setAllOrders] = useState<any[]>([]);
@@ -153,7 +153,7 @@ export default function DriverWalletPage() {
         setDriver(d);
 
         if (d?.id) {
-          // Load wallet from backend
+          // Load wallet from wallet-service
           try {
             const wallet = await walletApi.getWallet(d.id, 'DRIVER');
             setWalletBalance(wallet.balance);
@@ -173,10 +173,10 @@ export default function DriverWalletPage() {
 
   const activeCODOrders = allOrders.filter(o => o.status === 'OUT_FOR_DELIVERY' || o.status === 'READY_FOR_PICKUP');
   const holdAmount = activeCODOrders.reduce((sum, o) => sum + toNum(o.totalAmount), 0);
+  const availableBalance = Math.max(0, walletBalance - holdAmount);
 
-  // Income = from wallet balance (settlement) + computed from orders
   const deliveredOrders = allOrders.filter(o => o.status === 'DELIVERED');
-  const incomeFromOrders = deliveredOrders.reduce((sum, o) => sum + Math.round(toNum(o.deliveryFee || 15000) * 0.75), 0);
+  const incomeFromDelivered = deliveredOrders.reduce((sum, o) => sum + Math.round(toNum(o.deliveryFee || 15000) * 0.75), 0);
 
   if (loading) {
     return (
@@ -198,153 +198,150 @@ export default function DriverWalletPage() {
         </div>
       </header>
 
-      <div className="flex mx-4 mt-4 bg-white rounded-2xl p-1.5 shadow-sm max-w-md lg:max-w-lg lg:mx-auto">
-        {[{ key: 'credit' as const, icon: '💳', label: 'Ví tín dụng' }, { key: 'income' as const, icon: '💵', label: 'Ví thu nhập' }].map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${tab === t.key ? 'bg-[#ff6b35] text-white shadow-md' : 'text-gray-500'}`}>
-            {t.icon} {t.label}
-          </button>
-        ))}
-      </div>
-
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5">
-        {tab === 'credit' && (
-          <>
-            <div className="bg-gradient-to-br from-[#1a1a2e] to-[#2d2d44] rounded-2xl p-6 text-white">
-              <p className="text-sm text-white/60">Số dư ví tín dụng</p>
-              <p className="text-3xl font-extrabold mt-1">{walletBalance.toLocaleString('vi-VN')}₫</p>
-              <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-white/10">
-                <div><p className="text-xs text-white/50">Khả dụng</p><p className="text-lg font-bold text-[#2ecc71]">{Math.max(0, walletBalance - holdAmount).toLocaleString('vi-VN')}₫</p></div>
-                <div><p className="text-xs text-white/50">Đang giữ COD</p><p className="text-lg font-bold text-[#e67e22]">{holdAmount.toLocaleString('vi-VN')}₫</p></div>
-              </div>
+
+        {/* ─── Balance Card ─── */}
+        <div className="bg-gradient-to-br from-[#1a1a2e] to-[#2d2d44] rounded-2xl p-6 text-white">
+          <p className="text-sm text-white/60">Số dư ví</p>
+          <p className="text-3xl font-extrabold mt-1">{walletBalance.toLocaleString('vi-VN')}₫</p>
+          <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-white/10">
+            <div>
+              <p className="text-xs text-white/50">Khả dụng</p>
+              <p className="text-lg font-bold text-[#2ecc71]">{availableBalance.toLocaleString('vi-VN')}₫</p>
             </div>
-
-            <div className="bg-[#fff7ed] rounded-2xl p-4 border border-orange-100 text-sm text-gray-600">
-              <p className="font-semibold text-[#ff6b35] mb-2">💡 Ví tín dụng:</p>
-              <ul className="space-y-1.5 list-disc pl-4">
-                <li>Nhận đơn COD → tiền bị <strong>đóng băng</strong></li>
-                <li>Giao thành công → tiền được <strong>giải phóng</strong></li>
-                <li className="text-red-500">⚠️ KHÔNG thể rút tiền từ ví này</li>
-              </ul>
+            <div>
+              <p className="text-xs text-white/50">Đang giữ COD</p>
+              <p className="text-lg font-bold text-[#e67e22]">{holdAmount.toLocaleString('vi-VN')}₫</p>
             </div>
+          </div>
+          {/* COD min balance indicator */}
+          <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-2">
+            <span className={`inline-block w-2 h-2 rounded-full ${walletBalance >= MIN_COD_BALANCE ? 'bg-[#2ecc71]' : 'bg-red-400'}`} />
+            <p className={`text-xs ${walletBalance >= MIN_COD_BALANCE ? 'text-white/60' : 'text-red-300'}`}>
+              {walletBalance >= MIN_COD_BALANCE
+                ? `✅ Đủ điều kiện nhận đơn COD (≥ ${MIN_COD_BALANCE.toLocaleString('vi-VN')}₫)`
+                : `⚠️ Cần nạp thêm ${(MIN_COD_BALANCE - walletBalance).toLocaleString('vi-VN')}₫ để nhận đơn COD`}
+            </p>
+          </div>
+        </div>
 
-            {showStripe && Number(topupAmount) >= 50000 ? (
-              <Elements stripe={getStripePromise()} options={{ appearance: { theme: 'stripe', variables: { colorPrimary: '#f97316', borderRadius: '12px' } } }}>
-                <StripeTopupForm
-                  amount={Number(topupAmount)}
-                  ownerId={driverId}
-                  onSuccess={(newBalance) => {
-                    setWalletBalance(newBalance);
-                    setShowStripe(false);
-                    setTopupStatus(`✅ Đã nạp ${Number(topupAmount).toLocaleString('vi-VN')}đ thành công!`);
-                    setTopupAmount('');
-                  }}
-                  onError={(msg) => { setTopupStatus('❌ ' + msg); setShowStripe(false); }}
-                  onCancel={() => setShowStripe(false)}
-                />
-              </Elements>
-            ) : (
-              <div className="bg-white rounded-2xl shadow-sm p-5">
-                <h3 className="font-bold text-[#1a1a2e] mb-3">💳 Nạp tiền qua Stripe</h3>
-                <div className="flex gap-2 mb-3 flex-wrap">
-                  {[100000, 200000, 500000, 1000000].map(amt => (
-                    <button key={amt} onClick={() => setTopupAmount(amt.toString())}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${topupAmount === amt.toString() ? 'border-[#ff6b35] bg-[#fff7ed] text-[#ff6b35]' : 'border-gray-200 text-gray-500'}`}>
-                      {amt >= 1000000 ? `${amt/1000000}tr` : `${(amt/1000).toFixed(0)}k`}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <input type="number" value={topupAmount} onChange={e => setTopupAmount(e.target.value)}
-                    placeholder="Số tiền (tối thiểu 50.000đ)"
-                    className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]" />
-                  <button onClick={() => { if (!topupAmount || Number(topupAmount) < 50000) { setTopupStatus('❌ Tối thiểu 50.000đ'); return; } setShowStripe(true); }}
-                    className="bg-[#ff6b35] text-white px-5 py-3 rounded-xl font-semibold text-sm hover:bg-orange-600 transition whitespace-nowrap">
-                    Nạp qua Stripe
-                  </button>
-                </div>
-                {topupStatus && <p className={`text-sm mt-2 font-medium ${topupStatus.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{topupStatus}</p>}
-              </div>
-            )}
+        {/* ─── Wallet Rules ─── */}
+        <div className="bg-[#fff7ed] rounded-2xl p-4 border border-orange-100 text-sm text-gray-600">
+          <p className="font-semibold text-[#ff6b35] mb-2">💡 Quy tắc ví tài xế:</p>
+          <ul className="space-y-1.5 list-disc pl-4">
+            <li>Số dư <strong>≥ {MIN_COD_BALANCE.toLocaleString('vi-VN')}₫</strong> mới được nhận đơn COD</li>
+            <li>Nhận đơn COD → tiền món bị <strong>đóng băng</strong> đến khi giao xong</li>
+            <li>Hoàn thành đơn → phí ship tự động chuyển vào ví</li>
+            <li>Rút tối thiểu <strong>{MIN_WITHDRAW.toLocaleString('vi-VN')}₫</strong>, sau rút vẫn giữ ≥ {MIN_COD_BALANCE.toLocaleString('vi-VN')}₫</li>
+            <li>🔄 <strong>Tối đa 1 lần rút/ngày</strong></li>
+          </ul>
+        </div>
 
-            <div className="bg-white rounded-2xl shadow-sm p-5">
-              <h3 className="font-bold text-[#1a1a2e] mb-3">📋 Lịch sử giao dịch</h3>
-              <div className="space-y-2">
-                {walletTx.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Chưa có giao dịch</p>}
-                {walletTx.map((tx: any) => (
-                  <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${tx.type === 'CREDIT' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                          {tx.type === 'CREDIT' ? 'NẠP' : 'RÚT'}
-                        </span>
-                        <span className="text-sm text-gray-700 truncate">{tx.description}</span>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-0.5">{new Date(tx.createdAt).toLocaleString('vi-VN')}</p>
-                    </div>
-                    <span className={`text-sm font-semibold ml-3 ${tx.type === 'CREDIT' ? 'text-green-600' : 'text-red-500'}`}>
-                      {tx.type === 'CREDIT' ? '+' : '-'}{tx.amount?.toLocaleString('vi-VN')}₫
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        {tab === 'income' && (
-          <>
-            <div className="bg-gradient-to-br from-[#2ecc71] to-[#27ae60] rounded-2xl p-6 text-white">
-              <p className="text-sm text-white/80">Số dư ví thu nhập</p>
-              <p className="text-3xl font-extrabold mt-1">{incomeFromOrders.toLocaleString('vi-VN')}₫</p>
-            </div>
-
-            <div className="bg-green-50 rounded-2xl p-4 border border-green-100 text-sm text-gray-600">
-              <p className="font-semibold text-green-700 mb-2">✅ Ví thu nhập:</p>
-              <ul className="space-y-1.5 list-disc pl-4">
-                <li>Nhận: Phí ship (75%), tip, thưởng</li>
-                <li><strong>CÓ THỂ rút</strong> về ngân hàng</li>
-                <li>Điều kiện: ≥ 50.000đ, tối đa 3 lần/ngày</li>
-              </ul>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-sm p-5">
-              <h3 className="font-bold text-[#1a1a2e] mb-3">🏦 Rút tiền</h3>
-              <div className="flex gap-2 mb-2">
-                <input type="number" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)}
-                  placeholder="Tối thiểu 50.000đ" className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-green-500" />
-                <button onClick={async () => {
-                  const amt = Number(withdrawAmount);
-                  if (!amt || amt < 50000) { setWithdrawStatus('❌ Tối thiểu 50.000đ'); return; }
-                  try {
-                    const result = await walletApi.withdraw(driverId, 'DRIVER', amt);
-                    setWalletBalance(result.balance);
-                    setWithdrawStatus(`✅ Yêu cầu rút ${amt.toLocaleString('vi-VN')}đ đã gửi (24-48h)`);
-                    setWithdrawAmount('');
-                  } catch (err: any) {
-                    setWithdrawStatus('❌ ' + (err.message || 'Lỗi rút tiền'));
-                  }
-                }} className="bg-[#2ecc71] text-white px-5 py-3 rounded-xl font-semibold text-sm hover:bg-green-600 transition whitespace-nowrap">
-                  Rút tiền
+        {/* ─── Top-up (Stripe) ─── */}
+        {showStripe && Number(topupAmount) >= MIN_WITHDRAW ? (
+          <Elements stripe={getStripePromise()} options={{ appearance: { theme: 'stripe', variables: { colorPrimary: '#f97316', borderRadius: '12px' } } }}>
+            <StripeTopupForm
+              amount={Number(topupAmount)}
+              ownerId={driverId}
+              onSuccess={(newBalance) => {
+                setWalletBalance(newBalance);
+                setShowStripe(false);
+                setTopupStatus(`✅ Đã nạp ${Number(topupAmount).toLocaleString('vi-VN')}đ thành công!`);
+                setTopupAmount('');
+              }}
+              onError={(msg) => { setTopupStatus('❌ ' + msg); setShowStripe(false); }}
+              onCancel={() => setShowStripe(false)}
+            />
+          </Elements>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-sm p-5">
+            <h3 className="font-bold text-[#1a1a2e] mb-3">💳 Nạp tiền qua Stripe</h3>
+            <div className="flex gap-2 mb-3 flex-wrap">
+              {[100000, 200000, 500000, 1000000, 2000000].map(amt => (
+                <button key={amt} onClick={() => setTopupAmount(amt.toString())}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${topupAmount === amt.toString() ? 'border-[#ff6b35] bg-[#fff7ed] text-[#ff6b35]' : 'border-gray-200 text-gray-500'}`}>
+                  {amt >= 1000000 ? `${amt / 1000000}tr` : `${(amt / 1000).toFixed(0)}k`}
                 </button>
-              </div>
-              {withdrawStatus && <p className={`text-sm font-medium ${withdrawStatus.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{withdrawStatus}</p>}
+              ))}
             </div>
-
-            <div className="bg-white rounded-2xl shadow-sm p-5">
-              <h3 className="font-bold text-[#1a1a2e] mb-3">📋 Đơn đã giao</h3>
-              <div className="space-y-2">
-                {deliveredOrders.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Chưa có đơn nào</p>}
-                {deliveredOrders.map((o: any) => (
-                  <div key={o.id} className="flex justify-between text-sm py-2 border-b border-gray-50">
-                    <span className="text-gray-700">#{o.id?.slice(0, 8)}</span>
-                    <span className="text-green-600 font-semibold">+{Math.round(toNum(o.deliveryFee || 15000) * 0.75).toLocaleString('vi-VN')}₫</span>
-                  </div>
-                ))}
-              </div>
+            <div className="flex gap-2">
+              <input type="number" value={topupAmount} onChange={e => setTopupAmount(e.target.value)}
+                placeholder={`Số tiền (tối thiểu ${MIN_WITHDRAW.toLocaleString('vi-VN')}đ)`}
+                className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]" />
+              <button onClick={() => { if (!topupAmount || Number(topupAmount) < MIN_WITHDRAW) { setTopupStatus(`❌ Tối thiểu ${MIN_WITHDRAW.toLocaleString('vi-VN')}đ`); return; } setShowStripe(true); }}
+                className="bg-[#ff6b35] text-white px-5 py-3 rounded-xl font-semibold text-sm hover:bg-orange-600 transition whitespace-nowrap">
+                Nạp qua Stripe
+              </button>
             </div>
-          </>
+            {topupStatus && <p className={`text-sm mt-2 font-medium ${topupStatus.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{topupStatus}</p>}
+          </div>
         )}
+
+        {/* ─── Withdraw ─── */}
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <h3 className="font-bold text-[#1a1a2e] mb-3">🏦 Rút tiền về ngân hàng</h3>
+          <p className="text-xs text-gray-400 mb-3">
+            Tối thiểu {MIN_WITHDRAW.toLocaleString('vi-VN')}₫ · Sau rút giữ ≥ {MIN_COD_BALANCE.toLocaleString('vi-VN')}₫ · Tối đa 1 lần/ngày
+          </p>
+          <div className="flex gap-2 mb-2">
+            <input type="number" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)}
+              placeholder="Tối thiểu 50.000đ" className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]" />
+            <button onClick={async () => {
+              const amt = Number(withdrawAmount);
+              if (!amt || amt < MIN_WITHDRAW) { setWithdrawStatus(`❌ Tối thiểu ${MIN_WITHDRAW.toLocaleString('vi-VN')}đ`); return; }
+              try {
+                const result = await walletApi.withdraw(driverId, 'DRIVER', amt);
+                setWalletBalance(result.balance);
+                setWithdrawStatus(`✅ Đã rút ${amt.toLocaleString('vi-VN')}đ. Số dư mới: ${result.balance.toLocaleString('vi-VN')}đ`);
+                setWithdrawAmount('');
+              } catch (err: any) {
+                setWithdrawStatus('❌ ' + (err.message || 'Lỗi rút tiền'));
+              }
+            }} className="bg-[#ff6b35] text-white px-5 py-3 rounded-xl font-semibold text-sm hover:bg-orange-600 transition whitespace-nowrap">
+              Rút tiền
+            </button>
+          </div>
+          {withdrawStatus && <p className={`text-sm font-medium ${withdrawStatus.startsWith('✅') ? 'text-green-600' : 'text-red-500'}`}>{withdrawStatus}</p>}
+        </div>
+
+        {/* ─── Transaction History ─── */}
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <h3 className="font-bold text-[#1a1a2e] mb-3">📋 Lịch sử giao dịch</h3>
+          <div className="space-y-2">
+            {walletTx.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Chưa có giao dịch</p>}
+            {walletTx.map((tx: any) => (
+              <div key={tx.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${tx.type === 'CREDIT' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                      {tx.type === 'CREDIT' ? 'NẠP' : tx.type === 'DEBIT' ? 'RÚT' : tx.type}
+                    </span>
+                    <span className="text-sm text-gray-700 truncate">{tx.description || tx.referenceType}</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">{new Date(tx.createdAt).toLocaleString('vi-VN')}</p>
+                </div>
+                <span className={`text-sm font-semibold ml-3 ${tx.type === 'CREDIT' ? 'text-green-600' : 'text-red-500'}`}>
+                  {tx.type === 'CREDIT' ? '+' : '-'}{Number(tx.amount).toLocaleString('vi-VN')}₫
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ─── Delivered Orders (income reference) ─── */}
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <h3 className="font-bold text-[#1a1a2e] mb-3">📦 Đơn đã giao (thu nhập ước tính: {incomeFromDelivered.toLocaleString('vi-VN')}₫)</h3>
+          <div className="space-y-2">
+            {deliveredOrders.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Chưa có đơn nào</p>}
+            {deliveredOrders.map((o: any) => (
+              <div key={o.id} className="flex justify-between text-sm py-2 border-b border-gray-50">
+                <span className="text-gray-700">#{o.id?.slice(0, 8)}</span>
+                <span className="text-green-600 font-semibold">+{Math.round(toNum(o.deliveryFee || 15000) * 0.75).toLocaleString('vi-VN')}₫</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
       </main>
 
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">

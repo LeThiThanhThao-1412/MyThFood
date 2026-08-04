@@ -10,6 +10,6 @@ import { DispatchController } from "./presentation/dispatch.controller";
   imports: [TypeOrmModule.forFeature([DispatchEntity])],
   controllers: [DispatchController],
   providers: [DispatchRepository, DispatchService, MatchingEngineService],
-  exports: [DispatchService],
+  exports: [DispatchService, MatchingEngineService],
 })
 export class DispatchModule {}

@@ -1,0 +1,22 @@
+{
+  "name": "@mythfood/e2e-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MyThFood End-to-End tests with Playwright",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:consumer": "playwright test --project=consumer",
+    "test:e2e:merchant": "playwright test --project=merchant",
+    "test:e2e:driver": "playwright test --project=driver",
+    "test:e2e:admin": "playwright test --project=admin",
+    "test:e2e:full-flow": "playwright test --project=full-flow",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:report": "playwright show-report",
+    "test:e2e:codegen": "playwright codegen"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "typescript": "^5.5.0"
+  }
+}

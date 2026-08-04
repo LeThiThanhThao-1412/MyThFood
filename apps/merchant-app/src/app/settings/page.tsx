@@ -27,6 +27,9 @@ export default function SettingsPage() {
   // Capacity
   const [capacity, setCapacity] = useState({ maxConcurrentOrders: 20, averagePreparationMinutes: 15 });
 
+  // COD settings
+  const [acceptsCod, setAcceptsCod] = useState(true);
+
   useEffect(() => {
     if (!isAuthenticated) { router.push('/login'); return; }
     async function load() {
@@ -35,6 +38,11 @@ export default function SettingsPage() {
         const m = (res.items || []).find((m2: any) => m2.userId === user?.id);
         setMerchant(m);
         if (m) {
+          // Load COD setting from localStorage
+          const codSetting = localStorage.getItem(`merchant_${m.id}_acceptsCod`);
+          if (codSetting !== null) {
+            setAcceptsCod(codSetting === 'true');
+          }
           try {
             const h = await (merchantApi as any).getOperatingHours(m.id);
             if (Array.isArray(h) && h.length > 0) {
@@ -125,6 +133,48 @@ export default function SettingsPage() {
           <button onClick={saveCapacity} disabled={saving} className="mt-4 bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50">
             {saving ? 'Đang lưu...' : 'Lưu sức chứa'}
           </button>
+        </div>
+
+        {/* COD Settings */}
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <h3 className="font-bold text-lg mb-4">💵 Cài đặt thanh toán COD</h3>
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+            <div>
+              <p className="font-semibold text-gray-800">Nhận đơn COD</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                {acceptsCod
+                  ? 'Khách hàng có thể chọn thanh toán khi nhận hàng'
+                  : 'Chỉ chấp nhận thanh toán qua thẻ'}
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                const newValue = !acceptsCod;
+                setAcceptsCod(newValue);
+                if (merchant) {
+                  localStorage.setItem(`merchant_${merchant.id}_acceptsCod`, String(newValue));
+                }
+                setStatus(`✅ Đã ${newValue ? 'bật' : 'tắt'} nhận đơn COD`);
+              }}
+              className={`relative w-14 h-7 rounded-full transition-colors duration-200 ${
+                acceptsCod ? 'bg-green-500' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform duration-200 ${
+                  acceptsCod ? 'translate-x-7' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+          <div className="mt-3 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
+            <p className="font-semibold mb-1">ℹ️ Lưu ý về COD:</p>
+            <ul className="list-disc pl-4 space-y-0.5">
+              <li>Tài xế cần số dư ví ≥ 2.000.000₫ để nhận đơn COD</li>
+              <li>Tiền món sẽ được giữ trong ví tài xế đến khi giao thành công</li>
+              <li>Nếu tắt COD, khách chỉ có thể thanh toán qua thẻ</li>
+            </ul>
+          </div>
         </div>
       </main>
 

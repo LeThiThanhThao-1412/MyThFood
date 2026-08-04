@@ -54,6 +54,8 @@ export class Dispatch extends AggregateRoot<DispatchId> {
     props: {
       orderId: string;
       merchantId: string;
+      merchantLatitude?: number;
+      merchantLongitude?: number;
       deliveryAddress: string;
       deliveryLatitude: number;
       deliveryLongitude: number;
@@ -73,8 +75,8 @@ export class Dispatch extends AggregateRoot<DispatchId> {
     super(id);
     this._orderId = props.orderId;
     this._merchantId = props.merchantId;
-    this._merchantLatitude = (props as any).merchantLatitude ?? 10.77;
-    this._merchantLongitude = (props as any).merchantLongitude ?? 106.7;
+    this._merchantLatitude = props.merchantLatitude ?? 10.77;
+    this._merchantLongitude = props.merchantLongitude ?? 106.7;
     this._deliveryAddress = props.deliveryAddress;
     this._deliveryLatitude = props.deliveryLatitude;
     this._deliveryLongitude = props.deliveryLongitude;
@@ -99,6 +101,8 @@ export class Dispatch extends AggregateRoot<DispatchId> {
     deliveryAddress: string;
     deliveryLatitude: number;
     deliveryLongitude: number;
+    merchantLatitude?: number;
+    merchantLongitude?: number;
     expiresAt?: Date;
   }): Dispatch {
     const dispatchId = DispatchId.create();
@@ -109,6 +113,8 @@ export class Dispatch extends AggregateRoot<DispatchId> {
       deliveryAddress: props.deliveryAddress,
       deliveryLatitude: props.deliveryLatitude,
       deliveryLongitude: props.deliveryLongitude,
+      merchantLatitude: props.merchantLatitude,
+      merchantLongitude: props.merchantLongitude,
       status: DispatchStatus.MATCHING,
       driverId: null,
       matchedDriverIds: [],

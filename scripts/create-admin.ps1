@@ -6,7 +6,7 @@ Write-Host "  Creating Admin Account" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
 $adminPhone = "+84901112233"
-$adminPass = "Admin123"
+$adminPass = "Admin@123"
 
 # Register Admin
 Write-Host "`n[1] Registering admin account..." -ForegroundColor Yellow

@@ -1,6 +1,6 @@
 'use client';
 
-import { MapView } from '@mythfood/frontend-shared';
+import MapView from '@mythfood/frontend-shared/components/MapView';
 
 interface DeliveryMapProps {
   lat: number;

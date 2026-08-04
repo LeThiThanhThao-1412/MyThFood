@@ -5,8 +5,6 @@ import { PaymentId } from "../domain/payment-id";
 import { PaymentRepository } from "../infrastructure/payment.repository";
 import { StripeService } from "../../stripe/stripe.service";
 import { SplitPaymentService } from "./split-payment.service";
-import { WalletRepository } from "../../wallet/infrastructure/wallet.repository";
-import { OwnerType } from "../../wallet/domain/wallet.aggregate";
 import {
   CreatePaymentDto,
   CreateStripePaymentDto,
@@ -18,12 +16,12 @@ import {
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
+  private readonly walletServiceUrl = process.env.WALLET_SERVICE_URL || "http://localhost:3009";
 
   constructor(
     private readonly paymentRepository: PaymentRepository,
     private readonly stripeService: StripeService,
     private readonly splitPaymentService: SplitPaymentService,
-    private readonly walletRepository: WalletRepository,
   ) {}
 
   // ===================== Payment Creation =====================
@@ -134,31 +132,62 @@ export class PaymentService {
     return this.toResponseDto(payment);
   }
 
-  // ===================== Wallet Operations =====================
+  // ===================== Wallet Operations (delegated to wallet-service) =====================
 
   async getWallet(ownerId: string): Promise<WalletResponseDto | null> {
-    const wallet = await this.walletRepository.findByOwnerId(ownerId);
-    if (!wallet) return null;
-    return {
-      id: wallet.id, ownerId: wallet.walletOwnerId, ownerType: wallet.walletOwnerType,
-      balance: wallet.walletBalance, currency: wallet.walletCurrency,
-      createdAt: new Date(), updatedAt: new Date(),
-    };
+    try {
+      const res = await fetch(
+        `${this.walletServiceUrl}/api/v1/wallets/${ownerId}`,
+      );
+      if (!res.ok) return null;
+      const data: any = await res.json();
+      const wallet = data.data || data;
+      return {
+        id: wallet.id,
+        ownerId: wallet.ownerId,
+        ownerType: wallet.ownerType,
+        balance: wallet.balance,
+        currency: wallet.currency || "VND",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    } catch (err) {
+      this.logger.error(`Failed to get wallet from wallet-service: ${err}`);
+      return null;
+    }
   }
 
   async getWalletTransactions(walletId: string): Promise<WalletTransactionResponseDto[]> {
-    const txs = await this.walletRepository.getTransactionsByWalletId(walletId);
-    return txs.map((tx: { id: string; walletId: string; ownerId: string; ownerType: string; type: string; amount: number; balanceBefore: number; balanceAfter: number; description: string | null; orderId: string | null; stripeTransferId: string | null; stripePayoutId: string | null; createdAt: Date }) => ({
-      id: tx.id, walletId: tx.walletId, ownerId: tx.ownerId, ownerType: tx.ownerType,
-      type: tx.type, amount: Number(tx.amount), balanceBefore: Number(tx.balanceBefore),
-      balanceAfter: Number(tx.balanceAfter), description: tx.description,
-      orderId: tx.orderId, stripeTransferId: tx.stripeTransferId, stripePayoutId: tx.stripePayoutId,
-      createdAt: tx.createdAt,
-    }));
+    try {
+      const res = await fetch(
+        `${this.walletServiceUrl}/api/v1/wallets/${walletId}/transactions`,
+      );
+      if (!res.ok) return [];
+      const data: any = await res.json();
+      const txs = data.data || data || [];
+      return txs.map((tx: any) => ({
+        id: tx.id,
+        walletId: tx.walletId,
+        ownerId: tx.ownerId,
+        ownerType: tx.ownerType,
+        type: tx.type,
+        amount: Number(tx.amount),
+        balanceBefore: Number(tx.balanceBefore),
+        balanceAfter: Number(tx.balanceAfter),
+        description: tx.description || null,
+        orderId: tx.orderId || tx.referenceId || null,
+        stripeTransferId: null,
+        stripePayoutId: null,
+        createdAt: tx.createdAt,
+      }));
+    } catch (err) {
+      this.logger.error(`Failed to get wallet transactions from wallet-service: ${err}`);
+      return [];
+    }
   }
 
   async withdrawFromWallet(params: {
-    ownerId: string; ownerType: OwnerType; amount: number; stripeAccountId: string;
+    ownerId: string; ownerType: string; amount: number; stripeAccountId: string;
   }): Promise<{ payoutId: string; newBalance: number }> {
     return this.splitPaymentService.executeWalletWithdrawal(params);
   }

@@ -21,6 +21,7 @@ import {
   orderApi,
   consumerApi,
   paymentApi,
+  merchantApi,
   type ConsumerProfile,
   type Address,
   type PaymentMethod,
@@ -37,7 +38,7 @@ const stripePromise = loadStripe(
 
 // ─── Dynamic Map ─────────────────────────────────────────────
 const CheckoutMap = dynamic(
-  () => import('@mythfood/frontend-shared').then(m => ({ default: m.MapView })),
+  () => import('@mythfood/frontend-shared/components/MapView'),
   { ssr: false },
 );
 
@@ -297,15 +298,45 @@ function CheckoutContent() {
 
   const [dynamicFee, setDynamicFee] = useState<ShippingFeeInfo | null>(null);
 
+  // Real merchant location (fetched from API)
+  const [merchantLat, setMerchantLat] = useState(10.770);
+  const [merchantLng, setMerchantLng] = useState(106.700);
+  // COD support from merchant settings
+  const [merchantCodAccepted, setMerchantCodAccepted] = useState(true);
+
+  // Fetch merchant location & COD settings
+  useEffect(() => {
+    if (!merchantId) return;
+    const mid = merchantId; // Narrow type for async closure
+    let cancelled = false;
+    async function fetchMerchantInfo() {
+      try {
+        const m = await merchantApi.getById(mid);
+        if (!cancelled && m) {
+          // Use real merchant coordinates
+          if (m.latitude != null) setMerchantLat(m.latitude);
+          if (m.longitude != null) setMerchantLng(m.longitude);
+          // Check COD setting from merchant's localStorage
+          const codSetting = localStorage.getItem(`merchant_${mid}_acceptsCod`);
+          if (codSetting !== null) {
+            setMerchantCodAccepted(codSetting === 'true');
+          }
+        }
+      } catch {
+        // Keep default values if fetch fails
+      }
+    }
+    fetchMerchantInfo();
+    return () => { cancelled = true; };
+  }, [merchantId]);
+
   // Fetch dynamic shipping fee when location changes (client-side calculation)
   useEffect(() => {
     if (!merchantId) return;
     let cancelled = false;
     async function fetchFee() {
       try {
-        const originLat = 10.770;
-        const originLng = 106.700;
-        const fee = await calculateShippingFee(originLat, originLng, lat, lng);
+        const fee = await calculateShippingFee(merchantLat, merchantLng, lat, lng);
         if (!cancelled) setDynamicFee(fee);
       } catch {
         if (!cancelled) setDynamicFee(null);
@@ -313,7 +344,7 @@ function CheckoutContent() {
     }
     fetchFee();
     return () => { cancelled = true; };
-  }, [lat, lng, merchantId]);
+  }, [lat, lng, merchantId, merchantLat, merchantLng]);
 
   const subtotal = getSubtotal();
   const deliveryFee = dynamicFee?.totalFee || 15000;
@@ -563,9 +594,32 @@ function CheckoutContent() {
                 </label>
 
                 {/* COD */}
-                <label className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${!isStripe ? 'border-green-400 bg-green-50/50 ring-2 ring-green-200' : 'border-gray-100 hover:border-gray-300'}`}>
-                  <input type="radio" name="payment" value="CASH" checked={!isStripe} onChange={e => setPaymentMethod(e.target.value)} className="accent-green-600" />
-                  <div className="flex-1"><p className="text-sm font-semibold text-gray-800">💵 Tiền mặt (COD)</p><p className="text-xs text-gray-400 mt-0.5">Thanh toán khi nhận hàng</p></div>
+                <label className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${
+                  !merchantCodAccepted
+                    ? 'border-gray-100 cursor-not-allowed opacity-60'
+                    : !isStripe
+                      ? 'border-green-400 bg-green-50/50 ring-2 ring-green-200'
+                      : 'border-gray-100 hover:border-gray-300'
+                }`}>
+                  <input
+                    type="radio"
+                    name="payment"
+                    value="CASH"
+                    checked={!isStripe}
+                    onChange={e => {
+                      if (merchantCodAccepted) setPaymentMethod(e.target.value);
+                    }}
+                    disabled={!merchantCodAccepted}
+                    className="accent-green-600"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-gray-800">💵 Tiền mặt (COD)</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {merchantCodAccepted
+                        ? 'Thanh toán khi nhận hàng'
+                        : '⚠️ Nhà hàng không hỗ trợ COD'}
+                    </p>
+                  </div>
                 </label>
 
                 {/* E-Wallet disabled */}

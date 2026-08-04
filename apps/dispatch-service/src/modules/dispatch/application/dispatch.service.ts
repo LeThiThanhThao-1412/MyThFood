@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { BusinessRuleViolationError } from "@mythfood/shared-kernel";
 import { DispatchRepository } from "../infrastructure/dispatch.repository";
 import { Dispatch } from "../domain/dispatch.aggregate";
@@ -11,8 +11,13 @@ import {
   UpdateDispatchNotesDto,
 } from "./dtos/dispatch.dto";
 
+const WALLET_SERVICE_URL = process.env.WALLET_SERVICE_URL || "http://localhost:3009";
+const MIN_COD_BALANCE = 2_000_000;
+
 @Injectable()
 export class DispatchService {
+  private readonly logger = new Logger(DispatchService.name);
+
   constructor(private readonly dispatchRepo: DispatchRepository) {}
 
   // ---- Dispatch CRUD ----
@@ -83,13 +88,85 @@ export class DispatchService {
 
   // ---- Matching Engine ----
 
-  async assignDriver(id: string, dto: AssignDriverDto): Promise<Dispatch> {
+  async assignDriver(
+    id: string,
+    dto: AssignDriverDto,
+    isCodOrder: boolean = false,
+    authToken?: string,
+  ): Promise<Dispatch> {
     const dispatch = await this.dispatchRepo.findByIdOrFail(
       DispatchId.from(id),
     );
+
+    // Check COD eligibility before assigning driver
+    if (isCodOrder && dto.driverId) {
+      const isEligible = await this.checkCodEligibility(
+        dto.driverId,
+        authToken,
+      );
+      if (!isEligible) {
+        throw new BusinessRuleViolationError(
+          `Driver ${dto.driverId} does not meet COD requirements (min balance: ${MIN_COD_BALANCE.toLocaleString("vi-VN")} VND)`,
+        );
+      }
+      this.logger.log(`Driver ${dto.driverId} passed COD eligibility check`);
+    }
+
     dispatch.assignDriver(dto.driverId);
     await this.dispatchRepo.save(dispatch);
     return dispatch;
+  }
+
+  /**
+   * Check if a driver's wallet balance meets COD requirements.
+   * Calls wallet-service API: GET /api/v1/wallets/check-cod-eligibility/:driverId
+   */
+  private async checkCodEligibility(
+    driverId: string,
+    authToken?: string,
+  ): Promise<boolean> {
+    try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (authToken) {
+        headers["Authorization"] = `Bearer ${authToken}`;
+      }
+
+      const response = await fetch(
+        `${WALLET_SERVICE_URL}/api/v1/wallets/check-cod-eligibility/${driverId}`,
+        { headers },
+      );
+
+      if (!response.ok) {
+        this.logger.warn(
+          `Wallet check-cod-eligibility returned ${response.status} for driver ${driverId}`,
+        );
+        return false;
+      }
+
+      const data = await response.json() as { eligible?: boolean; balance?: number };
+      if (typeof data.eligible === "boolean") {
+        return data.eligible;
+      }
+
+      // Fallback: check balance manually
+      if (typeof data.balance === "number") {
+        return data.balance >= MIN_COD_BALANCE;
+      }
+
+      return false;
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to check COD eligibility for driver ${driverId}: ${error.message}`,
+      );
+      // SAFETY: If wallet service is unavailable, REJECT the assignment
+      // to prevent drivers with insufficient balance from taking COD orders
+      this.logger.warn(
+        `Wallet service unavailable - REJECTING COD assignment for driver ${driverId} (fail-safe)`,
+      );
+      return false;
+    }
   }
 
   async driverAccept(id: string): Promise<Dispatch> {

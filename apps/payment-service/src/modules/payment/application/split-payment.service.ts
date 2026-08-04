@@ -1,16 +1,18 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { StripeService } from "../../stripe/stripe.service";
-import { WalletRepository } from "../../wallet/infrastructure/wallet.repository";
-import { OwnerType } from "../../wallet/domain/wallet.aggregate";
 import { Payment } from "../domain/payment.aggregate";
 
+/**
+ * Wallet operations now delegated to wallet-service (port 3009).
+ * This eliminates duplicate wallet code in payment-service.
+ */
 @Injectable()
 export class SplitPaymentService {
   private readonly logger = new Logger(SplitPaymentService.name);
+  private readonly walletServiceUrl = process.env.WALLET_SERVICE_URL || "http://localhost:3009";
 
   constructor(
     private readonly stripeService: StripeService,
-    private readonly walletRepository: WalletRepository,
   ) {}
 
   /**
@@ -18,7 +20,7 @@ export class SplitPaymentService {
    * 1. Capture the Stripe PaymentIntent (funds were held)
    * 2. Split the captured amount between merchant, driver, and platform
    * 3. Transfer funds to merchant's and driver's Stripe connected accounts
-   * 4. Record credits to merchant's and driver's wallets
+   * 4. Record credits via wallet-service HTTP API
    */
   async executeSplitPayment(
     payment: Payment,
@@ -108,28 +110,16 @@ export class SplitPaymentService {
       }
     }
 
-    // 5. Record wallet credits (as a ledger/debt record)
+    // 5. Record wallet credits via wallet-service HTTP API
     // Merchant wallet credit
     try {
-      const merchantWallet = await this.walletRepository.findByOwnerIdOrCreate(
+      await this.creditWallet(
         payment.paymentMerchantId,
-        OwnerType.MERCHANT,
+        "MERCHANT",
+        merchantAmount,
+        `Merchant share for order ${payment.paymentOrderId}`,
+        payment.paymentOrderId,
       );
-      const balanceBefore = merchantWallet.walletBalance;
-      merchantWallet.credit(merchantAmount);
-      await this.walletRepository.save(merchantWallet);
-      await this.walletRepository.recordTransaction({
-        walletId: merchantWallet.id.toString(),
-        ownerId: payment.paymentMerchantId,
-        ownerType: OwnerType.MERCHANT,
-        type: "CREDIT",
-        amount: merchantAmount,
-        balanceBefore,
-        balanceAfter: merchantWallet.walletBalance,
-        description: `Merchant share for order ${payment.paymentOrderId}`,
-        orderId: payment.paymentOrderId,
-        stripeTransferId: merchantTransferId,
-      });
     } catch (err) {
       this.logger.error(`Failed to record merchant wallet credit: ${err}`);
     }
@@ -137,25 +127,13 @@ export class SplitPaymentService {
     // Driver wallet credit
     if (payment.paymentDriverId) {
       try {
-        const driverWallet = await this.walletRepository.findByOwnerIdOrCreate(
+        await this.creditWallet(
           payment.paymentDriverId,
-          OwnerType.DRIVER,
+          "DRIVER",
+          driverAmount,
+          `Driver share for order ${payment.paymentOrderId}`,
+          payment.paymentOrderId,
         );
-        const balanceBefore = driverWallet.walletBalance;
-      driverWallet.credit(driverAmount);
-        await this.walletRepository.save(driverWallet);
-        await this.walletRepository.recordTransaction({
-          walletId: driverWallet.id.toString(),
-          ownerId: payment.paymentDriverId,
-          ownerType: OwnerType.DRIVER,
-        type: "CREDIT",
-        amount: driverAmount,
-          balanceBefore,
-          balanceAfter: driverWallet.walletBalance,
-          description: `Driver share for order ${payment.paymentOrderId}`,
-          orderId: payment.paymentOrderId,
-          stripeTransferId: driverTransferId,
-        });
       } catch (err) {
         this.logger.error(`Failed to record driver wallet credit: ${err}`);
       }
@@ -212,21 +190,14 @@ export class SplitPaymentService {
   }
 
   /**
-   * Execute wallet withdrawal: debit from wallet and payout to bank account via Stripe.
+   * Execute wallet withdrawal: debit from wallet via wallet-service HTTP API
    */
   async executeWalletWithdrawal(params: {
     ownerId: string;
-    ownerType: OwnerType;
+    ownerType: string;
     amount: number;
     stripeAccountId: string;
   }): Promise<{ payoutId: string; newBalance: number }> {
-    const wallet = await this.walletRepository.findByOwnerIdOrCreate(
-      params.ownerId,
-      params.ownerType,
-    );
-
-    const balanceBefore = wallet.walletBalance;
-
     // Create payout via Stripe to the user's bank account
     const payout = await this.stripeService.createPayout({
       amount: params.amount,
@@ -234,22 +205,29 @@ export class SplitPaymentService {
       description: `Wallet withdrawal for ${params.ownerType} ${params.ownerId}`,
     });
 
-    // Debit the wallet
-    wallet.debit(params.amount);
-    await this.walletRepository.save(wallet);
-
-    // Record transaction
-    await this.walletRepository.recordTransaction({
-      walletId: wallet.id.toString(),
-      ownerId: params.ownerId,
-      ownerType: params.ownerType,
-      type: "DEBIT",
-      amount: params.amount,
-      balanceBefore,
-      balanceAfter: wallet.walletBalance,
-      description: `Wallet withdrawal to bank account`,
-      stripePayoutId: payout.id,
-    });
+    // Debit the wallet via wallet-service
+    let newBalance = 0;
+    try {
+      const res = await fetch(
+        `${this.walletServiceUrl}/api/v1/wallets/debit`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ownerId: params.ownerId,
+            ownerType: params.ownerType,
+            amount: params.amount,
+            description: `Wallet withdrawal to bank account`,
+          }),
+        },
+      );
+      if (res.ok) {
+        const data: any = await res.json();
+        newBalance = data.balance || 0;
+      }
+    } catch (err) {
+      this.logger.error(`Failed to debit wallet via wallet-service: ${err}`);
+    }
 
     this.logger.log(
       `Wallet withdrawal: ${params.amount} from ${params.ownerType} ${params.ownerId}, payout: ${payout.id}`,
@@ -257,7 +235,7 @@ export class SplitPaymentService {
 
     return {
       payoutId: payout.id,
-      newBalance: wallet.walletBalance,
+      newBalance,
     };
   }
 
@@ -266,6 +244,36 @@ export class SplitPaymentService {
    */
   public calculateSplit(_totalAmount: number): SplitPercentages {
     return calculateSplitFromEnv(this.logger);
+  }
+
+  // ─── Private: HTTP calls to wallet-service ──────────────
+
+  private async creditWallet(
+    ownerId: string,
+    ownerType: string,
+    amount: number,
+    description: string,
+    orderId: string,
+  ): Promise<void> {
+    const res = await fetch(
+      `${this.walletServiceUrl}/api/v1/wallets/credit`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerId,
+          ownerType,
+          amount,
+          description,
+          referenceId: orderId,
+          referenceType: "SETTLEMENT",
+        }),
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Wallet credit failed: ${res.status} ${text}`);
+    }
   }
 }
 
