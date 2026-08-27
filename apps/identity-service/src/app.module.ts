@@ -17,24 +17,28 @@ import { databaseConfig } from "./config/database.config";
       envFilePath: [".env", ".env.local"],
     }),
 
-    // Rate limiting - prevents brute force attacks (Issue #6)
-    ThrottlerModule.forRoot([
-      {
-        name: "short",
-        ttl: 1000,
-        limit: 3,
+    // Rate limiting - configurable via env (ISSUE: throttle TTL=0 to disable in dev/test)
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => {
+        const ttl = parseInt(config.get("THROTTLE_TTL") ?? "1000", 10);
+        const limit = parseInt(config.get("THROTTLE_LIMIT") ?? "3", 10);
+        // If TTL=0, bind a large limit effectively disabling throttling
+        if (ttl === 0) {
+          return [
+            { name: "short", ttl: 60000, limit: 999999 },
+            { name: "medium", ttl: 60000, limit: 999999 },
+            { name: "long", ttl: 60000, limit: 999999 },
+          ];
+        }
+        return [
+          { name: "short", ttl, limit },
+          { name: "medium", ttl: ttl * 10, limit: limit * 7 },
+          { name: "long", ttl: ttl * 60, limit: limit * 33 },
+        ];
       },
-      {
-        name: "medium",
-        ttl: 10000,
-        limit: 20,
-      },
-      {
-        name: "long",
-        ttl: 60000,
-        limit: 100,
-      },
-    ]),
+    }),
 
     // Database
     TypeOrmModule.forRootAsync({

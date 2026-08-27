@@ -59,8 +59,7 @@ export class UserAdminService {
       SUSPENDED: ["ACTIVE"],
     };
 
-    const allowedTransitions =
-      validTransitions[user.currentStatus] ?? [];
+    const allowedTransitions = validTransitions[user.currentStatus] ?? [];
     if (!allowedTransitions.includes(status)) {
       throw new BadRequestException(
         `Cannot transition user from ${user.currentStatus} to ${status}`,

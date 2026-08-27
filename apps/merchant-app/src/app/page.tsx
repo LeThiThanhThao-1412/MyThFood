@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useAuthStore } from '@mythfood/frontend-shared';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import Link from "next/link";
+import { useAuthStore } from "@mythfood/frontend-shared";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function MerchantLandingPage() {
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
-    if (isAuthenticated) router.push('/dashboard');
+    if (isAuthenticated) router.push("/dashboard");
   }, [isAuthenticated, router]);
 
   return (
@@ -45,7 +45,8 @@ export default function MerchantLandingPage() {
             Kết nối với hàng nghìn khách hàng
           </h1>
           <p className="text-xl text-blue-100 mb-10 max-w-2xl mx-auto">
-            Tăng doanh thu, quản lý nhà hàng hiệu quả với nền tảng giao đồ ăn hàng đầu Việt Nam. Tiếp cận hàng triệu khách hàng mỗi ngày.
+            Tăng doanh thu, quản lý nhà hàng hiệu quả với nền tảng giao đồ ăn
+            hàng đầu Việt Nam. Tiếp cận hàng triệu khách hàng mỗi ngày.
           </p>
           <div className="flex gap-4 justify-center">
             <Link
@@ -75,19 +76,19 @@ export default function MerchantLandingPage() {
         <div className="grid md:grid-cols-3 gap-8">
           {[
             {
-              icon: '📈',
-              title: 'Tăng doanh thu',
-              desc: 'Tiếp cận hàng triệu khách hàng mới mỗi ngày. Tăng đơn hàng lên đến 300% với nền tảng giao đồ ăn số 1.',
+              icon: "📈",
+              title: "Tăng doanh thu",
+              desc: "Tiếp cận hàng triệu khách hàng mới mỗi ngày. Tăng đơn hàng lên đến 300% với nền tảng giao đồ ăn số 1.",
             },
             {
-              icon: '📋',
-              title: 'Quản lý dễ dàng',
-              desc: 'Thêm, sửa, xóa món ăn chỉ với vài cú click. Cập nhật giá realtime. Quản lý đơn hàng tập trung.',
+              icon: "📋",
+              title: "Quản lý dễ dàng",
+              desc: "Thêm, sửa, xóa món ăn chỉ với vài cú click. Cập nhật giá realtime. Quản lý đơn hàng tập trung.",
             },
             {
-              icon: '📊',
-              title: 'Báo cáo chi tiết',
-              desc: 'Theo dõi doanh thu, đơn hàng theo ngày/tuần/tháng. Phân tích xu hướng khách hàng thông minh.',
+              icon: "📊",
+              title: "Báo cáo chi tiết",
+              desc: "Theo dõi doanh thu, đơn hàng theo ngày/tuần/tháng. Phân tích xu hướng khách hàng thông minh.",
             },
           ].map((f, i) => (
             <div
@@ -107,9 +108,9 @@ export default function MerchantLandingPage() {
         <div className="max-w-6xl mx-auto px-4">
           <div className="grid md:grid-cols-3 gap-8 text-center">
             {[
-              { num: '10,000+', label: 'Nhà hàng đối tác' },
-              { num: '1M+', label: 'Lượt đặt mỗi tháng' },
-              { num: '24/7', label: 'Hỗ trợ kỹ thuật' },
+              { num: "10,000+", label: "Nhà hàng đối tác" },
+              { num: "1M+", label: "Lượt đặt mỗi tháng" },
+              { num: "24/7", label: "Hỗ trợ kỹ thuật" },
             ].map((s, i) => (
               <div key={i}>
                 <p className="text-4xl font-bold text-blue-600 mb-2">{s.num}</p>
@@ -123,7 +124,9 @@ export default function MerchantLandingPage() {
       {/* CTA */}
       <section className="py-20 max-w-6xl mx-auto px-4 text-center">
         <h2 className="text-3xl font-bold mb-4">Bắt đầu ngay hôm nay</h2>
-        <p className="text-gray-500 mb-8">Đăng ký trong 5 phút và bắt đầu nhận đơn hàng</p>
+        <p className="text-gray-500 mb-8">
+          Đăng ký trong 5 phút và bắt đầu nhận đơn hàng
+        </p>
         <Link
           href="/register"
           className="bg-blue-600 text-white px-10 py-4 rounded-xl font-bold text-lg hover:bg-blue-700 transition inline-block"
@@ -135,7 +138,9 @@ export default function MerchantLandingPage() {
       {/* Footer */}
       <footer className="bg-gray-800 text-white py-8">
         <div className="max-w-6xl mx-auto px-4 text-center text-sm text-gray-400">
-          <p className="mb-2">© 2026 MyThFood Partner. Tất cả quyền được bảo lưu.</p>
+          <p className="mb-2">
+            © 2026 MyThFood Partner. Tất cả quyền được bảo lưu.
+          </p>
           <p>Nền tảng giao đồ ăn hàng đầu Việt Nam</p>
         </div>
       </footer>

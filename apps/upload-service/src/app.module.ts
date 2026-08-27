@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { AuthModule } from "./modules/auth/auth.module";
 import { UploadModule } from "./modules/upload/upload.module";
 
 @Module({
@@ -8,6 +9,7 @@ import { UploadModule } from "./modules/upload/upload.module";
       isGlobal: true,
       envFilePath: [".env", ".env.local"],
     }),
+    AuthModule,
     UploadModule,
   ],
 })

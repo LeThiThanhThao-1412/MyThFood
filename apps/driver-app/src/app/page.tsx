@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useAuthStore } from '@mythfood/frontend-shared';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import Link from "next/link";
+import { useAuthStore } from "@mythfood/frontend-shared";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export default function DriverLandingPage() {
   const { isAuthenticated } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
-    if (isAuthenticated) router.push('/dashboard');
+    if (isAuthenticated) router.push("/dashboard");
   }, [isAuthenticated, router]);
 
   return (
@@ -45,7 +45,8 @@ export default function DriverLandingPage() {
             Trở thành tài xế MyThFood
           </h1>
           <p className="text-xl text-green-100 mb-10 max-w-2xl mx-auto">
-            Kiếm tiền linh hoạt, làm việc tự do, thu nhập hấp dẫn. Tham gia đội ngũ tài xế MyThFood ngay hôm nay!
+            Kiếm tiền linh hoạt, làm việc tự do, thu nhập hấp dẫn. Tham gia đội
+            ngũ tài xế MyThFood ngay hôm nay!
           </p>
           <div className="flex gap-4 justify-center">
             <Link
@@ -75,19 +76,19 @@ export default function DriverLandingPage() {
         <div className="grid md:grid-cols-3 gap-8">
           {[
             {
-              icon: '💰',
-              title: 'Thu nhập hấp dẫn',
-              desc: 'Nhận 80% phí giao hàng mỗi đơn. Thu nhập trung bình 15-20 triệu/tháng với lịch làm linh hoạt.',
+              icon: "💰",
+              title: "Thu nhập hấp dẫn",
+              desc: "Nhận 80% phí giao hàng mỗi đơn. Thu nhập trung bình 15-20 triệu/tháng với lịch làm linh hoạt.",
             },
             {
-              icon: '🕐',
-              title: 'Thời gian linh hoạt',
-              desc: 'Làm việc bất cứ khi nào bạn muốn. Online/Offline dễ dàng chỉ với một chạm.',
+              icon: "🕐",
+              title: "Thời gian linh hoạt",
+              desc: "Làm việc bất cứ khi nào bạn muốn. Online/Offline dễ dàng chỉ với một chạm.",
             },
             {
-              icon: '🛡️',
-              title: 'Hỗ trợ đầy đủ',
-              desc: 'Bảo hiểm tai nạn cho mọi tài xế. Hỗ trợ 24/7 qua hotline và app.',
+              icon: "🛡️",
+              title: "Hỗ trợ đầy đủ",
+              desc: "Bảo hiểm tai nạn cho mọi tài xế. Hỗ trợ 24/7 qua hotline và app.",
             },
           ].map((f, i) => (
             <div
@@ -107,12 +108,14 @@ export default function DriverLandingPage() {
         <div className="max-w-6xl mx-auto px-4">
           <div className="grid md:grid-cols-3 gap-8 text-center">
             {[
-              { num: '50,000+', label: 'Tài xế đang hoạt động' },
-              { num: '20M₫', label: 'Thu nhập trung bình/tháng' },
-              { num: '24/7', label: 'Hỗ trợ trực tuyến' },
+              { num: "50,000+", label: "Tài xế đang hoạt động" },
+              { num: "20M₫", label: "Thu nhập trung bình/tháng" },
+              { num: "24/7", label: "Hỗ trợ trực tuyến" },
             ].map((s, i) => (
               <div key={i}>
-                <p className="text-4xl font-bold text-green-600 mb-2">{s.num}</p>
+                <p className="text-4xl font-bold text-green-600 mb-2">
+                  {s.num}
+                </p>
                 <p className="text-gray-600">{s.label}</p>
               </div>
             ))}
@@ -122,8 +125,12 @@ export default function DriverLandingPage() {
 
       {/* CTA */}
       <section className="py-20 max-w-6xl mx-auto px-4 text-center">
-        <h2 className="text-3xl font-bold mb-4">Bắt đầu kiếm tiền ngay hôm nay</h2>
-        <p className="text-gray-500 mb-8">Đăng ký trong 5 phút và bắt đầu nhận đơn</p>
+        <h2 className="text-3xl font-bold mb-4">
+          Bắt đầu kiếm tiền ngay hôm nay
+        </h2>
+        <p className="text-gray-500 mb-8">
+          Đăng ký trong 5 phút và bắt đầu nhận đơn
+        </p>
         <Link
           href="/register"
           className="bg-green-600 text-white px-10 py-4 rounded-xl font-bold text-lg hover:bg-green-700 transition inline-block"
@@ -135,7 +142,9 @@ export default function DriverLandingPage() {
       {/* Footer */}
       <footer className="bg-gray-800 text-white py-8">
         <div className="max-w-6xl mx-auto px-4 text-center text-sm text-gray-400">
-          <p className="mb-2">© 2026 MyThFood Driver. Tất cả quyền được bảo lưu.</p>
+          <p className="mb-2">
+            © 2026 MyThFood Driver. Tất cả quyền được bảo lưu.
+          </p>
           <p>Nền tảng giao đồ ăn hàng đầu Việt Nam</p>
         </div>
       </footer>

@@ -98,7 +98,10 @@ export class ShippingService {
   }
 
   // ─── Weather Surcharge ───────────────────────────────────
-  private async getWeatherMultiplier(lat: number, lng: number): Promise<number> {
+  private async getWeatherMultiplier(
+    lat: number,
+    lng: number,
+  ): Promise<number> {
     try {
       const apiKey = "e3238768c07b4d77897565c7bb6a42b5";
       const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`;
@@ -107,7 +110,9 @@ export class ShippingService {
 
       if (data.weather?.length > 0) {
         const condition = data.weather[0].main as string;
-        const description = (data.weather[0].description as string).toLowerCase();
+        const description = (
+          data.weather[0].description as string
+        ).toLowerCase();
 
         // Heavy rain / storm → +30%
         if (
@@ -117,13 +122,17 @@ export class ShippingService {
           description.includes("mưa") ||
           description.includes("rain")
         ) {
-          this.logger.log(`Weather: ${condition}, applying rain surcharge x1.3`);
+          this.logger.log(
+            `Weather: ${condition}, applying rain surcharge x1.3`,
+          );
           return 1.3;
         }
 
         // Snow / extreme → +50%
         if (condition === "Snow" || condition === "Extreme") {
-          this.logger.log(`Weather: ${condition}, applying extreme surcharge x1.5`);
+          this.logger.log(
+            `Weather: ${condition}, applying extreme surcharge x1.5`,
+          );
           return 1.5;
         }
 
@@ -141,7 +150,9 @@ export class ShippingService {
         if (data.main?.temp) {
           const temp = data.main.temp as number;
           if (temp > 35 || temp < 10) {
-            this.logger.log(`Temperature: ${temp}°C, applying temp surcharge x1.15`);
+            this.logger.log(
+              `Temperature: ${temp}°C, applying temp surcharge x1.15`,
+            );
             return 1.15;
           }
         }
@@ -171,7 +182,9 @@ export class ShippingService {
         req.destLat,
         req.destLng,
       );
-      this.logger.log(`OSRM failed, using Haversine: ${distanceKm.toFixed(2)} km`);
+      this.logger.log(
+        `OSRM failed, using Haversine: ${distanceKm.toFixed(2)} km`,
+      );
     } else {
       this.logger.log(`OSRM distance: ${distanceKm.toFixed(2)} km`);
     }

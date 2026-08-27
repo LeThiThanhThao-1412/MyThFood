@@ -8,10 +8,12 @@ export class StripeService {
 
   constructor() {
     const secretKey = process.env.STRIPE_SECRET_KEY;
-    if (!secretKey || secretKey === "sk_test_placeholder") {
-      this.logger.warn("STRIPE_SECRET_KEY is not configured. Stripe operations will fail.");
+    if (!secretKey || secretKey === "stripe_key_not_configured") {
+      this.logger.warn(
+        "STRIPE_SECRET_KEY is not configured. Stripe operations will fail.",
+      );
     }
-    this.stripe = new Stripe(secretKey || "sk_test_placeholder", {
+    this.stripe = new Stripe(secretKey || "stripe_key_not_configured", {
       apiVersion: (process.env.STRIPE_API_VERSION as any) || "2023-10-16",
     });
   }
@@ -38,6 +40,10 @@ export class StripeService {
    */
   verifyWebhookSignature(rawBody: Buffer, signature: string): Stripe.Event {
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
-    return this.stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+    return this.stripe.webhooks.constructEvent(
+      rawBody,
+      signature,
+      webhookSecret,
+    );
   }
 }

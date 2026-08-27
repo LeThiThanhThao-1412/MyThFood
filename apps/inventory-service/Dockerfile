@@ -26,6 +26,8 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
+RUN apk add --no-cache tzdata
+
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/apps/inventory-service/dist ./apps/inventory-service/dist

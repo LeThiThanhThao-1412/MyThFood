@@ -43,7 +43,7 @@ COPY --from=builder /app/packages/common/dist packages/common/dist/
 COPY --from=builder /app/apps/dispatch-service/package.json apps/dispatch-service/
 COPY --from=builder /app/apps/dispatch-service/dist apps/dispatch-service/dist/
 
-RUN npm install -g pnpm@9.4.0
+RUN npm install -g pnpm@9.4.0 && apk add --no-cache tzdata
 RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
 RUN pnpm install --frozen-lockfile --filter @mythfood/dispatch-service --prod
 

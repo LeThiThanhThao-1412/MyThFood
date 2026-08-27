@@ -55,8 +55,8 @@ jobs:
           docker compose build ${{ matrix.service }} 2>&1 | tail -30
         env:
           DOCKER_BUILDKIT: 1
-          STRIPE_SECRET_KEY: "sk_test_placeholder"
-          STRIPE_WEBHOOK_SECRET: "whsec_placeholder"
+          STRIPE_SECRET_KEY: ""
+          STRIPE_WEBHOOK_SECRET: ""
           DB_PASSWORD: "ci_build_password"
           REDIS_PASSWORD: "ci_build_redis"
 
@@ -103,7 +103,7 @@ jobs:
             http://localhost:3001/api/v1/auth/register \
             -X POST -H "Content-Type: application/json" \
             -d '{"phoneNumber":"0999999999","fullName":"CI Test","password":"CiTest@123"}'
-          
+
           echo "Testing wallet service..."
           curl -s -o /dev/null -w "Wallet stats: %{http_code}\n" \
             http://localhost:3009/api/v1/wallets/stats \

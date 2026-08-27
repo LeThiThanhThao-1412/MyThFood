@@ -1,15 +1,15 @@
 # BUG-005: Driver & Dispatch Services Not Included in Docker Compose
 
-| Field | Value |
-|-------|-------|
-| **Bug ID** | BUG-005 |
-| **Title** | Driver Service and Dispatch Service are not included in docker-compose deployment |
-| **Severity** | High (P1) |
-| **Priority** | High |
-| **Status** | Open |
-| **Found Date** | 2026-07-15 |
-| **Service** | Driver Service (3007), Dispatch Service (3008) |
-| **Environment** | Docker Compose (local dev) |
+| Field           | Value                                                                             |
+| --------------- | --------------------------------------------------------------------------------- |
+| **Bug ID**      | BUG-005                                                                           |
+| **Title**       | Driver Service and Dispatch Service are not included in docker-compose deployment |
+| **Severity**    | High (P1)                                                                         |
+| **Priority**    | High                                                                              |
+| **Status**      | Open                                                                              |
+| **Found Date**  | 2026-07-15                                                                        |
+| **Service**     | Driver Service (3007), Dispatch Service (3008)                                    |
+| **Environment** | Docker Compose (local dev)                                                        |
 
 ---
 
@@ -20,6 +20,7 @@ While Driver and Dispatch services ARE defined in `docker-compose.yml`, they app
 ## Evidence
 
 From `docs/API_TEST_CASES.md`:
+
 ```
 | 7 | Driver/Dispatch chưa có trong docker-compose | High | DevOps |
 ```

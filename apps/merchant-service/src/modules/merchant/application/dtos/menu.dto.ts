@@ -3,23 +3,89 @@ import {
   IsOptional,
   IsNotEmpty,
   IsNumber,
-  IsEnum,
   Min,
   IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsIn,
+  IsInt,
 } from "class-validator";
 import { Type } from "class-transformer";
 
+export class MenuItemOptionDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  priceDelta!: number;
+
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  isDefault?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  minQuantity?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  maxQuantity?: number;
+}
+
+export class MenuItemOptionGroupDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @IsIn(["CHOICE", "MULTI_CHOICE", "TOGGLE", "QUANTITY"])
+  type!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  required?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  minSelections?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  maxSelections?: number;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemOptionDto)
+  options!: MenuItemOptionDto[];
+}
+
 export class CreateMenuItemDto {
-  @IsEnum([
-    "APPETIZER",
-    "MAIN_COURSE",
-    "DESSERT",
-    "BEVERAGE",
-    "SIDE_DISH",
-    "COMBO",
-    "OTHER",
-  ])
+  @IsString()
+  @IsNotEmpty()
   category!: string;
+
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
 
   @IsString()
   @IsNotEmpty()
@@ -48,20 +114,22 @@ export class CreateMenuItemDto {
   @Min(0)
   @Type(() => Number)
   preparationTime?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemOptionGroupDto)
+  optionGroups?: MenuItemOptionGroupDto[];
 }
 
 export class UpdateMenuItemDto {
   @IsOptional()
-  @IsEnum([
-    "APPETIZER",
-    "MAIN_COURSE",
-    "DESSERT",
-    "BEVERAGE",
-    "SIDE_DISH",
-    "COMBO",
-    "OTHER",
-  ])
+  @IsString()
   category?: string;
+
+  @IsOptional()
+  @IsString()
+  categoryId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -92,12 +160,19 @@ export class UpdateMenuItemDto {
   @Min(0)
   @Type(() => Number)
   preparationTime?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemOptionGroupDto)
+  optionGroups?: MenuItemOptionGroupDto[];
 }
 
 export class MenuItemResponseDto {
   id!: string;
   merchantId!: string;
   category!: string;
+  categoryId!: string | null;
   name!: string;
   description!: string | null;
   price!: number;
@@ -107,6 +182,7 @@ export class MenuItemResponseDto {
   isFeatured!: boolean;
   preparationTime!: number | null;
   sortOrder!: number;
+  optionGroups!: MenuItemOptionGroupDto[];
   createdAt!: Date;
   updatedAt!: Date;
 }

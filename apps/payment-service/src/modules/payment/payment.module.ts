@@ -7,9 +7,7 @@ import { SplitPaymentService } from "./application/split-payment.service";
 import { PaymentController } from "./presentation/payment.controller";
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([PaymentEntity]),
-  ],
+  imports: [TypeOrmModule.forFeature([PaymentEntity])],
   controllers: [PaymentController],
   providers: [PaymentRepository, PaymentService, SplitPaymentService],
   exports: [PaymentService],

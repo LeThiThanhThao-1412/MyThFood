@@ -33,9 +33,9 @@ export interface LoginResponse {
   user: UserProfile;
 }
 
-export type UserRole = 'CONSUMER' | 'MERCHANT_OWNER' | 'DRIVER' | 'ADMIN';
+export type UserRole = "CONSUMER" | "MERCHANT_OWNER" | "DRIVER" | "ADMIN";
 
-export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+export type UserStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
 
 export interface UserProfile {
   id: string;
@@ -57,7 +57,7 @@ export interface UserDetail {
 }
 
 // --- Consumer ---
-export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
+export type Gender = "MALE" | "FEMALE" | "OTHER";
 
 export interface ConsumerProfile {
   id: string;
@@ -74,7 +74,7 @@ export interface ConsumerProfile {
 
 export interface Address {
   id: string;
-  type: 'HOME' | 'WORK' | 'OTHER';
+  type: "HOME" | "WORK" | "OTHER";
   address: string;
   latitude?: number;
   longitude?: number;
@@ -83,7 +83,7 @@ export interface Address {
 
 export interface PaymentMethod {
   id: string;
-  type: 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH' | 'WALLET';
+  type: "CREDIT_CARD" | "DEBIT_CARD" | "CASH" | "WALLET";
   provider: string;
   lastFourDigits: string;
   isDefault: boolean;
@@ -97,23 +97,38 @@ export interface CreateConsumerRequest {
 }
 
 export interface AddAddressRequest {
-  type: 'HOME' | 'WORK' | 'OTHER';
-  address: string;
-  latitude?: number;
-  longitude?: number;
-  isDefault?: boolean;
+  label: string;
+  fullAddress: string;
+  city: string;
+  district?: string;
+  ward?: string;
+  street?: string;
+  gps?: { latitude: number; longitude: number };
+  type?: "HOME" | "WORK" | "OTHER";
+}
+
+export interface UpdateConsumerProfileRequest {
+  fullName?: string;
+  avatar?: string;
+  dateOfBirth?: string;
+  gender?: Gender;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
 }
 
 export interface AddPaymentMethodRequest {
-  type: 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH' | 'WALLET';
+  type: "CREDIT_CARD" | "DEBIT_CARD" | "CASH" | "WALLET";
   provider: string;
   lastFourDigits: string;
   isDefault?: boolean;
 }
 
 // --- Merchant ---
-export type MerchantStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
-export type CapacityStatus = 'NORMAL' | 'BUSY' | 'OVERLOADED';
+export type MerchantStatus = "PENDING" | "APPROVED" | "REJECTED" | "SUSPENDED";
+export type CapacityStatus = "NORMAL" | "BUSY" | "OVERLOADED";
 
 export interface Merchant {
   id: string;
@@ -133,6 +148,10 @@ export interface Merchant {
   totalOrders: number;
   capacityStatus: CapacityStatus;
   currentOrderCount: number;
+  primaryCategory?: string | null;
+  secondaryCategories?: string[];
+  isOpen?: boolean;
+  isOpenNow?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -146,14 +165,70 @@ export interface CreateMerchantRequest {
   description?: string;
   latitude?: number;
   longitude?: number;
+  primaryCategory?: string;
+  secondaryCategories?: string[];
 }
 
-export type MenuCategory = 'FOOD' | 'DRINK' | 'DESSERT' | 'SNACK' | 'OTHER';
+export interface MenuCategory {
+  id: string;
+  merchantId: string;
+  name: string;
+  sortOrder: number;
+}
+
+export interface CreateMenuCategoryRequest {
+  name: string;
+  sortOrder?: number;
+}
+
+export interface UpdateMenuCategoryRequest {
+  name?: string;
+  sortOrder?: number;
+}
+
+export type OptionGroupType = "CHOICE" | "MULTI_CHOICE" | "TOGGLE" | "QUANTITY";
+
+export interface MenuItemOption {
+  id: string;
+  name: string;
+  priceDelta: number; // số tiền cộng/trừ (có thể âm)
+  isDefault?: boolean; // mặc định được chọn (CHOICE/TOGGLE)
+  minQuantity?: number; // dành cho QUANTITY
+  maxQuantity?: number; // dành cho QUANTITY
+}
+
+export interface MenuItemOptionGroup {
+  id: string;
+  name: string;
+  type: OptionGroupType;
+  required: boolean;
+  minSelections?: number; // MULTI_CHOICE: tối thiểu phải chọn
+  maxSelections?: number; // MULTI_CHOICE: tối đa
+  options: MenuItemOption[];
+}
+
+// Snapshot các option đã chọn (dùng cho cart + order)
+export interface SelectedMenuItemOption {
+  optionId: string;
+  groupId: string;
+  groupName: string;
+  name: string;
+  priceDelta: number;
+  quantity?: number; // dành cho QUANTITY
+}
+
+export interface SelectedOptionGroup {
+  groupId: string;
+  groupName: string;
+  type: OptionGroupType;
+  options: SelectedMenuItemOption[];
+}
 
 export interface MenuItem {
   id: string;
   merchantId: string;
-  category: MenuCategory;
+  category: string;
+  categoryId?: string | null;
   name: string;
   description?: string;
   price: number;
@@ -163,26 +238,31 @@ export interface MenuItem {
   isFeatured: boolean;
   preparationTime: number;
   sortOrder: number;
+  optionGroups?: MenuItemOptionGroup[];
   createdAt: string;
   updatedAt: string;
 }
 
 export interface CreateMenuItemRequest {
-  category: MenuCategory;
+  category: string;
+  categoryId?: string;
   name: string;
   description?: string;
   price: number;
   isFeatured?: boolean;
   preparationTime?: number;
+  optionGroups?: MenuItemOptionGroup[];
 }
 
 export interface UpdateMenuItemRequest {
   name?: string;
   description?: string;
   price?: number;
-  category?: MenuCategory;
+  category?: string;
+  categoryId?: string | null;
   isFeatured?: boolean;
   preparationTime?: number;
+  optionGroups?: MenuItemOptionGroup[];
 }
 
 export interface OperatingHour {
@@ -202,16 +282,16 @@ export interface UpdateCapacityRequest {
 }
 
 // --- Order ---
-export type OrderType = 'DELIVERY' | 'PICKUP';
+export type OrderType = "DELIVERY" | "PICKUP";
 export type OrderStatus =
-  | 'PENDING'
-  | 'CONFIRMED'
-  | 'PREPARING'
-  | 'READY_FOR_PICKUP'
-  | 'OUT_FOR_DELIVERY'
-  | 'DELIVERED'
-  | 'CANCELLED'
-  | 'REJECTED';
+  | "PENDING"
+  | "CONFIRMED"
+  | "PREPARING"
+  | "READY_FOR_PICKUP"
+  | "OUT_FOR_DELIVERY"
+  | "DELIVERED"
+  | "CANCELLED"
+  | "REJECTED";
 
 export interface OrderItem {
   menuItemId: string;
@@ -220,6 +300,7 @@ export interface OrderItem {
   unitPrice: number;
   subtotal: number;
   specialInstructions?: string;
+  options?: SelectedMenuItemOption[];
 }
 
 export interface Order {
@@ -242,6 +323,7 @@ export interface Order {
   driverId?: string | null;
   cancelReason?: string | null;
   rejectionReason?: string | null;
+  paymentMethod?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -256,6 +338,7 @@ export interface PlaceOrderRequest {
     quantity: number;
     unitPrice: number;
     specialInstructions?: string;
+    options?: SelectedMenuItemOption[];
   }[];
   deliveryAddress: string;
   deliveryLatitude?: number;
@@ -263,7 +346,9 @@ export interface PlaceOrderRequest {
   deliveryFee?: number;
   serviceFee?: number;
   discount?: number;
+  promotionCode?: string;
   notes?: string;
+  paymentMethod?: string;
 }
 
 export interface CancelOrderRequest {
@@ -285,8 +370,12 @@ export interface UpdateOrderRequest {
 }
 
 // --- Payment ---
-export type PaymentStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
-export type PaymentMethodType = 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH' | 'WALLET';
+export type PaymentStatus = "PENDING" | "COMPLETED" | "FAILED" | "REFUNDED";
+export type PaymentMethodType =
+  | "CREDIT_CARD"
+  | "DEBIT_CARD"
+  | "CASH"
+  | "WALLET";
 
 export interface Payment {
   id: string;
@@ -374,8 +463,8 @@ export interface UpdateStockRequest {
 }
 
 // --- Driver ---
-export type DriverStatus = 'ONLINE' | 'OFFLINE' | 'BUSY' | 'ON_DELIVERY';
-export type VehicleType = 'MOTORBIKE' | 'CAR' | 'BICYCLE';
+export type DriverStatus = "ONLINE" | "OFFLINE" | "BUSY" | "ON_DELIVERY";
+export type VehicleType = "MOTORBIKE" | "CAR" | "BICYCLE";
 
 export interface Driver {
   id: string;
@@ -411,7 +500,14 @@ export interface UpdateLocationRequest {
 }
 
 // --- Dispatch ---
-export type DispatchStatus = 'SEARCHING' | 'ASSIGNED' | 'ACCEPTED' | 'DECLINED' | 'PICKED_UP' | 'COMPLETED' | 'CANCELLED';
+export type DispatchStatus =
+  | "SEARCHING"
+  | "ASSIGNED"
+  | "ACCEPTED"
+  | "DECLINED"
+  | "PICKED_UP"
+  | "COMPLETED"
+  | "CANCELLED";
 
 export interface Dispatch {
   id: string;
@@ -447,4 +543,149 @@ export interface DriverLocationUpdate {
   latitude: number;
   longitude: number;
   timestamp: string;
+}
+
+// --- Review ---
+export interface Review {
+  id: string;
+  orderId: string;
+  consumerId: string;
+  merchantId: string;
+  rating: number;
+  comment?: string | null;
+  tags?: string[];
+  merchantReply?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateReviewRequest {
+  orderId: string;
+  consumerId: string;
+  merchantId: string;
+  rating: number;
+  comment?: string;
+  tags?: string[];
+}
+
+export interface ReplyReviewRequest {
+  reply: string;
+}
+
+// --- Promotion ---
+export type PromotionType = "PERCENT" | "FIXED";
+
+export type PromotionTarget = "FOOD" | "SHIPPING" | "ITEM";
+export type PromotionFundedBy = "MERCHANT" | "PLATFORM";
+
+export interface PromotionItem {
+  menuItemId: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface Promotion {
+  id: string;
+  merchantId: string;
+  code: string;
+  type: PromotionType;
+  target: PromotionTarget;
+  fundedBy: PromotionFundedBy;
+  menuItemId?: string | null;
+  menuItemName?: string | null;
+  value: number;
+  minOrderValue?: number | null;
+  maxDiscount?: number | null;
+  startAt?: string | null;
+  endAt?: string | null;
+  usageLimit?: number | null;
+  usageLimitPerUser?: number | null;
+  usedCount: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePromotionRequest {
+  merchantId: string;
+  code: string;
+  type: PromotionType;
+  target: PromotionTarget;
+  menuItemId?: string;
+  menuItemName?: string;
+  value: number;
+  minOrderValue?: number;
+  maxDiscount?: number;
+  startAt?: string;
+  endAt?: string;
+  usageLimit?: number;
+  usageLimitPerUser?: number;
+}
+
+export interface UpdatePromotionRequest {
+  menuItemId?: string;
+  menuItemName?: string;
+  value?: number;
+  minOrderValue?: number;
+  maxDiscount?: number;
+  startAt?: string;
+  endAt?: string;
+  usageLimit?: number;
+  usageLimitPerUser?: number;
+}
+
+export interface PromotionUsage {
+  id: string;
+  promotionId: string;
+  orderId: string;
+  consumerId: string;
+  discountAmount: number;
+  createdAt: string;
+}
+
+export interface PromotionStats {
+  usedCount: number;
+  totalDiscount: number;
+  totalOrders: number;
+}
+
+export interface ValidatePromotionRequest {
+  merchantId: string;
+  code: string;
+  foodTotal: number;
+  shippingFee?: number;
+  consumerId?: string;
+  itemTotal?: number;
+  items?: PromotionItem[];
+}
+
+export interface ApplyPromotionRequest {
+  merchantId: string;
+  code: string;
+  orderId: string;
+  consumerId: string;
+  foodTotal: number;
+  shippingFee?: number;
+  itemTotal?: number;
+  items?: PromotionItem[];
+}
+
+// --- Notification ---
+export interface Notification {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  body?: string | null;
+  data?: Record<string, unknown>;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface CreateNotificationRequest {
+  userId: string;
+  type: string;
+  title: string;
+  body?: string;
+  data?: Record<string, unknown>;
 }

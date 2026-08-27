@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Between, In, Repository } from "typeorm";
 import { WalletEntity } from "./wallet.entity";
 import { WalletTransactionEntity } from "./wallet-transaction.entity";
 import { Wallet } from "../domain/wallet.aggregate";
@@ -24,7 +24,10 @@ export class WalletRepository {
     private readonly txRepo: Repository<WalletTransactionEntity>,
   ) {}
 
-  async findByOwnerOrCreate(ownerId: string, ownerType: string): Promise<{
+  async findByOwnerOrCreate(
+    ownerId: string,
+    ownerType: string,
+  ): Promise<{
     entity: WalletEntity;
     domain: Wallet;
   }> {
@@ -56,7 +59,7 @@ export class WalletRepository {
     walletId: string;
     ownerId: string;
     ownerType: string;
-    type: "CREDIT" | "DEBIT";
+    type: string;
     amount: number;
     balanceBefore: number;
     balanceAfter: number;
@@ -86,11 +89,24 @@ export class WalletRepository {
     } as WalletTransactionEntity);
   }
 
-  async getTransactions(ownerId: string, ownerType: string): Promise<WalletTransactionEntity[]> {
+  async getTransactions(
+    ownerId: string,
+    ownerType: string,
+  ): Promise<WalletTransactionEntity[]> {
     return this.txRepo.find({
       where: { ownerId, ownerType },
       order: { createdAt: "DESC" },
       take: 50,
+    });
+  }
+
+  async findTransactionsByType(
+    ownerId: string,
+    referenceType: string,
+  ): Promise<WalletTransactionEntity[]> {
+    return this.txRepo.find({
+      where: { ownerId, referenceType },
+      order: { createdAt: "DESC" },
     });
   }
 
@@ -120,10 +136,16 @@ export class WalletRepository {
     search?: string;
   }): Promise<{ items: WalletTransactionEntity[]; total: number }> {
     const qb = this.txRepo.createQueryBuilder("tx");
-    if (params.ownerType) qb.andWhere("tx.ownerType = :ownerType", { ownerType: params.ownerType });
-    if (params.type) qb.andWhere("tx.referenceType = :type", { type: params.type });
-    if (params.startDate) qb.andWhere("tx.createdAt >= :startDate", { startDate: params.startDate });
-    if (params.endDate) qb.andWhere("tx.createdAt <= :endDate", { endDate: params.endDate });
+    if (params.ownerType)
+      qb.andWhere("tx.ownerType = :ownerType", { ownerType: params.ownerType });
+    if (params.type)
+      qb.andWhere("tx.referenceType = :type", { type: params.type });
+    if (params.startDate)
+      qb.andWhere("tx.createdAt >= :startDate", {
+        startDate: params.startDate,
+      });
+    if (params.endDate)
+      qb.andWhere("tx.createdAt <= :endDate", { endDate: params.endDate });
     if (params.search) {
       qb.andWhere(
         "(tx.description ILIKE :search OR tx.referenceId ILIKE :search OR tx.ownerId ILIKE :search)",
@@ -135,12 +157,16 @@ export class WalletRepository {
     return { items, total };
   }
 
-  async getStatsSummary(startDate?: string, endDate?: string): Promise<{
+  async getStatsSummary(
+    startDate?: string,
+    endDate?: string,
+  ): Promise<{
     totalTopupVolume: number;
     totalSettlementVolume: number;
   }> {
     const statsQb = this.txRepo.createQueryBuilder("tx");
-    if (startDate) statsQb.andWhere("tx.createdAt >= :startDate", { startDate });
+    if (startDate)
+      statsQb.andWhere("tx.createdAt >= :startDate", { startDate });
     if (endDate) statsQb.andWhere("tx.createdAt <= :endDate", { endDate });
     const stats = await statsQb
       .select("tx.referenceType", "type")
@@ -152,9 +178,63 @@ export class WalletRepository {
     let totalSettlementVolume = 0;
     for (const row of stats) {
       if (row.type === "TOPUP") totalTopupVolume = Number(row.total) || 0;
-      if (row.type === "SETTLEMENT") totalSettlementVolume = Number(row.total) || 0;
+      if (row.type === "SETTLEMENT")
+        totalSettlementVolume = Number(row.total) || 0;
     }
     return { totalTopupVolume, totalSettlementVolume };
+  }
+
+  async getEarningsByOwner(
+    ownerId: string,
+    ownerType: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<{
+    totalEarnings: number;
+    totalOrders: number;
+    earningsByDay: any[];
+  }> {
+    const where: Record<string, unknown> = {
+      ownerId,
+      ownerType,
+      referenceType: "SETTLEMENT",
+      type: In(["CREDIT", "REVENUE"]),
+    };
+    if (startDate || endDate) {
+      const from = startDate ? new Date(startDate) : new Date(0);
+      const to = endDate ? new Date(endDate) : new Date(8640000000000000);
+      where["createdAt"] = Between(from, to);
+    }
+
+    const txs = await this.txRepo.find({ where, order: { createdAt: "ASC" } });
+
+    const byDay = new Map<
+      string,
+      { earnings: number; orderIds: Set<string> }
+    >();
+    for (const tx of txs) {
+      const date = tx.createdAt.toISOString().slice(0, 10);
+      const bucket = byDay.get(date) ?? {
+        earnings: 0,
+        orderIds: new Set<string>(),
+      };
+      bucket.earnings += Number(tx.amount);
+      if (tx.referenceId) bucket.orderIds.add(tx.referenceId);
+      byDay.set(date, bucket);
+    }
+
+    const earningsByDay = [...byDay.entries()]
+      .map(([date, b]) => ({
+        date,
+        earnings: b.earnings,
+        orders: b.orderIds.size,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const totalEarnings = earningsByDay.reduce((s, d) => s + d.earnings, 0);
+    const totalOrders = earningsByDay.reduce((s, d) => s + d.orders, 0);
+
+    return { totalEarnings, totalOrders, earningsByDay };
   }
 
   toDomain(entity: WalletEntity): Wallet {
@@ -163,6 +243,7 @@ export class WalletRepository {
       ownerId: entity.ownerId,
       ownerType: entity.ownerType,
       balance: Number(entity.balance),
+      heldBalance: Number(entity.heldBalance || 0),
       currency: entity.currency,
     });
   }

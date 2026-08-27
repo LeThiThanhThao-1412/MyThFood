@@ -14,7 +14,7 @@ export class WalletEntity {
   id!: string;
 
   @Index()
-  @Column("uuid")
+  @Column({ type: "varchar", length: 100 })
   ownerId!: string;
 
   @Index()
@@ -24,6 +24,9 @@ export class WalletEntity {
   @Column("decimal", { precision: 14, scale: 2, default: 0 })
   balance!: number;
 
+  @Column("decimal", { precision: 14, scale: 2, default: 0 })
+  heldBalance!: number;
+
   @Column({ type: "varchar", length: 10, default: "VND" })
   currency!: string;
 
@@ -31,9 +34,9 @@ export class WalletEntity {
   @VersionColumn()
   version!: number;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: "timestamptz" })
   createdAt!: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: "timestamptz" })
   updatedAt!: Date;
 }

@@ -122,6 +122,152 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     await this.repository.softDelete(id.toString());
   }
 
+  async findPendingOlderThan(cutoff: Date): Promise<Order[]> {
+    const entities = await this.repository.find({
+      where: { status: "PENDING" },
+      order: { created_at: "ASC" },
+    });
+
+    // Filter in-memory: only orders created before cutoff
+    const expired = entities.filter((e) => new Date(e.created_at) < cutoff);
+    return Promise.all(expired.map((e) => this.loadRelatedAndMap(e)));
+  }
+
+  async getDailyStats(options?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ dailyStats: any[]; summary: any }> {
+    const qb = this.repository
+      .createQueryBuilder("o")
+      .select("TO_CHAR(o.created_at, 'YYYY-MM-DD')", "date")
+      .addSelect("COUNT(*)", "orders")
+      .addSelect("COALESCE(SUM(o.total_amount), 0)", "revenue")
+      .where("o.deleted_at IS NULL")
+      .andWhere("o.status != :cancelled", { cancelled: "CANCELLED" })
+      .andWhere("o.status != :rejected", { rejected: "REJECTED" });
+
+    if (options?.startDate) {
+      qb.andWhere("o.created_at >= :startDate", {
+        startDate: new Date(options.startDate),
+      });
+    }
+    if (options?.endDate) {
+      qb.andWhere("o.created_at <= :endDate", {
+        endDate: new Date(options.endDate),
+      });
+    }
+
+    qb.groupBy("TO_CHAR(o.created_at, 'YYYY-MM-DD')").orderBy("date", "ASC");
+    const rows = await qb.getRawMany();
+
+    const dailyStats = rows.map((r) => ({
+      date: r.date,
+      orders: Number(r.orders ?? 0),
+      revenue: Number(r.revenue ?? 0),
+    }));
+
+    const summary = dailyStats.reduce(
+      (acc, d) => {
+        acc.totalOrders += d.orders;
+        acc.totalRevenue += d.revenue;
+        return acc;
+      },
+      { totalOrders: 0, totalRevenue: 0 },
+    );
+
+    return { dailyStats, summary };
+  }
+
+  async getMerchantStats(
+    merchantId: string,
+    options?: { startDate?: string; endDate?: string },
+  ): Promise<any> {
+    const applyDateRange = (qb: any) => {
+      if (options?.startDate) {
+        qb.andWhere("o.created_at >= :startDate", {
+          startDate: new Date(options.startDate),
+        });
+      }
+      if (options?.endDate) {
+        qb.andWhere("o.created_at <= :endDate", {
+          endDate: new Date(options.endDate),
+        });
+      }
+    };
+
+    const totalOrdersQb = this.repository
+      .createQueryBuilder("o")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL");
+    applyDateRange(totalOrdersQb);
+    const totalOrders = await totalOrdersQb.getCount();
+
+    const revenueQb = this.repository
+      .createQueryBuilder("o")
+      .select("COALESCE(SUM(o.total_amount), 0)", "revenue")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status != :cancelled", { cancelled: "CANCELLED" })
+      .andWhere("o.status != :rejected", { rejected: "REJECTED" });
+    applyDateRange(revenueQb);
+    const revenueRow = await revenueQb.getRawOne();
+
+    const pendingOrders = await this.repository
+      .createQueryBuilder("o")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status = :pending", { pending: "PENDING" })
+      .getCount();
+
+    const byDayQb = this.repository
+      .createQueryBuilder("o")
+      .select("TO_CHAR(o.created_at, 'YYYY-MM-DD')", "date")
+      .addSelect("COUNT(*)", "orders")
+      .addSelect("COALESCE(SUM(o.total_amount), 0)", "revenue")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status != :cancelled", { cancelled: "CANCELLED" })
+      .andWhere("o.status != :rejected", { rejected: "REJECTED" });
+    applyDateRange(byDayQb);
+    byDayQb
+      .groupBy("TO_CHAR(o.created_at, 'YYYY-MM-DD')")
+      .orderBy("date", "ASC");
+    const revenueByDay = (await byDayQb.getRawMany()).map((r) => ({
+      date: r.date,
+      orders: Number(r.orders ?? 0),
+      revenue: Number(r.revenue ?? 0),
+    }));
+
+    const topItemsQb = this.orderItemRepo
+      .createQueryBuilder("mi")
+      .select("mi.menu_item_id", "menuItemId")
+      .addSelect("MAX(mi.name)", "name")
+      .addSelect("SUM(mi.quantity)", "quantity")
+      .addSelect("COALESCE(SUM(mi.quantity * mi.unit_price), 0)", "revenue")
+      .innerJoin(OrderEntity, "o", "o.id = mi.order_id")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status != :cancelled", { cancelled: "CANCELLED" })
+      .andWhere("o.status != :rejected", { rejected: "REJECTED" });
+    applyDateRange(topItemsQb);
+    topItemsQb.groupBy("mi.menu_item_id").orderBy("quantity", "DESC").limit(10);
+    const topItems = (await topItemsQb.getRawMany()).map((r) => ({
+      menuItemId: r.menuItemId,
+      name: r.name,
+      quantity: Number(r.quantity ?? 0),
+      revenue: Number(r.revenue ?? 0),
+    }));
+
+    return {
+      merchantId,
+      totalOrders,
+      totalRevenue: Number(revenueRow?.revenue ?? 0),
+      pendingOrders,
+      revenueByDay,
+      topItems,
+    };
+  }
+
   private async loadRelatedAndMap(entity: OrderEntity): Promise<Order> {
     const items = await this.orderItemRepo.find({
       where: { order_id: entity.id },

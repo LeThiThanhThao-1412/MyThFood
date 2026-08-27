@@ -1,15 +1,15 @@
 # BUG-001: Payment Complete CASH Returns 500 Internal Server Error
 
-| Field | Value |
-|-------|-------|
-| **Bug ID** | BUG-001 |
-| **Title** | Payment `complete` endpoint returns 500 when completing CASH payment |
-| **Severity** | Medium (P2) |
-| **Priority** | High |
-| **Status** | Open |
-| **Found Date** | 2026-07-15 |
-| **Service** | Payment Service (Port 3006) |
-| **Environment** | Docker Compose (local dev) |
+| Field           | Value                                                                |
+| --------------- | -------------------------------------------------------------------- |
+| **Bug ID**      | BUG-001                                                              |
+| **Title**       | Payment `complete` endpoint returns 500 when completing CASH payment |
+| **Severity**    | Medium (P2)                                                          |
+| **Priority**    | High                                                                 |
+| **Status**      | Open                                                                 |
+| **Found Date**  | 2026-07-15                                                           |
+| **Service**     | Payment Service (Port 3006)                                          |
+| **Environment** | Docker Compose (local dev)                                           |
 
 ---
 
@@ -18,6 +18,7 @@
 1. Create a payment with `paymentMethod: "CASH"` via `POST /api/v1/api/v1/payments`
 2. Note the payment ID from response
 3. Call `PATCH /api/v1/api/v1/payments/:id/complete` with body:
+
 ```json
 {
   "transactionId": "txn-001"
@@ -44,6 +45,7 @@
 ## Evidence
 
 From `docs/API_TEST_CASES.md`:
+
 ```
 | 6.7 | Complete payment | PATCH | /api/v1/api/v1/payments/:id/complete | 200 OK → COMPLETED | 500 Internal Server Error (**BUG**) | ❌ FAIL |
 ```

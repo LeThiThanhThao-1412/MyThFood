@@ -265,6 +265,7 @@ describe("Order Aggregate", () => {
         driverId: original.orderDriverId,
         cancelReason: original.orderCancelReason,
         rejectionReason: original.orderRejectionReason,
+        paymentMethod: original.orderPaymentMethod,
       });
 
       expect(rehydrated.id.equals(original.id)).toBe(true);

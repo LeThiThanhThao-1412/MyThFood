@@ -1,15 +1,15 @@
 # BUG-002: Payment Fail Returns 400 Bad Request Instead of 200
 
-| Field | Value |
-|-------|-------|
-| **Bug ID** | BUG-002 |
-| **Title** | Payment `fail` endpoint returns 400 Bad Request instead of 200 with FAILED status |
-| **Severity** | Medium (P2) |
-| **Priority** | Medium |
-| **Status** | Open |
-| **Found Date** | 2026-07-15 |
-| **Service** | Payment Service (Port 3006) |
-| **Environment** | Docker Compose (local dev) |
+| Field           | Value                                                                             |
+| --------------- | --------------------------------------------------------------------------------- |
+| **Bug ID**      | BUG-002                                                                           |
+| **Title**       | Payment `fail` endpoint returns 400 Bad Request instead of 200 with FAILED status |
+| **Severity**    | Medium (P2)                                                                       |
+| **Priority**    | Medium                                                                            |
+| **Status**      | Open                                                                              |
+| **Found Date**  | 2026-07-15                                                                        |
+| **Service**     | Payment Service (Port 3006)                                                       |
+| **Environment** | Docker Compose (local dev)                                                        |
 
 ---
 
@@ -17,6 +17,7 @@
 
 1. Create a payment via `POST /api/v1/api/v1/payments`
 2. Call `PATCH /api/v1/api/v1/payments/:id/fail` with body:
+
 ```json
 {
   "reason": "Insufficient funds"
@@ -43,6 +44,7 @@
 ## Evidence
 
 From `docs/API_TEST_CASES.md`:
+
 ```
 | 6.8 | Fail a payment | PATCH | /api/v1/api/v1/payments/:id/fail | 200 OK → FAILED | 400 Bad Request (**BUG**) | ❌ FAIL |
 ```
@@ -52,6 +54,7 @@ From `docs/API_TEST_CASES.md`:
 ## Root Cause Analysis
 
 The 400 status suggests a request validation issue. Possible causes:
+
 1. DTO validation rejecting the `reason` field
 2. The endpoint expects a different request body format
 3. Status validation logic preventing the transition to FAILED

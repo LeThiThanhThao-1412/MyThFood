@@ -9,11 +9,10 @@ import { Payment } from "../domain/payment.aggregate";
 @Injectable()
 export class SplitPaymentService {
   private readonly logger = new Logger(SplitPaymentService.name);
-  private readonly walletServiceUrl = process.env.WALLET_SERVICE_URL || "http://localhost:3009";
+  private readonly walletServiceUrl =
+    process.env.WALLET_SERVICE_URL || "http://localhost:3009";
 
-  constructor(
-    private readonly stripeService: StripeService,
-  ) {}
+  constructor(private readonly stripeService: StripeService) {}
 
   /**
    * Execute the split payment flow when an order is delivered:
@@ -208,19 +207,16 @@ export class SplitPaymentService {
     // Debit the wallet via wallet-service
     let newBalance = 0;
     try {
-      const res = await fetch(
-        `${this.walletServiceUrl}/api/v1/wallets/debit`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ownerId: params.ownerId,
-            ownerType: params.ownerType,
-            amount: params.amount,
-            description: `Wallet withdrawal to bank account`,
-          }),
-        },
-      );
+      const res = await fetch(`${this.walletServiceUrl}/api/v1/wallets/debit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerId: params.ownerId,
+          ownerType: params.ownerType,
+          amount: params.amount,
+          description: `Wallet withdrawal to bank account`,
+        }),
+      });
       if (res.ok) {
         const data: any = await res.json();
         newBalance = data.balance || 0;
@@ -255,21 +251,18 @@ export class SplitPaymentService {
     description: string,
     orderId: string,
   ): Promise<void> {
-    const res = await fetch(
-      `${this.walletServiceUrl}/api/v1/wallets/credit`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ownerId,
-          ownerType,
-          amount,
-          description,
-          referenceId: orderId,
-          referenceType: "SETTLEMENT",
-        }),
-      },
-    );
+    const res = await fetch(`${this.walletServiceUrl}/api/v1/wallets/credit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ownerId,
+        ownerType,
+        amount,
+        description,
+        referenceId: orderId,
+        referenceType: "SETTLEMENT",
+      }),
+    });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`Wallet credit failed: ${res.status} ${text}`);

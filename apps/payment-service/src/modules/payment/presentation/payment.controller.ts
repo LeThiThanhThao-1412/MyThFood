@@ -13,6 +13,7 @@ import {
   Req,
 } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
 import { Request } from "express";
 import { PaymentService } from "../application/payment.service";
 import { StripeWebhookService } from "../../stripe/stripe.webhook";
@@ -93,6 +94,18 @@ export class PaymentController {
     @Body() body: { transactionId: string },
   ): Promise<PaymentResponseDto> {
     return this.paymentService.complete(id, body.transactionId ?? "manual");
+  }
+
+  @Patch(":id/confirm")
+  @UseGuards(AuthGuard("jwt"))
+  async confirm(@Param("id") id: string): Promise<PaymentResponseDto> {
+    return this.paymentService.complete(id, "manual");
+  }
+
+  @Patch(":id/settle")
+  @UseGuards(AuthGuard("jwt"))
+  async settle(@Param("id") id: string): Promise<PaymentResponseDto> {
+    return this.paymentService.complete(id, "settled");
   }
 
   @Patch(":id/fail")
@@ -192,7 +205,8 @@ export class PaymentController {
   // ===================== Stats Daily (B8) =====================
 
   @Get("stats/daily")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
   async getDailyStats(
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,

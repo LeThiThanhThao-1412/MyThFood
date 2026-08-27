@@ -1,4 +1,4 @@
-declare module '*.css';
+declare module "*.css";
 
 declare namespace NodeJS {
   interface ProcessEnv {

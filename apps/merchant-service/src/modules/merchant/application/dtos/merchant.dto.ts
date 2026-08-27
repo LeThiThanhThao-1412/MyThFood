@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsUUID,
   Min,
+  Max,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -44,6 +45,15 @@ export class RegisterMerchantDto {
   @IsNumber()
   @Type(() => Number)
   longitude?: number;
+
+  // FIX #5: Category system - 1 primary + up to 3 secondary categories
+  @IsOptional()
+  @IsString()
+  primaryCategory?: string;
+
+  @IsOptional()
+  @IsString({ each: true })
+  secondaryCategories?: string[];
 }
 
 // ===================== Update Merchant =====================
@@ -89,6 +99,15 @@ export class UpdateMerchantDto {
   @IsNumber()
   @Type(() => Number)
   longitude?: number;
+
+  // FIX #5: Category system - 1 primary + up to 3 secondary categories
+  @IsOptional()
+  @IsString()
+  primaryCategory?: string;
+
+  @IsOptional()
+  @IsString({ each: true })
+  secondaryCategories?: string[];
 }
 
 // ===================== Query Merchants =====================
@@ -101,6 +120,11 @@ export class MerchantQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  // FIX #5: Filter by category
+  @IsOptional()
+  @IsString()
+  category?: string;
 
   @IsOptional()
   @IsNumber()
@@ -129,6 +153,21 @@ export class RejectMerchantDto {
   reason!: string;
 }
 
+// ===================== Update Rating (internal) =====================
+
+export class UpdateRatingDto {
+  @IsNumber()
+  @Min(0)
+  @Max(5)
+  @Type(() => Number)
+  rating!: number;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  totalRatings!: number;
+}
+
 // ===================== Merchant Response =====================
 
 export class MerchantResponseDto {
@@ -145,9 +184,14 @@ export class MerchantResponseDto {
   longitude!: number | null;
   status!: string;
   rating!: number;
+  totalRatings!: number;
   totalOrders!: number;
   capacityStatus!: string;
   currentOrderCount!: number;
+  primaryCategory!: string | null;
+  secondaryCategories!: string[];
+  isOpen!: boolean;
+  isOpenNow!: boolean;
   createdAt!: Date;
   updatedAt!: Date;
 }

@@ -107,29 +107,70 @@ export class DispatchRepository {
     lat: number,
     lng: number,
     radiusKm: number,
-  ): Promise<{ driverId: string; distanceKm: number; latitude: number; longitude: number }[]> {
-    // Query all ONLINE drivers from driver-service DB (shared postgres)
-    const result = await this.repo.query(
-      `SELECT d.id as "driverId",
-              d."currentLatitude" as latitude,
-              d."currentLongitude" as longitude,
-              (6371 * acos(
-                cos(radians($1)) * cos(radians(d."currentLatitude")) *
-                cos(radians(d."currentLongitude") - radians($2)) +
-                sin(radians($1)) * sin(radians(d."currentLatitude"))
-              )) as "distanceKm"
-       FROM drivers d
-       WHERE d.status = 'ACTIVE'
-         AND d."onlineStatus" = 'ONLINE'
-         AND d."fatigueLevel" != 'CRITICAL'
-         AND d."currentOrderId" IS NULL
-         AND d."currentLatitude" IS NOT NULL
-         AND d."currentLongitude" IS NOT NULL
-         ${radiusKm < 9999 ? 'AND (6371 * acos(cos(radians($1)) * cos(radians(d."currentLatitude")) * cos(radians(d."currentLongitude") - radians($2)) + sin(radians($1)) * sin(radians(d."currentLatitude")))) <= $3' : ''}
-       ORDER BY "distanceKm" ASC
-       LIMIT 20`,
-      radiusKm < 9999 ? [lat, lng, radiusKm] : [lat, lng],
-    );
-    return result;
+  ): Promise<
+    {
+      driverId: string;
+      distanceKm: number;
+      latitude: number;
+      longitude: number;
+    }[]
+  > {
+    // Lấy danh sách tài xế khả dụng từ driver-service (HTTP) — không query xuyên DB
+    const driverUrl =
+      process.env.DRIVER_SERVICE_URL || "http://driver-service:3007";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+
+    try {
+      const res = await fetch(`${driverUrl}/api/v1/drivers/available/list`, {
+        headers: { "x-service-key": serviceKey },
+      });
+      if (!res.ok) return [];
+      const json: any = await res.json();
+      const drivers: any[] = json?.data ?? json ?? [];
+
+      const results: {
+        driverId: string;
+        distanceKm: number;
+        latitude: number;
+        longitude: number;
+      }[] = [];
+      for (const d of drivers) {
+        const dLat = Number(d.currentLatitude);
+        const dLng = Number(d.currentLongitude);
+        if (dLat == null || dLng == null || isNaN(dLat) || isNaN(dLng))
+          continue;
+        if (d.currentOrderId) continue; // đã lọc ở driver-service, kiểm tra lại cho chắc
+        const distanceKm = this._haversine(lat, lng, dLat, dLng);
+        if (radiusKm < 9999 && distanceKm > radiusKm) continue;
+        results.push({
+          driverId: d.id,
+          distanceKm,
+          latitude: dLat,
+          longitude: dLng,
+        });
+      }
+      results.sort((a, b) => a.distanceKm - b.distanceKm);
+      return results.slice(0, 20);
+    } catch {
+      return [];
+    }
+  }
+
+  private _haversine(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+  ): number {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 }

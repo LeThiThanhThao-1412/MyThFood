@@ -147,19 +147,31 @@ export class WalletTransactionResponseDto {
 }
 
 export class PaymentQueryDto {
-  @IsUUID("4")
+  @IsString()
   @IsOptional()
   consumerId?: string;
 
-  @IsUUID("4")
+  @IsString()
   @IsOptional()
   merchantId?: string;
 
-  @IsUUID("4")
+  @IsString()
   @IsOptional()
   orderId?: string;
 
   @IsOptional()
   @IsEnum(PaymentStatus)
   status?: PaymentStatus;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @Type(() => Number)
+  take?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Type(() => Number)
+  skip?: number;
 }

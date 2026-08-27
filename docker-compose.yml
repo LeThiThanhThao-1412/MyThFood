@@ -1,4 +1,4 @@
-version: '3.9'
+version: "3.9"
 
 services:
   # ============================================================================
@@ -10,7 +10,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-mythfood}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME:-mythfood_identity}
     ports:
       - "5432:5432"
@@ -36,7 +36,7 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-mythfood_redis_secret_dev}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
     healthcheck:
       test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 10s
@@ -59,16 +59,17 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3001
+      TZ: Asia/Ho_Chi_Minh
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_NAME: ${DB_NAME_IDENTITY:-mythfood_identity}
       DATABASE_USER: ${DB_USER:-mythfood}
-      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
-      JWT_SECRET: ${JWT_SECRET_IDENTITY:-dev_jwt_secret_change_me}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET_IDENTITY:-dev_refresh_secret_change_me}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_IDENTITY}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET_IDENTITY}
       JWT_EXPIRATION: 1h
       JWT_REFRESH_EXPIRATION: 7d
-      REDIS_URL: redis://default:${REDIS_PASSWORD:-mythfood_redis_secret_dev}@redis:6379
+      REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -91,12 +92,13 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3002
+      TZ: Asia/Ho_Chi_Minh
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_NAME: ${DB_NAME_CONSUMER:-mythfood_consumer}
       DATABASE_USER: ${DB_USER:-mythfood}
-      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
-      JWT_SECRET: ${JWT_SECRET_CONSUMER:-dev_jwt_secret_change_me}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_CONSUMER}
       JWT_EXPIRATION: 1h
     depends_on:
       postgres:
@@ -122,9 +124,13 @@ services:
       DATABASE_PORT: 5432
       DATABASE_NAME: ${DB_NAME_MERCHANT:-mythfood_merchant}
       DATABASE_USER: ${DB_USER:-mythfood}
-      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
-      JWT_SECRET: ${JWT_SECRET_MERCHANT:-dev_jwt_secret_change_me}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_MERCHANT}
       JWT_EXPIRATION: 1h
+      TZ: Asia/Ho_Chi_Minh
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      ORDER_SERVICE_URL: http://order-service:3004
+      REVIEW_SERVICE_URL: http://review-service:3011
     depends_on:
       postgres:
         condition: service_healthy
@@ -145,13 +151,19 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3004
+      TZ: Asia/Ho_Chi_Minh
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_NAME: ${DB_NAME_ORDER:-mythfood_order}
       DATABASE_USER: ${DB_USER:-mythfood}
-      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
-      JWT_SECRET: ${JWT_SECRET_ORDER:-dev_jwt_secret_change_me}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_ORDER}
       JWT_EXPIRATION: 1h
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      DISPATCH_SERVICE_URL: http://dispatch-service:3008
+      MERCHANT_SERVICE_URL: http://merchant-service:3003
+      DRIVER_SERVICE_URL: http://driver-service:3007
+      PROMOTION_SERVICE_URL: http://promotion-service:3012
     depends_on:
       postgres:
         condition: service_healthy
@@ -172,12 +184,13 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3005
+      TZ: Asia/Ho_Chi_Minh
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_NAME: ${DB_NAME_INVENTORY:-mythfood_inventory}
       DATABASE_USER: ${DB_USER:-mythfood}
-      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
-      JWT_SECRET: ${JWT_SECRET_INVENTORY:-dev_jwt_secret_change_me}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_INVENTORY}
       JWT_EXPIRATION: 1h
     depends_on:
       postgres:
@@ -199,15 +212,16 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3006
+      TZ: Asia/Ho_Chi_Minh
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_NAME: ${DB_NAME_PAYMENT:-mythfood_payment}
       DATABASE_USER: ${DB_USER:-mythfood}
-      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
-      JWT_SECRET: ${JWT_SECRET_PAYMENT:-dev_jwt_secret_change_me}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_PAYMENT}
       JWT_EXPIRATION: 1h
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -228,13 +242,16 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3007
+      TZ: Asia/Ho_Chi_Minh
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_NAME: ${DB_NAME_DRIVER:-mythfood_driver}
       DATABASE_USER: ${DB_USER:-mythfood}
-      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
-      JWT_SECRET: ${JWT_SECRET_DRIVER:-dev_jwt_secret_change_me}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_DRIVER}
       JWT_EXPIRATION: 1h
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      WALLET_SERVICE_URL: http://wallet-service:3009
     depends_on:
       postgres:
         condition: service_healthy
@@ -255,13 +272,18 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3008
+      TZ: Asia/Ho_Chi_Minh
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_NAME: ${DB_NAME_DISPATCH:-mythfood_dispatch}
       DATABASE_USER: ${DB_USER:-mythfood}
-      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
-      JWT_SECRET: ${JWT_SECRET_DISPATCH:-dev_jwt_secret_change_me}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_DISPATCH}
       JWT_EXPIRATION: 1h
+      WALLET_SERVICE_URL: http://wallet-service:3009
+      ORDER_SERVICE_URL: http://order-service:3004
+      DRIVER_SERVICE_URL: http://driver-service:3007
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -282,15 +304,17 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3009
+      TZ: Asia/Ho_Chi_Minh
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_NAME: ${DB_NAME_WALLET:-mythfood_wallet}
       DATABASE_USER: ${DB_USER:-mythfood}
-      DATABASE_PASSWORD: ${DB_PASSWORD:-mythfood_secret_dev}
-      JWT_SECRET: ${JWT_SECRET_WALLET:-dev_jwt_secret_change_me}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_WALLET}
       JWT_EXPIRATION: 1h
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-sk_test_placeholder}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
       STRIPE_API_VERSION: ${STRIPE_API_VERSION:-2023-10-16}
     depends_on:
       postgres:
@@ -312,15 +336,106 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3010
-      JWT_SECRET: ${JWT_SECRET_UPLOAD:-dev_jwt_secret_change_me}
+      TZ: Asia/Ho_Chi_Minh
+      JWT_SECRET: ${JWT_SECRET_UPLOAD}
       JWT_EXPIRATION: 1h
-      STORAGE_DRIVER: local
-      STORAGE_LOCAL_PATH: ./uploads
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+      UPLOAD_BASE_URL: http://localhost:3010
       STORAGE_MAX_FILE_SIZE: 5242880
       STORAGE_ALLOWED_TYPES: image/jpeg,image/png,image/webp
-      UPLOAD_BASE_URL: http://localhost:3010
-    volumes:
-      - upload_data:/app/uploads
+    networks:
+      - mythfood-network
+
+  # ============================================================================
+  # Review Service (NestJS) - Ratings & reviews
+  # ============================================================================
+  review-service:
+    build:
+      context: .
+      dockerfile: apps/review-service/Dockerfile
+    container_name: mythfood-review-service
+    restart: unless-stopped
+    ports:
+      - "3011:3011"
+    environment:
+      NODE_ENV: development
+      PORT: 3011
+      TZ: Asia/Ho_Chi_Minh
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${DB_NAME_REVIEW:-mythfood_review}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_REVIEW}
+      JWT_EXPIRATION: 1h
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      MERCHANT_SERVICE_URL: http://merchant-service:3003
+      ORDER_SERVICE_URL: http://order-service:3004
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mythfood-network
+
+  # ============================================================================
+  # Promotion Service (NestJS) - Vouchers & campaigns
+  # ============================================================================
+  promotion-service:
+    build:
+      context: .
+      dockerfile: apps/promotion-service/Dockerfile
+    container_name: mythfood-promotion-service
+    restart: unless-stopped
+    ports:
+      - "3012:3012"
+    environment:
+      NODE_ENV: development
+      PORT: 3012
+      TZ: Asia/Ho_Chi_Minh
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${DB_NAME_PROMOTION:-mythfood_promotion}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_PROMOTION}
+      JWT_EXPIRATION: 1h
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mythfood-network
+
+  # ============================================================================
+  # Notification Service (NestJS) - In-app notifications
+  # ============================================================================
+  notification-service:
+    build:
+      context: .
+      dockerfile: apps/notification-service/Dockerfile
+    container_name: mythfood-notification-service
+    restart: unless-stopped
+    ports:
+      - "3013:3013"
+    environment:
+      NODE_ENV: development
+      PORT: 3013
+      TZ: Asia/Ho_Chi_Minh
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: ${DB_NAME_NOTIFICATION:-mythfood_notification}
+      DATABASE_USER: ${DB_USER:-mythfood}
+      DATABASE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET_NOTIFICATION}
+      JWT_EXPIRATION: 1h
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - mythfood-network
 

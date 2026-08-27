@@ -160,7 +160,8 @@ export class MatchingEngineService {
 
     // Also check: created more than MATCHING_TIMEOUT_SECONDS ago
     const createdAt = dispatch.createdAt; // using inherited from AggregateRoot
-    const elapsed = (now.getTime() - (createdAt?.getTime() || now.getTime())) / 1000;
+    const elapsed =
+      (now.getTime() - (createdAt?.getTime() || now.getTime())) / 1000;
     return elapsed > MATCHING_TIMEOUT_SECONDS;
   }
 
@@ -168,8 +169,10 @@ export class MatchingEngineService {
    * Calculate distance between two coordinates (Haversine formula)
    */
   static haversineKm(
-    lat1: number, lng1: number,
-    lat2: number, lng2: number,
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
   ): number {
     const R = 6371;
     const dLat = ((lat2 - lat1) * Math.PI) / 180;

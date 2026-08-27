@@ -1,5 +1,5 @@
-export { httpClient, ApiError } from './http-client';
-export { socketClient } from './socket-client';
+export { httpClient, ApiError } from "./http-client";
+export { socketClient } from "./socket-client";
 export {
   authApi,
   consumerApi,
@@ -11,12 +11,13 @@ export {
   dispatchApi,
   shippingApi,
   walletApi,
+  uploadApi,
+  reviewApi,
+  promotionApi,
+  notificationApi,
   PORTS,
-} from './api-endpoints';
-export type {
-  ShippingFeeRequest,
-  ShippingFeeResponse,
-} from './api-endpoints';
+} from "./api-endpoints";
+export type { ShippingFeeRequest, ShippingFeeResponse } from "./api-endpoints";
 export type {
   ApiResponse,
   PaginatedResponse,
@@ -34,11 +35,20 @@ export type {
   CreateConsumerRequest,
   AddAddressRequest,
   AddPaymentMethodRequest,
+  UpdateConsumerProfileRequest,
+  ChangePasswordRequest,
   MerchantStatus,
   CapacityStatus,
   Merchant,
   CreateMerchantRequest,
   MenuCategory,
+  CreateMenuCategoryRequest,
+  UpdateMenuCategoryRequest,
+  OptionGroupType,
+  MenuItemOption,
+  MenuItemOptionGroup,
+  SelectedMenuItemOption,
+  SelectedOptionGroup,
   MenuItem,
   CreateMenuItemRequest,
   UpdateMenuItemRequest,
@@ -78,4 +88,20 @@ export type {
   CreateDispatchRequest,
   OrderStatusUpdate,
   DriverLocationUpdate,
-} from './types';
+  Review,
+  CreateReviewRequest,
+  ReplyReviewRequest,
+  PromotionType,
+  PromotionTarget,
+  PromotionFundedBy,
+  Promotion,
+  PromotionItem,
+  CreatePromotionRequest,
+  UpdatePromotionRequest,
+  ValidatePromotionRequest,
+  ApplyPromotionRequest,
+  PromotionUsage,
+  PromotionStats,
+  Notification,
+  CreateNotificationRequest,
+} from "./types";

@@ -10,8 +10,37 @@ import {
   Min,
   IsDateString,
   ArrayMinSize,
+  IsInt,
 } from "class-validator";
 import { Type } from "class-transformer";
+
+export class OrderItemOptionDto {
+  @IsString()
+  @IsNotEmpty()
+  optionId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  groupId!: string;
+
+  @IsString()
+  @IsOptional()
+  groupName?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  priceDelta!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  quantity?: number;
+}
 
 export class OrderItemDto {
   @IsUUID("4")
@@ -35,6 +64,12 @@ export class OrderItemDto {
   @IsString()
   @IsOptional()
   specialInstructions?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemOptionDto)
+  options?: OrderItemOptionDto[];
 }
 
 export class PlaceOrderDto {
@@ -89,6 +124,10 @@ export class PlaceOrderDto {
   @Type(() => Number)
   discount?: number;
 
+  @IsString()
+  @IsOptional()
+  promotionCode?: string;
+
   @IsDateString()
   @IsOptional()
   estimatedDeliveryTime?: string;
@@ -96,6 +135,10 @@ export class PlaceOrderDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  paymentMethod?: string;
 }
 
 export class UpdateOrderDto {
@@ -164,6 +207,7 @@ export class OrderResponseDto {
   driverId!: string | null;
   cancelReason!: string | null;
   rejectionReason!: string | null;
+  paymentMethod!: string;
   createdAt!: Date;
   updatedAt!: Date;
 }
@@ -175,4 +219,5 @@ export class OrderItemResponseDto {
   unitPrice!: number;
   subtotal!: number;
   specialInstructions!: string | null;
+  options!: OrderItemOptionDto[] | null;
 }

@@ -20,3 +20,6 @@ export {
   IDEMPOTENCY_METADATA_KEY,
 } from "./decorators/idempotency.decorator";
 export type { IdempotencyOptions } from "./decorators/idempotency.decorator";
+
+// Guards
+export { Roles, RolesGuard, ROLES_KEY } from "./guards/roles.guard";

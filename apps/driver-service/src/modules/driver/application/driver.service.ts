@@ -1,7 +1,7 @@
-import { Injectable } from "@nestjs/common";
-import {
-  BusinessRuleViolationError,
-} from "@mythfood/shared-kernel";
+import { Injectable, Logger } from "@nestjs/common";
+import { HttpService } from "@nestjs/axios";
+import { firstValueFrom } from "rxjs";
+import { BusinessRuleViolationError } from "@mythfood/shared-kernel";
 import { DriverRepository } from "../infrastructure/driver.repository";
 import { Driver } from "../domain/driver.aggregate";
 import { DriverId } from "../domain/driver-id";
@@ -14,7 +14,12 @@ import {
 
 @Injectable()
 export class DriverService {
-  constructor(private readonly driverRepo: DriverRepository) {}
+  private readonly logger = new Logger(DriverService.name);
+
+  constructor(
+    private readonly driverRepo: DriverRepository,
+    private readonly httpService: HttpService,
+  ) {}
 
   // ---- Driver Profile CRUD ----
 
@@ -183,16 +188,47 @@ export class DriverService {
     return driver;
   }
 
-  // ---- Earnings (B4) ----
+  // ---- Earnings (B4): delegate to wallet-service ----
   async getEarnings(id: string, period: string): Promise<any> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
+    const walletEarnings = await this.fetchWalletEarnings(
+      driver.id.toString(),
+      period,
+    );
+    const totalOrders =
+      walletEarnings?.totalOrders ?? driver.driverTotalOrders ?? 0;
+    const totalEarnings = walletEarnings?.totalEarnings ?? 0;
     return {
       driverId: driver.id.toString(),
       period,
-      totalEarnings: 0,
-      totalOrders: driver.driverTotalOrders ?? 0,
-      averagePerOrder: 0,
+      totalEarnings,
+      totalOrders,
+      averagePerOrder:
+        totalOrders > 0
+          ? Math.round((totalEarnings / totalOrders) * 100) / 100
+          : 0,
+      earningsByDay: walletEarnings?.earningsByDay ?? [],
     };
+  }
+
+  private async fetchWalletEarnings(
+    driverId: string,
+    period: string,
+  ): Promise<any | null> {
+    const url = process.env.WALLET_SERVICE_URL || "http://localhost:3009";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(`${url}/api/v1/wallets/earnings`, {
+          params: { ownerId: driverId, ownerType: "DRIVER", period },
+          headers: { "x-service-key": serviceKey },
+        }),
+      );
+      return res.data;
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch wallet earnings: ${err?.message}`);
+      return null;
+    }
   }
 
   // ---- Stats (B4) ----
@@ -201,7 +237,8 @@ export class DriverService {
     return {
       totalDrivers: all.length,
       activeDrivers: all.filter((d) => d.driverStatus === "ACTIVE").length,
-      onlineDrivers: all.filter((d) => d.driverOnlineStatus === "ONLINE").length,
+      onlineDrivers: all.filter((d) => d.driverOnlineStatus === "ONLINE")
+        .length,
     };
   }
 }

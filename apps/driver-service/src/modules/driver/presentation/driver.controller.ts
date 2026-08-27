@@ -12,7 +12,8 @@ import {
   HttpStatus,
   UseGuards,
 } from "@nestjs/common";
-import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { DriverService } from "../application/driver.service";
 import {
   CreateDriverDto,
@@ -22,19 +23,21 @@ import {
 } from "../application/dtos/driver.dto";
 
 @Controller("drivers")
-@UseGuards(AuthGuard("jwt"))
+@UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
 export class DriverController {
   constructor(private readonly driverService: DriverService) {}
 
   // ---- CRUD ----
 
   @Post()
+  @Roles("DRIVER", "ADMIN")
   async create(@Body() dto: CreateDriverDto) {
     const driver = await this.driverService.createDriver(dto);
     return { statusCode: HttpStatus.CREATED, data: this.toResponse(driver) };
   }
 
   @Get()
+  @Roles("ADMIN")
   async getAll(
     @Query("status") status?: string,
     @Query("onlineStatus") onlineStatus?: string,
@@ -61,18 +64,21 @@ export class DriverController {
   }
 
   @Get("user/:userId")
+  @Roles("DRIVER", "ADMIN")
   async getByUserId(@Param("userId") userId: string) {
     const driver = await this.driverService.getByUserId(userId);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Get(":id")
+  @Roles("DRIVER", "ADMIN")
   async getById(@Param("id") id: string) {
     const driver = await this.driverService.getById(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Put(":id")
+  @Roles("DRIVER", "ADMIN")
   async updateProfile(
     @Param("id") id: string,
     @Body() dto: UpdateDriverProfileDto,
@@ -82,6 +88,7 @@ export class DriverController {
   }
 
   @Delete(":id")
+  @Roles("ADMIN")
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param("id") id: string) {
     await this.driverService.deleteDriver(id);
@@ -90,24 +97,28 @@ export class DriverController {
   // ---- Training & Activation ----
 
   @Patch(":id/complete-training")
+  @Roles("ADMIN")
   async completeTraining(@Param("id") id: string) {
     const driver = await this.driverService.completeTraining(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/activate")
+  @Roles("ADMIN")
   async activate(@Param("id") id: string) {
     const driver = await this.driverService.activateDriver(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/deactivate")
+  @Roles("ADMIN")
   async deactivate(@Param("id") id: string) {
     const driver = await this.driverService.deactivateDriver(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/suspend")
+  @Roles("ADMIN")
   async suspend(@Param("id") id: string) {
     const driver = await this.driverService.suspendDriver(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
@@ -116,18 +127,21 @@ export class DriverController {
   // ---- Online/Offline ----
 
   @Patch(":id/go-online")
+  @Roles("DRIVER", "ADMIN")
   async goOnline(@Param("id") id: string) {
     const driver = await this.driverService.goOnline(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/go-offline")
+  @Roles("DRIVER", "ADMIN")
   async goOffline(@Param("id") id: string) {
     const driver = await this.driverService.goOffline(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/go-home")
+  @Roles("DRIVER", "ADMIN")
   async goHome(@Param("id") id: string) {
     const driver = await this.driverService.goHome(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
@@ -136,6 +150,7 @@ export class DriverController {
   // ---- GPS Location ----
 
   @Patch(":id/location")
+  @Roles("DRIVER", "ADMIN")
   async updateLocation(
     @Param("id") id: string,
     @Body() dto: UpdateLocationDto,
@@ -147,12 +162,14 @@ export class DriverController {
   // ---- Order Assignment ----
 
   @Patch(":id/assign-order")
+  @Roles("DRIVER", "ADMIN")
   async assignOrder(@Param("id") id: string, @Body("orderId") orderId: string) {
     const driver = await this.driverService.assignOrder(id, orderId);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/complete-order")
+  @Roles("DRIVER", "ADMIN")
   async completeOrder(@Param("id") id: string) {
     const driver = await this.driverService.completeOrder(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
@@ -161,18 +178,21 @@ export class DriverController {
   // ---- Fatigue ----
 
   @Patch(":id/fatigue")
+  @Roles("DRIVER", "ADMIN")
   async updateFatigue(@Param("id") id: string, @Body() dto: UpdateFatigueDto) {
     const driver = await this.driverService.updateFatigue(id, dto);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/take-break")
+  @Roles("DRIVER", "ADMIN")
   async takeBreak(@Param("id") id: string) {
     const driver = await this.driverService.takeBreak(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/force-break")
+  @Roles("ADMIN")
   async forceBreak(@Param("id") id: string) {
     const driver = await this.driverService.forceBreak(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
@@ -181,12 +201,14 @@ export class DriverController {
   // ---- Shift ----
 
   @Patch(":id/start-shift")
+  @Roles("DRIVER", "ADMIN")
   async startShift(@Param("id") id: string) {
     const driver = await this.driverService.startShift(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/end-shift")
+  @Roles("DRIVER", "ADMIN")
   async endShift(@Param("id") id: string) {
     const driver = await this.driverService.endShift(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
@@ -195,17 +217,19 @@ export class DriverController {
   // ---- Earnings & Stats (B4) ----
 
   @Get("stats")
+  @Roles("ADMIN")
   async getDriverStats() {
     const stats = await this.driverService.getDriverStats();
     return { statusCode: HttpStatus.OK, data: stats };
   }
 
   @Get(":id/earnings")
-  async getEarnings(
-    @Param("id") id: string,
-    @Query("period") period?: string,
-  ) {
-    const earnings = await this.driverService.getEarnings(id, period || "today");
+  @Roles("DRIVER", "ADMIN")
+  async getEarnings(@Param("id") id: string, @Query("period") period?: string) {
+    const earnings = await this.driverService.getEarnings(
+      id,
+      period || "today",
+    );
     return { statusCode: HttpStatus.OK, data: earnings };
   }
 

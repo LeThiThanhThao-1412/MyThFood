@@ -1,8 +1,9 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { BusinessRuleViolationError } from "@mythfood/shared-kernel";
 import { DispatchRepository } from "../infrastructure/dispatch.repository";
-import { Dispatch } from "../domain/dispatch.aggregate";
+import { Dispatch, DispatchStatus } from "../domain/dispatch.aggregate";
 import { DispatchId } from "../domain/dispatch-id";
+import { MatchingEngineService } from "./matching-engine.service";
 import {
   CreateDispatchDto,
   AssignDriverDto,
@@ -11,14 +12,20 @@ import {
   UpdateDispatchNotesDto,
 } from "./dtos/dispatch.dto";
 
-const WALLET_SERVICE_URL = process.env.WALLET_SERVICE_URL || "http://localhost:3009";
+const WALLET_SERVICE_URL =
+  process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
+const ORDER_SERVICE_URL =
+  process.env.ORDER_SERVICE_URL || "http://order-service:3004";
 const MIN_COD_BALANCE = 2_000_000;
 
 @Injectable()
 export class DispatchService {
   private readonly logger = new Logger(DispatchService.name);
 
-  constructor(private readonly dispatchRepo: DispatchRepository) {}
+  constructor(
+    private readonly dispatchRepo: DispatchRepository,
+    private readonly matchingEngine: MatchingEngineService,
+  ) {}
 
   // ---- Dispatch CRUD ----
 
@@ -31,6 +38,45 @@ export class DispatchService {
     }
     const dispatch = Dispatch.create(dto);
     await this.dispatchRepo.save(dispatch);
+
+    // Auto-match: tìm & gán tài xế gần nhất ngay lập tức
+    try {
+      return await this.autoMatchDispatch(dispatch.id.value);
+    } catch (err: any) {
+      this.logger.warn(
+        `Auto-match failed for dispatch ${dispatch.id.value}: ${err.message}`,
+      );
+      return dispatch;
+    }
+  }
+
+  /**
+   * Chạy matching engine theo vòng bán kính mở rộng (1.5→3→5→7→∞ km)
+   * và gán tài xế gần nhất cho dispatch đang ở trạng thái MATCHING.
+   */
+  async autoMatchDispatch(id: string): Promise<Dispatch> {
+    const dispatch = await this.dispatchRepo.findByIdOrFail(
+      DispatchId.from(id),
+    );
+    if (dispatch.dispatchStatus !== DispatchStatus.MATCHING) {
+      return dispatch;
+    }
+
+    for (let ring = 0; ring < 5; ring++) {
+      const result = await this.matchingEngine.findBestDriver(
+        dispatch,
+        ring,
+        false,
+      );
+      if (result.matched && result.driver) {
+        dispatch.assignDriver(result.driver.driverId);
+        await this.dispatchRepo.save(dispatch);
+        this.logger.log(
+          `Auto-assigned driver ${result.driver.driverId} (${result.driver.distanceKm.toFixed(2)} km) to dispatch ${id}`,
+        );
+        return dispatch;
+      }
+    }
     return dispatch;
   }
 
@@ -91,25 +137,65 @@ export class DispatchService {
   async assignDriver(
     id: string,
     dto: AssignDriverDto,
-    isCodOrder: boolean = false,
+    _isCodOrder: boolean = false,
     authToken?: string,
   ): Promise<Dispatch> {
     const dispatch = await this.dispatchRepo.findByIdOrFail(
       DispatchId.from(id),
     );
 
+    // Check if this order is COD by querying the order service
+    let isCodOrder = _isCodOrder;
+    try {
+      const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+      const orderUrl = `${ORDER_SERVICE_URL}/api/v1/orders/${dispatch.dispatchOrderId}`;
+      this.logger.log(`🔍 [COD-DEBUG] Querying order: ${orderUrl}`);
+      const orderRes = await fetch(orderUrl, {
+        headers: { "x-service-key": serviceKey },
+      });
+      if (orderRes.ok) {
+        const orderData = (await orderRes.json()) as any;
+        const paymentMethod =
+          orderData?.paymentMethod || orderData?.data?.paymentMethod;
+        isCodOrder = paymentMethod === "CASH" || paymentMethod === "COD";
+        this.logger.log(
+          `🔍 [COD-DEBUG] Order ${dispatch.dispatchOrderId} paymentMethod=${paymentMethod} → isCodOrder=${isCodOrder}`,
+        );
+      } else {
+        this.logger.warn(
+          `🔍 [COD-DEBUG] Order query failed: HTTP ${orderRes.status} (fallback isCodOrder=${_isCodOrder})`,
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `🔍 [COD-DEBUG] Order query error: ${err.message} (fallback isCodOrder=${_isCodOrder})`,
+      );
+    }
+
     // Check COD eligibility before assigning driver
     if (isCodOrder && dto.driverId) {
+      this.logger.log(
+        `🔍 [COD-DEBUG] Checking COD eligibility for driver ${dto.driverId}...`,
+      );
       const isEligible = await this.checkCodEligibility(
         dto.driverId,
         authToken,
       );
       if (!isEligible) {
+        this.logger.warn(
+          `🔍 [COD-DEBUG] Driver ${dto.driverId} NOT eligible for COD`,
+        );
         throw new BusinessRuleViolationError(
           `Driver ${dto.driverId} does not meet COD requirements (min balance: ${MIN_COD_BALANCE.toLocaleString("vi-VN")} VND)`,
         );
       }
-      this.logger.log(`Driver ${dto.driverId} passed COD eligibility check`);
+      this.logger.log(
+        `🔍 [COD-DEBUG] Driver ${dto.driverId} passed COD check ✅`,
+      );
+    } else {
+      this.logger.log(
+        `🔍 [COD-DEBUG] Skipping COD check: isCodOrder=${isCodOrder}, hasDriver=${!!dto.driverId}`,
+      );
     }
 
     dispatch.assignDriver(dto.driverId);
@@ -145,7 +231,10 @@ export class DispatchService {
         return false;
       }
 
-      const data = await response.json() as { eligible?: boolean; balance?: number };
+      const data = (await response.json()) as {
+        eligible?: boolean;
+        balance?: number;
+      };
       if (typeof data.eligible === "boolean") {
         return data.eligible;
       }
@@ -184,6 +273,14 @@ export class DispatchService {
     );
     dispatch.driverDecline(dto.reason, dto.detail);
     await this.dispatchRepo.save(dispatch);
+    // Tự tìm tài xế khác khi còn lượt retry
+    if (dispatch.hasRemainingRetries) {
+      try {
+        return await this.autoMatchDispatch(id);
+      } catch {
+        /* ignore */
+      }
+    }
     return dispatch;
   }
 
@@ -285,7 +382,9 @@ export class DispatchService {
 
   // ---- Location (B3) ----
   async getDispatchLocation(id: string): Promise<any> {
-    const dispatch = await this.dispatchRepo.findByIdOrFail(DispatchId.from(id));
+    const dispatch = await this.dispatchRepo.findByIdOrFail(
+      DispatchId.from(id),
+    );
     return {
       dispatchId: dispatch.id.value,
       status: dispatch.dispatchStatus,

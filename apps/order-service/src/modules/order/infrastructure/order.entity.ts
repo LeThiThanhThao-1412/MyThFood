@@ -46,6 +46,13 @@ export class OrderEntity {
   @Column("decimal", { precision: 12, scale: 2, default: 0 })
   discount!: number;
 
+  @Column("varchar", {
+    length: 20,
+    name: "discount_funded_by",
+    default: "MERCHANT",
+  })
+  discount_funded_by!: string;
+
   @Column("decimal", { precision: 12, scale: 2, name: "total_amount" })
   total_amount!: number;
 
@@ -83,12 +90,15 @@ export class OrderEntity {
   @Column("text", { name: "rejection_reason", nullable: true })
   rejection_reason!: string | null;
 
-  @CreateDateColumn({ name: "created_at" })
+  @Column("varchar", { length: 20, name: "payment_method", default: "CASH" })
+  payment_method!: string;
+
+  @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   created_at!: Date;
 
-  @UpdateDateColumn({ name: "updated_at" })
+  @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updated_at!: Date;
 
-  @DeleteDateColumn({ name: "deleted_at" })
+  @DeleteDateColumn({ name: "deleted_at", type: "timestamptz" })
   deleted_at!: Date | null;
 }

@@ -1,0 +1,39 @@
+import {
+  IsString,
+  IsUUID,
+  IsInt,
+  IsOptional,
+  IsArray,
+  Min,
+  Max,
+} from "class-validator";
+
+export class CreateReviewDto {
+  @IsUUID("4")
+  orderId!: string;
+
+  @IsUUID("4")
+  consumerId!: string;
+
+  @IsUUID("4")
+  merchantId!: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  rating!: number;
+
+  @IsOptional()
+  @IsString()
+  comment?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+}
+
+export class ReplyReviewDto {
+  @IsString()
+  reply!: string;
+}

@@ -1,18 +1,18 @@
-'use client';
+"use client";
 
-import { useState, FormEvent, useEffect } from 'react';
+import { useState, FormEvent, useEffect } from "react";
 import {
   useStripe,
   useElements,
   CardNumberElement,
   CardExpiryElement,
   CardCvcElement,
-} from '@stripe/react-stripe-js';
+} from "@stripe/react-stripe-js";
 import type {
   StripeCardNumberElementChangeEvent,
   StripeCardExpiryElementChangeEvent,
   StripeCardCvcElementChangeEvent,
-} from '@stripe/stripe-js';
+} from "@stripe/stripe-js";
 
 interface StripeCardFormProps {
   amount: number;
@@ -23,27 +23,29 @@ interface StripeCardFormProps {
 
 const ELEMENT_STYLE = {
   base: {
-    fontSize: '15px',
-    color: '#1f2937',
-    fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif',
-    '::placeholder': { color: '#9ca3af' },
+    fontSize: "15px",
+    color: "#1f2937",
+    fontFamily: "ui-sans-serif, system-ui, -apple-system, sans-serif",
+    "::placeholder": { color: "#9ca3af" },
   },
   invalid: {
-    color: '#ef4444',
-    iconColor: '#ef4444',
+    color: "#ef4444",
+    iconColor: "#ef4444",
   },
 };
 
-function detectCardBrand(brand: string): { icon: string; label: string } | null {
+function detectCardBrand(
+  brand: string,
+): { icon: string; label: string } | null {
   const map: Record<string, { icon: string; label: string }> = {
-    visa: { icon: '💳', label: 'Visa' },
-    mastercard: { icon: '💳', label: 'Mastercard' },
-    amex: { icon: '💳', label: 'Amex' },
-    discover: { icon: '💳', label: 'Discover' },
-    jcb: { icon: '💳', label: 'JCB' },
-    unionpay: { icon: '💳', label: 'UnionPay' },
-    diners: { icon: '💳', label: 'Diners' },
-    unknown: { icon: '💳', label: 'Thẻ' },
+    visa: { icon: "💳", label: "Visa" },
+    mastercard: { icon: "💳", label: "Mastercard" },
+    amex: { icon: "💳", label: "Amex" },
+    discover: { icon: "💳", label: "Discover" },
+    jcb: { icon: "💳", label: "JCB" },
+    unionpay: { icon: "💳", label: "UnionPay" },
+    diners: { icon: "💳", label: "Diners" },
+    unknown: { icon: "💳", label: "Thẻ" },
   };
   return map[brand.toLowerCase()] || map.unknown;
 }
@@ -57,24 +59,27 @@ export default function StripeCardForm({
   const stripe = useStripe();
   const elements = useElements();
   const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentError, setPaymentError] = useState('');
+  const [paymentError, setPaymentError] = useState("");
 
   // Card brand detection
-  const [cardBrand, setCardBrand] = useState<{ icon: string; label: string } | null>(null);
+  const [cardBrand, setCardBrand] = useState<{
+    icon: string;
+    label: string;
+  } | null>(null);
   const [cardComplete, setCardComplete] = useState(false);
   const [expiryComplete, setExpiryComplete] = useState(false);
   const [cvcComplete, setCvcComplete] = useState(false);
 
   // Field-level errors
-  const [cardError, setCardError] = useState('');
-  const [expiryError, setExpiryError] = useState('');
-  const [cvcError, setCvcError] = useState('');
+  const [cardError, setCardError] = useState("");
+  const [expiryError, setExpiryError] = useState("");
+  const [cvcError, setCvcError] = useState("");
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
     if (!stripe || !elements) {
-      setPaymentError('Stripe chưa được tải. Vui lòng thử lại.');
+      setPaymentError("Stripe chưa được tải. Vui lòng thử lại.");
       return;
     }
 
@@ -84,33 +89,31 @@ export default function StripeCardForm({
     try {
       const cardElement = elements.getElement(CardNumberElement);
       if (!cardElement) {
-        setPaymentError('Vui lòng nhập thông tin thẻ.');
+        setPaymentError("Vui lòng nhập thông tin thẻ.");
         setIsProcessing(false);
         onProcessing(false);
         return;
       }
 
-      const { error: stripeError, paymentIntent } = await stripe.confirmCardPayment(
-        elements.getElement('card') as any,
-        {
+      const { error: stripeError, paymentIntent } =
+        await stripe.confirmCardPayment(elements.getElement("card") as any, {
           payment_method: {
             card: cardElement,
           },
-        },
-      );
+        });
 
       if (stripeError) {
-        setPaymentError(stripeError.message || 'Thanh toán thất bại.');
-        onError(stripeError.message || 'Thanh toán thất bại.');
-      } else if (paymentIntent?.status === 'succeeded') {
+        setPaymentError(stripeError.message || "Thanh toán thất bại.");
+        onError(stripeError.message || "Thanh toán thất bại.");
+      } else if (paymentIntent?.status === "succeeded") {
         onSuccess(paymentIntent.id);
-      } else if (paymentIntent?.status === 'requires_capture') {
+      } else if (paymentIntent?.status === "requires_capture") {
         onSuccess(paymentIntent.id);
       } else {
-        onSuccess(paymentIntent?.id || 'pending');
+        onSuccess(paymentIntent?.id || "pending");
       }
     } catch (err: any) {
-      const msg = err.message || 'Lỗi thanh toán không xác định';
+      const msg = err.message || "Lỗi thanh toán không xác định";
       setPaymentError(msg);
       onError(msg);
     } finally {
@@ -128,18 +131,22 @@ export default function StripeCardForm({
         <label className="block text-xs font-semibold text-gray-600 mb-1.5 ml-1">
           Số thẻ
         </label>
-        <div className={`relative rounded-xl border bg-gray-50 px-4 py-3.5 transition-all ${
-          cardError ? 'border-red-300 bg-red-50' : 'border-gray-200 focus-within:border-[#ff6b35] focus-within:bg-white focus-within:ring-2 focus-within:ring-orange-200'
-        }`}>
+        <div
+          className={`relative rounded-xl border bg-gray-50 px-4 py-3.5 transition-all ${
+            cardError
+              ? "border-red-300 bg-red-50"
+              : "border-gray-200 focus-within:border-[#ff6b35] focus-within:bg-white focus-within:ring-2 focus-within:ring-orange-200"
+          }`}
+        >
           <CardNumberElement
             options={{
               style: ELEMENT_STYLE,
-              placeholder: '1234 5678 9012 3456',
+              placeholder: "1234 5678 9012 3456",
               showIcon: true,
             }}
             onChange={(event: StripeCardNumberElementChangeEvent) => {
               setCardComplete(event.complete);
-              setCardError(event.error?.message || '');
+              setCardError(event.error?.message || "");
               if (event.brand) {
                 setCardBrand(detectCardBrand(event.brand));
               } else {
@@ -166,17 +173,21 @@ export default function StripeCardForm({
           <label className="block text-xs font-semibold text-gray-600 mb-1.5 ml-1">
             Hết hạn (MM/YY)
           </label>
-          <div className={`rounded-xl border bg-gray-50 px-4 py-3.5 transition-all ${
-            expiryError ? 'border-red-300 bg-red-50' : 'border-gray-200 focus-within:border-[#ff6b35] focus-within:bg-white focus-within:ring-2 focus-within:ring-orange-200'
-          }`}>
+          <div
+            className={`rounded-xl border bg-gray-50 px-4 py-3.5 transition-all ${
+              expiryError
+                ? "border-red-300 bg-red-50"
+                : "border-gray-200 focus-within:border-[#ff6b35] focus-within:bg-white focus-within:ring-2 focus-within:ring-orange-200"
+            }`}
+          >
             <CardExpiryElement
               options={{
                 style: ELEMENT_STYLE,
-                placeholder: 'MM / YY',
+                placeholder: "MM / YY",
               }}
               onChange={(event: StripeCardExpiryElementChangeEvent) => {
                 setExpiryComplete(event.complete);
-                setExpiryError(event.error?.message || '');
+                setExpiryError(event.error?.message || "");
               }}
             />
           </div>
@@ -190,17 +201,21 @@ export default function StripeCardForm({
           <label className="block text-xs font-semibold text-gray-600 mb-1.5 ml-1">
             Mã CVC
           </label>
-          <div className={`rounded-xl border bg-gray-50 px-4 py-3.5 transition-all ${
-            cvcError ? 'border-red-300 bg-red-50' : 'border-gray-200 focus-within:border-[#ff6b35] focus-within:bg-white focus-within:ring-2 focus-within:ring-orange-200'
-          }`}>
+          <div
+            className={`rounded-xl border bg-gray-50 px-4 py-3.5 transition-all ${
+              cvcError
+                ? "border-red-300 bg-red-50"
+                : "border-gray-200 focus-within:border-[#ff6b35] focus-within:bg-white focus-within:ring-2 focus-within:ring-orange-200"
+            }`}
+          >
             <CardCvcElement
               options={{
                 style: ELEMENT_STYLE,
-                placeholder: '123',
+                placeholder: "123",
               }}
               onChange={(event: StripeCardCvcElementChangeEvent) => {
                 setCvcComplete(event.complete);
-                setCvcError(event.error?.message || '');
+                setCvcError(event.error?.message || "");
               }}
             />
           </div>
@@ -213,7 +228,8 @@ export default function StripeCardForm({
       {/* ===== Card Holder Name (Optional) ===== */}
       <div className="mb-4">
         <label className="block text-xs font-semibold text-gray-600 mb-1.5 ml-1">
-          Tên chủ thẻ <span className="text-gray-400 font-normal">(không bắt buộc)</span>
+          Tên chủ thẻ{" "}
+          <span className="text-gray-400 font-normal">(không bắt buộc)</span>
         </label>
         <input
           type="text"
@@ -225,13 +241,13 @@ export default function StripeCardForm({
 
       {/* ===== Card brand badges ===== */}
       <div className="flex items-center gap-2 mb-4 justify-center">
-        {['Visa', 'Mastercard', 'Amex', 'JCB'].map(b => (
+        {["Visa", "Mastercard", "Amex", "JCB"].map((b) => (
           <span
             key={b}
             className={`text-xs px-2 py-1 rounded-md font-medium border transition-colors ${
               cardBrand?.label === b
-                ? 'bg-[#fff7ed] border-[#ff6b35] text-[#ff6b35]'
-                : 'bg-transparent border-gray-200 text-gray-400'
+                ? "bg-[#fff7ed] border-[#ff6b35] text-[#ff6b35]"
+                : "bg-transparent border-gray-200 text-gray-400"
             }`}
           >
             {b}
@@ -268,7 +284,7 @@ export default function StripeCardForm({
             Đang xử lý thanh toán...
           </>
         ) : (
-          `Thanh toán ${(amount || 0).toLocaleString('vi-VN')}₫`
+          `Thanh toán ${(amount || 0).toLocaleString("vi-VN")}₫`
         )}
       </button>
 

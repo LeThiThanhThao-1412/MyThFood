@@ -65,7 +65,11 @@ export class AuthController {
     @Req() req: { user: { userId: string } },
     @Body() body: { currentPassword: string; newPassword: string },
   ) {
-    await this.authService.changePassword(req.user.userId, body.currentPassword, body.newPassword);
+    await this.authService.changePassword(
+      req.user.userId,
+      body.currentPassword,
+      body.newPassword,
+    );
     return { statusCode: 200, message: "Password changed successfully" };
   }
 

@@ -21,8 +21,17 @@ export interface AuthTokens {
   };
 }
 
-/** Allowed roles for self-registration (cannot self-assign elevated roles) */
-const ALLOWED_SELF_REGISTER_ROLES: UserRole[] = ["CONSUMER", "DRIVER"];
+/**
+ * Allowed roles for self-registration.
+ * CONSUMER, DRIVER and MERCHANT_OWNER can self-register (a restaurant owner
+ * signs up to open a store, then admin approves the store).
+ * MERCHANT_STAFF (assigned by owner) and ADMIN (assigned by admin) cannot.
+ */
+const ALLOWED_SELF_REGISTER_ROLES: UserRole[] = [
+  "CONSUMER",
+  "DRIVER",
+  "MERCHANT_OWNER",
+];
 
 @Injectable()
 export class AuthService {
@@ -146,17 +155,24 @@ export class AuthService {
   }
 
   // ---- Change Password (FIX #18: removed inline require) ----
-  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
     const id = UserId.from(userId);
     const user = await this.userRepository.findById(id);
     if (!user) throw new UnauthorizedException("User not found");
 
     const isValid = await user.verifyPassword(currentPassword);
-    if (!isValid) throw new UnauthorizedException("Current password is incorrect");
+    if (!isValid)
+      throw new UnauthorizedException("Current password is incorrect");
 
     const pwResult = await Password.create(newPassword);
     if (pwResult.isFailure) {
-      throw new UnauthorizedException(pwResult.error?.message ?? "Invalid new password");
+      throw new UnauthorizedException(
+        pwResult.error?.message ?? "Invalid new password",
+      );
     }
     user.changePassword(pwResult.value);
     await this.userRepository.save(user);
@@ -165,7 +181,8 @@ export class AuthService {
   // ---- Refresh Token (FIX #7: verify separate refresh token) ----
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
     try {
-      const refreshSecret = process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET;
+      const refreshSecret =
+        process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET;
       const payload = this.jwtService.verify(refreshToken, {
         secret: refreshSecret,
       });

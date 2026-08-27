@@ -1,11 +1,11 @@
 /**
  * Shipping Fee Calculator (client-side)
- * 
+ *
  * Implements the same logic as the backend shipping service:
  * - Haversine distance
  * - Rush hour multiplier (7-9h, 17-19h)
  * - Weather multiplier (OpenWeatherMap API)
- * 
+ *
  * Falls back to shippingApi.getFee() when backend is available.
  */
 
@@ -30,7 +30,12 @@ const PER_KM_RATE = 3000;
 const MIN_FEE = 8000;
 const MAX_FEE = 80000;
 
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+function haversineKm(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLng = ((lng2 - lng1) * Math.PI) / 180;
@@ -54,28 +59,50 @@ function getRushHourMultiplier(): number {
 
 async function getWeatherMultiplier(lat: number, lng: number): Promise<number> {
   try {
-    const apiKey = 'e3238768c07b4d77897565c7bb6a42b5';
+    const apiKey = "e3238768c07b4d77897565c7bb6a42b5";
     const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`;
     const res = await fetch(url);
     const data = await res.json();
 
     if (data.weather?.length > 0) {
       const condition = data.weather[0].main as string;
-      const desc = (data.weather[0].description || '').toLowerCase();
+      const desc = (data.weather[0].description || "").toLowerCase();
 
-      if (condition === 'Thunderstorm' || condition === 'Rain' || condition === 'Drizzle' || desc.includes('rain') || desc.includes('mưa')) {
+      if (
+        condition === "Thunderstorm" ||
+        condition === "Rain" ||
+        condition === "Drizzle" ||
+        desc.includes("rain") ||
+        desc.includes("mưa")
+      ) {
         return 1.3;
       }
-      if (condition === 'Snow' || condition === 'Extreme') return 1.5;
-      if (condition === 'Fog' || condition === 'Mist' || condition === 'Haze') return 1.1;
+      if (condition === "Snow" || condition === "Extreme") return 1.5;
+      if (condition === "Fog" || condition === "Mist" || condition === "Haze")
+        return 1.1;
 
       if (data.main?.temp) {
         const temp = data.main.temp as number;
         if (temp > 35 || temp < 10) return 1.15;
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return 1.0;
+}
+
+/**
+ * Synchronous distance-based shipping fee estimate (no weather call).
+ * Same formula as `calculateShippingFee` but skips the weather multiplier,
+ * useful for listing cards where we only need a quick estimate per restaurant.
+ */
+export function calculateShippingFeeSync(distanceKm: number): number {
+  const distanceFee = Math.round(distanceKm * PER_KM_RATE);
+  const rawFee = BASE_FEE + distanceFee;
+  const rushMultiplier = getRushHourMultiplier();
+  const afterRush = Math.round(rawFee * rushMultiplier);
+  return Math.max(MIN_FEE, Math.min(MAX_FEE, afterRush));
 }
 
 export async function calculateShippingFee(

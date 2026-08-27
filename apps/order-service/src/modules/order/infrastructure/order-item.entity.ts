@@ -32,9 +32,12 @@ export class OrderItemEntity {
   @Column("text", { name: "special_instructions", nullable: true })
   special_instructions!: string | null;
 
-  @CreateDateColumn({ name: "created_at" })
+  @Column("jsonb", { name: "options", nullable: true })
+  options!: Record<string, unknown>[] | null;
+
+  @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   created_at!: Date;
 
-  @UpdateDateColumn({ name: "updated_at" })
+  @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updated_at!: Date;
 }

@@ -32,7 +32,13 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
     await this.menuItemRepo.save(menuItemEntities);
 
     const hoursEntities = MerchantMapper.operatingHoursToPersistence(aggregate);
-    await this.operatingHoursRepo.save(hoursEntities);
+    // Replace operating hours (delete old then insert new) to avoid duplicates on update
+    await this.operatingHoursRepo.delete({
+      merchant_id: aggregate.id.toString(),
+    });
+    if (hoursEntities.length > 0) {
+      await this.operatingHoursRepo.save(hoursEntities);
+    }
 
     const docEntities = MerchantMapper.documentsToPersistence(aggregate);
     await this.documentRepo.save(docEntities);
@@ -69,6 +75,7 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
   async findAll(options?: {
     status?: string;
     search?: string;
+    category?: string;
     skip?: number;
     take?: number;
   }): Promise<{ items: Merchant[]; total: number }> {
@@ -85,8 +92,16 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
 
     if (options?.search) {
       queryBuilder.andWhere(
-        "(merchant.name ILIKE :search OR merchant.address ILIKE :search)",
+        "(merchant.name ILIKE :search OR merchant.address ILIKE :search OR merchant.id IN (SELECT mi.merchant_id FROM menu_items mi WHERE mi.name ILIKE :search AND mi.deleted_at IS NULL))",
         { search: `%${options.search}%` },
+      );
+    }
+
+    // FIX #5: Filter by category (primary + secondary via LIKE for simple-array)
+    if (options?.category) {
+      queryBuilder.andWhere(
+        "(merchant.primary_category = :cat OR COALESCE(merchant.secondary_categories, '') LIKE :catLike)",
+        { cat: options.category, catLike: `%${options.category}%` },
       );
     }
 

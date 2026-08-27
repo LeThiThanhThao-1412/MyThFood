@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import { MerchantId } from "../domain/merchant-id";
 import { MenuItemId } from "../domain/menu-item-id";
 import {
@@ -6,7 +7,7 @@ import {
   MerchantStatus,
   CapacityStatus,
 } from "../domain/merchant.aggregate";
-import { MenuItem, MenuItemCategory } from "../domain/menu-item.entity";
+import { MenuItem } from "../domain/menu-item.entity";
 import { OperatingHours } from "../domain/operating-hours.vo";
 import {
   MerchantDocument,
@@ -60,6 +61,7 @@ export class MerchantMapper {
       longitude: entity.longitude,
       status: entity.status as MerchantStatus,
       rating: entity.rating,
+      totalRatings: entity.total_ratings ?? 0,
       totalOrders: entity.total_orders,
       capacityConfig,
       capacityStatus: entity.capacity_status as CapacityStatus,
@@ -67,6 +69,9 @@ export class MerchantMapper {
       operatingHours: domainHours,
       documents: domainDocs,
       currentOrderCount: entity.current_order_count ?? 0,
+      primaryCategory: entity.primary_category ?? null,
+      secondaryCategories: entity.secondary_categories ?? [],
+      isOpen: entity.is_open !== false,
     });
   }
 
@@ -88,10 +93,14 @@ export class MerchantMapper {
     entity.longitude = merchant.merchantLongitude;
     entity.status = merchant.merchantStatus;
     entity.rating = merchant.merchantRating;
+    entity.total_ratings = merchant.merchantTotalRatings;
     entity.total_orders = merchant.merchantTotalOrders;
     entity.capacity_config = merchant.merchantCapacityConfig;
     entity.capacity_status = merchant.merchantCapacityStatus;
     entity.current_order_count = merchant.merchantCurrentOrderCount;
+    entity.primary_category = merchant.merchantPrimaryCategory;
+    entity.secondary_categories = merchant.merchantSecondaryCategories;
+    entity.is_open = merchant.merchantIsOpen;
     return entity;
   }
 
@@ -101,6 +110,7 @@ export class MerchantMapper {
       entity.id = mi.id.toString();
       entity.merchant_id = merchant.id.toString();
       entity.category = mi.itemCategory;
+      entity.category_id = mi.itemCategoryId;
       entity.name = mi.itemName;
       entity.description = mi.itemDescription;
       entity.price = mi.itemPrice;
@@ -110,6 +120,7 @@ export class MerchantMapper {
       entity.is_featured = mi.featured;
       entity.preparation_time = mi.prepTime;
       entity.sort_order = mi.order;
+      entity.option_groups = mi.itemOptionGroups as any;
       return entity;
     });
   }
@@ -119,7 +130,7 @@ export class MerchantMapper {
   ): OperatingHoursEntity[] {
     return merchant.operatingHoursList.map((oh) => {
       const entity = new OperatingHoursEntity();
-      entity.id = ""; // Will be auto-generated, or we can track existing
+      entity.id = uuidv4();
       entity.merchant_id = merchant.id.toString();
       entity.day_of_week = oh.dayOfWeek;
       entity.open_time = oh.openTime;
@@ -151,7 +162,8 @@ export class MerchantMapper {
     const id = MenuItemId.from(entity.id);
     return MenuItem.rehydrate(id, {
       merchantId: MerchantId.from(entity.merchant_id),
-      category: entity.category as MenuItemCategory,
+      category: entity.category,
+      categoryId: entity.category_id ?? null,
       name: entity.name,
       description: entity.description,
       price: Number(entity.price),
@@ -163,6 +175,7 @@ export class MerchantMapper {
       isFeatured: entity.is_featured,
       preparationTime: entity.preparation_time,
       sortOrder: entity.sort_order,
+      optionGroups: (entity.option_groups as any) ?? [],
     });
   }
 

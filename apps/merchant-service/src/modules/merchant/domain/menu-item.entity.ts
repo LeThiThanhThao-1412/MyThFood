@@ -2,23 +2,40 @@ import {
   Entity as DomainEntity,
   BusinessRuleViolationError,
 } from "@mythfood/shared-kernel";
+import { v4 as uuidv4 } from "uuid";
 import { MenuItemId } from "./menu-item-id";
 import { MerchantId } from "./merchant-id";
 
-export type MenuItemCategory =
-  | "APPETIZER"
-  | "MAIN_COURSE"
-  | "DESSERT"
-  | "BEVERAGE"
-  | "DRINK"
-  | "SIDE_DISH"
-  | "COMBO"
-  | "OTHER";
+export type MenuItemOptionGroupType =
+  | "CHOICE"
+  | "MULTI_CHOICE"
+  | "TOGGLE"
+  | "QUANTITY";
+
+export interface MenuItemOption {
+  id: string;
+  name: string;
+  priceDelta: number;
+  isDefault: boolean;
+  minQuantity: number | null;
+  maxQuantity: number | null;
+}
+
+export interface MenuItemOptionGroup {
+  id: string;
+  name: string;
+  type: MenuItemOptionGroupType;
+  required: boolean;
+  minSelections: number | null;
+  maxSelections: number | null;
+  options: MenuItemOption[];
+}
 
 export interface MenuItemProps {
   id?: MenuItemId;
   merchantId: MerchantId;
-  category: MenuItemCategory;
+  category: string;
+  categoryId: string | null;
   name: string;
   description: string | null;
   price: number;
@@ -28,11 +45,13 @@ export interface MenuItemProps {
   isFeatured: boolean;
   preparationTime: number | null;
   sortOrder: number;
+  optionGroups: MenuItemOptionGroup[];
 }
 
 export class MenuItem extends DomainEntity<MenuItemId> {
   private merchantId: MerchantId;
-  private category: MenuItemCategory;
+  private category: string;
+  private categoryId: string | null;
   private name: string;
   private description: string | null;
   private price: number;
@@ -42,11 +61,13 @@ export class MenuItem extends DomainEntity<MenuItemId> {
   private isFeatured: boolean;
   private preparationTime: number | null;
   private sortOrder: number;
+  private optionGroups: MenuItemOptionGroup[];
 
   private constructor(id: MenuItemId, props: MenuItemProps) {
     super(id);
     this.merchantId = props.merchantId;
     this.category = props.category;
+    this.categoryId = props.categoryId ?? null;
     this.name = props.name;
     this.description = props.description;
     this.price = props.price;
@@ -56,11 +77,13 @@ export class MenuItem extends DomainEntity<MenuItemId> {
     this.isFeatured = props.isFeatured;
     this.preparationTime = props.preparationTime;
     this.sortOrder = props.sortOrder;
+    this.optionGroups = props.optionGroups ?? [];
   }
 
   public static create(props: {
     merchantId: MerchantId;
-    category: MenuItemCategory;
+    category: string;
+    categoryId?: string;
     name: string;
     description?: string;
     price: number;
@@ -70,10 +93,12 @@ export class MenuItem extends DomainEntity<MenuItemId> {
     isFeatured?: boolean;
     preparationTime?: number;
     sortOrder?: number;
+    optionGroups?: MenuItemOptionGroup[];
   }): MenuItem {
     return new MenuItem(MenuItemId.create(), {
       merchantId: props.merchantId,
       category: props.category,
+      categoryId: props.categoryId ?? null,
       name: props.name,
       description: props.description ?? null,
       price: props.price,
@@ -83,6 +108,7 @@ export class MenuItem extends DomainEntity<MenuItemId> {
       isFeatured: props.isFeatured ?? false,
       preparationTime: props.preparationTime ?? null,
       sortOrder: props.sortOrder ?? 0,
+      optionGroups: MenuItem.sanitizeOptionGroups(props.optionGroups),
     });
   }
 
@@ -94,13 +120,15 @@ export class MenuItem extends DomainEntity<MenuItemId> {
    * Update menu item properties.
    */
   public update(props: {
-    category?: MenuItemCategory;
+    category?: string;
+    categoryId?: string | null;
     name?: string;
     description?: string;
     price?: number;
     imageUrl?: string;
     isFeatured?: boolean;
     preparationTime?: number;
+    optionGroups?: MenuItemOptionGroup[];
   }): void {
     if (props.name !== undefined) {
       if (!props.name.trim()) {
@@ -109,6 +137,7 @@ export class MenuItem extends DomainEntity<MenuItemId> {
       this.name = props.name;
     }
     if (props.category !== undefined) this.category = props.category;
+    if (props.categoryId !== undefined) this.categoryId = props.categoryId;
     if (props.description !== undefined) this.description = props.description;
     if (props.imageUrl !== undefined) this.imageUrl = props.imageUrl;
     if (props.isFeatured !== undefined) this.isFeatured = props.isFeatured;
@@ -130,6 +159,10 @@ export class MenuItem extends DomainEntity<MenuItemId> {
         this.originalPrice = this.price;
         this.price = props.price;
       }
+    }
+
+    if (props.optionGroups !== undefined) {
+      this.optionGroups = MenuItem.sanitizeOptionGroups(props.optionGroups);
     }
   }
 
@@ -164,8 +197,12 @@ export class MenuItem extends DomainEntity<MenuItemId> {
     return this.merchantId;
   }
 
-  get itemCategory(): MenuItemCategory {
+  get itemCategory(): string {
     return this.category;
+  }
+
+  get itemCategoryId(): string | null {
+    return this.categoryId;
   }
 
   get itemName(): string {
@@ -202,5 +239,61 @@ export class MenuItem extends DomainEntity<MenuItemId> {
 
   get order(): number {
     return this.sortOrder;
+  }
+
+  get itemOptionGroups(): MenuItemOptionGroup[] {
+    return this.optionGroups.map((g) => ({
+      ...g,
+      options: g.options.map((o) => ({ ...o })),
+    }));
+  }
+
+  /**
+   * Validate and normalize option groups coming from the API/client.
+   */
+  public static sanitizeOptionGroups(
+    groups?: MenuItemOptionGroup[],
+  ): MenuItemOptionGroup[] {
+    if (!groups || groups.length === 0) return [];
+    return groups.map((g) => {
+      if (!g.name || !g.name.trim()) {
+        throw new BusinessRuleViolationError(
+          "Option group name cannot be empty",
+        );
+      }
+      const type = g.type;
+      if (!["CHOICE", "MULTI_CHOICE", "TOGGLE", "QUANTITY"].includes(type)) {
+        throw new BusinessRuleViolationError(
+          `Invalid option group type: ${type}`,
+        );
+      }
+      const options = (g.options || []).map((o) => {
+        if (!o.name || !o.name.trim()) {
+          throw new BusinessRuleViolationError("Option name cannot be empty");
+        }
+        return {
+          id: o.id || uuidv4(),
+          name: o.name,
+          priceDelta: Number(o.priceDelta) || 0,
+          isDefault: !!o.isDefault,
+          minQuantity: o.minQuantity ?? null,
+          maxQuantity: o.maxQuantity ?? null,
+        };
+      });
+      if (options.length === 0) {
+        throw new BusinessRuleViolationError(
+          `Option group "${g.name}" must have at least one option`,
+        );
+      }
+      return {
+        id: g.id || uuidv4(),
+        name: g.name,
+        type,
+        required: !!g.required,
+        minSelections: g.minSelections ?? null,
+        maxSelections: g.maxSelections ?? null,
+        options,
+      };
+    });
   }
 }

@@ -7,6 +7,8 @@ import { OwnerType } from "../domain/wallet.aggregate";
  * FIX #8: WalletService now depends on WalletRepository which encapsulates TypeORM.
  * No direct TypeORM Repository injection - clean Domain-driven architecture.
  * FIX #9: Optimistic locking via @VersionColumn on WalletEntity prevents race conditions.
+ * FIX #PHASE1-COD: COD eligibility now checks balance >= 2M AND availableBalance > orderValue.
+ * Uses hold/release pattern to reserve funds for active COD orders.
  */
 @Injectable()
 export class WalletService {
@@ -19,7 +21,10 @@ export class WalletService {
   constructor(private readonly walletRepo: WalletRepository) {}
 
   async getOrCreateWallet(ownerId: string, ownerType: OwnerType) {
-    const result = await this.walletRepo.findByOwnerOrCreate(ownerId, ownerType);
+    const result = await this.walletRepo.findByOwnerOrCreate(
+      ownerId,
+      ownerType,
+    );
     return result.entity;
   }
 
@@ -55,7 +60,9 @@ export class WalletService {
       referenceId,
     });
 
-    this.logger.log(`Credit ${ownerType}:${ownerId} +${amount} VND - ${description}`);
+    this.logger.log(
+      `Credit ${ownerType}:${ownerId} +${amount} VND - ${description}`,
+    );
     return { id: entity.id, balance: Number(entity.balance) };
   }
 
@@ -68,19 +75,28 @@ export class WalletService {
     const entity = await this.getOrCreateWallet(ownerId, ownerType);
 
     if (amount < WalletService.MIN_WITHDRAW) {
-      throw new Error(`Minimum withdraw: ${WalletService.MIN_WITHDRAW.toLocaleString("vi-VN")} VND`);
+      throw new Error(
+        `Minimum withdraw: ${WalletService.MIN_WITHDRAW.toLocaleString("vi-VN")} VND`,
+      );
     }
 
     if (ownerType === OwnerType.DRIVER) {
       const count = await this.walletRepo.countDailyWithdraws(ownerId);
       if (count >= WalletService.MAX_WITHDRAWS_PER_DAY) {
-        throw new Error(`Max ${WalletService.MAX_WITHDRAWS_PER_DAY} withdrawal per day`);
+        throw new Error(
+          `Max ${WalletService.MAX_WITHDRAWS_PER_DAY} withdrawal per day`,
+        );
       }
 
+      const heldBalance = Number(entity.heldBalance || 0);
       const balanceAfter = Number(entity.balance) - amount;
-      if (balanceAfter < WalletService.MIN_COD_BALANCE) {
+      // FIX PHASE1: Must maintain 2M + heldBalance (for active COD orders)
+      if (balanceAfter < WalletService.MIN_COD_BALANCE + heldBalance) {
         throw new Error(
-          `Must maintain minimum ${WalletService.MIN_COD_BALANCE.toLocaleString("vi-VN")} VND balance`,
+          `Must maintain minimum ${WalletService.MIN_COD_BALANCE.toLocaleString("vi-VN")} VND balance` +
+            (heldBalance > 0
+              ? ` + ${heldBalance.toLocaleString("vi-VN")} VND held for COD orders`
+              : ""),
         );
       }
     }
@@ -102,16 +118,140 @@ export class WalletService {
       referenceType: "WITHDRAW",
     });
 
-    this.logger.log(`Debit ${ownerType}:${ownerId} -${amount} VND - ${description}`);
+    this.logger.log(
+      `Debit ${ownerType}:${ownerId} -${amount} VND - ${description}`,
+    );
     return { id: entity.id, balance: Number(entity.balance) };
   }
 
-  async canAcceptCOD(driverId: string) {
-    const balance = await this.getBalance(driverId, OwnerType.DRIVER);
+  /**
+   * COD Eligibility check.
+   * - First COD order: balance must be >= 2,000,000 VND (deposit requirement)
+   * - Subsequent COD orders: availableBalance (balance - heldBalance) must be > orderValue
+   */
+  async canAcceptCOD(driverId: string, orderValue?: number) {
+    const entity = await this.getOrCreateWallet(driverId, OwnerType.DRIVER);
+    const balance = Number(entity.balance);
+    const heldBalance = Number(entity.heldBalance || 0);
+    const available = balance - heldBalance;
+
+    // Check if driver has EVER completed a COD (settlement transaction exists)
+    const codTxs = await this.walletRepo.findTransactionsByType(
+      driverId,
+      "COD_SETTLEMENT",
+    );
+    const hasCompletedCOD = codTxs.length > 0;
+
+    const overMinBalance = balance >= WalletService.MIN_COD_BALANCE;
+    const canCoverOrder = orderValue ? available > orderValue : true;
+
+    // First COD: need 2M deposit. Subsequent: just need to cover
+    const eligible = hasCompletedCOD
+      ? canCoverOrder
+      : overMinBalance && canCoverOrder;
+
     return {
-      eligible: balance >= WalletService.MIN_COD_BALANCE,
+      eligible,
       balance,
-      required: WalletService.MIN_COD_BALANCE,
+      heldBalance,
+      availableBalance: available,
+      minCodBalance: WalletService.MIN_COD_BALANCE,
+      orderValue: orderValue || null,
+      hasActiveCOD: heldBalance > 0,
+      hasCompletedCOD,
+      checks: {
+        overMinBalance,
+        canCoverOrder,
+      },
+    };
+  }
+
+  /**
+   * FIX PHASE1-COD: Hold (reserve) funds when a driver accepts a COD order.
+   * This prevents the driver from withdrawing funds needed to cover COD orders.
+   */
+  async holdForCOD(
+    driverId: string,
+    orderValue: number,
+    orderId: string,
+  ): Promise<{
+    balance: number;
+    heldBalance: number;
+    availableBalance: number;
+  }> {
+    const entity = await this.getOrCreateWallet(driverId, OwnerType.DRIVER);
+    const heldBefore = Number(entity.heldBalance || 0);
+
+    if (heldBefore + orderValue > Number(entity.balance)) {
+      throw new Error("Insufficient balance to hold for COD order");
+    }
+
+    entity.heldBalance = heldBefore + orderValue;
+    await this.walletRepo.save(entity);
+
+    await this.walletRepo.recordTransaction({
+      id: randomUUID(),
+      walletId: entity.id,
+      ownerId: driverId,
+      ownerType: OwnerType.DRIVER,
+      type: "HOLD",
+      amount: orderValue,
+      balanceBefore: Number(entity.balance),
+      balanceAfter: Number(entity.balance),
+      description: `Hold for COD order #${orderId.slice(0, 8)}`,
+      referenceType: "COD_HOLD",
+      referenceId: orderId,
+    });
+
+    this.logger.log(
+      `COD Hold: Driver ${driverId} reserved +${orderValue} VND for order #${orderId.slice(0, 8)}`,
+    );
+    return {
+      balance: Number(entity.balance),
+      heldBalance: Number(entity.heldBalance),
+      availableBalance: Number(entity.balance) - Number(entity.heldBalance),
+    };
+  }
+
+  /**
+   * FIX PHASE1-COD: Release held funds when COD order is settled or cancelled.
+   */
+  async releaseHoldCOD(
+    driverId: string,
+    orderValue: number,
+    orderId: string,
+  ): Promise<{
+    balance: number;
+    heldBalance: number;
+    availableBalance: number;
+  }> {
+    const entity = await this.getOrCreateWallet(driverId, OwnerType.DRIVER);
+    const heldBefore = Number(entity.heldBalance || 0);
+
+    entity.heldBalance = Math.max(0, heldBefore - orderValue);
+    await this.walletRepo.save(entity);
+
+    await this.walletRepo.recordTransaction({
+      id: randomUUID(),
+      walletId: entity.id,
+      ownerId: driverId,
+      ownerType: OwnerType.DRIVER,
+      type: "RELEASE",
+      amount: orderValue,
+      balanceBefore: Number(entity.balance),
+      balanceAfter: Number(entity.balance),
+      description: `Release hold for COD order #${orderId.slice(0, 8)}`,
+      referenceType: "COD_RELEASE",
+      referenceId: orderId,
+    });
+
+    this.logger.log(
+      `COD Release: Driver ${driverId} released ${orderValue} VND for order #${orderId.slice(0, 8)}`,
+    );
+    return {
+      balance: Number(entity.balance),
+      heldBalance: Number(entity.heldBalance),
+      availableBalance: Number(entity.balance) - Number(entity.heldBalance),
     };
   }
 
@@ -120,7 +260,13 @@ export class WalletService {
   }
 
   async handleStripeTopup(ownerId: string, amount: number): Promise<void> {
-    await this.credit(ownerId, OwnerType.DRIVER, amount, "Nạp tiền qua Stripe", "TOPUP");
+    await this.credit(
+      ownerId,
+      OwnerType.DRIVER,
+      amount,
+      "Nạp tiền qua Stripe",
+      "TOPUP",
+    );
   }
 
   async settleCOD(
@@ -129,44 +275,295 @@ export class WalletService {
     orderId: string,
     foodTotal: number,
     shippingFee: number,
+    discount = 0,
+    discountFundedBy = "MERCHANT",
+    serviceFee = 0,
   ): Promise<void> {
-    await this.credit(driverId, OwnerType.DRIVER, shippingFee, `Phí ship COD đơn #${orderId.slice(0, 8)}`, "SETTLEMENT", orderId);
-    const merchantShare = Math.round(foodTotal * 0.7);
-    await this.credit(merchantId, OwnerType.MERCHANT, merchantShare, `Doanh thu đơn #${orderId.slice(0, 8)}`, "SETTLEMENT", orderId);
-    const platformShare = Math.round(foodTotal * 0.2);
-    await this.credit("PLATFORM_DEFAULT", OwnerType.PLATFORM, platformShare, `Phí nền tảng đơn #${orderId.slice(0, 8)}`, "SETTLEMENT", orderId);
-    const taxShare = Math.round(foodTotal * 0.1);
-    await this.credit("TAX_DEFAULT", OwnerType.TAX, taxShare, `Thuế đơn #${orderId.slice(0, 8)}`, "SETTLEMENT", orderId);
-    this.logger.log(`COD Settlement #${orderId.slice(0, 8)}: Food ${foodTotal}, Ship ${shippingFee}`);
+    foodTotal = Number(foodTotal);
+    shippingFee = Number(shippingFee);
+    discount = Number(discount);
+    serviceFee = Number(serviceFee);
+    const { merchantCommissionPct, driverCommissionPct } =
+      this.getCommissionRates();
+    const driverCommissionAmount = Math.round(
+      (shippingFee * driverCommissionPct) / 100,
+    );
+    const merchantCommissionAmount = Math.round(
+      (foodTotal * merchantCommissionPct) / 100,
+    );
+    const merchantDiscount = discountFundedBy === "MERCHANT" ? discount : 0;
+    const platformDiscount = discountFundedBy === "PLATFORM" ? discount : 0;
+
+    const driverDebitTotal =
+      foodTotal - discount + driverCommissionAmount + serviceFee;
+    await this.debitForCOD(
+      driverId,
+      OwnerType.DRIVER,
+      driverDebitTotal,
+      `COD: Chuyen tien mon + phi nen tang don #${orderId.slice(0, 8)}`,
+      orderId,
+    );
+    const driverCashKept = shippingFee - driverCommissionAmount;
+    const driverWallet = await this.getOrCreateWallet(
+      driverId,
+      OwnerType.DRIVER,
+    );
+    await this.walletRepo.recordTransaction({
+      id: randomUUID(),
+      walletId: driverWallet.id,
+      ownerId: driverId,
+      ownerType: OwnerType.DRIVER,
+      type: "REVENUE",
+      amount: driverCashKept,
+      balanceBefore: Number(driverWallet.balance),
+      balanceAfter: Number(driverWallet.balance),
+      description: `Doanh thu phi ship COD ${driverCashKept.toLocaleString("vi-VN")}d (da tru ${driverCommissionPct}% phi) - Don #${orderId.slice(0, 8)}`,
+      referenceType: "SETTLEMENT",
+      referenceId: orderId,
+    });
+    const merchantShare =
+      foodTotal - merchantCommissionAmount - merchantDiscount;
+    await this.credit(
+      merchantId,
+      OwnerType.MERCHANT,
+      merchantShare,
+      `Doanh thu don #${orderId.slice(0, 8)}`,
+      "SETTLEMENT",
+      orderId,
+    );
+    const platformShare =
+      merchantCommissionAmount +
+      driverCommissionAmount +
+      serviceFee -
+      platformDiscount;
+    await this.credit(
+      "PLATFORM_DEFAULT",
+      OwnerType.PLATFORM,
+      platformShare,
+      `Phi nen tang don #${orderId.slice(0, 8)}`,
+      "SETTLEMENT",
+      orderId,
+    );
+    this.logger.log(
+      `COD Settlement #${orderId.slice(0, 8)}: Food=${foodTotal}, Ship=${shippingFee}, Discount=${discount} (${discountFundedBy}), ` +
+        `Driver -${driverDebitTotal}, Merchant +${merchantShare} (${100 - merchantCommissionPct}%), Platform +${platformShare}`,
+    );
   }
 
-  async settleRegular(driverId: string, orderId: string, shippingFee: number): Promise<void> {
-    await this.credit(driverId, OwnerType.DRIVER, shippingFee, `Phí ship đơn #${orderId.slice(0, 8)}`, "SETTLEMENT", orderId);
-    this.logger.log(`Regular Settlement #${orderId.slice(0, 8)}: Driver +${shippingFee}`);
+  /**
+   * Internal debit for COD settlement - bypasses min withdraw/daily limits.
+   * This is a system-to-system transfer, not a user withdrawal.
+   */
+  private async debitForCOD(
+    ownerId: string,
+    ownerType: OwnerType,
+    amount: number,
+    description: string,
+    orderId: string,
+  ): Promise<{ id: string; balance: number }> {
+    const entity = await this.getOrCreateWallet(ownerId, ownerType);
+    const balanceBefore = Number(entity.balance);
+    entity.balance = balanceBefore - amount;
+    await this.walletRepo.save(entity);
+
+    await this.walletRepo.recordTransaction({
+      id: randomUUID(),
+      walletId: entity.id,
+      ownerId,
+      ownerType,
+      type: "DEBIT",
+      amount,
+      balanceBefore,
+      balanceAfter: Number(entity.balance),
+      description,
+      referenceType: "COD_SETTLEMENT",
+      referenceId: orderId,
+    });
+
+    this.logger.log(
+      `COD Debit ${ownerType}:${ownerId} -${amount} VND - ${description}`,
+    );
+    return { id: entity.id, balance: Number(entity.balance) };
+  }
+
+  async settleRegular(
+    driverId: string,
+    orderId: string,
+    shippingFee: number,
+  ): Promise<void> {
+    await this.credit(
+      driverId,
+      OwnerType.DRIVER,
+      shippingFee,
+      `Phí ship đơn #${orderId.slice(0, 8)}`,
+      "SETTLEMENT",
+      orderId,
+    );
+    this.logger.log(
+      `Regular Settlement #${orderId.slice(0, 8)}: Driver +${shippingFee}`,
+    );
+  }
+
+  /**
+   * Settlement for online (card/Stripe) payments.
+   * Customer paid via Stripe → driver did NOT collect cash.
+   * Driver gets shipping x (1 - driverCommission%), merchant gets food x (1 - merchantCommission%), platform keeps all commissions.
+   * NO debit from driver (money already went through Stripe).
+   */
+  async settleOnline(
+    merchantId: string,
+    driverId: string,
+    orderId: string,
+    foodTotal: number,
+    shippingFee: number,
+    discount = 0,
+    discountFundedBy = "MERCHANT",
+    serviceFee = 0,
+  ): Promise<void> {
+    foodTotal = Number(foodTotal);
+    shippingFee = Number(shippingFee);
+    discount = Number(discount);
+    serviceFee = Number(serviceFee);
+    const { merchantCommissionPct, driverCommissionPct } =
+      this.getCommissionRates();
+    const merchantCommissionAmount = Math.round(
+      (foodTotal * merchantCommissionPct) / 100,
+    );
+    const driverCommissionAmount = Math.round(
+      (shippingFee * driverCommissionPct) / 100,
+    );
+    const merchantDiscount = discountFundedBy === "MERCHANT" ? discount : 0;
+    const platformDiscount = discountFundedBy === "PLATFORM" ? discount : 0;
+    const driverShare = shippingFee - driverCommissionAmount;
+    await this.credit(
+      driverId,
+      OwnerType.DRIVER,
+      driverShare,
+      `Phi ship don #${orderId.slice(0, 8)} (thanh toan online)`,
+      "SETTLEMENT",
+      orderId,
+    );
+    const merchantShare =
+      foodTotal - merchantCommissionAmount - merchantDiscount;
+    await this.credit(
+      merchantId,
+      OwnerType.MERCHANT,
+      merchantShare,
+      `Doanh thu don #${orderId.slice(0, 8)} (thanh toan online)`,
+      "SETTLEMENT",
+      orderId,
+    );
+    const platformShare =
+      merchantCommissionAmount +
+      driverCommissionAmount +
+      serviceFee -
+      platformDiscount;
+    await this.credit(
+      "PLATFORM_DEFAULT",
+      OwnerType.PLATFORM,
+      platformShare,
+      `Phi nen tang don #${orderId.slice(0, 8)} (thanh toan online)`,
+      "SETTLEMENT",
+      orderId,
+    );
+    this.logger.log(
+      `Online Settlement #${orderId.slice(0, 8)}: Food=${foodTotal}, Ship=${shippingFee}, Discount=${discount} (${discountFundedBy}), ` +
+        `Driver +${driverShare} (${100 - driverCommissionPct}% ship), Merchant +${merchantShare} (${100 - merchantCommissionPct}%), Platform +${platformShare}`,
+    );
+  }
+
+  private getCommissionRates(): {
+    merchantCommissionPct: number;
+    driverCommissionPct: number;
+  } {
+    const merchantCommissionPct = parseFloat(
+      process.env.MERCHANT_COMMISSION_PERCENT || "25",
+    );
+    const driverCommissionPct = parseFloat(
+      process.env.DRIVER_COMMISSION_PERCENT || "20",
+    );
+    return { merchantCommissionPct, driverCommissionPct };
   }
 
   async getAdminTransactions(params: {
-    skip: number; take: number;
-    type?: string; ownerType?: string;
-    startDate?: string; endDate?: string; search?: string;
+    skip: number;
+    take: number;
+    type?: string;
+    ownerType?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
   }) {
-    const { items, total } = await this.walletRepo.findTransactionsPaginated(params);
-    const { totalTopupVolume, totalSettlementVolume } = await this.walletRepo.getStatsSummary(params.startDate, params.endDate);
+    const { items, total } =
+      await this.walletRepo.findTransactionsPaginated(params);
+    const { totalTopupVolume, totalSettlementVolume } =
+      await this.walletRepo.getStatsSummary(params.startDate, params.endDate);
     return {
-      items, total,
+      items,
+      total,
       summary: { totalTopupVolume, totalSettlementVolume },
     };
   }
 
   async getWalletStats() {
     const allWallets = await this.walletRepo.findAllWallets();
-    const totalBalance = allWallets.reduce((sum, w) => sum + Number(w.balance), 0);
+    const totalBalance = allWallets.reduce(
+      (sum, w) => sum + Number(w.balance),
+      0,
+    );
     const balanceByType: Record<string, number> = {};
     for (const w of allWallets) {
-      balanceByType[w.ownerType] = (balanceByType[w.ownerType] || 0) + Number(w.balance);
+      balanceByType[w.ownerType] =
+        (balanceByType[w.ownerType] || 0) + Number(w.balance);
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     return { totalWallets: allWallets.length, totalBalance, balanceByType };
+  }
+
+  async getEarnings(
+    ownerId: string,
+    ownerType: string,
+    period: string,
+  ): Promise<any> {
+    const { startDate, endDate } = this.periodToRange(period);
+    const stats = await this.walletRepo.getEarningsByOwner(
+      ownerId,
+      ownerType,
+      startDate,
+      endDate,
+    );
+    const totalOrders = stats.totalOrders;
+    return {
+      ownerId,
+      ownerType,
+      period,
+      totalEarnings: stats.totalEarnings,
+      totalOrders,
+      averagePerOrder:
+        totalOrders > 0
+          ? Math.round((stats.totalEarnings / totalOrders) * 100) / 100
+          : 0,
+      earningsByDay: stats.earningsByDay,
+    };
+  }
+
+  private periodToRange(period: string): {
+    startDate?: string;
+    endDate?: string;
+  } {
+    const endDate = new Date().toISOString();
+    let startDate: string | undefined;
+    switch (period) {
+      case "week":
+        startDate = new Date(Date.now() - 7 * 86400000).toISOString();
+        break;
+      case "month":
+        startDate = new Date(Date.now() - 30 * 86400000).toISOString();
+        break;
+      case "today":
+      default:
+        startDate = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+        break;
+    }
+    return { startDate, endDate };
   }
 }

@@ -3,7 +3,7 @@ name: Deploy Pipeline
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch: # Allow manual trigger
 
 env:

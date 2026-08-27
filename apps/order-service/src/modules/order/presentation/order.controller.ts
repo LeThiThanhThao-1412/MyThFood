@@ -13,6 +13,8 @@ import {
   Patch,
 } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { OrderService } from "../application/order.service";
 import {
   PlaceOrderDto,
@@ -24,7 +26,7 @@ import {
 import { Order } from "../domain/order.aggregate";
 
 @Controller("orders")
-@UseGuards(AuthGuard("jwt"))
+@UseGuards(AuthGuard("jwt"), RolesGuard)
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
 
@@ -72,6 +74,7 @@ export class OrderController {
   }
 
   @Get(":id")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
   async findById(@Param("id") id: string): Promise<OrderResponseDto> {
     const order = await this.orderService.findById(id);
     return this.toOrderResponse(order);
@@ -91,24 +94,28 @@ export class OrderController {
   // ===================== Status Transitions =====================
 
   @Patch(":id/confirm")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async confirm(@Param("id") id: string): Promise<OrderResponseDto> {
     const order = await this.orderService.confirm(id);
     return this.toOrderResponse(order);
   }
 
   @Patch(":id/preparing")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async startPreparing(@Param("id") id: string): Promise<OrderResponseDto> {
     const order = await this.orderService.startPreparing(id);
     return this.toOrderResponse(order);
   }
 
   @Patch(":id/ready")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async markReadyForPickup(@Param("id") id: string): Promise<OrderResponseDto> {
     const order = await this.orderService.markReadyForPickup(id);
     return this.toOrderResponse(order);
   }
 
   @Patch(":id/out-for-delivery")
+  @Roles("DRIVER", "ADMIN")
   async markOutForDelivery(
     @Param("id") id: string,
     @Body() dto: StatusTransitionDto,
@@ -118,12 +125,14 @@ export class OrderController {
   }
 
   @Patch(":id/delivered")
+  @Roles("DRIVER", "ADMIN")
   async markDelivered(@Param("id") id: string): Promise<OrderResponseDto> {
     const order = await this.orderService.markDelivered(id);
     return this.toOrderResponse(order);
   }
 
   @Patch(":id/cancel")
+  @Roles("CONSUMER", "MERCHANT_OWNER", "ADMIN")
   async cancel(
     @Param("id") id: string,
     @Body() dto: StatusTransitionDto,
@@ -133,22 +142,13 @@ export class OrderController {
   }
 
   @Patch(":id/reject")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async reject(
     @Param("id") id: string,
     @Body() dto: StatusTransitionDto,
   ): Promise<OrderResponseDto> {
     const order = await this.orderService.reject(id, dto);
     return this.toOrderResponse(order);
-  }
-
-  // ===================== Review (B6) =====================
-
-  @Post(":id/review")
-  async addReview(
-    @Param("id") id: string,
-    @Body() body: { rating: number; comment?: string; tags?: string[] },
-  ): Promise<any> {
-    return this.orderService.addReview(id, body);
   }
 
   // ===================== Timeline (B6) =====================
@@ -161,6 +161,7 @@ export class OrderController {
   // ===================== Stats Daily (B6) =====================
 
   @Get("stats/daily")
+  @Roles("ADMIN")
   async getDailyStats(
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,
@@ -168,9 +169,23 @@ export class OrderController {
     return this.orderService.getDailyStats(startDate, endDate);
   }
 
+  // ===================== Merchant Stats (B7) =====================
+
+  @Get("stats/merchant/:merchantId")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async getMerchantStats(
+    @Param("merchantId") merchantId: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+  ): Promise<any> {
+    return this.orderService.getMerchantStats(merchantId, startDate, endDate);
+  }
+
   // ===================== Delete =====================
 
   @Delete(":id")
+  @Roles("ADMIN")
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param("id") id: string): Promise<void> {
     await this.orderService.softDelete(id);
@@ -192,6 +207,7 @@ export class OrderController {
         unitPrice: item.unitPrice,
         subtotal: item.subtotal,
         specialInstructions: item.specialInstructions,
+        options: item.options ?? null,
       })),
       subtotal: order.orderSubtotal,
       deliveryFee: order.orderDeliveryFee,
@@ -207,6 +223,7 @@ export class OrderController {
       driverId: order.orderDriverId,
       cancelReason: order.orderCancelReason,
       rejectionReason: order.orderRejectionReason,
+      paymentMethod: order.orderPaymentMethod,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
     };

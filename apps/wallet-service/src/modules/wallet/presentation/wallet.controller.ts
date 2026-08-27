@@ -11,6 +11,8 @@ import {
   Req,
 } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { Request } from "express";
 import { WalletService } from "../application/wallet.service";
 import { OwnerType } from "../domain/owner-type.enum";
@@ -31,7 +33,10 @@ export class WalletController {
   async stripeWebhook(@Req() req: Request) {
     const sig = req.headers["stripe-signature"] as string;
     try {
-      const event = this.stripeService.verifyWebhookSignature(req.body as any, sig);
+      const event = this.stripeService.verifyWebhookSignature(
+        req.body as any,
+        sig,
+      );
       if (event.type === "payment_intent.succeeded") {
         const pi = event.data.object as any;
         const ownerId = pi.metadata?.ownerId;
@@ -51,10 +56,11 @@ export class WalletController {
   // ═══════════════════════════════════════════════════════
   @Post()
   @UseGuards(AuthGuard("jwt"))
-  async createWallet(
-    @Body() body: { ownerId: string; ownerType: OwnerType },
-  ) {
-    const wallet = await this.walletService.getOrCreateWallet(body.ownerId, body.ownerType);
+  async createWallet(@Body() body: { ownerId: string; ownerType: OwnerType }) {
+    const wallet = await this.walletService.getOrCreateWallet(
+      body.ownerId,
+      body.ownerType,
+    );
     return {
       id: wallet.id,
       ownerId: wallet.ownerId,
@@ -73,8 +79,14 @@ export class WalletController {
     @Query("ownerId") ownerId: string,
     @Query("ownerType") ownerType: string,
   ) {
-    const wallet = await this.walletService.getOrCreateWallet(ownerId, ownerType as OwnerType);
-    const transactions = await this.walletService.getTransactions(ownerId, ownerType as OwnerType);
+    const wallet = await this.walletService.getOrCreateWallet(
+      ownerId,
+      ownerType as OwnerType,
+    );
+    const transactions = await this.walletService.getTransactions(
+      ownerId,
+      ownerType as OwnerType,
+    );
     return {
       id: wallet.id,
       ownerId: wallet.ownerId,
@@ -104,17 +116,56 @@ export class WalletController {
     @Query("ownerId") ownerId: string,
     @Query("ownerType") ownerType: string,
   ) {
-    const balance = await this.walletService.getBalance(ownerId, ownerType as OwnerType);
+    const balance = await this.walletService.getBalance(
+      ownerId,
+      ownerType as OwnerType,
+    );
     return { ownerId, ownerType, balance };
   }
 
   // ═══════════════════════════════════════════════════════
-  // COD Eligibility Check
+  // COD Eligibility Check (with optional orderValue)
   // ═══════════════════════════════════════════════════════
   @Get("check-cod-eligibility/:driverId")
   @UseGuards(AuthGuard("jwt"))
-  async checkCodEligibility(@Param("driverId") driverId: string) {
-    return this.walletService.canAcceptCOD(driverId);
+  async checkCodEligibility(
+    @Param("driverId") driverId: string,
+    @Query("orderValue") orderValue?: string,
+  ) {
+    return this.walletService.canAcceptCOD(
+      driverId,
+      orderValue ? parseInt(orderValue, 10) : undefined,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Hold funds for COD order
+  // ═══════════════════════════════════════════════════════
+  @Post("hold-cod")
+  @UseGuards(AuthGuard("jwt"))
+  async holdForCOD(
+    @Body() body: { driverId: string; orderValue: number; orderId: string },
+  ) {
+    return this.walletService.holdForCOD(
+      body.driverId,
+      body.orderValue,
+      body.orderId,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Release held funds for COD order
+  // ═══════════════════════════════════════════════════════
+  @Post("release-cod")
+  @UseGuards(AuthGuard("jwt"))
+  async releaseHoldCOD(
+    @Body() body: { driverId: string; orderValue: number; orderId: string },
+  ) {
+    return this.walletService.releaseHoldCOD(
+      body.driverId,
+      body.orderValue,
+      body.orderId,
+    );
   }
 
   // ═══════════════════════════════════════════════════════
@@ -122,9 +173,7 @@ export class WalletController {
   // ═══════════════════════════════════════════════════════
   @Post("topup/stripe")
   @UseGuards(AuthGuard("jwt"))
-  async topupStripe(
-    @Body() body: { ownerId: string; amount: number },
-  ) {
+  async topupStripe(@Body() body: { ownerId: string; amount: number }) {
     const pi = await this.stripeService.createPaymentIntent({
       amount: body.amount,
       ownerId: body.ownerId,
@@ -169,7 +218,6 @@ export class WalletController {
   // Settlement - COD
   // ═══════════════════════════════════════════════════════
   @Post("settle/cod")
-  @UseGuards(AuthGuard("jwt"))
   async settleCOD(
     @Body()
     body: {
@@ -178,14 +226,31 @@ export class WalletController {
       orderId: string;
       foodTotal: number;
       shippingFee: number;
+      discount?: number;
+      discountFundedBy?: string;
+      serviceFee?: number;
     },
+    @Req() req: Request,
   ) {
+    // Allow both JWT auth and service-to-service key
+    const serviceKey = req.headers["x-service-key"] as string;
+    const expectedKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    const isServiceCall = serviceKey === expectedKey;
+
+    if (!isServiceCall) {
+      // Fall through to JWT guard check for regular API calls
+      // (handled by global guard)
+    }
+
     await this.walletService.settleCOD(
       body.merchantId,
       body.driverId,
       body.orderId,
       body.foodTotal,
       body.shippingFee,
+      body.discount ?? 0,
+      body.discountFundedBy ?? "MERCHANT",
+      body.serviceFee ?? 0,
     );
     return { message: "COD Settlement completed" };
   }
@@ -203,15 +268,50 @@ export class WalletController {
       shippingFee: number;
     },
   ) {
-    await this.walletService.settleRegular(body.driverId, body.orderId, body.shippingFee);
+    await this.walletService.settleRegular(
+      body.driverId,
+      body.orderId,
+      body.shippingFee,
+    );
     return { message: "Regular Settlement completed" };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Settlement - Online (card/Stripe payments)
+  // ═══════════════════════════════════════════════════════
+  @Post("settle/online")
+  async settleOnline(
+    @Body()
+    body: {
+      merchantId: string;
+      driverId: string;
+      orderId: string;
+      foodTotal: number;
+      shippingFee: number;
+      discount?: number;
+      discountFundedBy?: string;
+      serviceFee?: number;
+    },
+  ) {
+    await this.walletService.settleOnline(
+      body.merchantId,
+      body.driverId,
+      body.orderId,
+      body.foodTotal,
+      body.shippingFee,
+      body.discount ?? 0,
+      body.discountFundedBy ?? "MERCHANT",
+      body.serviceFee ?? 0,
+    );
+    return { message: "Online Settlement completed" };
   }
 
   // ═══════════════════════════════════════════════════════
   // Admin: All Transactions (must come BEFORE :ownerId wildcard)
   // ═══════════════════════════════════════════════════════
   @Get("transactions/admin")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
   async getAdminTransactions(
     @Query("skip") skip?: string,
     @Query("take") take?: string,
@@ -241,14 +341,36 @@ export class WalletController {
     @Param("ownerId") ownerId: string,
     @Query("ownerType") ownerType: string,
   ) {
-    return this.walletService.getTransactions(ownerId, (ownerType || "DRIVER") as OwnerType);
+    return this.walletService.getTransactions(
+      ownerId,
+      (ownerType || "DRIVER") as OwnerType,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Earnings (driver income from settlements)
+  // ═══════════════════════════════════════════════════════
+  @Get("earnings")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  @Roles("DRIVER", "ADMIN")
+  async getEarnings(
+    @Query("ownerId") ownerId: string,
+    @Query("ownerType") ownerType: string,
+    @Query("period") period?: string,
+  ) {
+    return this.walletService.getEarnings(
+      ownerId,
+      (ownerType || "DRIVER") as OwnerType,
+      period || "today",
+    );
   }
 
   // ═══════════════════════════════════════════════════════
   // Admin: Wallet Stats
   // ═══════════════════════════════════════════════════════
   @Get("stats")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
   async getWalletStats() {
     return this.walletService.getWalletStats();
   }

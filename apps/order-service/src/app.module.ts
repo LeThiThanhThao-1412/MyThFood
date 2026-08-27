@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { CqrsModule } from "@nestjs/cqrs";
+import { ScheduleModule } from "@nestjs/schedule";
 import { databaseConfig } from "./config/database.config";
 import { OrderModule } from "./modules/order/order.module";
 import { ShippingModule } from "./modules/shipping/shipping.module";
@@ -21,6 +22,7 @@ import { ShippingModule } from "./modules/shipping/shipping.module";
       inject: [ConfigService],
     }),
     CqrsModule.forRoot(),
+    ScheduleModule.forRoot(),
     OrderModule,
     ShippingModule,
   ],

@@ -20,6 +20,7 @@ export class OrderMapper {
     entity.delivery_fee = order.orderDeliveryFee;
     entity.service_fee = order.orderServiceFee;
     entity.discount = order.orderDiscount;
+    entity.discount_funded_by = order.orderDiscountFundedBy;
     entity.total_amount = order.orderTotalAmount;
     entity.delivery_address = order.orderDeliveryAddress;
     entity.delivery_latitude = order.orderDeliveryLatitude;
@@ -29,6 +30,7 @@ export class OrderMapper {
     entity.driver_id = order.orderDriverId;
     entity.cancel_reason = order.orderCancelReason;
     entity.rejection_reason = order.orderRejectionReason;
+    entity.payment_method = order.orderPaymentMethod;
     return entity;
   }
 
@@ -46,6 +48,7 @@ export class OrderMapper {
       entity.unit_price = item.unitPrice;
       entity.subtotal = item.subtotal;
       entity.special_instructions = item.specialInstructions;
+      entity.options = (item.options as any) ?? null;
       return entity;
     });
   }
@@ -64,6 +67,7 @@ export class OrderMapper {
       unitPrice: item.unit_price,
       subtotal: item.subtotal,
       specialInstructions: item.special_instructions,
+      options: (item.options as any) ?? null,
     }));
 
     return Order.rehydrate(OrderId.from(orderEntity.id), {
@@ -76,6 +80,7 @@ export class OrderMapper {
       deliveryFee: orderEntity.delivery_fee,
       serviceFee: orderEntity.service_fee,
       discount: orderEntity.discount,
+      discountFundedBy: orderEntity.discount_funded_by || "MERCHANT",
       totalAmount: orderEntity.total_amount,
       deliveryAddress: orderEntity.delivery_address,
       deliveryLatitude: orderEntity.delivery_latitude,
@@ -85,6 +90,7 @@ export class OrderMapper {
       driverId: orderEntity.driver_id,
       cancelReason: orderEntity.cancel_reason,
       rejectionReason: orderEntity.rejection_reason,
+      paymentMethod: orderEntity.payment_method || "CASH",
     });
   }
 }

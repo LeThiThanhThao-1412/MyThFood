@@ -1,9 +1,11 @@
-'use client';
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+"use client";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function MapPage() {
   const router = useRouter();
-  useEffect(() => { router.replace('/location'); }, [router]);
+  useEffect(() => {
+    router.replace("/location");
+  }, [router]);
   return null;
 }

@@ -2,7 +2,7 @@
 
 > **Service:** Payment Service  
 > **Source:** `apps/payment-service/src/modules/payment/application/split-payment.service.ts`  
-> **Total Cases:** 9  
+> **Total Cases:** 9
 
 ---
 
@@ -21,11 +21,21 @@ Order Total (100,000 VND)
 ```
 
 **Source code (`split-payment.service.ts` lines 279-305):**
+
 ```typescript
 export function calculateSplitFromEnv(logger?): SplitPercentages {
-  const merchantPercent = parseInt(process.env.PAYMENT_SPLIT_MERCHANT_PERCENT || "70", 10);
-  const driverPercent = parseInt(process.env.PAYMENT_SPLIT_DRIVER_PERCENT || "20", 10);
-  const platformPercent = parseInt(process.env.PAYMENT_SPLIT_PLATFORM_PERCENT || "10", 10);
+  const merchantPercent = parseInt(
+    process.env.PAYMENT_SPLIT_MERCHANT_PERCENT || "70",
+    10,
+  );
+  const driverPercent = parseInt(
+    process.env.PAYMENT_SPLIT_DRIVER_PERCENT || "20",
+    10,
+  );
+  const platformPercent = parseInt(
+    process.env.PAYMENT_SPLIT_PLATFORM_PERCENT || "10",
+    10,
+  );
 
   // Validate total = 100
   if (merchantPercent + driverPercent + platformPercent !== 100) {
@@ -43,49 +53,49 @@ export function calculateSplitFromEnv(logger?): SplitPercentages {
 
 ### TC-SPLIT-001: Default split (no env vars)
 
-| Priority | P0 |
-|----------|-----|
+| Priority                                | P0  |
+| --------------------------------------- | --- |
 | **Input:** No environment variables set |
-| **Expected:** 70/20/10 |
-| **Actual:** ✅ PASS |
+| **Expected:** 70/20/10                  |
+| **Actual:** ✅ PASS                     |
 
 ### TC-SPLIT-002: Custom split 80/15/5
 
-| Priority | P1 |
-|----------|-----|
+| Priority                                                                  | P1  |
+| ------------------------------------------------------------------------- | --- |
 | **Input:** `PAYMENT_SPLIT_MERCHANT_PERCENT=80`, `DRIVER=15`, `PLATFORM=5` |
-| **Expected:** Split = 80/15/5 |
-| **Actual:** ✅ PASS |
+| **Expected:** Split = 80/15/5                                             |
+| **Actual:** ✅ PASS                                                       |
 
 ### TC-SPLIT-003: Custom split 75/15/10
 
-| Priority | P2 |
-|----------|-----|
+| Priority                       | P2  |
+| ------------------------------ | --- |
 | **Expected:** Split = 75/15/10 |
-| **Actual:** ✅ PASS |
+| **Actual:** ✅ PASS            |
 
 ### TC-SPLIT-004: Custom split 60/30/10
 
-| Priority | P2 |
-|----------|-----|
+| Priority                       | P2  |
+| ------------------------------ | --- |
 | **Expected:** Split = 60/30/10 |
-| **Actual:** ✅ PASS |
+| **Actual:** ✅ PASS            |
 
 ### TC-SPLIT-005: Total < 100 (50+30+10=90) → fallback
 
-| Priority | P1 |
-|----------|-----|
-| **Input:** Percentages sum to 90 |
+| Priority                                         | P1  |
+| ------------------------------------------------ | --- |
+| **Input:** Percentages sum to 90                 |
 | **Expected:** Fallback to 70/20/10 + warning log |
-| **Actual:** ✅ PASS |
+| **Actual:** ✅ PASS                              |
 
 ### TC-SPLIT-006: Total > 100 (60+40+30=130) → fallback
 
-| Priority | P1 |
-|----------|-----|
-| **Input:** Percentages sum to 130 |
+| Priority                           | P1  |
+| ---------------------------------- | --- |
+| **Input:** Percentages sum to 130  |
 | **Expected:** Fallback to 70/20/10 |
-| **Actual:** ✅ PASS |
+| **Actual:** ✅ PASS                |
 
 ---
 
@@ -93,29 +103,29 @@ export function calculateSplitFromEnv(logger?): SplitPercentages {
 
 ### TC-SPLIT-007: Order 100K with default split
 
-| Priority | P0 |
-|----------|-----|
-| **Input:** Order total = 100,000 VND, fee = 3,500 |
+| Priority                                                  | P0  |
+| --------------------------------------------------------- | --- |
+| **Input:** Order total = 100,000 VND, fee = 3,500         |
 | **Calc:** net = 96,500, M = 67,550, D = 19,300, P = 9,650 |
-| **Expected:** M=67,550, D=19,300, P=9,650 |
-| **Actual:** ✅ PASS |
+| **Expected:** M=67,550, D=19,300, P=9,650                 |
+| **Actual:** ✅ PASS                                       |
 
 ### TC-SPLIT-008: Order 500K with split 80/15/5
 
-| Priority | P1 |
-|----------|-----|
-| **Input:** Order total = 500,000 VND, split 80/15/5 |
+| Priority                                                         | P1  |
+| ---------------------------------------------------------------- | --- |
+| **Input:** Order total = 500,000 VND, split 80/15/5              |
 | **Calc:** fee=17,500, net=482,500, M=386,000, D=72,375, P=24,125 |
-| **Expected:** M=386,000, D=72,375, P=24,125 |
-| **Actual:** ✅ PASS |
+| **Expected:** M=386,000, D=72,375, P=24,125                      |
+| **Actual:** ✅ PASS                                              |
 
 ### TC-SPLIT-009: Rounding: remainder goes to platform
 
-| Priority | P2 |
-|----------|-----|
-| **Input:** Any order with uneven split |
+| Priority                                                       | P2  |
+| -------------------------------------------------------------- | --- |
+| **Input:** Any order with uneven split                         |
 | **Expected:** M + D + P = netAmount (rounding diff → platform) |
-| **Actual:** ✅ PASS |
+| **Actual:** ✅ PASS                                            |
 
 ---
 
@@ -142,9 +152,9 @@ async executeSplitPayment(payment, merchantStripeAccountId, driverStripeAccountI
 
 ## Summary
 
-| Status | Count |
-|--------|-------|
-| ✅ PASS | 9 |
+| Status    | Count |
+| --------- | ----- |
+| ✅ PASS   | 9     |
 | **Total** | **9** |
 
 | **Grand Total Test Cases** | **238** |

@@ -16,7 +16,8 @@
   },
   "scripts": {
     "clean": "rm -rf dist",
-    "lint": "echo 'lint ok'"
+    "lint": "echo 'lint ok'",
+    "test": "jest --passWithNoTests"
   },
   "dependencies": {
     "@mythfood/api-client": "workspace:*",

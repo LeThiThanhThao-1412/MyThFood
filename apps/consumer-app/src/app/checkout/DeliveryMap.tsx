@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import MapView from '@mythfood/frontend-shared/components/MapView';
+import MapView from "@mythfood/frontend-shared/components/MapView";
 
 interface DeliveryMapProps {
   lat: number;
@@ -9,14 +9,19 @@ interface DeliveryMapProps {
   onLocationSelect: (lat: number, lng: number) => void;
 }
 
-export default function DeliveryMap({ lat, lng, address, onLocationSelect }: DeliveryMapProps) {
+export default function DeliveryMap({
+  lat,
+  lng,
+  address,
+  onLocationSelect,
+}: DeliveryMapProps) {
   return (
     <MapView
       locations={[
         {
           latitude: lat,
           longitude: lng,
-          label: '📍 Vị trí giao hàng',
+          label: "📍 Vị trí giao hàng",
           address,
         },
       ]}

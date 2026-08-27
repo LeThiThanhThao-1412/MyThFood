@@ -13,7 +13,8 @@ import {
   HttpStatus,
   UseGuards,
 } from "@nestjs/common";
-import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { DispatchService } from "../application/dispatch.service";
 import {
   CreateDispatchDto,
@@ -25,7 +26,7 @@ import {
 } from "../application/dtos/dispatch.dto";
 
 @Controller("dispatches")
-@UseGuards(AuthGuard("jwt"))
+@UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
 export class DispatchController {
   constructor(private readonly dispatchService: DispatchService) {}
 
@@ -88,7 +89,11 @@ export class DispatchController {
       };
     }
 
-    const dispatches = await this.dispatchService.getNearbyDispatches(lat, lng, radius);
+    const dispatches = await this.dispatchService.getNearbyDispatches(
+      lat,
+      lng,
+      radius,
+    );
     return {
       statusCode: HttpStatus.OK,
       data: {
@@ -193,6 +198,7 @@ export class DispatchController {
   }
 
   @Patch(":id/driver-accept")
+  @Roles("DRIVER", "ADMIN")
   async driverAccept(@Param("id") id: string) {
     const dispatch = await this.dispatchService.driverAccept(id);
     return {
@@ -202,6 +208,7 @@ export class DispatchController {
   }
 
   @Patch(":id/driver-decline")
+  @Roles("DRIVER", "ADMIN")
   async driverDecline(@Param("id") id: string, @Body() dto: DriverDeclineDto) {
     const dispatch = await this.dispatchService.driverDecline(id, dto);
     return {
@@ -213,6 +220,7 @@ export class DispatchController {
   // ---- Dispatch Lifecycle ----
 
   @Patch(":id/driver-arrived")
+  @Roles("DRIVER", "ADMIN")
   async driverArrived(@Param("id") id: string) {
     const dispatch = await this.dispatchService.driverArrived(id);
     return {
@@ -222,6 +230,7 @@ export class DispatchController {
   }
 
   @Patch(":id/picked-up")
+  @Roles("DRIVER", "ADMIN")
   async markPickedUp(@Param("id") id: string) {
     const dispatch = await this.dispatchService.markPickedUp(id);
     return {
@@ -231,6 +240,7 @@ export class DispatchController {
   }
 
   @Patch(":id/start-delivering")
+  @Roles("DRIVER", "ADMIN")
   async startDelivering(@Param("id") id: string) {
     const dispatch = await this.dispatchService.startDelivering(id);
     return {
@@ -240,6 +250,7 @@ export class DispatchController {
   }
 
   @Patch(":id/delivered")
+  @Roles("DRIVER", "ADMIN")
   async markDelivered(@Param("id") id: string) {
     const dispatch = await this.dispatchService.markDelivered(id);
     return {

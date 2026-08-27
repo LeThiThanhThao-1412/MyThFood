@@ -12,9 +12,7 @@ import { WalletTransactionEntity } from "./infrastructure/wallet-transaction.ent
  * FIX #9: @VersionColumn on WalletEntity enables optimistic locking on balance ops.
  */
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([WalletEntity, WalletTransactionEntity]),
-  ],
+  imports: [TypeOrmModule.forFeature([WalletEntity, WalletTransactionEntity])],
   controllers: [WalletController],
   providers: [WalletService, WalletRepository],
   exports: [WalletService, WalletRepository],

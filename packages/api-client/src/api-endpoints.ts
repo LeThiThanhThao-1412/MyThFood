@@ -2,7 +2,7 @@
 // MyThFood API Endpoints - Typed API functions for all services
 // ============================================================================
 
-import { httpClient } from './http-client';
+import { httpClient } from "./http-client";
 import type {
   ApiResponse,
   PaginatedResponse,
@@ -14,12 +14,18 @@ import type {
   ConsumerProfile,
   AddAddressRequest,
   AddPaymentMethodRequest,
+  UpdateConsumerProfileRequest,
+  ChangePasswordRequest,
   CreateMerchantRequest,
   Merchant,
   CreateMenuItemRequest,
   MenuItem,
   UpdateMenuItemRequest,
+  MenuCategory,
+  CreateMenuCategoryRequest,
+  UpdateMenuCategoryRequest,
   SetOperatingHoursRequest,
+  OperatingHour,
   UpdateCapacityRequest,
   PlaceOrderRequest,
   Order,
@@ -41,7 +47,18 @@ import type {
   RegisterDriverRequest,
   Driver,
   UpdateLocationRequest,
-} from './types';
+  CreateReviewRequest,
+  Review,
+  ReplyReviewRequest,
+  CreatePromotionRequest,
+  UpdatePromotionRequest,
+  Promotion,
+  PromotionStats,
+  ValidatePromotionRequest,
+  ApplyPromotionRequest,
+  CreateNotificationRequest,
+  Notification,
+} from "./types";
 
 // Service port constants
 export const PORTS = {
@@ -54,6 +71,10 @@ export const PORTS = {
   DRIVER: 3007,
   DISPATCH: 3008,
   WALLET: 3009,
+  UPLOAD: 3010,
+  REVIEW: 3011,
+  PROMOTION: 3012,
+  NOTIFICATION: 3013,
 } as const;
 
 // ============================================================================
@@ -61,13 +82,27 @@ export const PORTS = {
 // ============================================================================
 export const authApi = {
   login: (body: LoginRequest) =>
-    httpClient.post<ApiResponse<LoginResponse>>(PORTS.IDENTITY, '/auth/login', body),
+    httpClient.post<ApiResponse<LoginResponse>>(
+      PORTS.IDENTITY,
+      "/auth/login",
+      body,
+    ),
 
   register: (body: RegisterRequest) =>
-    httpClient.post<ApiResponse<{ user: UserDetail }>>(PORTS.IDENTITY, '/auth/register', body),
+    httpClient.post<ApiResponse<{ user: UserDetail }>>(
+      PORTS.IDENTITY,
+      "/auth/register",
+      body,
+    ),
 
-  me: () =>
-    httpClient.get<ApiResponse<UserDetail>>(PORTS.IDENTITY, '/auth/me'),
+  me: () => httpClient.get<ApiResponse<UserDetail>>(PORTS.IDENTITY, "/auth/me"),
+
+  changePassword: (body: ChangePasswordRequest) =>
+    httpClient.post<ApiResponse<{ message: string }>>(
+      PORTS.IDENTITY,
+      "/auth/change-password",
+      body,
+    ),
 };
 
 // ============================================================================
@@ -75,19 +110,42 @@ export const authApi = {
 // ============================================================================
 export const consumerApi = {
   create: (body: CreateConsumerRequest) =>
-    httpClient.post<ApiResponse<ConsumerProfile>>(PORTS.CONSUMER, '/consumers', body),
+    httpClient.post<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      "/consumers",
+      body,
+    ),
 
   getByUserId: (userId: string) =>
-    httpClient.get<ApiResponse<ConsumerProfile>>(PORTS.CONSUMER, `/consumers/user/${userId}`),
+    httpClient.get<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/user/${userId}`,
+    ),
 
   getById: (id: string) =>
-    httpClient.get<ApiResponse<ConsumerProfile>>(PORTS.CONSUMER, `/consumers/${id}`),
+    httpClient.get<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${id}`,
+    ),
 
   addAddress: (consumerId: string, body: AddAddressRequest) =>
     httpClient.post<ApiResponse<ConsumerProfile>>(
       PORTS.CONSUMER,
       `/consumers/${consumerId}/addresses`,
       body,
+    ),
+
+  update: (consumerId: string, body: UpdateConsumerProfileRequest) =>
+    httpClient.put<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}`,
+      body,
+    ),
+
+  removeAddress: (consumerId: string, addressId: string) =>
+    httpClient.delete<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/addresses/${addressId}`,
     ),
 
   addPaymentMethod: (consumerId: string, body: AddPaymentMethodRequest) =>
@@ -103,40 +161,146 @@ export const consumerApi = {
 // ============================================================================
 export const merchantApi = {
   create: (body: CreateMerchantRequest) =>
-    httpClient.post<Merchant>(PORTS.MERCHANT, '/merchants', body),
+    httpClient.post<Merchant>(PORTS.MERCHANT, "/merchants", body),
 
-  list: (params?: { status?: string; search?: string; skip?: number; take?: number }) =>
-    httpClient.get<PaginatedResponse<Merchant>>(PORTS.MERCHANT, '/merchants', { params }),
+  list: (params?: {
+    status?: string;
+    search?: string;
+    category?: string;
+    skip?: number;
+    take?: number;
+  }) =>
+    httpClient.get<PaginatedResponse<Merchant>>(PORTS.MERCHANT, "/merchants", {
+      params,
+    }),
 
   getById: (id: string) =>
     httpClient.get<Merchant>(PORTS.MERCHANT, `/merchants/${id}`),
 
+  update: (
+    id: string,
+    body: {
+      name?: string;
+      description?: string;
+      phone?: string;
+      email?: string;
+      address?: string;
+      logoUrl?: string;
+      coverImageUrl?: string;
+      primaryCategory?: string;
+      secondaryCategories?: string[];
+    },
+  ) => httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${id}`, body),
+
   approve: (id: string) =>
     httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${id}/approve`),
 
-  getMenu: (merchantId: string) =>
-    httpClient.get<MenuItem[]>(PORTS.MERCHANT, `/merchants/${merchantId}/menu`),
+  getMenu: (merchantId: string, includeUnavailable?: boolean) =>
+    httpClient.get<MenuItem[]>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu`,
+      {
+        params: includeUnavailable ? { includeUnavailable: "true" } : undefined,
+      },
+    ),
 
   addMenuItem: (merchantId: string, body: CreateMenuItemRequest) =>
-    httpClient.post<MenuItem>(PORTS.MERCHANT, `/merchants/${merchantId}/menu/items`, body),
+    httpClient.post<MenuItem>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu/items`,
+      body,
+    ),
 
-  updateMenuItem: (merchantId: string, itemId: string, body: UpdateMenuItemRequest) =>
-    httpClient.put<MenuItem>(PORTS.MERCHANT, `/merchants/${merchantId}/menu/${itemId}`, body),
+  updateMenuItem: (
+    merchantId: string,
+    itemId: string,
+    body: UpdateMenuItemRequest,
+  ) =>
+    httpClient.put<MenuItem>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu/${itemId}`,
+      body,
+    ),
 
   toggleMenuItem: (merchantId: string, itemId: string) =>
-    httpClient.patch<MenuItem>(PORTS.MERCHANT, `/merchants/${merchantId}/menu/${itemId}/available`),
+    httpClient.patch<MenuItem>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu/${itemId}/available`,
+    ),
 
   deleteMenuItem: (merchantId: string, itemId: string) =>
-    httpClient.delete<void>(PORTS.MERCHANT, `/merchants/${merchantId}/menu/${itemId}`),
+    httpClient.delete<void>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu/${itemId}`,
+    ),
+
+  getMenuCategories: (merchantId: string) =>
+    httpClient.get<MenuCategory[]>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu-categories`,
+    ),
+
+  addMenuCategory: (merchantId: string, body: CreateMenuCategoryRequest) =>
+    httpClient.post<MenuCategory>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu-categories`,
+      body,
+    ),
+
+  updateMenuCategory: (
+    merchantId: string,
+    categoryId: string,
+    body: UpdateMenuCategoryRequest,
+  ) =>
+    httpClient.put<MenuCategory>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu-categories/${categoryId}`,
+      body,
+    ),
+
+  deleteMenuCategory: (merchantId: string, categoryId: string) =>
+    httpClient.delete<void>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu-categories/${categoryId}`,
+    ),
 
   setOperatingHours: (merchantId: string, body: SetOperatingHoursRequest) =>
-    httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${merchantId}/operating-hours`, body),
+    httpClient.put<Merchant>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/operating-hours`,
+      body,
+    ),
+
+  getOperatingHours: (merchantId: string) =>
+    httpClient.get<OperatingHour[]>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/operating-hours`,
+    ),
 
   checkIsOpen: (merchantId: string) =>
-    httpClient.get<{ isOpen: boolean }>(PORTS.MERCHANT, `/merchants/${merchantId}/is-open`),
+    httpClient.get<{ isOpen: boolean }>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/is-open`,
+    ),
+
+  toggleOpen: (merchantId: string) =>
+    httpClient.patch<Merchant>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/toggle-open`,
+    ),
+
+  getCapacity: (merchantId: string) =>
+    httpClient.get<{
+      maxConcurrentOrders: number;
+      averagePreparationMinutes: number;
+    }>(PORTS.MERCHANT, `/merchants/${merchantId}/capacity`),
 
   updateCapacity: (merchantId: string, body: UpdateCapacityRequest) =>
-    httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${merchantId}/capacity`, body),
+    httpClient.put<Merchant>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/capacity`,
+      body,
+    ),
 };
 
 // ============================================================================
@@ -144,10 +308,9 @@ export const merchantApi = {
 // ============================================================================
 export const orderApi = {
   place: (body: PlaceOrderRequest) =>
-    httpClient.post<Order>(PORTS.ORDER, '/orders', body),
+    httpClient.post<Order>(PORTS.ORDER, "/orders", body),
 
-  getById: (id: string) =>
-    httpClient.get<Order>(PORTS.ORDER, `/orders/${id}`),
+  getById: (id: string) => httpClient.get<Order>(PORTS.ORDER, `/orders/${id}`),
 
   list: (params?: {
     status?: string;
@@ -155,7 +318,10 @@ export const orderApi = {
     consumerId?: string;
     skip?: number;
     take?: number;
-  }) => httpClient.get<PaginatedResponse<Order>>(PORTS.ORDER, '/orders', { params }),
+  }) =>
+    httpClient.get<PaginatedResponse<Order>>(PORTS.ORDER, "/orders", {
+      params,
+    }),
 
   listByConsumer: (consumerId: string) =>
     httpClient.get<Order[]>(PORTS.ORDER, `/orders/consumer/${consumerId}`),
@@ -176,7 +342,11 @@ export const orderApi = {
     httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/ready`),
 
   outForDelivery: (id: string, body: OutForDeliveryRequest) =>
-    httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/out-for-delivery`, body),
+    httpClient.patch<Order>(
+      PORTS.ORDER,
+      `/orders/${id}/out-for-delivery`,
+      body,
+    ),
 
   delivered: (id: string) =>
     httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/delivered`),
@@ -190,8 +360,7 @@ export const orderApi = {
   update: (id: string, body: UpdateOrderRequest) =>
     httpClient.put<Order>(PORTS.ORDER, `/orders/${id}`, body),
 
-  delete: (id: string) =>
-    httpClient.delete<void>(PORTS.ORDER, `/orders/${id}`),
+  delete: (id: string) => httpClient.delete<void>(PORTS.ORDER, `/orders/${id}`),
 };
 
 // ============================================================================
@@ -199,10 +368,14 @@ export const orderApi = {
 // ============================================================================
 export const paymentApi = {
   create: (body: CreatePaymentRequest) =>
-    httpClient.post<Payment>(PORTS.PAYMENT, '/payments', body),
+    httpClient.post<Payment>(PORTS.PAYMENT, "/payments", body),
 
   createStripePayment: (body: CreatePaymentRequest & { currency?: string }) =>
-    httpClient.post<Payment & { clientSecret: string }>(PORTS.PAYMENT, '/payments/stripe', body),
+    httpClient.post<Payment & { clientSecret: string }>(
+      PORTS.PAYMENT,
+      "/payments/stripe",
+      body,
+    ),
 
   getById: (id: string) =>
     httpClient.get<Payment>(PORTS.PAYMENT, `/payments/${id}`),
@@ -212,16 +385,22 @@ export const paymentApi = {
     consumerId?: string;
     merchantId?: string;
     status?: string;
-  }) => httpClient.get<Payment[]>(PORTS.PAYMENT, '/payments', { params }),
+  }) => httpClient.get<Payment[]>(PORTS.PAYMENT, "/payments", { params }),
 
   getByOrder: (orderId: string) =>
     httpClient.get<Payment>(PORTS.PAYMENT, `/payments/order/${orderId}`),
 
   listByConsumer: (consumerId: string) =>
-    httpClient.get<Payment[]>(PORTS.PAYMENT, `/payments/consumer/${consumerId}`),
+    httpClient.get<Payment[]>(
+      PORTS.PAYMENT,
+      `/payments/consumer/${consumerId}`,
+    ),
 
   listByMerchant: (merchantId: string) =>
-    httpClient.get<Payment[]>(PORTS.PAYMENT, `/payments/merchant/${merchantId}`),
+    httpClient.get<Payment[]>(
+      PORTS.PAYMENT,
+      `/payments/merchant/${merchantId}`,
+    ),
 
   complete: (id: string, body: CompletePaymentRequest) =>
     httpClient.patch<Payment>(PORTS.PAYMENT, `/payments/${id}/complete`, body),
@@ -241,28 +420,45 @@ export const paymentApi = {
 // ============================================================================
 export const inventoryApi = {
   create: (body: CreateInventoryRequest) =>
-    httpClient.post<Inventory>(PORTS.INVENTORY, '/inventory', body),
+    httpClient.post<Inventory>(PORTS.INVENTORY, "/inventory", body),
 
-  list: () =>
-    httpClient.get<Inventory[]>(PORTS.INVENTORY, '/inventory'),
+  list: () => httpClient.get<Inventory[]>(PORTS.INVENTORY, "/inventory"),
 
   getById: (id: string) =>
     httpClient.get<Inventory>(PORTS.INVENTORY, `/inventory/${id}`),
 
   getByMerchant: (merchantId: string) =>
-    httpClient.get<Inventory[]>(PORTS.INVENTORY, `/inventory/merchant/${merchantId}`),
+    httpClient.get<Inventory[]>(
+      PORTS.INVENTORY,
+      `/inventory/merchant/${merchantId}`,
+    ),
 
   getByMenuItem: (menuItemId: string) =>
-    httpClient.get<Inventory>(PORTS.INVENTORY, `/inventory/menuitem/${menuItemId}`),
+    httpClient.get<Inventory>(
+      PORTS.INVENTORY,
+      `/inventory/menuitem/${menuItemId}`,
+    ),
 
   reserve: (id: string, body: ReserveStockRequest) =>
-    httpClient.post<Inventory>(PORTS.INVENTORY, `/inventory/${id}/reserve`, body),
+    httpClient.post<Inventory>(
+      PORTS.INVENTORY,
+      `/inventory/${id}/reserve`,
+      body,
+    ),
 
   release: (id: string, body: ReleaseStockRequest) =>
-    httpClient.post<Inventory>(PORTS.INVENTORY, `/inventory/${id}/release`, body),
+    httpClient.post<Inventory>(
+      PORTS.INVENTORY,
+      `/inventory/${id}/release`,
+      body,
+    ),
 
   consume: (id: string, body: ConsumeStockRequest) =>
-    httpClient.post<Inventory>(PORTS.INVENTORY, `/inventory/${id}/consume`, body),
+    httpClient.post<Inventory>(
+      PORTS.INVENTORY,
+      `/inventory/${id}/consume`,
+      body,
+    ),
 
   updateTotal: (id: string, body: UpdateStockRequest) =>
     httpClient.put<Inventory>(PORTS.INVENTORY, `/inventory/${id}/total`, body),
@@ -273,49 +469,103 @@ export const inventoryApi = {
 // ============================================================================
 export const driverApi = {
   register: (body: RegisterDriverRequest) =>
-    httpClient.post<{ statusCode: number; data: Driver }>(PORTS.DRIVER, '/drivers', body),
+    httpClient.post<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      "/drivers",
+      body,
+    ),
 
   getById: (id: string) =>
-    httpClient.get<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}`),
+    httpClient.get<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}`,
+    ),
 
   getByUserId: (userId: string) =>
-    httpClient.get<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/user/${userId}`),
+    httpClient.get<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/user/${userId}`,
+    ),
 
-  list: (params?: { status?: string; onlineStatus?: string; fatigueLevel?: string }) =>
-    httpClient.get<{ statusCode: number; data: Driver[] }>(PORTS.DRIVER, '/drivers', { params }),
+  list: (params?: {
+    status?: string;
+    onlineStatus?: string;
+    fatigueLevel?: string;
+  }) =>
+    httpClient.get<{ statusCode: number; data: Driver[] }>(
+      PORTS.DRIVER,
+      "/drivers",
+      { params },
+    ),
 
   getAvailable: () =>
-    httpClient.get<{ statusCode: number; data: Driver[] }>(PORTS.DRIVER, '/drivers/available/list'),
+    httpClient.get<{ statusCode: number; data: Driver[] }>(
+      PORTS.DRIVER,
+      "/drivers/available/list",
+    ),
 
   updateProfile: (id: string, body: Partial<RegisterDriverRequest>) =>
-    httpClient.put<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}`, body),
+    httpClient.put<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}`,
+      body,
+    ),
 
   goOnline: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/go-online`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/go-online`,
+    ),
 
   goOffline: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/go-offline`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/go-offline`,
+    ),
 
   goHome: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/go-home`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/go-home`,
+    ),
 
   updateLocation: (id: string, body: UpdateLocationRequest) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/location`, body),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/location`,
+      body,
+    ),
 
   assignOrder: (id: string, orderId: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/assign-order`, { orderId }),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/assign-order`,
+      { orderId },
+    ),
 
   completeOrder: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/complete-order`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/complete-order`,
+    ),
 
   startShift: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/start-shift`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/start-shift`,
+    ),
 
   endShift: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/end-shift`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/end-shift`,
+    ),
 
   takeBreak: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/take-break`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/take-break`,
+    ),
 
   delete: (id: string) =>
     httpClient.delete<void>(PORTS.DRIVER, `/drivers/${id}`),
@@ -326,19 +576,36 @@ export const driverApi = {
 // ============================================================================
 export const dispatchApi = {
   getById: (id: string) =>
-    httpClient.get<import('./types').Dispatch>(PORTS.DISPATCH, `/dispatch/${id}`),
+    httpClient.get<import("./types").Dispatch>(
+      PORTS.DISPATCH,
+      `/dispatch/${id}`,
+    ),
 
   getByOrder: (orderId: string) =>
-    httpClient.get<import('./types').Dispatch>(PORTS.DISPATCH, `/dispatch/order/${orderId}`),
+    httpClient.get<import("./types").Dispatch>(
+      PORTS.DISPATCH,
+      `/dispatch/order/${orderId}`,
+    ),
 
   getByDriver: (driverId: string) =>
-    httpClient.get<import('./types').Dispatch[]>(PORTS.DISPATCH, `/dispatch/driver/${driverId}`),
+    httpClient.get<import("./types").Dispatch[]>(
+      PORTS.DISPATCH,
+      `/dispatch/driver/${driverId}`,
+    ),
 
-  create: (body: import('./types').CreateDispatchRequest) =>
-    httpClient.post<import('./types').Dispatch>(PORTS.DISPATCH, '/dispatch', body),
+  create: (body: import("./types").CreateDispatchRequest) =>
+    httpClient.post<import("./types").Dispatch>(
+      PORTS.DISPATCH,
+      "/dispatch",
+      body,
+    ),
 
   updateStatus: (id: string, body: { status: string }) =>
-    httpClient.patch<import('./types').Dispatch>(PORTS.DISPATCH, `/dispatch/${id}/status`, body),
+    httpClient.patch<import("./types").Dispatch>(
+      PORTS.DISPATCH,
+      `/dispatch/${id}/status`,
+      body,
+    ),
 };
 
 // ============================================================================
@@ -373,50 +640,309 @@ export interface ShippingFeeResponse {
 // ============================================================================
 export const walletApi = {
   // Get wallet + transactions
-  getWallet: (ownerId: string, ownerType: 'CONSUMER' | 'DRIVER' | 'MERCHANT' | 'PLATFORM' | 'TAX') =>
+  getWallet: (
+    ownerId: string,
+    ownerType: "CONSUMER" | "DRIVER" | "MERCHANT" | "PLATFORM" | "TAX",
+  ) =>
     httpClient.get<{
-      id: string; ownerId: string; ownerType: string; balance: number; currency: string;
-      transactions: { id: string; type: string; amount: number; description: string; referenceType: string; referenceId: string; createdAt: string }[];
-    }>(PORTS.WALLET, '/wallets', { params: { ownerId, ownerType } }),
+      id: string;
+      ownerId: string;
+      ownerType: string;
+      balance: number;
+      currency: string;
+      transactions: {
+        id: string;
+        type: string;
+        amount: number;
+        description: string;
+        referenceType: string;
+        referenceId: string;
+        createdAt: string;
+      }[];
+    }>(PORTS.WALLET, "/wallets", { params: { ownerId, ownerType } }),
 
   // Get balance
   getBalance: (ownerId: string, ownerType: string) =>
-    httpClient.get<{ ownerId: string; ownerType: string; balance: number }>(PORTS.WALLET, '/wallets/balance', { params: { ownerId, ownerType } }),
+    httpClient.get<{ ownerId: string; ownerType: string; balance: number }>(
+      PORTS.WALLET,
+      "/wallets/balance",
+      { params: { ownerId, ownerType } },
+    ),
 
   // Top-up via Stripe (returns clientSecret)
   topupStripe: (ownerId: string, amount: number) =>
-    httpClient.post<{ clientSecret: string; paymentIntentId: string }>(PORTS.WALLET, '/wallets/topup/stripe', { ownerId, amount }),
+    httpClient.post<{ clientSecret: string; paymentIntentId: string }>(
+      PORTS.WALLET,
+      "/wallets/topup/stripe",
+      { ownerId, amount },
+    ),
 
   // Direct top-up (internal/testing)
   topup: (ownerId: string, ownerType: string, amount: number) =>
-    httpClient.post<{ id: string; balance: number }>(PORTS.WALLET, '/wallets/topup', { ownerId, ownerType, amount }),
+    httpClient.post<{ id: string; balance: number }>(
+      PORTS.WALLET,
+      "/wallets/topup",
+      { ownerId, ownerType, amount },
+    ),
 
   // Withdraw (with min balance check for driver)
   withdraw: (ownerId: string, ownerType: string, amount: number) =>
-    httpClient.post<{ id: string; balance: number }>(PORTS.WALLET, '/wallets/withdraw', { ownerId, ownerType, amount }),
+    httpClient.post<{ id: string; balance: number }>(
+      PORTS.WALLET,
+      "/wallets/withdraw",
+      { ownerId, ownerType, amount },
+    ),
 
   // COD settlement
-  settleCOD: (data: { merchantId: string; driverId: string; orderId: string; foodTotal: number; shippingFee: number }) =>
-    httpClient.post<{ message: string }>(PORTS.WALLET, '/wallets/settle/cod', data),
+  settleCOD: (data: {
+    merchantId: string;
+    driverId: string;
+    orderId: string;
+    foodTotal: number;
+    shippingFee: number;
+    discount?: number;
+    discountFundedBy?: string;
+    serviceFee?: number;
+  }) =>
+    httpClient.post<{ message: string }>(
+      PORTS.WALLET,
+      "/wallets/settle/cod",
+      data,
+    ),
+
+  // Online (card) settlement
+  settleOnline: (data: {
+    merchantId: string;
+    driverId: string;
+    orderId: string;
+    foodTotal: number;
+    shippingFee: number;
+    discount?: number;
+    discountFundedBy?: string;
+    serviceFee?: number;
+  }) =>
+    httpClient.post<{ message: string }>(
+      PORTS.WALLET,
+      "/wallets/settle/online",
+      data,
+    ),
 
   // Regular settlement
-  settleRegular: (data: { driverId: string; orderId: string; shippingFee: number }) =>
-    httpClient.post<{ message: string }>(PORTS.WALLET, '/wallets/settle/regular', data),
+  settleRegular: (data: {
+    driverId: string;
+    orderId: string;
+    shippingFee: number;
+  }) =>
+    httpClient.post<{ message: string }>(
+      PORTS.WALLET,
+      "/wallets/settle/regular",
+      data,
+    ),
 
   // Check COD eligibility (min 2M VND)
   checkCodEligibility: (driverId: string) =>
-    httpClient.get<{ eligible: boolean; balance: number; required: number }>(PORTS.WALLET, `/wallets/check-cod-eligibility/${driverId}`),
+    httpClient.get<{
+      eligible: boolean;
+      balance: number;
+      heldBalance: number;
+      availableBalance: number;
+      hasActiveCOD: boolean;
+      required: number;
+    }>(PORTS.WALLET, `/wallets/check-cod-eligibility/${driverId}`),
 
   // Transaction history
   getTransactions: (ownerId: string, ownerType: string) =>
-    httpClient.get<any[]>(PORTS.WALLET, `/${ownerId}/transactions`, { params: { ownerType } }),
+    httpClient.get<any[]>(PORTS.WALLET, `/${ownerId}/transactions`, {
+      params: { ownerType },
+    }),
 
   // Create wallet
   createWallet: (ownerId: string, ownerType: string) =>
-    httpClient.post<{ id: string; ownerId: string; ownerType: string; balance: number; currency: string }>(PORTS.WALLET, '/wallets', { ownerId, ownerType }),
+    httpClient.post<{
+      id: string;
+      ownerId: string;
+      ownerType: string;
+      balance: number;
+      currency: string;
+    }>(PORTS.WALLET, "/wallets", { ownerId, ownerType }),
 };
 
 export const shippingApi = {
   getFee: (params: ShippingFeeRequest) =>
-    httpClient.get<ShippingFeeResponse>(PORTS.ORDER, '/shipping/fee', { params }),
+    httpClient.get<ShippingFeeResponse>(PORTS.ORDER, "/shipping/fee", {
+      params,
+    }),
+};
+
+// ============================================================================
+// Upload Service (Port 3010)
+// ============================================================================
+export const uploadApi = {
+  uploadImage: (file: File, folder?: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (folder) formData.append("folder", folder);
+    return httpClient.post<{
+      statusCode: number;
+      message: string;
+      data: { url: string; key: string; size: number; mimeType: string };
+    }>(3010, "/upload/image", formData);
+  },
+};
+
+// ============================================================================
+// Review Service (Port 3011)
+// ============================================================================
+export const reviewApi = {
+  create: (body: CreateReviewRequest) =>
+    httpClient.post<ApiResponse<Review>>(PORTS.REVIEW, "/reviews", body),
+
+  getByMerchant: (
+    merchantId: string,
+    params?: { skip?: number; take?: number },
+  ) =>
+    httpClient.get<{
+      statusCode: number;
+      data: Review[];
+      total: number;
+      averageRating: number;
+    }>(PORTS.REVIEW, `/reviews/merchant/${merchantId}`, { params }),
+
+  getByOrder: (orderId: string) =>
+    httpClient.get<ApiResponse<Review | null>>(
+      PORTS.REVIEW,
+      `/reviews/order/${orderId}`,
+    ),
+
+  reply: (reviewId: string, body: ReplyReviewRequest) =>
+    httpClient.post<ApiResponse<Review>>(
+      PORTS.REVIEW,
+      `/reviews/${reviewId}/reply`,
+      body,
+    ),
+};
+
+// ============================================================================
+// Promotion Service (Port 3012)
+// ============================================================================
+export const promotionApi = {
+  create: (body: CreatePromotionRequest) =>
+    httpClient.post<ApiResponse<Promotion>>(
+      PORTS.PROMOTION,
+      "/promotions",
+      body,
+    ),
+
+  list: (params?: {
+    merchantId?: string;
+    isActive?: boolean;
+    skip?: number;
+    take?: number;
+  }) =>
+    httpClient.get<{ statusCode: number; items: Promotion[]; total: number }>(
+      PORTS.PROMOTION,
+      "/promotions",
+      { params },
+    ),
+
+  getById: (id: string) =>
+    httpClient.get<ApiResponse<Promotion>>(
+      PORTS.PROMOTION,
+      `/promotions/${id}`,
+    ),
+
+  getByMerchant: (merchantId: string) =>
+    httpClient.get<ApiResponse<Promotion[]>>(
+      PORTS.PROMOTION,
+      `/promotions/merchant/${merchantId}`,
+    ),
+
+  update: (id: string, body: UpdatePromotionRequest) =>
+    httpClient.patch<ApiResponse<Promotion>>(
+      PORTS.PROMOTION,
+      `/promotions/${id}`,
+      body,
+    ),
+
+  activate: (id: string) =>
+    httpClient.patch<ApiResponse<Promotion>>(
+      PORTS.PROMOTION,
+      `/promotions/${id}/activate`,
+    ),
+
+  deactivate: (id: string) =>
+    httpClient.patch<ApiResponse<Promotion>>(
+      PORTS.PROMOTION,
+      `/promotions/${id}/deactivate`,
+    ),
+
+  remove: (id: string) =>
+    httpClient.delete<void>(PORTS.PROMOTION, `/promotions/${id}`),
+
+  validate: (body: ValidatePromotionRequest) =>
+    httpClient.post<
+      ApiResponse<{ discount: number; fundedBy: string; target: string }>
+    >(PORTS.PROMOTION, "/promotions/validate", body),
+
+  apply: (body: ApplyPromotionRequest) =>
+    httpClient.post<
+      ApiResponse<{
+        discount: number;
+        promotionId: string;
+        fundedBy: string;
+        target: string;
+      }>
+    >(PORTS.PROMOTION, "/promotions/apply", body),
+
+  getStats: (id: string) =>
+    httpClient.get<ApiResponse<PromotionStats>>(
+      PORTS.PROMOTION,
+      `/promotions/${id}/stats`,
+    ),
+
+  getMerchantStats: (merchantId: string) =>
+    httpClient.get<
+      ApiResponse<{
+        totalPromotions: number;
+        activePromotions: number;
+        totalUsedCount: number;
+        totalDiscount: number;
+        totalOrders: number;
+      }>
+    >(PORTS.PROMOTION, `/promotions/merchant/${merchantId}/stats`),
+};
+
+// ============================================================================
+// Notification Service (Port 3013)
+// ============================================================================
+export const notificationApi = {
+  create: (body: CreateNotificationRequest) =>
+    httpClient.post<ApiResponse<Notification>>(
+      PORTS.NOTIFICATION,
+      "/notifications",
+      body,
+    ),
+
+  getByUser: (userId: string, params?: { skip?: number; take?: number }) =>
+    httpClient.get<{
+      statusCode: number;
+      data: Notification[];
+      total: number;
+      unreadCount: number;
+    }>(PORTS.NOTIFICATION, `/notifications/user/${userId}`, { params }),
+
+  markRead: (id: string) =>
+    httpClient.patch<ApiResponse<Notification>>(
+      PORTS.NOTIFICATION,
+      `/notifications/${id}/read`,
+    ),
+
+  markAllRead: (userId: string) =>
+    httpClient.patch<{ statusCode: number }>(
+      PORTS.NOTIFICATION,
+      "/notifications/read-all",
+      {
+        userId,
+      },
+    ),
 };

@@ -1,6 +1,6 @@
-import { io, Socket } from 'socket.io-client';
+import { io, Socket } from "socket.io-client";
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3004';
+const SOCKET_URL = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3004";
 
 type EventHandler = (data: unknown) => void;
 
@@ -13,22 +13,22 @@ class SocketClient {
 
     this.socket = io(SOCKET_URL, {
       auth: token ? { token } : undefined,
-      transports: ['websocket', 'polling'],
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 10,
     });
 
-    this.socket.on('connect', () => {
-      console.log('[Socket] Connected:', this.socket?.id);
+    this.socket.on("connect", () => {
+      console.log("[Socket] Connected:", this.socket?.id);
     });
 
-    this.socket.on('disconnect', (reason) => {
-      console.log('[Socket] Disconnected:', reason);
+    this.socket.on("disconnect", (reason) => {
+      console.log("[Socket] Disconnected:", reason);
     });
 
-    this.socket.on('connect_error', (err) => {
-      console.error('[Socket] Connection error:', err.message);
+    this.socket.on("connect_error", (err) => {
+      console.error("[Socket] Connection error:", err.message);
     });
 
     // Re-register all listeners after reconnect

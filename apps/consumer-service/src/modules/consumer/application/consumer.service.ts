@@ -186,8 +186,11 @@ export class ConsumerService {
       type?: string;
     },
   ): Promise<Result<Consumer, DomainError>> {
-    const consumer = await this.repository.findById(ConsumerId.from(consumerId));
-    if (!consumer) return Result.fail(new EntityNotFoundError("Consumer", consumerId));
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer)
+      return Result.fail(new EntityNotFoundError("Consumer", consumerId));
     const result = consumer.updateAddress(addressId, {
       label: props.label,
       fullAddress: props.fullAddress,
@@ -215,8 +218,11 @@ export class ConsumerService {
       expiryDate?: Date;
     },
   ): Promise<Result<Consumer, DomainError>> {
-    const consumer = await this.repository.findById(ConsumerId.from(consumerId));
-    if (!consumer) return Result.fail(new EntityNotFoundError("Consumer", consumerId));
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer)
+      return Result.fail(new EntityNotFoundError("Consumer", consumerId));
     const r = consumer.removePaymentMethod(pmId);
     if (r.isFailure) return Result.fail(r.error);
     const mr = PaymentMethod.create(props);

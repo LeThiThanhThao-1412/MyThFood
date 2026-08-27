@@ -51,6 +51,17 @@ try {
     exit 1
 }
 
+# FIX: self-registration sanitizes ADMIN -> CONSUMER (ADMIN cannot self-register).
+# There is no admin role-assignment API yet, so force-set the role directly in DB.
+Write-Host "`n[3] Setting ADMIN role in database..." -ForegroundColor Yellow
+try {
+    docker exec mythfood-postgres psql -U mythfood -d mythfood_identity -c "UPDATE users SET roles = 'ADMIN' WHERE phone_number = '$adminPhone';" | Out-Null
+    Write-Host "  Role set to ADMIN" -ForegroundColor Green
+} catch {
+    Write-Host "  [WARN] Could not set role: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "  Manual fix: docker exec mythfood-postgres psql -U mythfood -d mythfood_identity -c \"UPDATE users SET roles = 'ADMIN' WHERE phone_number = '$adminPhone';\""
+}
+
 # Summary
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "  ADMIN ACCOUNT READY" -ForegroundColor Cyan

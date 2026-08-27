@@ -20,6 +20,15 @@ export type OrderStatus =
 
 export type OrderType = "DELIVERY" | "PICKUP";
 
+export interface OrderItemOption {
+  optionId: string;
+  groupId: string;
+  groupName?: string;
+  name: string;
+  priceDelta: number;
+  quantity?: number;
+}
+
 export interface OrderItemProps {
   menuItemId: string;
   name: string;
@@ -27,6 +36,7 @@ export interface OrderItemProps {
   unitPrice: number;
   subtotal: number;
   specialInstructions: string | null;
+  options?: OrderItemOption[] | null;
 }
 
 export interface OrderProps {
@@ -39,6 +49,7 @@ export interface OrderProps {
   deliveryFee: number;
   serviceFee: number;
   discount: number;
+  discountFundedBy?: string;
   totalAmount: number;
   deliveryAddress: string | null;
   deliveryLatitude: number | null;
@@ -48,6 +59,7 @@ export interface OrderProps {
   driverId: string | null;
   cancelReason: string | null;
   rejectionReason: string | null;
+  paymentMethod: string;
 }
 
 /** Valid status transitions for the order state machine */
@@ -72,6 +84,7 @@ export class Order extends AggregateRoot<OrderId> {
   private deliveryFee: number;
   private serviceFee: number;
   private discount: number;
+  private discountFundedBy: string;
   private totalAmount: number;
   private deliveryAddress: string | null;
   private deliveryLatitude: number | null;
@@ -81,6 +94,7 @@ export class Order extends AggregateRoot<OrderId> {
   private driverId: string | null;
   private cancelReason: string | null;
   private rejectionReason: string | null;
+  private paymentMethod: string;
 
   private constructor(id: OrderId, props: OrderProps) {
     super(id);
@@ -93,6 +107,7 @@ export class Order extends AggregateRoot<OrderId> {
     this.deliveryFee = props.deliveryFee;
     this.serviceFee = props.serviceFee;
     this.discount = props.discount;
+    this.discountFundedBy = props.discountFundedBy ?? "MERCHANT";
     this.totalAmount = props.totalAmount;
     this.deliveryAddress = props.deliveryAddress;
     this.deliveryLatitude = props.deliveryLatitude;
@@ -102,6 +117,7 @@ export class Order extends AggregateRoot<OrderId> {
     this.driverId = props.driverId;
     this.cancelReason = props.cancelReason;
     this.rejectionReason = props.rejectionReason;
+    this.paymentMethod = props.paymentMethod || "CASH";
   }
 
   // ===================== Factory Methods =====================
@@ -119,6 +135,7 @@ export class Order extends AggregateRoot<OrderId> {
       quantity: number;
       unitPrice: number;
       specialInstructions?: string;
+      options?: OrderItemOption[];
     }>;
     deliveryAddress: string | null;
     deliveryLatitude?: number | null;
@@ -126,8 +143,10 @@ export class Order extends AggregateRoot<OrderId> {
     deliveryFee?: number;
     serviceFee?: number;
     discount?: number;
+    discountFundedBy?: string;
     estimatedDeliveryTime?: Date;
     notes?: string;
+    paymentMethod?: string;
   }): Result<Order, DomainError> {
     // Validation
     if (!props.consumerId || props.consumerId.trim().length === 0) {
@@ -181,6 +200,7 @@ export class Order extends AggregateRoot<OrderId> {
         unitPrice: item.unitPrice,
         subtotal: item.quantity * item.unitPrice,
         specialInstructions: item.specialInstructions ?? null,
+        options: item.options ?? null,
       });
     }
 
@@ -206,6 +226,7 @@ export class Order extends AggregateRoot<OrderId> {
       deliveryFee,
       serviceFee,
       discount,
+      discountFundedBy: props.discountFundedBy ?? "MERCHANT",
       totalAmount,
       deliveryAddress: props.deliveryAddress,
       deliveryLatitude: props.deliveryLatitude ?? null,
@@ -215,6 +236,7 @@ export class Order extends AggregateRoot<OrderId> {
       driverId: null,
       cancelReason: null,
       rejectionReason: null,
+      paymentMethod: props.paymentMethod || "CASH",
     });
 
     order.addDomainEvent(
@@ -422,6 +444,10 @@ export class Order extends AggregateRoot<OrderId> {
     return this.discount;
   }
 
+  get orderDiscountFundedBy(): string {
+    return this.discountFundedBy;
+  }
+
   get orderTotalAmount(): number {
     return this.totalAmount;
   }
@@ -456,5 +482,9 @@ export class Order extends AggregateRoot<OrderId> {
 
   get orderRejectionReason(): string | null {
     return this.rejectionReason;
+  }
+
+  get orderPaymentMethod(): string {
+    return this.paymentMethod;
   }
 }

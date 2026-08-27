@@ -10,6 +10,25 @@ import {
 } from "typeorm";
 import { MerchantEntity } from "./merchant.entity";
 
+export interface MenuItemOptionEntity {
+  id: string;
+  name: string;
+  priceDelta: number;
+  isDefault: boolean;
+  minQuantity: number | null;
+  maxQuantity: number | null;
+}
+
+export interface MenuItemOptionGroupEntity {
+  id: string;
+  name: string;
+  type: string;
+  required: boolean;
+  minSelections: number | null;
+  maxSelections: number | null;
+  options: MenuItemOptionEntity[];
+}
+
 @Entity("menu_items")
 export class MenuItemEntity {
   @PrimaryColumn({ type: "uuid" })
@@ -20,6 +39,9 @@ export class MenuItemEntity {
 
   @Column({ type: "varchar", length: 100 })
   category!: string;
+
+  @Column({ type: "uuid", nullable: true })
+  category_id!: string | null;
 
   @Column({ type: "varchar", length: 255 })
   name!: string;
@@ -47,6 +69,9 @@ export class MenuItemEntity {
 
   @Column({ type: "integer", default: 0 })
   sort_order!: number;
+
+  @Column({ type: "jsonb", nullable: true })
+  option_groups!: MenuItemOptionGroupEntity[] | null;
 
   @CreateDateColumn({ type: "timestamptz" })
   created_at!: Date;
