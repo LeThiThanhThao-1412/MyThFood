@@ -68,5 +68,6 @@ start-service.bat
 init-db.sql
 SETUP_GUIDE.md
 
-# Docker volumes
-docker/
+# Docker volumes (but keep the DB bootstrap scripts — docker-compose mounts them)
+docker/*
+!docker/init-db/

@@ -121,18 +121,19 @@ export default function SocketProvider({
     let socket: Socket | null = null;
 
     async function setup() {
-      // Resolve merchant id (persist for other pages to reuse)
-      let mid = localStorage.getItem("merchantId") || "";
-      if (!mid) {
-        try {
-          const res = await merchantApi.list({ take: 200 });
-          const m =
-            (res.items || []).find((m2: any) => m2.userId === user!.id) || null;
-          if (m?.id) {
-            mid = m.id;
-            localStorage.setItem("merchantId", m.id);
-          }
-        } catch {}
+      // Resolve merchant id by matching the logged-in user (never trust a
+      // stale localStorage value from a previous account/session).
+      let mid = "";
+      try {
+        const res = await merchantApi.list({ take: 200 });
+        const m =
+          (res.items || []).find((m2: any) => m2.userId === user!.id) || null;
+        if (m?.id) {
+          mid = m.id;
+          localStorage.setItem("merchantId", m.id);
+        }
+      } catch {
+        mid = localStorage.getItem("merchantId") || "";
       }
       if (cancelled) return;
       setMerchantId(mid);

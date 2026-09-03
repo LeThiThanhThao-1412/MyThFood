@@ -1,42 +1,67 @@
 "use client";
+
+// ============================================================================
+// Màn hình giao hàng của tài xế — 4 bước:
+//   Nhận đơn → Đã đến quán → Đã nhận món → Giao hàng thành công
+// Bản đồ tự cập nhật tuyến (tài xế→quán, rồi quán→khách) và mỗi bước đều
+// gửi thông báo tới khách hàng.
+// ============================================================================
+
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { orderApi, paymentApi } from "@mythfood/api-client";
+import dynamic from "next/dynamic";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
+import {
+  STAGE_ORDER,
+  formatKm,
+  googleMapsDirections,
+  toNum,
+} from "@/lib/delivery-flow";
 
-function toNum(v: unknown): number {
-  if (typeof v === "number") return v;
-  if (typeof v === "string") return parseFloat(v) || 0;
-  return 0;
-}
+const TripMap = dynamic(
+  () => import("@mythfood/frontend-shared/components/MapView"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[300px] w-full animate-pulse bg-gray-100" />
+    ),
+  },
+);
 
 export default function DeliveryPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
-  const [order, setOrder] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [settlement, setSettlement] = useState<any>(null);
+  const trip = useDeliveryTrip(id);
+  const [simLat, setSimLat] = useState("10.775");
+  const [simLng, setSimLng] = useState("106.7");
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push("/login");
-      return;
-    }
-    async function load() {
-      try {
-        const o = await orderApi.getById(id);
-        setOrder(o);
-      } catch {
-      } finally {
-        setLoading(false);
-      }
-    }
-    if (id) load();
-  }, [id, isAuthenticated, router]);
+    if (!isAuthenticated) router.push("/login");
+  }, [isAuthenticated, router]);
+
+  const {
+    order,
+    merchant,
+    loading,
+    busy,
+    error,
+    message,
+    stage,
+    stageMeta,
+    restaurant,
+    customer,
+    driverLocation,
+    route,
+    mapMarkers,
+    driverEarning,
+    locating,
+    advance,
+    simulateLocation,
+    reload,
+  } = trip;
 
   if (loading) {
     return (
@@ -65,27 +90,23 @@ export default function DeliveryPage() {
     );
   }
 
-  if (success) {
-    const shipFee = toNum(order.deliveryFee || 15000);
-    // Driver keeps 80% of shipping fee (20% platform commission - matches DRIVER_COMMISSION_PERCENT)
-    const driverShare = Math.round(shipFee * 0.8);
-
+  // ─── Đã giao xong: màn hình thu nhập ─────────────────────────
+  if (stage === "DELIVERED") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f0f2f5] px-4">
         <div className="w-full max-w-md">
           <div className="text-center bg-white rounded-2xl shadow-sm p-8">
             <p className="text-6xl mb-4">🎉</p>
             <p className="text-xl font-bold text-[#1a1a2e] mb-1">
-              Đã giao hàng thành công!
+              Đã giao món thành công!
             </p>
             <p className="text-gray-500 text-sm mb-2">
-              Đơn #{order.id?.slice(0, 8)}
+              Đơn #{order.id?.slice(0, 8)} · đã thông báo cho khách hàng
             </p>
             <p className="text-[#ff6b35] font-bold text-lg mb-6">
               {toNum(order.totalAmount).toLocaleString("vi-VN")}₫
             </p>
 
-            {/* Driver earning */}
             <div className="bg-[#f8fafb] rounded-2xl p-5 mb-4 text-left text-sm">
               <p className="font-bold text-[#1a1a2e] mb-3 text-center">
                 💰 Thu nhập của bạn
@@ -98,7 +119,7 @@ export default function DeliveryPage() {
                   <p className="text-xs text-blue-600">80% phí giao hàng</p>
                 </div>
                 <span className="font-bold text-blue-700 text-lg">
-                  +{driverShare.toLocaleString("vi-VN")}₫
+                  +{driverEarning.toLocaleString("vi-VN")}₫
                 </span>
               </div>
             </div>
@@ -129,66 +150,295 @@ export default function DeliveryPage() {
     );
   }
 
-  async function handlePickup() {
-    setActionLoading(true);
-    try {
-      await orderApi.outForDelivery(id, { driverId: order.driverId || "" });
-      setOrder({ ...order, status: "OUT_FOR_DELIVERY" });
-    } catch {
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
-  async function handleDelivered() {
-    setActionLoading(true);
-    try {
-      // Mark order as delivered - settlement is auto-triggered by order-service backend
-      await orderApi.delivered(id);
-      setSuccess(true);
-    } catch {
-    } finally {
-      setActionLoading(false);
-    }
-  }
-
-  const isOutForDelivery = order.status === "OUT_FOR_DELIVERY";
-  const isPending =
-    order.status === "PENDING" ||
-    order.status === "CONFIRMED" ||
-    order.status === "PREPARING" ||
-    order.status === "READY_FOR_PICKUP";
+  // ─── Đang trong chuyến ───────────────────────────────────────
+  const stageIndex = STAGE_ORDER.indexOf(stage);
+  const target = stageMeta.target === "CUSTOMER" ? customer : restaurant;
   const paymentMethod = order.paymentMethod || "CARD";
+  const isCod = paymentMethod === "COD" || paymentMethod === "CASH";
+  const midpoint =
+    restaurant && customer
+      ? {
+          latitude: (restaurant.latitude + customer.latitude) / 2,
+          longitude: (restaurant.longitude + customer.longitude) / 2,
+        }
+      : null;
+  const steps = [
+    { icon: "📥", label: "Nhận đơn" },
+    { icon: "📍", label: "Đã đến quán" },
+    { icon: "📦", label: "Đã nhận món" },
+    { icon: "✅", label: "Giao thành công" },
+  ];
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0 w-full">
-      <header className="bg-[#1a1a2e] px-4 sm:px-6 py-4 text-white">
+    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-28 w-full">
+      <header className="bg-[#1a1a2e] px-4 sm:px-6 py-4 text-white sticky top-0 z-[60]">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <Link href="/dashboard" className="text-white/60 text-lg">
             ←
           </Link>
           <h1 className="text-lg font-bold">🚚 Giao hàng</h1>
-          <div className="w-6" />
+          <button
+            onClick={() => reload()}
+            className="text-white/60 text-lg"
+            title="Làm mới"
+          >
+            🔄
+          </button>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5">
-        <div className="bg-gradient-to-br from-[#1a1a2e] to-[#2d2d44] rounded-2xl p-6 text-white text-center relative overflow-hidden">
-          <div className="absolute top-3 right-4">
-            <span
-              className={`text-xs px-2.5 py-1 rounded-full font-semibold ${isOutForDelivery ? "bg-[#2ecc71] text-white" : "bg-white/15"}`}
-            >
-              {isOutForDelivery ? "🛵 Đang giao" : "📦 Chờ lấy hàng"}
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-5 space-y-4">
+        {/* Trạng thái hiện tại */}
+        <div className="bg-gradient-to-br from-[#1a1a2e] to-[#2d2d44] rounded-2xl p-5 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-white/60">
+                Đơn #{order.id?.slice(0, 8)}
+              </p>
+              <p className="text-xl font-bold mt-0.5">
+                {stageMeta.icon} {stageMeta.label}
+              </p>
+            </div>
+            <span className="text-[#ff9f6b] font-bold text-lg">
+              {toNum(order.totalAmount).toLocaleString("vi-VN")}₫
             </span>
           </div>
-          <div className="text-4xl mb-2">{isOutForDelivery ? "🛵" : "📦"}</div>
-          <p className="font-bold text-lg">#{order.id?.slice(0, 8)}</p>
-          <p className="text-white/60 text-sm mt-1">
-            {toNum(order.totalAmount).toLocaleString("vi-VN")}₫
+          <p className="text-sm text-white/70 mt-2">{stageMeta.hint}</p>
+        </div>
+
+        {/* Tiến trình 4 bước */}
+        <div className="bg-white rounded-2xl shadow-sm p-4">
+          <div className="flex items-start justify-between">
+            {steps.map((step, i) => {
+              const done = stageIndex >= i + 1;
+              const current = stageIndex === i;
+              return (
+                <div
+                  key={step.label}
+                  className="flex-1 flex flex-col items-center text-center relative"
+                >
+                  {i < steps.length - 1 && (
+                    <div
+                      className={`absolute top-4 left-1/2 w-full h-0.5 ${done ? "bg-[#ff6b35]" : "bg-gray-200"}`}
+                    />
+                  )}
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm z-10 ${
+                      done
+                        ? "bg-[#ff6b35] text-white"
+                        : "bg-gray-100 text-gray-400"
+                    } ${current ? "ring-4 ring-orange-200" : ""}`}
+                  >
+                    {step.icon}
+                  </div>
+                  <span
+                    className={`text-[10px] mt-1.5 leading-tight ${done || current ? "text-[#1a1a2e] font-semibold" : "text-gray-400"}`}
+                  >
+                    {step.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Nút hành động nổi bật ngay dưới tiến trình */}
+        {stageMeta.actionLabel && (
+          <button
+            onClick={advance}
+            disabled={busy}
+            className="w-full bg-[#ff6b35] text-white py-4 rounded-2xl font-bold text-base hover:bg-orange-600 disabled:opacity-50 transition flex items-center justify-center gap-2"
+          >
+            {busy ? (
+              <>
+                <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Đang xử lý...
+              </>
+            ) : (
+              stageMeta.actionLabel
+            )}
+          </button>
+        )}
+
+        {/* Bản đồ dẫn đường */}
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100">
+            <p className="font-bold text-[#1a1a2e] text-sm">
+              {stage === "DELIVERING"
+                ? "🗺️ Tuyến: vị trí tài xế → khách hàng"
+                : stageMeta.target === "CUSTOMER"
+                  ? "🗺️ Tuyến: nhà hàng → khách hàng"
+                  : "🗺️ Tuyến: vị trí của bạn → nhà hàng"}
+            </p>
+            {route && (
+              <span className="text-xs text-gray-500">
+                {formatKm(route.distanceKm)} · ~{route.durationMin} phút
+                {route.source === "straight" ? " (ước tính)" : ""}
+              </span>
+            )}
+          </div>
+          {mapMarkers.length > 0 ? (
+            <TripMap
+              locations={mapMarkers}
+              route={route?.points}
+              height="300px"
+              zoom={14}
+              className="border-0 rounded-none"
+            />
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-10">
+              Chưa có toạ độ để hiển thị bản đồ
+            </p>
+          )}
+          {target && (
+            <div className="px-4 py-3 border-t border-gray-100">
+              <a
+                href={googleMapsDirections(driverLocation, target)}
+                target="_blank"
+                rel="noreferrer"
+                className="block w-full text-center bg-gray-100 text-gray-700 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200 transition"
+              >
+                🧭 Mở dẫn đường bằng Google Maps
+              </a>
+            </div>
+          )}
+        </div>
+
+        {/* Mô phỏng vị trí tài xế (dùng khi chưa có GPS thật) */}
+        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-[#1a1a2e]">
+              📍 Mô phỏng vị trí tài xế
+            </h3>
+            {locating && (
+              <span className="text-xs text-gray-400">Đang cập nhật...</span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() =>
+                restaurant &&
+                simulateLocation(
+                  restaurant.latitude,
+                  restaurant.longitude,
+                  "🏪 Tại nhà hàng",
+                )
+              }
+              disabled={!restaurant || locating}
+              className="px-3 py-2 rounded-xl text-sm font-semibold bg-orange-50 text-[#ff6b35] hover:bg-orange-100 disabled:opacity-50 transition"
+            >
+              🏪 Tại nhà hàng
+            </button>
+            <button
+              onClick={() =>
+                customer &&
+                simulateLocation(
+                  customer.latitude,
+                  customer.longitude,
+                  "🏠 Tại khách",
+                )
+              }
+              disabled={!customer || locating}
+              className="px-3 py-2 rounded-xl text-sm font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition"
+            >
+              🏠 Tại khách
+            </button>
+            <button
+              onClick={() =>
+                midpoint &&
+                simulateLocation(
+                  midpoint.latitude,
+                  midpoint.longitude,
+                  "🛣️ Giữa đường",
+                )
+              }
+              disabled={!midpoint || locating}
+              className="px-3 py-2 rounded-xl text-sm font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 transition"
+            >
+              🛣️ Giữa đường
+            </button>
+            <button
+              onClick={() =>
+                simulateLocation(10.775, 106.7, "📍 Quận 1 (mặc định)")
+              }
+              disabled={locating}
+              className="px-3 py-2 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition"
+            >
+              📍 Q1 (mặc định)
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              value={simLat}
+              onChange={(e) => setSimLat(e.target.value)}
+              placeholder="Vĩ độ (lat)"
+              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
+            />
+            <input
+              value={simLng}
+              onChange={(e) => setSimLng(e.target.value)}
+              placeholder="Kinh độ (lng)"
+              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
+            />
+            <button
+              onClick={() =>
+                simulateLocation(
+                  parseFloat(simLat),
+                  parseFloat(simLng),
+                  "📍 Toạ độ tuỳ chỉnh",
+                )
+              }
+              disabled={locating}
+              className="px-3 py-2 rounded-xl text-sm font-bold bg-[#1a1a2e] text-white hover:bg-[#2d2d44] disabled:opacity-50 transition"
+            >
+              Áp dụng
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-400">
+            Dùng để test khi chưa có GPS thật. Vị trí sẽ được lưu vào hồ sơ tài
+            xế và bản đồ sẽ tự vẽ lại tuyến.
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm p-5">
+        {/* Điểm lấy hàng */}
+        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-1">
+          <p className="text-xs text-gray-400 font-semibold">
+            🏪 LẤY MÓN TẠI NHÀ HÀNG
+          </p>
+          <p className="font-bold text-[#1a1a2e]">
+            {merchant?.name || "Nhà hàng"}
+          </p>
+          <p className="text-sm text-gray-600">
+            {merchant?.address || "Chưa có địa chỉ nhà hàng"}
+          </p>
+          {merchant?.phone && (
+            <a
+              href={`tel:${merchant.phone}`}
+              className="inline-block text-sm text-[#ff6b35] font-semibold mt-1"
+            >
+              📞 Gọi nhà hàng: {merchant.phone}
+            </a>
+          )}
+        </div>
+
+        {/* Điểm giao hàng */}
+        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-1">
+          <p className="text-xs text-gray-400 font-semibold">
+            🏠 GIAO CHO KHÁCH
+          </p>
+          <p className="text-sm text-gray-600">{order.deliveryAddress}</p>
+          {order.notes && (
+            <p className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-1.5 inline-block mt-1">
+              📝 {order.notes}
+            </p>
+          )}
+        </div>
+
+        {/* Món cần giao */}
+        <div className="bg-white rounded-2xl shadow-sm p-4">
           <h3 className="font-bold text-[#1a1a2e] mb-3">🛒 Món cần giao</h3>
           <div className="space-y-2">
             {order.items?.map((item: any, i: number) => (
@@ -197,74 +447,66 @@ export default function DeliveryPage() {
                   {item.quantity}x {item.name}
                 </span>
                 <span className="text-gray-600 font-medium">
-                  {((item.unitPrice || 0) * item.quantity).toLocaleString(
-                    "vi-VN",
-                  )}
+                  {(
+                    toNum(item.unitPrice) * toNum(item.quantity)
+                  ).toLocaleString("vi-VN")}
                   ₫
                 </span>
               </div>
             ))}
           </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-[#1a1a2e] mb-3">
-            📍 Địa chỉ giao hàng
-          </h3>
-          <p className="text-sm text-gray-600">{order.deliveryAddress}</p>
-          {order.notes && (
-            <p className="text-xs text-gray-400 mt-2 bg-gray-50 rounded-lg px-3 py-1.5 inline-block">
-              📝 {order.notes}
-            </p>
-          )}
-        </div>
-
-        {/* Payment method badge */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 text-center">
-          <span
-            className={`text-sm font-semibold px-4 py-1.5 rounded-full ${paymentMethod === "COD" ? "bg-yellow-100 text-yellow-800" : "bg-blue-100 text-blue-800"}`}
-          >
-            {paymentMethod === "COD"
-              ? "💵 Thanh toán COD (tiền mặt)"
-              : "💳 Thanh toán qua thẻ"}
-          </span>
-        </div>
-
-        <div className="space-y-3">
-          {isPending && (
-            <button
-              onClick={handlePickup}
-              disabled={actionLoading}
-              className="w-full bg-[#2ecc71] text-white py-4 rounded-2xl font-bold text-base hover:bg-green-600 disabled:opacity-50 transition flex items-center justify-center gap-2"
+          <div className="mt-3 pt-3 border-t border-gray-100 text-center">
+            <span
+              className={`text-sm font-semibold px-4 py-1.5 rounded-full ${isCod ? "bg-yellow-100 text-yellow-800" : "bg-blue-100 text-blue-800"}`}
             >
-              {actionLoading ? (
-                <>
-                  <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Đang xử lý...
-                </>
-              ) : (
-                <>📦 Đã lấy hàng - Bắt đầu giao</>
-              )}
-            </button>
-          )}
-          {isOutForDelivery && (
-            <button
-              onClick={handleDelivered}
-              disabled={actionLoading}
-              className="w-full bg-[#ff6b35] text-white py-4 rounded-2xl font-bold text-base hover:bg-orange-600 disabled:opacity-50 transition flex items-center justify-center gap-2"
-            >
-              {actionLoading ? (
-                <>
-                  <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Đang xử lý + chia tiền...
-                </>
-              ) : (
-                <>✅ Đã giao hàng thành công</>
-              )}
-            </button>
-          )}
+              {isCod
+                ? "💵 Thanh toán COD (thu tiền mặt)"
+                : "💳 Đã thanh toán qua thẻ"}
+            </span>
+          </div>
         </div>
+
+        {/* Thông báo kết quả */}
+        {message && (
+          <div className="p-3 rounded-xl text-sm font-medium text-center bg-green-50 text-green-700">
+            {message}
+          </div>
+        )}
+        {error && (
+          <div className="p-3 rounded-xl text-sm font-medium text-center bg-red-50 text-red-600">
+            ❌ {error}
+          </div>
+        )}
       </main>
+
+      {/* Nút hành động của bước hiện tại */}
+      {stageMeta.actionLabel && (
+        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-5xl bg-white border-t border-gray-100 px-4 py-3 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] z-[70]">
+          <button
+            onClick={advance}
+            disabled={busy}
+            className="w-full bg-[#ff6b35] text-white py-4 rounded-2xl font-bold text-base hover:bg-orange-600 disabled:opacity-50 transition flex items-center justify-center gap-2"
+          >
+            {busy ? (
+              <>
+                <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Đang xử lý...
+              </>
+            ) : (
+              stageMeta.actionLabel
+            )}
+          </button>
+          <p className="text-[11px] text-gray-400 text-center mt-1.5">
+            {stage === "WAITING"
+              ? "Khách sẽ nhận thông báo “Tài xế đang đến nhà hàng”"
+              : stage === "GOING_TO_RESTAURANT"
+                ? "Khách sẽ nhận thông báo “Tài xế đã đến nhà hàng”"
+                : stage === "AT_RESTAURANT"
+                  ? "Khách sẽ nhận thông báo “Tài xế đã nhận món, đang giao”"
+                  : "Khách sẽ nhận thông báo “Đơn hàng đã được giao”"}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

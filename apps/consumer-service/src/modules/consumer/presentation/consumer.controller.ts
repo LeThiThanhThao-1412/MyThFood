@@ -254,6 +254,32 @@ export class ConsumerController {
     return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
   }
 
+  // ---- Favorites (Yêu thích nhà hàng) ----
+
+  @Get(":id/favorites")
+  async getFavorites(@Param("id") id: string) {
+    const favorites = await this.consumerService.getFavorites(id);
+    return { statusCode: HttpStatus.OK, data: { favorites } };
+  }
+
+  @Put(":id/favorites/:merchantId")
+  async toggleFavorite(
+    @Param("id") id: string,
+    @Param("merchantId") merchantId: string,
+  ) {
+    const result = await this.consumerService.toggleFavorite(id, merchantId);
+    if (result.isFailure) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
+    }
+    return {
+      statusCode: HttpStatus.OK,
+      data: result.value,
+    };
+  }
+
   private toResponse(consumer: Consumer) {
     return {
       id: consumer.id.toString(),
@@ -284,6 +310,7 @@ export class ConsumerController {
         expiryDate: p.expiryDate?.toISOString() ?? null,
         isDefault: p.isDefault,
       })),
+      favoriteMerchantIds: consumer.favoriteMerchantIdList,
     };
   }
 }

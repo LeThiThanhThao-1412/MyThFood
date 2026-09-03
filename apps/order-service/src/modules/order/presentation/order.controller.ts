@@ -7,12 +7,15 @@ import {
   Body,
   Param,
   Query,
+  Req,
+  Res,
   UseGuards,
   HttpCode,
   HttpStatus,
   Patch,
 } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
+import { Response } from "express";
 import { Roles, RolesGuard } from "@mythfood/common";
 import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { OrderService } from "../application/order.service";
@@ -156,6 +159,22 @@ export class OrderController {
   @Get(":id/timeline")
   async getTimeline(@Param("id") id: string): Promise<any> {
     return this.orderService.getTimeline(id);
+  }
+
+  @Get(":id/invoice")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async getInvoice(
+    @Param("id") id: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ): Promise<void> {
+    const pdf = await this.orderService.getInvoicePdf(id, req?.user);
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `inline; filename="invoice-${id.slice(0, 8)}.pdf"`,
+    });
+    res.send(pdf);
   }
 
   // ===================== Stats Daily (B6) =====================

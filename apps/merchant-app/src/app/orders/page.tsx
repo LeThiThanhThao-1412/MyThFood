@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { orderApi } from "@mythfood/api-client";
+import { merchantApi, orderApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { useMerchantSocket } from "@/components/SocketProvider";
 import OrderDetailDrawer from "@/components/OrderDetailDrawer";
@@ -15,48 +15,90 @@ function toNum(v: unknown): number {
   return 0;
 }
 
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  PENDING: { label: "⏳ Chờ xác nhận", cls: "bg-yellow-100 text-yellow-800" },
+  CONFIRMED: { label: "✅ Đã xác nhận", cls: "bg-blue-100 text-blue-800" },
+  PREPARING: { label: "🍳 Đang nấu", cls: "bg-orange-100 text-orange-800" },
+  READY_FOR_PICKUP: {
+    label: "📦 Sẵn sàng",
+    cls: "bg-green-100 text-green-800",
+  },
+  OUT_FOR_DELIVERY: {
+    label: "🛵 Đang giao",
+    cls: "bg-purple-100 text-purple-800",
+  },
+  DELIVERED: { label: "🏠 Đã giao", cls: "bg-green-100 text-green-800" },
+  CANCELLED: { label: "❌ Đã hủy", cls: "bg-gray-100 text-gray-600" },
+  REJECTED: { label: "🚫 Đã từ chối", cls: "bg-red-100 text-red-700" },
+};
+
 export default function MerchantOrdersPage() {
   const router = useRouter();
-  const { isAuthenticated } = useAuthStore();
-  const { socket, status, merchantId, ready, resetNewOrderCount } =
-    useMerchantSocket();
+  const { isAuthenticated, user, token } = useAuthStore();
+  const { socket, status, resetNewOrderCount } = useMerchantSocket();
+  const [merchantId, setMerchantId] = useState("");
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<
-    "PENDING" | "CONFIRMED" | "PREPARING" | "READY" | "REJECTED"
-  >("PENDING");
+    | "ALL"
+    | "PENDING"
+    | "CONFIRMED"
+    | "PREPARING"
+    | "READY"
+    | "DELIVERED"
+    | "CANCELLED"
+    | "REJECTED"
+  >("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Auth guard
   useEffect(() => {
     if (!isAuthenticated) {
       router.push("/login");
-      return;
     }
-    if (ready && !merchantId) {
-      router.push("/dashboard");
-    }
-  }, [isAuthenticated, ready, merchantId, router]);
+  }, [isAuthenticated, router]);
+
+  // Resolve merchant id authoritatively by matching the logged-in user id.
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await merchantApi.list({ take: 200 });
+        const m = (res.items || []).find((m2: any) => m2.userId === user.id);
+        if (cancelled) return;
+        if (m?.id) {
+          localStorage.setItem("merchantId", m.id);
+          setMerchantId(m.id);
+        } else {
+          setMerchantId("");
+          setLoading(false);
+          setError("Không tìm thấy nhà hàng của bạn");
+        }
+      } catch {
+        if (cancelled) return;
+        setMerchantId("");
+        setLoading(false);
+        setError("Không thể xác định nhà hàng của bạn");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, user]);
 
   // Initial load + reset notification badge
   useEffect(() => {
     if (!merchantId) return;
     async function load() {
+      setLoading(true);
+      setError("");
       try {
         const allOrders = await orderApi.listByMerchant(merchantId);
-        const activeOrders = Array.isArray(allOrders)
-          ? allOrders.filter((o: any) =>
-              [
-                "PENDING",
-                "CONFIRMED",
-                "PREPARING",
-                "READY_FOR_PICKUP",
-                "REJECTED",
-              ].includes(o.status),
-            )
-          : [];
-        setOrders(activeOrders);
-      } catch {
+        setOrders(Array.isArray(allOrders) ? allOrders : []);
+      } catch (e: any) {
+        setError(e?.message || "Không thể tải danh sách đơn hàng");
       } finally {
         setLoading(false);
       }
@@ -71,18 +113,7 @@ export default function MerchantOrdersPage() {
     async function poll() {
       try {
         const allOrders = await orderApi.listByMerchant(merchantId);
-        const activeOrders = Array.isArray(allOrders)
-          ? allOrders.filter((o: any) =>
-              [
-                "PENDING",
-                "CONFIRMED",
-                "PREPARING",
-                "READY_FOR_PICKUP",
-                "REJECTED",
-              ].includes(o.status),
-            )
-          : [];
-        setOrders(activeOrders);
+        setOrders(Array.isArray(allOrders) ? allOrders : []);
       } catch {}
     }
     poll();
@@ -121,7 +152,11 @@ export default function MerchantOrdersPage() {
       );
     };
     const onDelivered = (data: any) => {
-      setOrders((prev) => prev.filter((o) => o.id !== data.id));
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === data.id ? { ...o, status: "DELIVERED" } : o,
+        ),
+      );
     };
     const onRejected = (data: any) => {
       setOrders((prev) =>
@@ -176,17 +211,53 @@ export default function MerchantOrdersPage() {
     }
   }
 
+  async function handlePrintInvoice(orderId: string) {
+    try {
+      const base =
+        process.env.NEXT_PUBLIC_ORDER_API || "http://localhost:3004";
+      const res = await fetch(`${base}/api/v1/orders/${orderId}/invoice`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        if (res.status === 403) {
+          alert("Bạn không có quyền in hóa đơn này");
+        } else {
+          alert("Không thể tải hóa đơn (HTTP " + res.status + ")");
+        }
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const w = window.open(url, "_blank");
+      if (!w) {
+        alert(
+          "Trình duyệt đã chặn popup. Vui lòng cho phép popup để xem hóa đơn.",
+        );
+      }
+    } catch (err: any) {
+      alert("Lỗi: " + (err?.message || "Không thể in hóa đơn"));
+    }
+  }
+
   const filtered = orders.filter((o) => {
+    if (activeTab === "ALL") return true;
     const s = o.status;
     if (activeTab === "PENDING") return s === "PENDING";
     if (activeTab === "CONFIRMED") return s === "CONFIRMED";
     if (activeTab === "PREPARING") return s === "PREPARING";
     if (activeTab === "READY") return s === "READY_FOR_PICKUP";
+    if (activeTab === "DELIVERED") return s === "DELIVERED";
+    if (activeTab === "CANCELLED") return s === "CANCELLED";
     if (activeTab === "REJECTED") return s === "REJECTED";
     return true;
   });
 
   const tabs = [
+    {
+      key: "ALL",
+      label: "📋 Tất cả",
+      count: orders.length,
+    },
     {
       key: "PENDING",
       label: "⏳ Chờ xác nhận",
@@ -206,6 +277,16 @@ export default function MerchantOrdersPage() {
       key: "READY",
       label: "📦 Sẵn sàng",
       count: orders.filter((o) => o.status === "READY_FOR_PICKUP").length,
+    },
+    {
+      key: "DELIVERED",
+      label: "🏠 Đã giao",
+      count: orders.filter((o) => o.status === "DELIVERED").length,
+    },
+    {
+      key: "CANCELLED",
+      label: "❌ Đã hủy",
+      count: orders.filter((o) => o.status === "CANCELLED").length,
     },
     {
       key: "REJECTED",
@@ -263,7 +344,18 @@ export default function MerchantOrdersPage() {
 
         {/* Orders List */}
         <div className="space-y-3">
-          {filtered.length === 0 && (
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700 flex items-center justify-between">
+              <span>⚠️ {error}</span>
+              <button
+                onClick={() => window.location.reload()}
+                className="ml-3 px-3 py-1.5 bg-red-500 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
+              >
+                Thử lại
+              </button>
+            </div>
+          )}
+          {!error && filtered.length === 0 && (
             <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
               <p className="text-3xl mb-2">📭</p>
               <p className="text-gray-400 text-sm">Không có đơn hàng nào</p>
@@ -295,26 +387,10 @@ export default function MerchantOrdersPage() {
                 </div>
                 <span
                   className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-                    o.status === "PENDING"
-                      ? "bg-yellow-100 text-yellow-800"
-                      : o.status === "CONFIRMED"
-                        ? "bg-blue-100 text-blue-800"
-                        : o.status === "PREPARING"
-                          ? "bg-orange-100 text-orange-800"
-                          : o.status === "REJECTED"
-                            ? "bg-red-100 text-red-800"
-                            : "bg-green-100 text-green-800"
+                    STATUS_META[o.status]?.cls || STATUS_META.PENDING.cls
                   }`}
                 >
-                  {o.status === "PENDING"
-                    ? "⏳ Chờ xác nhận"
-                    : o.status === "CONFIRMED"
-                      ? "✅ Đã xác nhận"
-                      : o.status === "PREPARING"
-                        ? "🍳 Đang nấu"
-                        : o.status === "REJECTED"
-                          ? "🚫 Đã từ chối"
-                          : "📦 Sẵn sàng"}
+                  {STATUS_META[o.status]?.label || o.status}
                 </span>
               </div>
 
@@ -322,6 +398,13 @@ export default function MerchantOrdersPage() {
               {o.status === "REJECTED" && o.rejectionReason && (
                 <div className="bg-[#ffebee] border border-[#ffcdd2] rounded-lg px-3 py-2 mb-3 text-xs text-[#c62828]">
                   ⚠️ Lý do: {o.rejectionReason}
+                </div>
+              )}
+
+              {/* Cancellation reason */}
+              {o.status === "CANCELLED" && o.cancelReason && (
+                <div className="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-2 mb-3 text-xs text-gray-600">
+                  ⚠️ Lý do hủy: {o.cancelReason}
                 </div>
               )}
 
@@ -362,7 +445,7 @@ export default function MerchantOrdersPage() {
               </div>
 
               {/* Action buttons */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {o.status === "PENDING" && (
                   <button
                     onClick={(e) => {
@@ -396,6 +479,15 @@ export default function MerchantOrdersPage() {
                     📦 Sẵn sàng giao
                   </button>
                 )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handlePrintInvoice(o.id);
+                  }}
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold border-2 border-[#ff6b35] text-[#ff6b35] hover:bg-orange-50 transition whitespace-nowrap"
+                >
+                  🖨️ In hóa đơn
+                </button>
               </div>
             </div>
           ))}

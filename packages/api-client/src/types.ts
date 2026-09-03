@@ -68,6 +68,7 @@ export interface ConsumerProfile {
   gender?: Gender;
   addresses: Address[];
   paymentMethods: PaymentMethod[];
+  favoriteMerchantIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -152,8 +153,60 @@ export interface Merchant {
   secondaryCategories?: string[];
   isOpen?: boolean;
   isOpenNow?: boolean;
+  /** Dishes that matched the `search` keyword (only present when searching). */
+  matchedMenuItems?: MatchedMenuItem[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** Dish that matched a keyword search, attached to a merchant in list results. */
+export interface MatchedMenuItem {
+  id: string;
+  name: string;
+  price: number;
+  imageUrl: string | null;
+}
+
+/** Sort keys supported by the merchant list endpoint (server-side). */
+export type MerchantSortKey = "rating" | "popular" | "newest" | "name";
+
+export interface MerchantListQuery {
+  status?: string;
+  search?: string;
+  /** Legacy single-category filter. */
+  category?: string;
+  /** CSV of category keys, e.g. `"pho,rice"`. */
+  categories?: string;
+  /** Only merchants with `rating >= minRating` (0-5). */
+  minRating?: number;
+  /** Only merchants open right now (manual flag + operating hours). */
+  openNow?: boolean;
+  sortBy?: MerchantSortKey;
+  sortOrder?: "ASC" | "DESC";
+  skip?: number;
+  take?: number;
+}
+
+/** Result row of the global dish search endpoint. */
+export interface MenuSearchItem {
+  id: string;
+  merchantId: string;
+  name: string;
+  description: string | null;
+  price: number;
+  imageUrl: string | null;
+  category: string;
+  isAvailable: boolean;
+  merchant: {
+    id: string;
+    name: string;
+    rating: number;
+    address: string;
+    latitude: number | null;
+    longitude: number | null;
+    isOpen: boolean;
+    isOpenNow: boolean;
+  };
 }
 
 export interface CreateMerchantRequest {
@@ -500,35 +553,67 @@ export interface UpdateLocationRequest {
 }
 
 // --- Dispatch ---
+/** Trạng thái dispatch (khớp `DispatchStatus` enum của dispatch-service). */
 export type DispatchStatus =
-  | "SEARCHING"
-  | "ASSIGNED"
-  | "ACCEPTED"
-  | "DECLINED"
+  | "MATCHING"
+  | "DRIVER_ASSIGNED"
+  | "DRIVER_ACCEPTED"
+  | "DRIVER_DECLINED"
+  | "DRIVER_ARRIVED"
   | "PICKED_UP"
-  | "COMPLETED"
+  | "DELIVERING"
+  | "DELIVERED"
+  | "EXPIRED"
   | "CANCELLED";
+
+export type DispatchDeclineReason =
+  | "TOO_FAR"
+  | "BUSY"
+  | "FATIGUE"
+  | "COD_NOT_ENOUGH"
+  | "OTHER";
 
 export interface Dispatch {
   id: string;
   orderId: string;
-  driverId?: string | null;
+  merchantId: string;
+  /** Toạ độ nhà hàng — dùng để vẽ tuyến “tài xế → quán”. */
+  merchantLatitude?: number;
+  merchantLongitude?: number;
+  deliveryAddress: string;
+  deliveryLatitude?: number;
+  deliveryLongitude?: number;
   status: DispatchStatus;
-  searchRadius: number;
-  maxSearchTime: number;
-  declinedDriverIds: string[];
-  estimatedPickupTime?: string | null;
-  estimatedDeliveryTime?: string | null;
-  actualPickupTime?: string | null;
-  actualDeliveryTime?: string | null;
-  createdAt: string;
-  updatedAt: string;
+  driverId?: string | null;
+  matchedDriverIds?: string[];
+  retryCount?: number;
+  declineReason?: string | null;
+  declineReasonType?: DispatchDeclineReason | null;
+  pickedUpAt?: string | null;
+  deliveredAt?: string | null;
+  expiresAt?: string | null;
+  cancellationReason?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+  hasRemainingRetries?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CreateDispatchRequest {
   orderId: string;
-  searchRadius?: number;
-  maxSearchTime?: number;
+  merchantId: string;
+  deliveryAddress: string;
+  deliveryLatitude: number;
+  deliveryLongitude: number;
+  merchantLatitude?: number;
+  merchantLongitude?: number;
+}
+
+export interface DeclineDispatchRequest {
+  driverId: string;
+  reason: DispatchDeclineReason;
+  detail?: string;
 }
 
 // --- Socket Events ---
@@ -554,6 +639,7 @@ export interface Review {
   rating: number;
   comment?: string | null;
   tags?: string[];
+  images?: string[] | null;
   merchantReply?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -566,6 +652,7 @@ export interface CreateReviewRequest {
   rating: number;
   comment?: string;
   tags?: string[];
+  images?: string[];
 }
 
 export interface ReplyReviewRequest {

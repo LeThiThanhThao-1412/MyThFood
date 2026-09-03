@@ -16,7 +16,8 @@
     "test:coverage": "jest --passWithNoTests --coverage"
   },
   "dependencies": {
-    "@mythfood/shared-kernel": "workspace:*"
+    "@mythfood/shared-kernel": "workspace:*",
+    "@nestjs/axios": "^4.0.1"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

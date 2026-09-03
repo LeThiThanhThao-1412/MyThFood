@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { orderApi, driverApi } from "@mythfood/api-client";
+import { useAuthStore } from "@mythfood/frontend-shared";
 import { useMerchantSocket } from "./SocketProvider";
 
 function toNum(v: unknown): number {
@@ -72,6 +73,7 @@ export default function OrderDetailDrawer({
   onClose: () => void;
 }) {
   const { socket } = useMerchantSocket();
+  const { token } = useAuthStore();
   const [order, setOrder] = useState<any>(null);
   const [driver, setDriver] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -170,6 +172,35 @@ export default function OrderDetailDrawer({
       alert("Lỗi: " + (e?.message || "Không thể từ chối đơn"));
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  async function handlePrintInvoice() {
+    if (!order) return;
+    try {
+      const base =
+        process.env.NEXT_PUBLIC_ORDER_API || "http://localhost:3004";
+      const res = await fetch(
+        `${base}/api/v1/orders/${order.id}/invoice`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) {
+        if (res.status === 403) {
+          alert("Bạn không có quyền in hóa đơn này");
+        } else {
+          alert("Không thể tải hóa đơn (HTTP " + res.status + ")");
+        }
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const w = window.open(url, "_blank");
+      if (!w) {
+        alert("Trình duyệt đã chặn popup. Vui lòng cho phép popup để xem hóa đơn.");
+        return;
+      }
+    } catch (err: any) {
+      alert("Lỗi: " + (err?.message || "Không thể in hóa đơn"));
     }
   }
 
@@ -408,6 +439,12 @@ export default function OrderDetailDrawer({
 
             {/* Actions */}
             <div className="p-4 border-t border-gray-100 shrink-0 space-y-2 bg-white">
+              <button
+                onClick={handlePrintInvoice}
+                className="w-full bg-white border-2 border-[#ff6b35] text-[#ff6b35] py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-50 transition"
+              >
+                🖨️ In hóa đơn
+              </button>
               {order.status === "PENDING" &&
                 (rejecting ? (
                   <div className="space-y-2">

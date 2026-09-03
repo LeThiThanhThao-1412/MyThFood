@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { HttpService } from "@nestjs/axios";
 import { firstValueFrom } from "rxjs";
@@ -20,6 +21,17 @@ export class ReviewService {
     private readonly httpService: HttpService,
   ) {}
 
+  private serviceCandidates(
+    envKey: string,
+    dockerUrl: string,
+    localUrl: string,
+  ): string[] {
+    const urls = [process.env[envKey], dockerUrl, localUrl].filter(
+      (u): u is string => !!u,
+    );
+    return [...new Set(urls)];
+  }
+
   async create(dto: CreateReviewDto): Promise<ReviewEntity> {
     await this.validateOrder(dto.orderId, dto.consumerId);
 
@@ -35,6 +47,7 @@ export class ReviewService {
     review.rating = dto.rating;
     review.comment = dto.comment ?? null;
     review.tags = dto.tags ?? [];
+    review.images = dto.images ?? [];
     review.merchantReply = null;
     const saved = await this.reviewRepo.save(review);
 
@@ -48,24 +61,33 @@ export class ReviewService {
     try {
       const averageRating = await this.reviewRepo.getAverageRating(merchantId);
       const totalRatings = await this.reviewRepo.countByMerchant(merchantId);
-      const url =
-        process.env.MERCHANT_SERVICE_URL || "http://merchant-service:3003";
       const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
-      await firstValueFrom(
-        this.httpService.patch(
-          `${url}/api/v1/merchants/${merchantId}/rating`,
-          {
-            rating: Number(averageRating.toFixed(2)),
-            totalRatings,
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "x-service-key": serviceKey,
-            },
-          },
-        ),
-      );
+      for (const base of this.serviceCandidates(
+        "MERCHANT_SERVICE_URL",
+        "http://merchant-service:3003",
+        "http://localhost:3003",
+      )) {
+        try {
+          await firstValueFrom(
+            this.httpService.patch(
+              `${base}/api/v1/merchants/${merchantId}/rating`,
+              {
+                rating: Number(averageRating.toFixed(2)),
+                totalRatings,
+              },
+              {
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-service-key": serviceKey,
+                },
+              },
+            ),
+          );
+          return;
+        } catch {
+          // thử base URL tiếp theo
+        }
+      }
     } catch (err: any) {
       this.logger.warn(
         `Failed to sync merchant rating for ${merchantId}: ${err?.message}`,
@@ -77,31 +99,57 @@ export class ReviewService {
     orderId: string,
     consumerId: string,
   ): Promise<void> {
-    const url = process.env.ORDER_SERVICE_URL || "http://order-service:3004";
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
-    try {
-      const res = await firstValueFrom(
-        this.httpService.get(`${url}/api/v1/orders/${orderId}`, {
-          headers: { "x-service-key": serviceKey },
-        }),
+    let order: any = null;
+    let lastErr: any = null;
+    const candidates = [
+      process.env.ORDER_SERVICE_URL,
+      "http://host.docker.internal:3004",
+      "http://localhost:3004",
+      "http://127.0.0.1:3004",
+      "http://order-service:3004",
+    ].filter((u): u is string => !!u);
+
+    for (const base of [...new Set(candidates)]) {
+      try {
+        const res = await firstValueFrom(
+          this.httpService.get(`${base}/api/v1/orders/${orderId}`, {
+            headers: { "x-service-key": serviceKey },
+          }),
+        );
+        const data: any = res.data;
+        order = data?.data ?? data;
+        if (!order) {
+          throw new BadRequestException("Order not found");
+        }
+        break;
+      } catch (err: any) {
+        if (err instanceof BadRequestException) {
+          throw err;
+        }
+        lastErr = err;
+      }
+    }
+
+    if (!order) {
+      this.logger.warn(
+        `Failed to validate order ${orderId}: ${lastErr?.message}`,
       );
-      const data: any = res.data;
-      const order = data?.data ?? data;
-      if (!order) {
-        throw new BadRequestException("Order not found");
+      // Khi chạy local/Docker dev mà order-service chưa reach được,
+      // không chặn người dùng gửi đánh giá (frontend đã chỉ cho gửi khi đơn DELIVERED).
+      if (!process.env.NODE_ENV || process.env.NODE_ENV === "development") {
+        this.logger.warn(
+          "Skipping order validation because order-service is unreachable (development mode)",
+        );
+        return;
       }
-      if (order.consumerId !== consumerId) {
-        throw new BadRequestException("Order does not belong to this consumer");
-      }
-      if (order.status !== "DELIVERED") {
-        throw new BadRequestException("Only delivered orders can be reviewed");
-      }
-    } catch (err: any) {
-      if (err instanceof BadRequestException) {
-        throw err;
-      }
-      this.logger.warn(`Failed to validate order ${orderId}: ${err?.message}`);
       throw new BadRequestException("Unable to validate order");
+    }
+    if (order.consumerId !== consumerId) {
+      throw new BadRequestException("Order does not belong to this consumer");
+    }
+    if (order.status !== "DELIVERED") {
+      throw new BadRequestException("Only delivered orders can be reviewed");
     }
   }
 
@@ -123,10 +171,61 @@ export class ReviewService {
     return { items, total, averageRating };
   }
 
-  async reply(id: string, dto: ReplyReviewDto): Promise<ReviewEntity> {
+  async reply(
+    id: string,
+    dto: ReplyReviewDto,
+    user?: { userId: string; roles: string[] },
+  ): Promise<ReviewEntity> {
     const review = await this.reviewRepo.findById(id);
     if (!review) throw new NotFoundException("Review not found");
+
+    // Merchant chỉ được phản hồi đánh giá của chính nhà hàng của họ
+    if (
+      user &&
+      !(user.roles || []).includes("ADMIN") &&
+      user.userId !== "service"
+    ) {
+      await this.assertMerchantOwnership(review.merchantId, user.userId);
+    }
+
     review.merchantReply = dto.reply;
     return this.reviewRepo.save(review);
+  }
+
+  private async assertMerchantOwnership(
+    merchantId: string,
+    userId: string,
+  ): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    let lastErr: any = null;
+    for (const base of this.serviceCandidates(
+      "MERCHANT_SERVICE_URL",
+      "http://merchant-service:3003",
+      "http://localhost:3003",
+    )) {
+      try {
+        const res = await firstValueFrom(
+          this.httpService.get(`${base}/api/v1/merchants/${merchantId}`, {
+            headers: { "x-service-key": serviceKey },
+          }),
+        );
+        const merchant = res.data;
+        if (!merchant || merchant.userId !== userId) {
+          throw new ForbiddenException(
+            "Bạn chỉ có thể phản hồi đánh giá của nhà hàng của bạn",
+          );
+        }
+        return;
+      } catch (err: any) {
+        if (err instanceof ForbiddenException) {
+          throw err;
+        }
+        lastErr = err;
+      }
+    }
+    this.logger.warn(
+      `Failed to verify merchant ownership for ${merchantId}: ${lastErr?.message}`,
+    );
+    throw new ForbiddenException("Không thể xác minh quyền phản hồi đánh giá");
   }
 }

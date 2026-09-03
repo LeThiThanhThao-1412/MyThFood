@@ -3,11 +3,20 @@ import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { authApi, merchantApi } from "@mythfood/api-client";
-import { useAuth } from "@mythfood/frontend-shared";
+import {
+  useAuth,
+  FOOD_CATEGORIES as MERCHANT_CATEGORIES,
+  searchAddress,
+} from "@mythfood/frontend-shared";
 
 const MerchantMap = dynamic(
   () => import("@mythfood/frontend-shared/components/MapView"),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[260px] w-full animate-pulse rounded-xl bg-gray-100" />
+    ),
+  },
 );
 
 interface Suggestion {
@@ -15,14 +24,6 @@ interface Suggestion {
   lat: string;
   lon: string;
 }
-
-const MERCHANT_CATEGORIES = [
-  { key: "pho", icon: "🍜", label: "Phở" },
-  { key: "rice", icon: "🍚", label: "Cơm" },
-  { key: "drink", icon: "🥤", label: "Đồ uống" },
-  { key: "snack", icon: "🍢", label: "Ăn vặt" },
-  { key: "sushi", icon: "🍣", label: "Nhật" },
-];
 
 export default function MerchantRegisterPage() {
   const router = useRouter();
@@ -57,23 +58,16 @@ export default function MerchantRegisterPage() {
 
   const fetchSuggestions = useCallback((query: string) => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (query.length < 3) {
+    if (query.length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
     searchTimeout.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&countrycodes=VN`,
-        );
-        const data = await res.json();
-        setSuggestions(data);
-        setShowSuggestions(data.length > 0);
-      } catch {
-        setSuggestions([]);
-      }
-    }, 400);
+      const data = await searchAddress(query);
+      setSuggestions(data);
+      setShowSuggestions(data.length > 0);
+    }, 350);
   }, []);
 
   function selectSuggestion(s: Suggestion) {
@@ -366,8 +360,8 @@ export default function MerchantRegisterPage() {
                 </div>
                 <p className="text-xs text-gray-400 mt-1.5">
                   📍 {merchant.latitude.toFixed(5)},{" "}
-                  {merchant.longitude.toFixed(5)} — Kéo thả điểm trên bản đồ để
-                  chọn vị trí
+                  {merchant.longitude.toFixed(5)} — Chạm vào bản đồ hoặc kéo thả
+                  điểm 📍 để chọn vị trí
                 </p>
               </div>
 

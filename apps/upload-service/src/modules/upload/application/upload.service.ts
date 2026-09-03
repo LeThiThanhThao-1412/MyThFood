@@ -75,7 +75,13 @@ export class UploadService {
       throw new BadRequestException("S3 client not initialized");
     }
 
-    const allowedFolders = ["avatars", "merchants", "menu-items", "covers"];
+    const allowedFolders = [
+      "avatars",
+      "merchants",
+      "menu-items",
+      "covers",
+      "reviews",
+    ];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(
         `Invalid folder: ${folder}. Allowed: ${allowedFolders.join(", ")}`,
@@ -121,7 +127,13 @@ export class UploadService {
     size: number;
     mimeType: string;
   }> {
-    const allowedFolders = ["avatars", "merchants", "menu-items", "covers"];
+    const allowedFolders = [
+      "avatars",
+      "merchants",
+      "menu-items",
+      "covers",
+      "reviews",
+    ];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(
         `Invalid folder: ${folder}. Allowed: ${allowedFolders.join(", ")}`,

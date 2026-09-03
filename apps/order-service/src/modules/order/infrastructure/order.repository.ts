@@ -47,6 +47,14 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     return order;
   }
 
+  async getCreatedAt(id: string): Promise<Date | null> {
+    const entity = await this.repository.findOne({
+      where: { id },
+      select: ["id", "created_at"],
+    });
+    return entity?.created_at ?? null;
+  }
+
   async findByConsumerId(consumerId: string): Promise<Order[]> {
     const entities = await this.repository.find({
       where: { consumer_id: consumerId },

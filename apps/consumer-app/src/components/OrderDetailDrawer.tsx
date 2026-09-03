@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { orderApi, reviewApi } from "@mythfood/api-client";
+import { orderApi, reviewApi, uploadApi } from "@mythfood/api-client";
 import { Drawer } from "@mythfood/frontend-shared";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -34,6 +34,8 @@ export default function OrderDetailDrawer({
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
   const [reviewStatus, setReviewStatus] = useState("");
+  const [reviewImages, setReviewImages] = useState<string[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -72,11 +74,13 @@ export default function OrderDetailDrawer({
         merchantId: order.merchantId,
         rating: reviewRating,
         comment: reviewComment.trim() || undefined,
+        images: reviewImages.length ? reviewImages : undefined,
       });
       setExistingReview(
         created?.data ?? {
           rating: reviewRating,
           comment: reviewComment.trim(),
+          images: reviewImages,
         },
       );
       setReviewStatus("✅ Đã gửi đánh giá");
@@ -85,6 +89,30 @@ export default function OrderDetailDrawer({
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleReviewImageUpload(e: any) {
+    const files = Array.from(e.target.files || []) as File[];
+    if (!files.length) return;
+    setUploadingImages(true);
+    setReviewStatus("");
+    const urls: string[] = [];
+    try {
+      for (const file of files) {
+        const res: any = await uploadApi.uploadImage(file, "reviews");
+        urls.push(res.data.url);
+      }
+      setReviewImages((prev) => [...prev, ...urls].slice(0, 6));
+    } catch (err: any) {
+      setReviewStatus(`❌ ${err?.message || "Tải ảnh thất bại"}`);
+    } finally {
+      setUploadingImages(false);
+      e.target.value = "";
+    }
+  }
+
+  function removeReviewImage(url: string) {
+    setReviewImages((prev) => prev.filter((u) => u !== url));
   }
 
   return (
@@ -183,6 +211,18 @@ export default function OrderDetailDrawer({
                   {existingReview.comment && (
                     <p className="text-gray-700">{existingReview.comment}</p>
                   )}
+                  {existingReview.images?.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {existingReview.images.map((img: string, i: number) => (
+                        <img
+                          key={i}
+                          src={img}
+                          alt={`Ảnh đánh giá ${i + 1}`}
+                          className="w-16 h-16 object-cover rounded-lg border border-gray-100"
+                        />
+                      ))}
+                    </div>
+                  )}
                   {existingReview.merchantReply && (
                     <div className="mt-2 bg-[#fff7ed] rounded-xl p-3">
                       <p className="font-semibold text-[#ff6b35] text-xs mb-1">
@@ -214,6 +254,42 @@ export default function OrderDetailDrawer({
                     rows={3}
                     className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
                   />
+                  <div className="mt-3">
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {reviewImages.map((img, i) => (
+                        <div key={i} className="relative">
+                          <img
+                            src={img}
+                            alt={`Ảnh ${i + 1}`}
+                            className="w-16 h-16 object-cover rounded-lg border border-gray-100"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeReviewImage(img)}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full text-xs leading-5"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <label className="inline-block cursor-pointer text-sm text-[#ff6b35] border border-[#ff6b35] rounded-xl px-3 py-2 hover:bg-orange-50 transition">
+                      📷 Thêm ảnh
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleReviewImageUpload}
+                        disabled={uploadingImages}
+                        className="hidden"
+                      />
+                    </label>
+                    {uploadingImages && (
+                      <span className="ml-2 text-sm text-gray-400">
+                        Đang tải ảnh...
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={submitReview}
                     disabled={submitting}

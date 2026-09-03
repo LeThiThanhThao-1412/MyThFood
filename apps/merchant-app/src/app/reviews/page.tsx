@@ -130,6 +130,18 @@ export default function MerchantReviewsPage() {
                     ))}
                   </div>
                 )}
+                {r.images?.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {r.images.map((img: string, i: number) => (
+                      <img
+                        key={i}
+                        src={img}
+                        alt={`Ảnh đánh giá ${i + 1}`}
+                        className="w-16 h-16 object-cover rounded-lg border border-gray-100"
+                      />
+                    ))}
+                  </div>
+                )}
                 {r.merchantReply ? (
                   <div className="mt-3 bg-[#fff7ed] rounded-xl p-3 text-sm">
                     <p className="font-semibold text-[#ff6b35] text-xs mb-1">

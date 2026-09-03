@@ -15,7 +15,9 @@
     "test": "jest --passWithNoTests",
     "test:coverage": "jest --passWithNoTests --coverage"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@nestjs/axios": "^4.0.1"
+  },
   "devDependencies": {
     "typescript": "^5.5.0"
   }

@@ -10,13 +10,27 @@ import {
   walletApi,
   dispatchApi,
 } from "@mythfood/api-client";
-import { useAuthStore, useLocationStore } from "@mythfood/frontend-shared";
+import {
+  useAuthStore,
+  useLocationStore,
+  searchAddress,
+} from "@mythfood/frontend-shared";
+import { acceptOrder as acceptDispatchOrder } from "@/lib/delivery-flow";
+import DeliveryActionButtons from "@/components/DeliveryActionButtons";
 
 const MIN_COD_BALANCE = 2_000_000;
 
 const DriverMap = dynamic(
   () => import("@mythfood/frontend-shared/components/MapView"),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="w-full animate-pulse rounded-2xl bg-gray-100"
+        style={{ height: "calc(55vh - 100px)" }}
+      />
+    ),
+  },
 );
 
 function toNum(v: unknown): number {
@@ -97,8 +111,9 @@ export default function DriverLocationPage() {
         // Load active dispatch
         try {
           const dispatches = await dispatchApi.getByDriver(d.id);
-          const active = Array.isArray(dispatches)
-            ? dispatches.find((dp: any) =>
+          const list = (dispatches as any).data ?? dispatches;
+          const active = Array.isArray(list)
+            ? list.find((dp: any) =>
                 [
                   "DRIVER_ASSIGNED",
                   "DRIVER_ACCEPTED",
@@ -134,23 +149,16 @@ export default function DriverLocationPage() {
 
   const fetchSuggestions = useCallback((query: string) => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    if (query.length < 3) {
+    if (query.length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
     searchTimeout.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&countrycodes=VN`,
-        );
-        const data = await res.json();
-        setSuggestions(data);
-        setShowSuggestions(data.length > 0);
-      } catch {
-        setSuggestions([]);
-      }
-    }, 400);
+      const data = await searchAddress(query);
+      setSuggestions(data);
+      setShowSuggestions(data.length > 0);
+    }, 350);
   }, []);
 
   function handleSearchChange(value: string) {
@@ -250,11 +258,14 @@ export default function DriverLocationPage() {
     if (!driver?.id || dispatchLoading) return;
     setDispatchLoading(true);
     try {
-      // Create dispatch = driver accepts
-      await dispatchApi.create({ orderId });
+      // “Nhận đơn” → dispatch DRIVER_ACCEPTED (Đang đến quán)
+      const order = await orderApi.getById(orderId);
+      const dispatch = await acceptDispatchOrder(order, driver.id);
+      setActiveDispatch(dispatch);
       setStatus("✅ Đã nhận đơn #" + orderId.slice(0, 8));
-      // Remove from nearby list
       setNearbyOrders((prev) => prev.filter((o) => o.id !== orderId));
+      // Mở trang giao hàng theo đúng yêu cầu
+      router.push(`/delivery/${orderId}`);
     } catch (err: any) {
       setStatus("❌ " + (err.message || "Lỗi nhận đơn"));
     } finally {
@@ -471,6 +482,12 @@ export default function DriverLocationPage() {
               >
                 Xem →
               </Link>
+            </div>
+            <div className="mt-3">
+              <DeliveryActionButtons
+                orderId={activeDispatch.orderId}
+                variant="light"
+              />
             </div>
           </div>
         )}

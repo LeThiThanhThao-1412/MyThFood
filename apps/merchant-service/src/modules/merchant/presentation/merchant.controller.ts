@@ -21,6 +21,9 @@ import {
   UpdateRatingDto,
   MerchantQueryDto,
   MerchantResponseDto,
+  MenuSearchQueryDto,
+  MenuSearchItemDto,
+  MatchedMenuItemDto,
 } from "../application/dtos/merchant.dto";
 import {
   CreateMenuItemDto,
@@ -65,9 +68,26 @@ export class MerchantController {
   async findAll(@Query() query: MerchantQueryDto) {
     const result = await this.merchantService.findAll(query);
     return {
-      items: result.items.map((m) => this.toMerchantResponse(m)),
+      items: result.items.map((m) =>
+        this.toMerchantResponse(
+          m,
+          result.matchedMenuItems.get(m.id.toString()),
+        ),
+      ),
       total: result.total,
     };
+  }
+
+  /**
+   * Global dish search (feature: search by dish).
+   * MUST stay declared before `@Get(":id")`, otherwise "menu" would be captured
+   * as an `:id` route param.
+   */
+  @Get("menu/search")
+  async searchMenu(
+    @Query() query: MenuSearchQueryDto,
+  ): Promise<{ items: MenuSearchItemDto[]; total: number }> {
+    return this.merchantService.searchMenuItems(query);
   }
 
   @Get(":id")
@@ -310,7 +330,10 @@ export class MerchantController {
 
   // ===================== Mapping Helpers =====================
 
-  private toMerchantResponse(merchant: Merchant): MerchantResponseDto {
+  private toMerchantResponse(
+    merchant: Merchant,
+    matchedMenuItems?: MatchedMenuItemDto[],
+  ): MerchantResponseDto {
     return {
       id: merchant.id.toString(),
       userId: merchant.ownerId,
@@ -333,6 +356,7 @@ export class MerchantController {
       secondaryCategories: merchant.merchantSecondaryCategories,
       isOpen: merchant.merchantIsOpen,
       isOpenNow: merchant.isOpen(),
+      matchedMenuItems,
       createdAt: merchant.createdAt,
       updatedAt: merchant.updatedAt,
     };

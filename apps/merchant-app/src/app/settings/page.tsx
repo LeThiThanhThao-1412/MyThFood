@@ -3,16 +3,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { merchantApi, uploadApi } from "@mythfood/api-client";
-import { useAuthStore } from "@mythfood/frontend-shared";
+import {
+  useAuthStore,
+  FOOD_CATEGORIES as MERCHANT_CATEGORIES,
+} from "@mythfood/frontend-shared";
 import TopNav from "@/components/TopNav";
-
-const MERCHANT_CATEGORIES = [
-  { key: "pho", icon: "🍜", label: "Phở" },
-  { key: "rice", icon: "🍚", label: "Cơm" },
-  { key: "drink", icon: "🥤", label: "Đồ uống" },
-  { key: "snack", icon: "🍢", label: "Ăn vặt" },
-  { key: "sushi", icon: "🍣", label: "Nhật" },
-];
 
 export default function SettingsPage() {
   const router = useRouter();

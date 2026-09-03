@@ -2,8 +2,35 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { orderApi, reviewApi } from "@mythfood/api-client";
+import dynamic from "next/dynamic";
+import {
+  orderApi,
+  reviewApi,
+  dispatchApi,
+  uploadApi,
+} from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import { reorderOrder } from "@/lib/reorder";
+
+const TrackingMap = dynamic(
+  () => import("@mythfood/frontend-shared/components/MapView"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[260px] w-full animate-pulse bg-gray-100" />
+    ),
+  },
+);
+
+const DRIVER_STATUS_LABELS: Record<string, { icon: string; text: string }> = {
+  MATCHING: { icon: "🔎", text: "Đang tìm tài xế..." },
+  DRIVER_ASSIGNED: { icon: "📩", text: "Đã ghép tài xế, chờ tài xế nhận đơn" },
+  DRIVER_ACCEPTED: { icon: "🛵", text: "Tài xế đang đến nhà hàng" },
+  DRIVER_ARRIVED: { icon: "🏪", text: "Tài xế đã đến nhà hàng" },
+  PICKED_UP: { icon: "📦", text: "Tài xế đã nhận món, đang giao" },
+  DELIVERING: { icon: "🚚", text: "Tài xế đang giao tới bạn" },
+  DELIVERED: { icon: "✅", text: "Đơn hàng đã được giao" },
+};
 
 const STEPS = [
   { key: "PENDING", icon: "📦", label: "Chờ xác nhận" },
@@ -11,6 +38,16 @@ const STEPS = [
   { key: "PREPARING", icon: "👨‍🍳", label: "Đang chuẩn bị" },
   { key: "READY_FOR_PICKUP", icon: "📦", label: "Sẵn sàng" },
   { key: "READY", icon: "📦", label: "Sẵn sàng" },
+  { key: "OUT_FOR_DELIVERY", icon: "🛵", label: "Đang giao" },
+  { key: "DELIVERED", icon: "🏠", label: "Đã giao" },
+];
+
+/** Các bước hiển thị dạng thanh ngang (không trùng trạng thái). */
+const PROGRESS_STEPS = [
+  { key: "PENDING", icon: "📦", label: "Chờ xác nhận" },
+  { key: "CONFIRMED", icon: "✅", label: "Đã xác nhận" },
+  { key: "PREPARING", icon: "👨‍🍳", label: "Đang chuẩn bị" },
+  { key: "READY_FOR_PICKUP", icon: "📦", label: "Sẵn sàng" },
   { key: "OUT_FOR_DELIVERY", icon: "🛵", label: "Đang giao" },
   { key: "DELIVERED", icon: "🏠", label: "Đã giao" },
 ];
@@ -26,10 +63,13 @@ const STATUS_COLORS: Record<string, string> = {
   REJECTED: "bg-red-50 border-red-200 text-red-700",
 };
 
-function toNum(v: unknown): number {
-  if (typeof v === "number") return v;
-  if (typeof v === "string") return parseFloat(v) || 0;
-  return 0;
+function toNum(v: unknown, fallback = 0): number {
+  if (typeof v === "number" && !Number.isNaN(v)) return v;
+  if (typeof v === "string") {
+    const parsed = parseFloat(v);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return fallback;
 }
 
 export default function OrderDetailPage() {
@@ -37,7 +77,11 @@ export default function OrderDetailPage() {
   const router = useRouter();
   const { isAuthenticated, user } = useAuthStore();
   const [order, setOrder] = useState<any>(null);
+  const [dispatch, setDispatch] = useState<any>(null);
+  const [dispatchLocation, setDispatchLocation] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [reordering, setReordering] = useState(false);
+  const [reorderMsg, setReorderMsg] = useState("");
 
   // Review state
   const [existingReview, setExistingReview] = useState<any>(null);
@@ -45,26 +89,35 @@ export default function OrderDetailPage() {
   const [reviewComment, setReviewComment] = useState("");
   const [reviewStatus, setReviewStatus] = useState("");
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewImages, setReviewImages] = useState<string[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
       router.push("/login");
       return;
     }
-    const poll = setInterval(async () => {
+    const refresh = async () => {
       try {
         const o = await orderApi.getById(id);
+        const dRes = await dispatchApi.getByOrder(id).catch(() => null);
+        const d = (dRes as any)?.data ?? null;
         setOrder(o);
+        setDispatch(d);
+
+        if (d?.id) {
+          const locRes = await dispatchApi.getLocation(d.id).catch(() => null);
+          setDispatchLocation((locRes as any)?.data ?? null);
+        } else {
+          setDispatchLocation(null);
+        }
       } catch {}
-    }, 5000);
+    };
+
+    const poll = setInterval(refresh, 5000);
     (async () => {
-      try {
-        const o = await orderApi.getById(id);
-        setOrder(o);
-      } catch {
-      } finally {
-        setLoading(false);
-      }
+      await refresh();
+      setLoading(false);
     })();
     return () => clearInterval(poll);
   }, [id, isAuthenticated, router]);
@@ -92,11 +145,13 @@ export default function OrderDetailPage() {
         merchantId: order.merchantId,
         rating: reviewRating,
         comment: reviewComment.trim() || undefined,
+        images: reviewImages.length ? reviewImages : undefined,
       });
       setExistingReview(
         created?.data ?? {
           rating: reviewRating,
           comment: reviewComment.trim(),
+          images: reviewImages,
         },
       );
       setReviewStatus("✅ Đã gửi đánh giá");
@@ -104,6 +159,51 @@ export default function OrderDetailPage() {
       setReviewStatus(`❌ ${err?.message || "Gửi đánh giá thất bại"}`);
     } finally {
       setSubmittingReview(false);
+    }
+  }
+
+  async function handleReviewImageUpload(e: any) {
+    const files = Array.from(e.target.files || []) as File[];
+    if (!files.length) return;
+    setUploadingImages(true);
+    setReviewStatus("");
+    const urls: string[] = [];
+    try {
+      for (const file of files) {
+        const res: any = await uploadApi.uploadImage(file, "reviews");
+        urls.push(res.data.url);
+      }
+      setReviewImages((prev) => [...prev, ...urls].slice(0, 6));
+    } catch (err: any) {
+      setReviewStatus(`❌ ${err?.message || "Tải ảnh thất bại"}`);
+    } finally {
+      setUploadingImages(false);
+      e.target.value = "";
+    }
+  }
+
+  function removeReviewImage(url: string) {
+    setReviewImages((prev) => prev.filter((u) => u !== url));
+  }
+
+  async function handleReorder() {
+    if (!order) return;
+    setReordering(true);
+    setReorderMsg("");
+    try {
+      const result = await reorderOrder(order);
+      if (result.ok) {
+        setReorderMsg(
+          result.skipped > 0
+            ? `✅ Đã thêm ${result.added} món vào giỏ (bỏ qua ${result.skipped} món không còn bán)`
+            : `✅ Đã thêm ${result.added} món vào giỏ hàng`,
+        );
+        router.push("/cart");
+      } else {
+        setReorderMsg(result.error || "Không có món nào còn bán để đặt lại");
+      }
+    } finally {
+      setReordering(false);
     }
   }
 
@@ -134,10 +234,82 @@ export default function OrderDetailPage() {
     );
   }
 
-  const currentStepIdx = STEPS.findIndex((s) => s.key === order.status);
+  const currentStepIdx = PROGRESS_STEPS.findIndex(
+    (s) =>
+      s.key === order.status ||
+      (order.status === "READY" && s.key === "READY_FOR_PICKUP"),
+  );
   const isCancelled =
     order.status === "CANCELLED" || order.status === "REJECTED";
   const isDelivered = order.status === "DELIVERED";
+
+  // Theo dõi tài xế trên bản đồ khi đang giao
+  const isTrackingDelivery =
+    !isDelivered &&
+    !isCancelled &&
+    (order.status === "OUT_FOR_DELIVERY" ||
+      dispatch?.status === "PICKED_UP" ||
+      dispatch?.status === "DELIVERING");
+
+  const trackingDriverLat = toNum(
+    dispatchLocation?.driverLatitude ?? dispatchLocation?.merchantLatitude,
+    Number.NaN,
+  );
+  const trackingDriverLng = toNum(
+    dispatchLocation?.driverLongitude ?? dispatchLocation?.merchantLongitude,
+    Number.NaN,
+  );
+  const trackingCustomerLat = toNum(
+    dispatchLocation?.deliveryLatitude ?? order?.deliveryLatitude,
+    Number.NaN,
+  );
+  const trackingCustomerLng = toNum(
+    dispatchLocation?.deliveryLongitude ?? order?.deliveryLongitude,
+    Number.NaN,
+  );
+
+  const trackingMarkers: any[] = [];
+  if (!Number.isNaN(trackingDriverLat) && !Number.isNaN(trackingDriverLng)) {
+    trackingMarkers.push({
+      latitude: trackingDriverLat,
+      longitude: trackingDriverLng,
+      emoji: "🛵",
+      label: "🛵 Tài xế",
+    });
+  }
+  if (
+    dispatchLocation?.merchantLatitude != null &&
+    dispatchLocation?.merchantLongitude != null
+  ) {
+    trackingMarkers.push({
+      latitude: toNum(dispatchLocation.merchantLatitude),
+      longitude: toNum(dispatchLocation.merchantLongitude),
+      emoji: "🏪",
+      label: "🏪 Nhà hàng",
+    });
+  }
+  if (
+    !Number.isNaN(trackingCustomerLat) &&
+    !Number.isNaN(trackingCustomerLng)
+  ) {
+    trackingMarkers.push({
+      latitude: trackingCustomerLat,
+      longitude: trackingCustomerLng,
+      emoji: "🏠",
+      label: "🏠 Khách hàng",
+    });
+  }
+
+  const trackingRoute: [number, number][] =
+    !Number.isNaN(trackingDriverLat) &&
+    !Number.isNaN(trackingDriverLng) &&
+    !Number.isNaN(trackingCustomerLat) &&
+    !Number.isNaN(trackingCustomerLng)
+      ? [
+          [trackingDriverLat, trackingDriverLng],
+          [trackingCustomerLat, trackingCustomerLng],
+        ]
+      : [];
 
   return (
     <div className="min-h-screen bg-[#f0f2f5] lg:max-w-3xl mx-auto relative pb-24">
@@ -178,31 +350,77 @@ export default function OrderDetailPage() {
           </p>
         </div>
 
+        {/* Real-time tài xế (theo dispatch) */}
+        {!isDelivered &&
+          !isCancelled &&
+          (order.status === "READY_FOR_PICKUP" ||
+            order.status === "OUT_FOR_DELIVERY") && (
+            <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 flex items-start gap-3">
+              <span className="text-2xl">
+                {DRIVER_STATUS_LABELS[dispatch?.status]?.icon ?? "🛵"}
+              </span>
+              <div>
+                <p className="font-bold text-[#1a1a2e] text-sm">
+                  {DRIVER_STATUS_LABELS[dispatch?.status]?.text ??
+                    "Đang tìm tài xế..."}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {dispatch?.status === "DELIVERING" ||
+                  dispatch?.status === "PICKED_UP"
+                    ? "Tài xế đã nhận món và đang trên đường tới bạn."
+                    : dispatch?.status === "DRIVER_ARRIVED"
+                      ? "Tài xế đang chờ nhà hàng bàn giao món."
+                      : dispatch?.status === "DRIVER_ACCEPTED"
+                        ? "Tài xế đang trên đường đến nhà hàng."
+                        : "Trạng thái tự động cập nhật mỗi 5 giây."}
+                </p>
+              </div>
+            </div>
+          )}
+
+        {/* Bản đồ theo dõi tài xế */}
+        {isTrackingDelivery && trackingMarkers.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <p className="font-bold text-[#1a1a2e] text-sm">
+                🗺️ Theo dõi tài xế giao hàng
+              </p>
+              <span className="text-xs text-gray-400">Cập nhật 5s</span>
+            </div>
+            <TrackingMap
+              locations={trackingMarkers}
+              route={trackingRoute}
+              height="260px"
+              zoom={14}
+              className="border-0 rounded-none"
+            />
+          </div>
+        )}
+
         {/* Progress Tracker */}
         {!isCancelled && (
           <div className="bg-white rounded-2xl shadow-sm p-5">
             <h3 className="font-bold text-[#1a1a2e] mb-4">
               📋 Tiến trình đơn hàng
             </h3>
-            <div className="space-y-0">
-              {STEPS.map((step, idx) => {
+            <div className="flex items-start">
+              {PROGRESS_STEPS.map((step, idx) => {
                 const isDone = idx <= currentStepIdx;
                 const isCurrent = idx === currentStepIdx;
                 return (
                   <div
                     key={step.key}
-                    className="flex items-start gap-3 relative"
+                    className="flex-1 flex flex-col items-center text-center relative"
                   >
-                    {/* Connector line */}
-                    {idx < STEPS.length - 1 && (
+                    {idx < PROGRESS_STEPS.length - 1 && (
                       <div
-                        className={`absolute left-[18px] top-9 w-0.5 h-full -translate-x-1/2 ${
+                        className={`absolute top-4 left-1/2 w-full h-0.5 ${
                           idx < currentStepIdx ? "bg-[#ff6b35]" : "bg-gray-200"
                         }`}
                       />
                     )}
                     <div
-                      className={`w-9 h-9 rounded-full flex items-center justify-center text-lg shrink-0 z-10 ${
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm z-10 ${
                         isDone
                           ? "bg-[#ff6b35] text-white"
                           : "bg-gray-100 text-gray-400"
@@ -210,22 +428,24 @@ export default function OrderDetailPage() {
                     >
                       {step.icon}
                     </div>
-                    <div className="pb-5 pt-1">
-                      <p
-                        className={`text-sm font-semibold ${isDone ? "text-[#1a1a2e]" : "text-gray-400"}`}
-                      >
-                        {step.label}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {isDelivered
-                          ? "✅ Hoàn thành"
-                          : isCurrent && !isDelivered
-                            ? "Đang xử lý..."
-                            : isDone
-                              ? "✅ Hoàn thành"
-                              : "Đang chờ"}
-                      </p>
-                    </div>
+                    <span
+                      className={`text-[10px] mt-1 leading-tight ${
+                        isDone || isCurrent
+                          ? "text-[#1a1a2e] font-semibold"
+                          : "text-gray-400"
+                      }`}
+                    >
+                      {step.label}
+                    </span>
+                    <span className="text-[9px] text-gray-400">
+                      {isDelivered
+                        ? "✅"
+                        : isCurrent && !isDelivered
+                          ? "Đang xử lý..."
+                          : isDone
+                            ? "✅"
+                            : ""}
+                    </span>
                   </div>
                 );
               })}
@@ -324,6 +544,18 @@ export default function OrderDetailPage() {
                 {existingReview.comment && (
                   <p className="text-gray-700">{existingReview.comment}</p>
                 )}
+                {existingReview.images?.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {existingReview.images.map((img: string, i: number) => (
+                      <img
+                        key={i}
+                        src={img}
+                        alt={`Ảnh đánh giá ${i + 1}`}
+                        className="w-20 h-20 object-cover rounded-lg border border-gray-100"
+                      />
+                    ))}
+                  </div>
+                )}
                 {existingReview.merchantReply && (
                   <div className="mt-2 bg-[#fff7ed] rounded-xl p-3 text-sm">
                     <p className="font-semibold text-[#ff6b35] text-xs mb-1">
@@ -355,6 +587,42 @@ export default function OrderDetailPage() {
                   rows={3}
                   className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
                 />
+                <div className="mt-3">
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {reviewImages.map((img, i) => (
+                      <div key={i} className="relative">
+                        <img
+                          src={img}
+                          alt={`Ảnh ${i + 1}`}
+                          className="w-20 h-20 object-cover rounded-lg border border-gray-100"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeReviewImage(img)}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full text-xs leading-5"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <label className="inline-block cursor-pointer text-sm text-[#ff6b35] border border-[#ff6b35] rounded-xl px-3 py-2 hover:bg-orange-50 transition">
+                    📷 Thêm ảnh
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleReviewImageUpload}
+                      disabled={uploadingImages}
+                      className="hidden"
+                    />
+                  </label>
+                  {uploadingImages && (
+                    <span className="ml-2 text-sm text-gray-400">
+                      Đang tải ảnh...
+                    </span>
+                  )}
+                </div>
                 <button
                   onClick={submitReview}
                   disabled={submittingReview}
@@ -372,6 +640,21 @@ export default function OrderDetailPage() {
               </div>
             )}
           </div>
+        )}
+
+        <button
+          onClick={handleReorder}
+          disabled={reordering}
+          className="w-full bg-white border-2 border-[#ff6b35] text-[#ff6b35] py-3.5 rounded-xl font-semibold hover:bg-orange-50 transition disabled:opacity-50"
+        >
+          {reordering ? "Đang thêm vào giỏ..." : "🔄 Đặt lại đơn này"}
+        </button>
+        {reorderMsg && (
+          <p
+            className={`text-sm font-medium text-center ${reorderMsg.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
+          >
+            {reorderMsg}
+          </p>
         )}
 
         <Link

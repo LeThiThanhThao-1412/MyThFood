@@ -29,6 +29,9 @@ export class ReviewEntity {
   @Column({ type: "jsonb", nullable: true })
   tags!: string[];
 
+  @Column({ type: "jsonb", nullable: true })
+  images!: string[] | null;
+
   @Column({ type: "text", nullable: true })
   merchantReply!: string | null;
 

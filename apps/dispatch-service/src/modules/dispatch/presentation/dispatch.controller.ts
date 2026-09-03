@@ -287,6 +287,8 @@ export class DispatchController {
       id: dispatch.id.value,
       orderId: dispatch.dispatchOrderId,
       merchantId: dispatch.dispatchMerchantId,
+      merchantLatitude: dispatch.dispatchMerchantLatitude,
+      merchantLongitude: dispatch.dispatchMerchantLongitude,
       deliveryAddress: dispatch.dispatchDeliveryAddress,
       deliveryLatitude: dispatch.dispatchDeliveryLatitude,
       deliveryLongitude: dispatch.dispatchDeliveryLongitude,

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { merchantApi } from "@mythfood/api-client";
@@ -7,10 +7,19 @@ import {
   useAuthStore,
   useCartStore,
   useLocationStore,
+  useSearchHistoryStore,
+  useFavoritesStore,
   haversineKm,
   formatDistance,
 } from "@mythfood/frontend-shared";
 import { calculateShippingFeeSync } from "@/app/checkout/shipping-utils";
+import RestaurantFilterBar, {
+  NEAR_ME_RADIUS_KM,
+  type SortOption,
+} from "@/components/RestaurantFilterBar";
+import SearchHistoryDropdown from "@/components/SearchHistoryDropdown";
+import CurrentLocationChip from "@/components/CurrentLocationChip";
+import { resolveConsumerId } from "@/lib/consumer";
 
 const gradientPalette = [
   "from-[#f093fb] to-[#f5576c]",
@@ -21,14 +30,14 @@ const gradientPalette = [
   "from-[#fbc2eb] to-[#a6c1ee]",
 ];
 
-const categories = [
-  { key: "", icon: "🍽️", label: "Tất cả" },
-  { key: "pho", icon: "🍜", label: "Phở" },
-  { key: "rice", icon: "🍚", label: "Cơm" },
-  { key: "drink", icon: "🥤", label: "Đồ uống" },
-  { key: "snack", icon: "🍢", label: "Ăn vặt" },
-  { key: "sushi", icon: "🍣", label: "Nhật" },
-];
+/** Sorts that the backend can resolve in SQL. */
+const SERVER_SORTS: Record<string, "rating" | "popular" | "newest"> = {
+  rating: "rating",
+  popular: "popular",
+  newest: "newest",
+};
+
+const DEFAULT_SHIP_FEE = 15000;
 
 export default function RestaurantsPage() {
   const router = useRouter();
@@ -40,9 +49,54 @@ export default function RestaurantsPage() {
   const [loading, setLoading] = useState(true);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // --- Filters & sorting ---
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [nearMe, setNearMe] = useState(false);
+  const [openOnly, setOpenOnly] = useState(false);
+  const [minRating, setMinRating] = useState(0);
+  const [maxShipFee, setMaxShipFee] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<SortOption>("distance");
+
   const { location, hasLocation } = useLocationStore();
+  const addKeyword = useSearchHistoryStore((s) => s.addKeyword);
+  const favorites = useFavoritesStore();
+
+  // Load favourites so the ❤️ shows correctly on each card
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    (async () => {
+      const cid = await resolveConsumerId(user.id);
+      if (cid) await favorites.load(cid);
+    })();
+  }, [isAuthenticated, user, favorites.load]);
+
+  const toggleFavorite = async (merchantId: string) => {
+    if (!isAuthenticated || !user) {
+      router.push("/login");
+      return;
+    }
+    const cid = await resolveConsumerId(user.id);
+    if (cid) await favorites.toggle(cid, merchantId);
+  };
+
+  // Deep link: /restaurants?q=...&category=...
+  // Read from window instead of useSearchParams() to avoid needing a Suspense
+  // boundary during prerender.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q");
+    const category = params.get("category");
+    if (q) {
+      setSearchInput(q);
+      setSearch(q);
+    }
+    if (category) {
+      setSelectedCategories([category]);
+    }
+  }, []);
 
   // Debounce search input (avoid API spam on every keystroke)
   useEffect(() => {
@@ -50,53 +104,127 @@ export default function RestaurantsPage() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // FIX #5: Load merchants with optional category/search filters
+  // Remember committed keywords (feature: lịch sử tìm kiếm)
+  useEffect(() => {
+    if (search.trim()) {
+      addKeyword(search);
+    }
+  }, [search, addKeyword]);
+
+  // FIX #5: Load merchants with category/search/rating/open/sort filters
   useEffect(() => {
     async function load() {
       setLoading(true);
       try {
         const params: any = { take: 100 };
-        if (activeCategory) {
-          params.category = activeCategory;
+        if (selectedCategories.length > 0) {
+          params.categories = selectedCategories.join(",");
         }
         if (search) {
           params.search = search;
+        }
+        if (minRating > 0) {
+          params.minRating = minRating;
+        }
+        if (openOnly) {
+          params.openNow = true;
+        }
+        const serverSort = SERVER_SORTS[sortBy];
+        if (serverSort) {
+          params.sortBy = serverSort;
         }
         const res = await merchantApi.list(params);
         const list = res.items || [];
         setMerchants(list.filter((m: any) => m.status === "APPROVED"));
       } catch {
-        /* ignore */
+        setMerchants([]);
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, [activeCategory, search]);
+  }, [selectedCategories, search, minRating, openOnly, sortBy]);
 
-  // Compute distance + sort by nearest
-  const merchantsWithDistance = merchants.map((m: any) => {
-    let distanceKm: number | null = null;
-    if (hasLocation && location && m.latitude != null && m.longitude != null) {
-      distanceKm = haversineKm(
-        location.latitude,
-        location.longitude,
-        Number(m.latitude),
-        Number(m.longitude),
+  // Compute distance + estimated ship fee, then apply client-side filters/sorts
+  const displayedMerchants = useMemo(() => {
+    const enriched = merchants.map((m: any) => {
+      let distanceKm: number | null = null;
+      if (
+        hasLocation &&
+        location &&
+        m.latitude != null &&
+        m.longitude != null
+      ) {
+        distanceKm = haversineKm(
+          location.latitude,
+          location.longitude,
+          Number(m.latitude),
+          Number(m.longitude),
+        );
+      }
+      const shipFee =
+        distanceKm != null
+          ? calculateShippingFeeSync(distanceKm)
+          : DEFAULT_SHIP_FEE;
+      return { ...m, distanceKm, shipFee };
+    });
+
+    let result = enriched;
+    if (nearMe) {
+      result = result.filter(
+        (m: any) => m.distanceKm != null && m.distanceKm <= NEAR_ME_RADIUS_KM,
       );
     }
-    return { ...m, distanceKm };
-  });
+    if (maxShipFee != null) {
+      result = result.filter((m: any) => m.shipFee <= maxShipFee);
+    }
 
-  const displayedMerchants = nearMe
-    ? merchantsWithDistance
-        .filter((m: any) => m.distanceKm != null && m.distanceKm <= 10)
-        .sort(
-          (a: any, b: any) => (a.distanceKm ?? 9999) - (b.distanceKm ?? 9999),
-        )
-    : merchantsWithDistance.sort(
+    // `rating` / `popular` / `newest` are already ordered by the API
+    if (sortBy === "distance") {
+      result = [...result].sort(
         (a: any, b: any) => (a.distanceKm ?? 9999) - (b.distanceKm ?? 9999),
       );
+    } else if (sortBy === "shipFee") {
+      result = [...result].sort((a: any, b: any) => a.shipFee - b.shipFee);
+    }
+    return result;
+  }, [merchants, hasLocation, location, nearMe, maxShipFee, sortBy]);
+
+  const activeFilterCount =
+    (nearMe ? 1 : 0) +
+    (openOnly ? 1 : 0) +
+    (minRating > 0 ? 1 : 0) +
+    (maxShipFee != null ? 1 : 0) +
+    selectedCategories.length;
+
+  const toggleCategory = (key: string) => {
+    if (key === "") {
+      setSelectedCategories([]);
+      return;
+    }
+    setSelectedCategories((prev) =>
+      prev.includes(key) ? prev.filter((c) => c !== key) : [...prev, key],
+    );
+  };
+
+  const clearAllFilters = () => {
+    setNearMe(false);
+    setOpenOnly(false);
+    setMinRating(0);
+    setMaxShipFee(null);
+    setSelectedCategories([]);
+  };
+
+  const clearSearch = () => {
+    setSearchInput("");
+    setSearch("");
+  };
+
+  const pickHistoryKeyword = (keyword: string) => {
+    setSearchInput(keyword);
+    setSearch(keyword);
+    setHistoryOpen(false);
+  };
 
   return (
     <div className="min-h-screen bg-[#f0f2f5]">
@@ -122,24 +250,31 @@ export default function RestaurantsPage() {
 
             {/* Search bar */}
             <div className="hidden sm:flex flex-1 max-w-lg relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg text-[#ff6b35]">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg text-[#ff6b35] z-10">
                 🔍
               </span>
               <input
                 type="text"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
+                onFocus={() => setHistoryOpen(true)}
+                onBlur={() => setHistoryOpen(false)}
                 placeholder="Tìm món ăn, nhà hàng..."
                 className="w-full bg-[#f5f5f5] rounded-xl pl-11 pr-4 py-2.5 text-sm border-none outline-none focus:ring-2 focus:ring-orange-200 transition"
               />
               {searchInput && (
                 <button
-                  onClick={() => setSearchInput("")}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  onClick={clearSearch}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10"
                 >
                   ✕
                 </button>
               )}
+              <SearchHistoryDropdown
+                visible={historyOpen && searchInput.length === 0}
+                onPick={pickHistoryKeyword}
+                onClose={() => setHistoryOpen(false)}
+              />
             </div>
 
             {/* Right side */}
@@ -188,7 +323,7 @@ export default function RestaurantsPage() {
       {/* ===== MAIN ===== */}
       <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Page title + count */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
           <div>
             <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
               🏪 Nhà hàng
@@ -197,58 +332,58 @@ export default function RestaurantsPage() {
               {displayedMerchants.length} nhà hàng đang hoạt động
             </p>
           </div>
+          {/* Vị trí giao hàng — đổi được ngay tại đây vì khoảng cách, phí ship
+              và bộ lọc "gần tôi" đều tính từ toạ độ này. */}
+          <CurrentLocationChip />
         </div>
 
         {/* Mobile search */}
         <div className="sm:hidden mb-4 relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg text-[#ff6b35]">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg text-[#ff6b35] z-10">
             🔍
           </span>
           <input
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
+            onFocus={() => setHistoryOpen(true)}
+            onBlur={() => setHistoryOpen(false)}
             placeholder="Tìm món ăn, nhà hàng..."
             className="w-full bg-white rounded-xl pl-11 pr-10 py-3 text-sm border border-gray-100 outline-none focus:ring-2 focus:ring-orange-200 transition shadow-sm"
           />
           {searchInput && (
             <button
-              onClick={() => setSearchInput("")}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              onClick={clearSearch}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10"
             >
               ✕
             </button>
           )}
+          <SearchHistoryDropdown
+            visible={historyOpen && searchInput.length === 0}
+            onPick={pickHistoryKeyword}
+            onClose={() => setHistoryOpen(false)}
+          />
         </div>
 
-        {/* Categories filter pills */}
-        <div className="flex gap-2 mb-6 overflow-x-auto hide-scrollbar pb-1 items-center">
-          <button
-            onClick={() => setNearMe(!nearMe)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all shrink-0 ${
-              nearMe
-                ? "bg-[#2ecc71] text-white shadow-md shadow-green-200"
-                : "bg-white text-gray-600 border border-gray-100 hover:border-green-200"
-            }`}
-          >
-            <span className="text-base">📍</span>
-            Gần tôi
-          </button>
-          {categories.map((cat) => (
-            <button
-              key={cat.key}
-              onClick={() => setActiveCategory(cat.key)}
-              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all shrink-0 ${
-                activeCategory === cat.key
-                  ? "bg-[#ff6b35] text-white shadow-md shadow-orange-200"
-                  : "bg-white text-gray-600 border border-gray-100 hover:border-orange-200"
-              }`}
-            >
-              <span className="text-base">{cat.icon}</span>
-              {cat.label}
-            </button>
-          ))}
-        </div>
+        {/* Filters: rating / open now / ship fee / sort / categories */}
+        <RestaurantFilterBar
+          nearMe={nearMe}
+          onNearMeChange={setNearMe}
+          openOnly={openOnly}
+          onOpenOnlyChange={setOpenOnly}
+          minRating={minRating}
+          onMinRatingChange={setMinRating}
+          maxShipFee={maxShipFee}
+          onMaxShipFeeChange={setMaxShipFee}
+          sortBy={sortBy}
+          onSortByChange={setSortBy}
+          selectedCategories={selectedCategories}
+          onToggleCategory={toggleCategory}
+          onClearAll={clearAllFilters}
+          activeFilterCount={activeFilterCount}
+          hasLocation={hasLocation}
+        />
 
         {/* Content */}
         {loading ? (
@@ -271,27 +406,37 @@ export default function RestaurantsPage() {
           <div className="text-center py-20 bg-white rounded-2xl shadow-sm">
             <p className="text-5xl mb-4">🍽️</p>
             <p className="text-gray-400 text-lg font-medium">
-              {nearMe
-                ? "Không có nhà hàng nào gần bạn"
-                : search
-                  ? "Không tìm thấy nhà hàng hoặc món ăn phù hợp"
+              {search
+                ? "Không tìm thấy nhà hàng hoặc món ăn phù hợp"
+                : activeFilterCount > 0
+                  ? "Không có nhà hàng nào khớp bộ lọc"
                   : "Chưa có nhà hàng nào"}
             </p>
             <p className="text-gray-400 text-sm mt-1">
-              {nearMe
-                ? 'Thử tắt bộ lọc "Gần tôi"'
-                : search
-                  ? "Thử tìm kiếm với từ khóa khác"
+              {search
+                ? "Thử tìm kiếm với từ khóa khác"
+                : activeFilterCount > 0
+                  ? "Thử nới lỏng hoặc xoá bớt bộ lọc"
                   : "Vui lòng quay lại sau"}
             </p>
-            {search && (
-              <button
-                onClick={() => setSearch("")}
-                className="mt-4 bg-[#ff6b35] text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-orange-600 transition"
-              >
-                Xóa tìm kiếm
-              </button>
-            )}
+            <div className="flex items-center justify-center gap-2 mt-4">
+              {search && (
+                <button
+                  onClick={clearSearch}
+                  className="bg-[#ff6b35] text-white px-5 py-2 rounded-lg text-sm font-medium hover:bg-orange-600 transition"
+                >
+                  Xóa tìm kiếm
+                </button>
+              )}
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={clearAllFilters}
+                  className="bg-white border border-gray-200 text-gray-600 px-5 py-2 rounded-lg text-sm font-medium hover:border-orange-300 hover:text-[#ff6b35] transition"
+                >
+                  Xoá bộ lọc ({activeFilterCount})
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -317,6 +462,26 @@ export default function RestaurantsPage() {
                   <span className="absolute top-3 left-3 bg-black/70 text-white px-2.5 py-0.5 rounded-full text-[10px] font-semibold">
                     ⭐ {Number(m.rating || 0).toFixed(1)}
                   </span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(m.id);
+                    }}
+                    aria-label={
+                      favorites.isFavorite(m.id) ? "Bỏ yêu thích" : "Yêu thích"
+                    }
+                    title={
+                      favorites.isFavorite(m.id)
+                        ? "Bỏ yêu thích"
+                        : "Yêu thích nhà hàng"
+                    }
+                    className={`absolute top-2.5 right-2.5 z-20 bg-black/50 backdrop-blur rounded-full w-9 h-9 flex items-center justify-center text-base transition-transform hover:scale-110 ${
+                      favorites.isFavorite(m.id) ? "" : "grayscale opacity-80"
+                    }`}
+                  >
+                    {favorites.isFavorite(m.id) ? "❤️" : "🤍"}
+                  </button>
                   {m.distanceKm != null && (
                     <span className="absolute top-3 right-3 bg-black/70 text-white px-2.5 py-0.5 rounded-full text-[10px] font-semibold">
                       📍 {formatDistance(m.distanceKm)}
@@ -356,15 +521,7 @@ export default function RestaurantsPage() {
                       ⭐ {Number(m.rating || 0).toFixed(1)}
                     </span>
                     <span className="text-gray-300">•</span>
-                    <span>
-                      🚚{" "}
-                      {m.distanceKm != null
-                        ? calculateShippingFeeSync(m.distanceKm).toLocaleString(
-                            "vi-VN",
-                          )
-                        : "15.000"}
-                      đ
-                    </span>
+                    <span>🚚 {m.shipFee.toLocaleString("vi-VN")}đ</span>
                     <span className="text-gray-300">•</span>
                     {m.isOpen === false ? (
                       <span className="text-red-500 font-semibold">
@@ -386,6 +543,25 @@ export default function RestaurantsPage() {
                   </div>
                   {m.phone && (
                     <p className="text-xs text-gray-400 mt-1">📞 {m.phone}</p>
+                  )}
+
+                  {/* Matched dishes (feature: tìm kiếm theo món ăn) */}
+                  {m.matchedMenuItems?.length > 0 && (
+                    <div className="mt-2.5 pt-2.5 border-t border-dashed border-gray-100">
+                      <p className="text-[11px] text-gray-400 mb-1">
+                        🍲 Có món bạn tìm:
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {m.matchedMenuItems.map((item: any) => (
+                          <span
+                            key={item.id}
+                            className="bg-orange-50 text-[#ff6b35] text-[11px] font-medium px-2 py-0.5 rounded-full"
+                          >
+                            {item.name} · {item.price.toLocaleString("vi-VN")}đ
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

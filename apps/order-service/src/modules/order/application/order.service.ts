@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, ForbiddenException } from "@nestjs/common";
 import { EventBus } from "@nestjs/cqrs";
 import { HttpService } from "@nestjs/axios";
 import { firstValueFrom } from "rxjs";
@@ -13,6 +13,7 @@ import {
   StatusTransitionDto,
   OrderQueryDto,
 } from "./dtos/order.dto";
+import { buildInvoicePdf } from "./invoice-pdf";
 
 @Injectable()
 export class OrderService {
@@ -517,6 +518,87 @@ export class OrderService {
         occurredAt: e.occurred_at,
       })),
     };
+  }
+
+  // ===================== Invoice (print / PDF) =====================
+
+  async getInvoicePdf(
+    id: string,
+    user?: { userId: string; roles: string[] },
+  ): Promise<Buffer> {
+    const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
+
+    // Chỉ merchant sở hữu (hoặc admin/service) mới được xem hóa đơn
+    if (
+      user &&
+      !(user.roles || []).includes("ADMIN") &&
+      user.userId !== "service"
+    ) {
+      await this.assertMerchantOwnership(order.orderMerchantId, user.userId);
+    }
+
+    const merchant = await this.tryFetchMerchant(order.orderMerchantId);
+    const createdAt = await this.orderRepository.getCreatedAt(
+      order.id.toString(),
+    );
+    return buildInvoicePdf(order, merchant, createdAt);
+  }
+
+  private merchantServiceCandidates(): string[] {
+    const urls = [
+      process.env.MERCHANT_SERVICE_URL,
+      "http://merchant-service:3003",
+      "http://localhost:3003",
+    ].filter((u): u is string => !!u);
+    return [...new Set(urls)];
+  }
+
+  private async fetchMerchant(merchantId: string): Promise<any | null> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    let lastErr: any = null;
+    for (const base of this.merchantServiceCandidates()) {
+      try {
+        const res = await firstValueFrom(
+          this.httpService.get(`${base}/api/v1/merchants/${merchantId}`, {
+            headers: { "x-service-key": serviceKey },
+          }),
+        );
+        return res.data ?? null;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr ?? new Error("merchant-service unreachable");
+  }
+
+  private async assertMerchantOwnership(
+    merchantId: string,
+    userId: string,
+  ): Promise<void> {
+    try {
+      const merchant = await this.fetchMerchant(merchantId);
+      if (!merchant || merchant.userId !== userId) {
+        throw new ForbiddenException(
+          "Bạn chỉ có thể in hóa đơn của nhà hàng của bạn",
+        );
+      }
+    } catch (err: any) {
+      if (err instanceof ForbiddenException) {
+        throw err;
+      }
+      this.logger.warn(
+        `Failed to verify merchant ownership for ${merchantId}: ${err?.message}`,
+      );
+      throw new ForbiddenException("Không thể xác minh quyền truy cập hóa đơn");
+    }
+  }
+
+  private async tryFetchMerchant(merchantId: string): Promise<any | null> {
+    try {
+      return await this.fetchMerchant(merchantId);
+    } catch {
+      return null;
+    }
   }
 
   // ===================== Stats Daily =====================

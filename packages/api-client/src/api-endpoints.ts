@@ -18,6 +18,8 @@ import type {
   ChangePasswordRequest,
   CreateMerchantRequest,
   Merchant,
+  MerchantListQuery,
+  MenuSearchItem,
   CreateMenuItemRequest,
   MenuItem,
   UpdateMenuItemRequest,
@@ -154,6 +156,18 @@ export const consumerApi = {
       `/consumers/${consumerId}/payment-methods`,
       body,
     ),
+
+  getFavorites: (consumerId: string) =>
+    httpClient.get<ApiResponse<{ favorites: string[] }>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/favorites`,
+    ),
+
+  toggleFavorite: (consumerId: string, merchantId: string) =>
+    httpClient.put<ApiResponse<{ added: boolean; favorites: string[] }>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/favorites/${merchantId}`,
+    ),
 };
 
 // ============================================================================
@@ -163,16 +177,26 @@ export const merchantApi = {
   create: (body: CreateMerchantRequest) =>
     httpClient.post<Merchant>(PORTS.MERCHANT, "/merchants", body),
 
-  list: (params?: {
-    status?: string;
-    search?: string;
+  list: (params?: MerchantListQuery) =>
+    httpClient.get<PaginatedResponse<Merchant>>(PORTS.MERCHANT, "/merchants", {
+      params,
+    }),
+
+  /**
+   * Global dish search across all APPROVED merchants.
+   * NOTE: backend route is declared before `/merchants/:id` on purpose.
+   */
+  searchMenu: (params: {
+    q: string;
     category?: string;
     skip?: number;
     take?: number;
   }) =>
-    httpClient.get<PaginatedResponse<Merchant>>(PORTS.MERCHANT, "/merchants", {
-      params,
-    }),
+    httpClient.get<{ items: MenuSearchItem[]; total: number }>(
+      PORTS.MERCHANT,
+      "/merchants/menu/search",
+      { params },
+    ),
 
   getById: (id: string) =>
     httpClient.get<Merchant>(PORTS.MERCHANT, `/merchants/${id}`),
@@ -573,38 +597,143 @@ export const driverApi = {
 
 // ============================================================================
 // Dispatch (Port 3008)
+// Base path backend: `/api/v1/dispatches` (DispatchController → @Controller("dispatches"))
+// Mọi response đều được bọc `{ statusCode, data }`.
 // ============================================================================
+type DispatchEnvelope = {
+  statusCode: number;
+  data: import("./types").Dispatch;
+};
+type DispatchListEnvelope = {
+  statusCode: number;
+  data: import("./types").Dispatch[];
+  total: number;
+};
+
 export const dispatchApi = {
   getById: (id: string) =>
-    httpClient.get<import("./types").Dispatch>(
-      PORTS.DISPATCH,
-      `/dispatch/${id}`,
-    ),
+    httpClient.get<DispatchEnvelope>(PORTS.DISPATCH, `/dispatches/${id}`),
 
+  /** `data` = null khi đơn chưa có dispatch. */
   getByOrder: (orderId: string) =>
-    httpClient.get<import("./types").Dispatch>(
-      PORTS.DISPATCH,
-      `/dispatch/order/${orderId}`,
-    ),
+    httpClient.get<{
+      statusCode: number;
+      data: import("./types").Dispatch | null;
+    }>(PORTS.DISPATCH, `/dispatches/order/${orderId}`),
 
   getByDriver: (driverId: string) =>
-    httpClient.get<import("./types").Dispatch[]>(
+    httpClient.get<DispatchListEnvelope>(
       PORTS.DISPATCH,
-      `/dispatch/driver/${driverId}`,
+      `/dispatches/driver/${driverId}`,
     ),
+
+  getByMerchant: (merchantId: string) =>
+    httpClient.get<DispatchListEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/merchant/${merchantId}`,
+    ),
+
+  listActive: () =>
+    httpClient.get<DispatchListEnvelope>(PORTS.DISPATCH, "/dispatches/active"),
+
+  listNearby: (latitude: number, longitude: number, radiusKm = 5) =>
+    httpClient.get<{
+      statusCode: number;
+      data: {
+        driverLocation: { latitude: number; longitude: number };
+        nearbyDispatches: import("./types").Dispatch[];
+        total: number;
+      };
+    }>(PORTS.DISPATCH, "/dispatches/nearby", {
+      params: { latitude, longitude, radiusKm },
+    }),
+
+  /** Vị trí theo dõi giao hàng (gồm GPS tài xế, nhà hàng, khách). */
+  getLocation: (id: string) =>
+    httpClient.get<{
+      statusCode: number;
+      data: {
+        dispatchId: string;
+        status: string;
+        driverId: string | null;
+        driverLatitude: number | null;
+        driverLongitude: number | null;
+        merchantLatitude: number;
+        merchantLongitude: number;
+        deliveryLatitude: number;
+        deliveryLongitude: number;
+      };
+    }>(PORTS.DISPATCH, `/dispatches/${id}/location`),
 
   create: (body: import("./types").CreateDispatchRequest) =>
-    httpClient.post<import("./types").Dispatch>(
+    httpClient.post<DispatchEnvelope>(PORTS.DISPATCH, "/dispatches", body),
+
+  delete: (id: string) =>
+    httpClient.delete<void>(PORTS.DISPATCH, `/dispatches/${id}`),
+
+  assignDriver: (id: string, driverId: string) =>
+    httpClient.patch<DispatchEnvelope>(
       PORTS.DISPATCH,
-      "/dispatch",
+      `/dispatches/${id}/assign-driver`,
+      { driverId },
+    ),
+
+  // ---- Vòng đời giao hàng của tài xế ----
+
+  /** Bấm “Nhận đơn” → DRIVER_ACCEPTED (Đang đến quán). */
+  driverAccept: (id: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/driver-accept`,
+    ),
+
+  driverDecline: (id: string, body: import("./types").DeclineDispatchRequest) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/driver-decline`,
       body,
     ),
 
-  updateStatus: (id: string, body: { status: string }) =>
-    httpClient.patch<import("./types").Dispatch>(
+  /** Bấm “Đã đến quán” → DRIVER_ARRIVED. */
+  driverArrived: (id: string) =>
+    httpClient.patch<DispatchEnvelope>(
       PORTS.DISPATCH,
-      `/dispatch/${id}/status`,
-      body,
+      `/dispatches/${id}/driver-arrived`,
+    ),
+
+  /** Bấm “Đã nhận món” → PICKED_UP. */
+  markPickedUp: (id: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/picked-up`,
+    ),
+
+  /** PICKED_UP → DELIVERING (đang giao tới khách). */
+  startDelivering: (id: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/start-delivering`,
+    ),
+
+  /** Bấm “Giao hàng thành công” → DELIVERED. */
+  markDelivered: (id: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/delivered`,
+    ),
+
+  cancel: (id: string, reason: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/cancel`,
+      { reason },
+    ),
+
+  updateNotes: (id: string, notes: string) =>
+    httpClient.put<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/notes`,
+      { notes },
     ),
 };
 

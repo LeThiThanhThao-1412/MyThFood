@@ -232,4 +232,33 @@ export class ConsumerService {
     await this.repository.save(consumer);
     return Result.ok(consumer);
   }
+
+  // ---- Favorites (Yêu thích nhà hàng) ----
+
+  async getFavorites(consumerId: string): Promise<string[]> {
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer) return [];
+    return consumer.favoriteMerchantIdList;
+  }
+
+  /** Returns the new state: `true` = added, `false` = removed. */
+  async toggleFavorite(
+    consumerId: string,
+    merchantId: string,
+  ): Promise<Result<{ added: boolean; favorites: string[] }, DomainError>> {
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer)
+      return Result.fail(new EntityNotFoundError("Consumer", consumerId));
+    const r = consumer.toggleFavorite(merchantId);
+    if (r.isFailure) return Result.fail(r.error);
+    await this.repository.save(consumer);
+    return Result.ok({
+      added: r.value,
+      favorites: consumer.favoriteMerchantIdList,
+    });
+  }
 }

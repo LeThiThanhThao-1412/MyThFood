@@ -4,7 +4,11 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { consumerApi, authApi, uploadApi } from "@mythfood/api-client";
-import { useAuthStore, useLocationStore } from "@mythfood/frontend-shared";
+import {
+  useAuthStore,
+  useLocationStore,
+  LocationGate,
+} from "@mythfood/frontend-shared";
 
 const ADDR_TYPE_META: Record<string, { icon: string; label: string }> = {
   HOME: { icon: "🏠", label: "Nhà" },
@@ -15,7 +19,7 @@ const ADDR_TYPE_META: Record<string, { icon: string; label: string }> = {
 export default function ProfilePage() {
   const router = useRouter();
   const { isAuthenticated, user, clearAuth } = useAuthStore();
-  const { location } = useLocationStore();
+  const { location, setLocation } = useLocationStore();
 
   const [consumer, setConsumer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -32,6 +36,7 @@ export default function ProfilePage() {
   const [showAddAddress, setShowAddAddress] = useState(false);
   const [addrType, setAddrType] = useState<"HOME" | "WORK" | "OTHER">("HOME");
   const [addrText, setAddrText] = useState("");
+  const [locationEditorOpen, setLocationEditorOpen] = useState(false);
 
   const [showChangePw, setShowChangePw] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
@@ -162,6 +167,29 @@ export default function ProfilePage() {
     }
   }
 
+  /**
+   * Dùng một địa chỉ đã lưu làm vị trí giao hàng hiện tại.
+   * Vị trí này là nguồn tính khoảng cách / phí ship của toàn app nên phải có toạ
+   * độ; địa chỉ lưu từ trước mà thiếu GPS thì yêu cầu chọn lại trên bản đồ.
+   */
+  function applySavedAddress(a: any) {
+    const lat = a?.gps?.latitude ?? a?.latitude;
+    const lng = a?.gps?.longitude ?? a?.longitude;
+    if (lat == null || lng == null) {
+      setStatus(
+        "❌ Địa chỉ này chưa có toạ độ — hãy dùng 'Cập nhật' để chọn trên bản đồ",
+      );
+      return;
+    }
+    setLocation({
+      latitude: Number(lat),
+      longitude: Number(lng),
+      address: a.fullAddress || a.label || "Địa chỉ đã lưu",
+      source: "manual",
+    });
+    setStatus("✅ Đã đặt làm vị trí giao hàng hiện tại");
+  }
+
   async function changePassword() {
     if (!currentPassword || !newPassword) {
       setStatus("Vui lòng nhập đủ mật khẩu");
@@ -290,6 +318,46 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {/* Vị trí giao hàng hiện tại */}
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-[#1a1a2e]">
+              📍 Vị trí giao hàng hiện tại
+            </h3>
+            <button
+              onClick={() => setLocationEditorOpen(true)}
+              className="text-sm font-semibold text-[#ff6b35]"
+            >
+              Cập nhật
+            </button>
+          </div>
+          {location ? (
+            <>
+              <p className="text-sm text-gray-700">
+                {location.address || "Vị trí hiện tại"}
+              </p>
+              <p className="text-xs text-gray-400 font-mono mt-0.5">
+                {Number(location.latitude).toFixed(6)},{" "}
+                {Number(location.longitude).toFixed(6)} ·{" "}
+                {location.source === "gps" ? "GPS" : "Tự chọn"}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-gray-400">
+              Chưa có vị trí — bấm “Cập nhật” để chọn bằng GPS hoặc bản đồ.
+            </p>
+          )}
+          <p className="text-xs text-gray-400 mt-2">
+            Vị trí này dùng để tính khoảng cách, phí giao hàng và gợi ý nhà hàng
+            gần bạn.
+          </p>
+          {/* Hộp thoại chọn vị trí ở chế độ điều khiển (không chặn màn hình) */}
+          <LocationGate
+            open={locationEditorOpen}
+            onClose={() => setLocationEditorOpen(false)}
+          />
+        </div>
+
         {/* Addresses */}
         <div className="bg-white rounded-2xl shadow-sm p-5">
           <div className="flex items-center justify-between mb-3">
@@ -361,6 +429,13 @@ export default function ProfilePage() {
                       {a.fullAddress}
                     </p>
                   </div>
+                  <button
+                    onClick={() => applySavedAddress(a)}
+                    title="Dùng làm vị trí giao hàng hiện tại"
+                    className="text-[#ff6b35] hover:text-orange-600 text-sm ml-3"
+                  >
+                    📌
+                  </button>
                   <button
                     onClick={() => removeAddress(a.id)}
                     className="text-red-400 hover:text-red-600 text-sm ml-3"

@@ -7,13 +7,16 @@ import {
   useAuthStore,
   useCartStore,
   useLocationStore,
+  useFavoritesStore,
   LocationGate,
   canAccessApp,
   haversineKm,
   NotificationBell,
 } from "@mythfood/frontend-shared";
 import { calculateShippingFeeSync } from "@/app/checkout/shipping-utils";
+import { resolveConsumerId } from "@/lib/consumer";
 import CartDrawer from "@/components/CartDrawer";
+import CurrentLocationChip from "@/components/CurrentLocationChip";
 import OrderDetailDrawer from "@/components/OrderDetailDrawer";
 import RecentOrdersDrawer from "@/components/RecentOrdersDrawer";
 
@@ -53,6 +56,7 @@ export default function DashboardPage() {
   const cartCount = cartItems.reduce((sum, i) => sum + i.quantity, 0);
   const cartTotal = getSubtotal();
   const { location, hasLocation } = useLocationStore();
+  const favorites = useFavoritesStore();
 
   const [merchants, setMerchants] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
@@ -61,6 +65,7 @@ export default function DashboardPage() {
   const [cartOpen, setCartOpen] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [recentOrdersOpen, setRecentOrdersOpen] = useState(false);
+  const [dashboardSearch, setDashboardSearch] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -82,10 +87,11 @@ export default function DashboardPage() {
         setMerchants(list.filter((m: any) => m.status === "APPROVED"));
         if (user) {
           try {
-            const oRes = await orderApi.list({ take: 20 });
-            setOrders(
-              (oRes.items || []).filter((o: any) => o.consumerId === user.id),
-            );
+            const cid = await resolveConsumerId(user.id);
+            if (cid) {
+              const oRes = await orderApi.listByConsumer(cid);
+              setOrders(Array.isArray(oRes) ? oRes : []);
+            }
           } catch {
             /* ignore */
           }
@@ -98,6 +104,19 @@ export default function DashboardPage() {
     }
     load();
   }, [user]);
+
+  // Load favourite merchants
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    (async () => {
+      const cid = await resolveConsumerId(user.id);
+      if (cid) await favorites.load(cid);
+    })();
+  }, [isAuthenticated, user, favorites.load]);
+
+  const favoriteMerchants = merchants.filter((m: any) =>
+    favorites.ids.includes(m.id),
+  );
 
   // Delivery fee from restaurant → customer's current location (distance-based)
   const feeFor = (m: any) => {
@@ -132,13 +151,27 @@ export default function DashboardPage() {
               </Link>
 
               {/* Search - hidden on small screens */}
-              <Link
-                href="/restaurants"
-                className="hidden md:flex flex-1 max-w-md items-center gap-2.5 bg-[#f5f5f5] rounded-xl px-4 py-2.5 text-sm text-gray-400 hover:bg-gray-100 transition"
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const q = dashboardSearch.trim();
+                  router.push(
+                    q
+                      ? `/restaurants?q=${encodeURIComponent(q)}`
+                      : "/restaurants",
+                  );
+                }}
+                className="hidden md:flex flex-1 max-w-md items-center gap-2.5 bg-[#f5f5f5] rounded-xl px-4 py-2.5 hover:bg-gray-100 transition"
               >
                 <span className="text-lg text-[#ff6b35]">🔍</span>
-                <span>Tìm món, nhà hàng...</span>
-              </Link>
+                <input
+                  type="text"
+                  value={dashboardSearch}
+                  onChange={(e) => setDashboardSearch(e.target.value)}
+                  placeholder="Tìm món, nhà hàng..."
+                  className="flex-1 bg-transparent border-none outline-none text-sm text-gray-700 placeholder:text-gray-400"
+                />
+              </form>
 
               {/* Right side */}
               <div className="flex items-center gap-3 sm:gap-4">
@@ -213,19 +246,15 @@ export default function DashboardPage() {
                   <p className="text-white/70 text-sm mt-2">
                     Khám phá nhà hàng và đặt món yêu thích ngay hôm nay
                   </p>
-                  <p className="text-white/90 text-xs mt-2">
+                  <div className="mt-2">
                     {hasLocation && location ? (
-                      <>
-                        📍 {location.address || "Vị trí hiện tại"}{" "}
-                        <span className="font-mono text-white/60">
-                          ({Number(location.latitude).toFixed(6)},{" "}
-                          {Number(location.longitude).toFixed(6)})
-                        </span>
-                      </>
+                      <CurrentLocationChip tone="light" showCoords />
                     ) : (
-                      "📍 Đang lấy vị trí của bạn..."
+                      <p className="text-white/90 text-xs">
+                        📍 Đang lấy vị trí của bạn...
+                      </p>
                     )}
-                  </p>
+                  </div>
                   <Link
                     href="/restaurants"
                     className="inline-block mt-4 bg-white text-[#ff6b35] px-6 py-2.5 rounded-full font-semibold text-sm hover:bg-gray-100 transition shadow-md"
@@ -261,6 +290,62 @@ export default function DashboardPage() {
 
           {/* ===== MERCHANTS ===== */}
           <div className="grid gap-6">
+            {/* Favourite merchants */}
+            {favoriteMerchants.length > 0 && (
+              <div>
+                <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-bold text-[#1a1a2e]">
+                      ❤️ Nhà hàng yêu thích
+                    </h2>
+                    <Link
+                      href="/restaurants"
+                      className="text-sm font-semibold text-[#ff6b35] hover:underline"
+                    >
+                      Xem tất cả →
+                    </Link>
+                  </div>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {favoriteMerchants.slice(0, 4).map((m, idx) => (
+                      <div
+                        key={m.id}
+                        onClick={() => router.push(`/restaurants/${m.id}`)}
+                        className="bg-white border border-orange-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
+                      >
+                        <div
+                          className={`h-[140px] sm:h-[160px] relative ${m.coverImageUrl ? "" : `bg-gradient-to-br ${gradientPalette[idx % gradientPalette.length]}`}`}
+                          style={
+                            m.coverImageUrl
+                              ? {
+                                  backgroundImage: `url(${m.coverImageUrl})`,
+                                  backgroundSize: "cover",
+                                  backgroundPosition: "center",
+                                }
+                              : undefined
+                          }
+                        >
+                          <span className="absolute top-3 left-3 bg-black/70 text-white px-2.5 py-0.5 rounded-full text-[10px] font-semibold">
+                            ⭐ {Number(m.rating || 0).toFixed(1)}
+                          </span>
+                          <span className="absolute bottom-3 right-3 bg-black/70 text-white px-2.5 py-1 rounded-full text-xs">
+                            🚚 {feeFor(m).toLocaleString("vi-VN")}đ
+                          </span>
+                        </div>
+                        <div className="p-3">
+                          <p className="font-semibold text-gray-800 truncate">
+                            {m.name}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate mt-0.5">
+                            {m.address}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Featured Merchants */}
             <div>
               <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6">

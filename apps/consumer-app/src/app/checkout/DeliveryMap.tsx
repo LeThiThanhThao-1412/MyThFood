@@ -1,6 +1,18 @@
 "use client";
 
-import MapView from "@mythfood/frontend-shared/components/MapView";
+// MapView phải nạp client-only: MapLibre cần WebGL + `window`, import tĩnh sẽ
+// làm vỡ SSR của trang dùng component này.
+import dynamic from "next/dynamic";
+
+const MapView = dynamic(
+  () => import("@mythfood/frontend-shared/components/MapView"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[300px] w-full animate-pulse rounded-lg bg-gray-100" />
+    ),
+  },
+);
 
 interface DeliveryMapProps {
   lat: number;

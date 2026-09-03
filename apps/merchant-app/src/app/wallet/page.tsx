@@ -26,7 +26,6 @@ export default function MerchantWalletPage() {
 
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawStatus, setWithdrawStatus] = useState("");
-  const [autoWithdraw, setAutoWithdraw] = useState(true);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -97,22 +96,11 @@ export default function MerchantWalletPage() {
           <p className="text-3xl font-extrabold mt-1">
             {walletBalance.toLocaleString("vi-VN")}₫
           </p>
-          <div className="mt-4 pt-4 border-t border-white/20 flex justify-between">
-            <div>
-              <p className="text-xs text-white/60">Doanh thu hôm nay</p>
-              <p className="text-lg font-bold">
-                +{todayRevenue.toLocaleString("vi-VN")}₫
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="text-xs text-white/60">Tự động rút</p>
-              <button
-                onClick={() => setAutoWithdraw(!autoWithdraw)}
-                className={`text-sm font-bold ${autoWithdraw ? "text-[#ffe066]" : "text-white/50"}`}
-              >
-                {autoWithdraw ? "🟢 BẬT" : "⚫ TẮT"}
-              </button>
-            </div>
+          <div className="mt-4 pt-4 border-t border-white/20">
+            <p className="text-xs text-white/60">Doanh thu hôm nay</p>
+            <p className="text-lg font-bold">
+              +{todayRevenue.toLocaleString("vi-VN")}₫
+            </p>
           </div>
         </div>
 
@@ -131,10 +119,6 @@ export default function MerchantWalletPage() {
             </p>
             <p>
               🏢 <strong>Nền tảng:</strong> 25% tiền món + 20% phí ship
-            </p>
-            <p>
-              ⏰ Thanh toán mỗi ngày lúc <strong>23:00</strong> (nếu bật tự
-              động)
             </p>
           </div>
         </div>
@@ -187,21 +171,6 @@ export default function MerchantWalletPage() {
               {withdrawStatus}
             </p>
           )}
-        </div>
-
-        {/* Auto-withdraw config */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-[#1a1a2e] mb-3">⏰ Tự động rút</h3>
-          <p className="text-sm text-gray-500 mb-3">
-            Khi bật, hệ thống sẽ tự động rút toàn bộ số dư về tài khoản ngân
-            hàng vào <strong>23:00 mỗi ngày</strong> nếu số dư ≥ 100.000đ.
-          </p>
-          <button
-            onClick={() => setAutoWithdraw(!autoWithdraw)}
-            className={`w-full py-3 rounded-xl font-semibold text-sm transition ${autoWithdraw ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500"}`}
-          >
-            {autoWithdraw ? "🟢 Đang bật tự động rút" : "⚫ Bật tự động rút"}
-          </button>
         </div>
 
         {/* Transaction History */}

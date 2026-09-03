@@ -30,7 +30,12 @@ import {
   type Order,
   type Promotion,
 } from "@mythfood/api-client";
-import { useCartStore, useAuthStore } from "@mythfood/frontend-shared";
+import {
+  useCartStore,
+  useAuthStore,
+  searchAddress,
+  reverseGeocodeAddress,
+} from "@mythfood/frontend-shared";
 import PromoCodeDrawer from "@/components/PromoCodeDrawer";
 import { calculateShippingFee, type ShippingFeeInfo } from "./shipping-utils";
 
@@ -40,9 +45,16 @@ const stripePromise = loadStripe(
 );
 
 // ─── Dynamic Map ─────────────────────────────────────────────
+// MapView phải nạp client-only (MapLibre cần WebGL + `window`). `loading` giữ đúng
+// chiều cao khung bản đồ để trang không bị nhảy layout lúc chunk đang tải.
 const CheckoutMap = dynamic(
   () => import("@mythfood/frontend-shared/components/MapView"),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[260px] w-full animate-pulse rounded-lg bg-gray-100" />
+    ),
+  },
 );
 
 // ─── Types / Constants ──────────────────────────────────────
@@ -328,23 +340,16 @@ function CheckoutContent() {
 
   const fetchSuggestions = useCallback((query: string) => {
     if (suggestionTimeout.current) clearTimeout(suggestionTimeout.current);
-    if (query.length < 4) {
+    if (query.length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
     suggestionTimeout.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&addressdetails=1&countrycodes=VN`,
-        );
-        const data = await res.json();
-        setSuggestions(data);
-        setShowSuggestions(data.length > 0);
-      } catch {
-        setSuggestions([]);
-      }
-    }, 400);
+      const data = await searchAddress(query);
+      setSuggestions(data);
+      setShowSuggestions(data.length > 0);
+    }, 350);
   }, []);
 
   const detectMyLocation = () => {
@@ -359,14 +364,7 @@ function CheckoutContent() {
         setLat(latitude);
         setLng(longitude);
         try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1&accept-language=vi`,
-          );
-          const data = await res.json();
-          setCustomAddress(
-            data.display_name ||
-              `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-          );
+          setCustomAddress(await reverseGeocodeAddress(latitude, longitude));
         } catch {
           setCustomAddress(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
         }
@@ -968,7 +966,7 @@ function CheckoutContent() {
                     )}
                   </div>
                   <p className="text-xs text-gray-400 mb-3">
-                    👆 Kéo thả điểm trên bản đồ để điều chỉnh
+                    👆 Chạm vào bản đồ hoặc kéo thả điểm 📍 để điều chỉnh
                   </p>
                   <div className="rounded-2xl overflow-hidden border border-gray-100">
                     <CheckoutMap

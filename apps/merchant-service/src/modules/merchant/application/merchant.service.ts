@@ -15,6 +15,9 @@ import {
   UpdateMerchantDto,
   UpdateRatingDto,
   MerchantQueryDto,
+  MenuSearchQueryDto,
+  MatchedMenuItemDto,
+  MenuSearchItemDto,
 } from "./dtos/merchant.dto";
 import { CreateMenuItemDto, UpdateMenuItemDto } from "./dtos/menu.dto";
 import {
@@ -104,14 +107,101 @@ export class MerchantService {
 
   async findAll(
     query: MerchantQueryDto,
-  ): Promise<{ items: Merchant[]; total: number }> {
-    return this.merchantRepository.findAll({
+  ): Promise<{
+    items: Merchant[];
+    total: number;
+    matchedMenuItems: Map<string, MatchedMenuItemDto[]>;
+  }> {
+    const result = await this.merchantRepository.findAll({
       status: query.status,
       search: query.search,
       category: query.category,
+      categories: query.categories,
+      minRating: query.minRating,
+      openNow: query.openNow,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
       skip: query.skip,
       take: query.take,
     });
+
+    // When searching, tell the client which dishes matched (feature: search by dish)
+    const matchedMenuItems = new Map<string, MatchedMenuItemDto[]>();
+    if (query.search && result.items.length > 0) {
+      const grouped = await this.merchantRepository.findMatchedMenuItems(
+        result.items.map((m) => m.id.toString()),
+        query.search,
+      );
+      for (const [merchantId, rows] of grouped) {
+        matchedMenuItems.set(
+          merchantId,
+          rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            price: Number(row.price),
+            imageUrl: row.image_url,
+          })),
+        );
+      }
+    }
+
+    return { items: result.items, total: result.total, matchedMenuItems };
+  }
+
+  /** Global dish search across all APPROVED merchants. */
+  async searchMenuItems(
+    dto: MenuSearchQueryDto,
+  ): Promise<{ items: MenuSearchItemDto[]; total: number }> {
+    const { rows, total } = await this.merchantRepository.searchMenuItems({
+      q: dto.q,
+      category: dto.category,
+      skip: dto.skip ?? 0,
+      take: dto.take ?? 20,
+    });
+
+    if (rows.length === 0) {
+      return { items: [], total };
+    }
+
+    const merchantIds = Array.from(new Set(rows.map((r) => r.merchantId)));
+    const merchants = await this.merchantRepository.findManyByIds(merchantIds);
+    const merchantById = new Map(merchants.map((m) => [m.id.toString(), m]));
+
+    const items: MenuSearchItemDto[] = [];
+    for (const row of rows) {
+      const merchant = merchantById.get(row.merchantId);
+      if (!merchant) {
+        continue;
+      }
+      const menuItem = merchant.menuItemList.find(
+        (mi) => mi.id.toString() === row.menuItemId,
+      );
+      if (!menuItem) {
+        continue;
+      }
+      items.push({
+        id: menuItem.id.toString(),
+        merchantId: row.merchantId,
+        name: menuItem.itemName,
+        description: menuItem.itemDescription,
+        price: menuItem.itemPrice,
+        imageUrl: menuItem.itemImageUrl,
+        category: menuItem.itemCategory,
+        isAvailable: menuItem.available,
+        merchant: {
+          id: merchant.id.toString(),
+          name: merchant.merchantName,
+          rating: merchant.merchantRating,
+          address: merchant.merchantAddress,
+          latitude: merchant.merchantLatitude,
+          longitude: merchant.merchantLongitude,
+          isOpen: merchant.merchantIsOpen,
+          isOpenNow: merchant.isOpen(),
+        },
+      });
+    }
+
+    return { items, total };
   }
 
   async softDelete(id: string): Promise<void> {

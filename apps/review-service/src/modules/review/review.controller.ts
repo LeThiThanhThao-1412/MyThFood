@@ -5,6 +5,7 @@ import {
   Param,
   Query,
   Body,
+  Req,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -58,10 +59,14 @@ export class ReviewController {
 
   @Post(":id/reply")
   @Roles("MERCHANT_OWNER", "ADMIN")
-  async reply(@Param("id") id: string, @Body() dto: ReplyReviewDto) {
+  async reply(
+    @Param("id") id: string,
+    @Body() dto: ReplyReviewDto,
+    @Req() req: any,
+  ) {
     return {
       statusCode: HttpStatus.OK,
-      data: await this.reviewService.reply(id, dto),
+      data: await this.reviewService.reply(id, dto, req?.user),
     };
   }
 }

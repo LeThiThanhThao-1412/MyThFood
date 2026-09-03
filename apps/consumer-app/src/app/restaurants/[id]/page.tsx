@@ -4,15 +4,22 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { merchantApi, reviewApi, promotionApi } from "@mythfood/api-client";
 import type { SelectedOptionGroup } from "@mythfood/api-client";
-import { useAuthStore, useCartStore } from "@mythfood/frontend-shared";
+import {
+  useAuthStore,
+  useCartStore,
+  useFavoritesStore,
+} from "@mythfood/frontend-shared";
 import MenuItemOptionDrawer from "@/components/MenuItemOptionDrawer";
 import CartDrawer from "@/components/CartDrawer";
+import { resolveConsumerId } from "@/lib/consumer";
 
 export default function RestaurantDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { isAuthenticated, user, clearAuth } = useAuthStore();
   const { addItem, items } = useCartStore();
+  const favorites = useFavoritesStore();
+  const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [merchant, setMerchant] = useState<any>(null);
   const [menu, setMenu] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,6 +51,32 @@ export default function RestaurantDetailPage() {
     }
     loadReviewsPromos();
   }, [id]);
+
+  // Load the consumer's favourites so the ❤️ state is correct
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    (async () => {
+      const cid = await resolveConsumerId(user.id);
+      if (cid) await favorites.load(cid);
+    })();
+  }, [isAuthenticated, user, favorites.load]);
+
+  const isFav = favorites.isFavorite(id as string);
+
+  async function handleToggleFavorite() {
+    if (!isAuthenticated || !user) {
+      router.push("/login");
+      return;
+    }
+    setFavoriteBusy(true);
+    try {
+      const cid = await resolveConsumerId(user.id);
+      if (!cid) return;
+      await favorites.toggle(cid, id as string);
+    } finally {
+      setFavoriteBusy(false);
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -286,9 +319,23 @@ export default function RestaurantDetailPage() {
 
           <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
             <div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold mb-2">
-                {merchant.name}
-              </h2>
+              <div className="flex items-start gap-3">
+                <h2 className="text-2xl sm:text-3xl font-extrabold mb-2">
+                  {merchant.name}
+                </h2>
+                <button
+                  type="button"
+                  onClick={handleToggleFavorite}
+                  disabled={favoriteBusy}
+                  aria-label={isFav ? "Bỏ yêu thích" : "Yêu thích"}
+                  title={isFav ? "Bỏ yêu thích" : "Yêu thích nhà hàng"}
+                  className={`text-2xl transition-transform hover:scale-125 disabled:opacity-50 ${
+                    isFav ? "" : "grayscale opacity-70"
+                  }`}
+                >
+                  {isFav ? "❤️" : "🤍"}
+                </button>
+              </div>
               <div className="flex flex-wrap items-center gap-3 text-sm text-white/80">
                 <span className="bg-white/20 px-2.5 py-0.5 rounded-full font-semibold">
                   ⭐ {Number(merchant.rating || 0).toFixed(1)}

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { orderApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import { reorderOrder } from "@/lib/reorder";
 
 const STATUS_LABELS: Record<
   string,
@@ -55,6 +56,8 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("ALL");
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [reorderMsg, setReorderMsg] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -82,6 +85,26 @@ export default function OrdersPage() {
             return !["DELIVERED", "CANCELLED", "REJECTED"].includes(o.status);
           return o.status === filter;
         });
+
+  async function handleReorder(o: any) {
+    setReorderingId(o.id);
+    setReorderMsg("");
+    try {
+      const result = await reorderOrder(o);
+      if (result.ok) {
+        setReorderMsg(
+          result.skipped > 0
+            ? `✅ Đã thêm ${result.added} món (bỏ qua ${result.skipped} món hết bán)`
+            : `✅ Đã thêm ${result.added} món vào giỏ`,
+        );
+        router.push("/cart");
+      } else {
+        setReorderMsg(result.error || "Không có món nào còn bán để đặt lại");
+      }
+    } finally {
+      setReorderingId(null);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#f0f2f5] max-w-[420px] mx-auto relative pb-24">
@@ -150,6 +173,13 @@ export default function OrdersPage() {
           </div>
         ) : (
           <div className="space-y-3">
+            {reorderMsg && (
+              <p
+                className={`text-sm font-medium text-center bg-white rounded-xl px-3 py-2 shadow-sm ${reorderMsg.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
+              >
+                {reorderMsg}
+              </p>
+            )}
             {filtered.map((o: any) => {
               const s = STATUS_LABELS[o.status] || STATUS_LABELS.PENDING;
               return (
@@ -185,6 +215,17 @@ export default function OrdersPage() {
                       <span className="truncate">{o.deliveryAddress}</span>
                     </div>
                   )}
+                  <button
+                    type="button"
+                    disabled={reorderingId === o.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleReorder(o);
+                    }}
+                    className="mt-3 text-xs font-semibold text-[#ff6b35] bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                  >
+                    {reorderingId === o.id ? "Đang thêm..." : "🔄 Đặt lại"}
+                  </button>
                 </div>
               );
             })}

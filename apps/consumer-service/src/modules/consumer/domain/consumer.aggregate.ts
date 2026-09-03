@@ -19,6 +19,7 @@ export interface ConsumerProps {
   gender: Gender | null;
   addresses: Address[];
   paymentMethods: PaymentMethod[];
+  favoriteMerchantIds: string[];
 }
 
 export class Consumer extends AggregateRoot<ConsumerId> {
@@ -29,6 +30,7 @@ export class Consumer extends AggregateRoot<ConsumerId> {
   private gender: Gender | null;
   private addresses: Address[];
   private paymentMethods: PaymentMethod[];
+  private favoriteMerchantIds: string[];
 
   private constructor(id: ConsumerId, props: ConsumerProps) {
     super(id);
@@ -39,6 +41,7 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     this.gender = props.gender;
     this.addresses = props.addresses;
     this.paymentMethods = props.paymentMethods;
+    this.favoriteMerchantIds = props.favoriteMerchantIds ?? [];
   }
 
   public static create(props: {
@@ -65,6 +68,7 @@ export class Consumer extends AggregateRoot<ConsumerId> {
       gender: props.gender ?? null,
       addresses: [],
       paymentMethods: [],
+      favoriteMerchantIds: [],
     });
 
     consumer.addDomainEvent(
@@ -246,6 +250,34 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     return Result.ok(undefined);
   }
 
+  // ===================== Favorites =====================
+
+  public isFavorite(merchantId: string): boolean {
+    return this.favoriteMerchantIds.includes(merchantId);
+  }
+
+  /** Returns true when the merchant was added, false when it was removed. */
+  public toggleFavorite(merchantId: string): Result<boolean, DomainError> {
+    if (!merchantId || merchantId.trim().length === 0) {
+      return Result.fail(
+        new BusinessRuleViolationError("Merchant ID is required"),
+      );
+    }
+    const index = this.favoriteMerchantIds.indexOf(merchantId);
+    let added: boolean;
+    if (index === -1) {
+      this.favoriteMerchantIds = [...this.favoriteMerchantIds, merchantId];
+      added = true;
+    } else {
+      this.favoriteMerchantIds = this.favoriteMerchantIds.filter(
+        (id) => id !== merchantId,
+      );
+      added = false;
+    }
+    this.markUpdated();
+    return Result.ok(added);
+  }
+
   get userIdValue(): string {
     return this.userId;
   }
@@ -266,6 +298,12 @@ export class Consumer extends AggregateRoot<ConsumerId> {
   }
   get paymentMethodList(): PaymentMethod[] {
     return [...this.paymentMethods];
+  }
+  get favoriteMerchantIdList(): string[] {
+    return [...this.favoriteMerchantIds];
+  }
+  get favoriteCount(): number {
+    return this.favoriteMerchantIds.length;
   }
   get defaultAddress(): Address | null {
     return this.addresses.find((a) => a.isDefault) ?? null;

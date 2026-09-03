@@ -12,8 +12,14 @@ import {
   formatDistance,
   canAccessApp,
   NotificationBell,
+  reverseGeocodeAddress,
 } from "@mythfood/frontend-shared";
 import DeliveryDrawer from "@/components/DeliveryDrawer";
+import DeliveryActionButtons from "@/components/DeliveryActionButtons";
+import {
+  acceptOrder as acceptDispatchOrder,
+  friendlyError,
+} from "@/lib/delivery-flow";
 
 // ─── Helpers ────────────────────────────────────────────────
 function toNum(v: unknown): number {
@@ -54,12 +60,9 @@ export default function DriverDashboardPage() {
       return;
     }
     let cancelled = false;
-    fetch(
-      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=vi`,
-    )
-      .then((r) => r.json())
-      .then((d) => {
-        if (!cancelled && d?.display_name) setDriverAddress(d.display_name);
+    reverseGeocodeAddress(lat, lng)
+      .then((address) => {
+        if (!cancelled) setDriverAddress(address);
       })
       .catch(() => {});
     return () => {
@@ -241,11 +244,20 @@ export default function DriverDashboardPage() {
         }
       }
 
-      await orderApi.outForDelivery(orderId, { driverId: driver.id });
+      await acceptDispatchOrder(order, driver.id);
+      // Chuyển ngay đơn sang danh sách “Đơn đang giao” để hiển thị nút trạng thái kế tiếp
+      if (order) {
+        setActiveOrders((prev) => [
+          order,
+          ...prev.filter((x) => x.id !== order.id),
+        ]);
+      }
       setAvailableOrders(availableOrders.filter((o) => o.id !== orderId));
-      setSelectedOrderId(orderId);
-    } catch {
-      /* ignore */
+      // Mở trang giao hàng theo đúng yêu cầu: bấm nhận đơn → /delivery/[mã đơn]
+      router.push(`/delivery/${orderId}`);
+      setDriver(((await driverApi.getById(driver.id)) as any).data ?? driver);
+    } catch (err: any) {
+      alert(friendlyError(err, "Không nhận được đơn này. Vui lòng thử lại."));
     } finally {
       setCodCheckLoading(false);
     }
@@ -562,21 +574,11 @@ export default function DriverDashboardPage() {
                         💰 {toNum(o.totalAmount).toLocaleString("vi-VN")}₫
                       </p>
                     </div>
-                    <div className="flex gap-2 mt-3">
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            await orderApi.delivered(o.id);
-                            setActiveOrders(
-                              activeOrders.filter((x) => x.id !== o.id),
-                            );
-                          } catch {}
-                        }}
-                        className="flex-1 bg-[#2ecc71] text-white py-2 rounded-xl text-sm font-semibold hover:bg-green-600 transition"
-                      >
-                        ✅ Đã giao
-                      </button>
+                    <div className="mt-3">
+                      <DeliveryActionButtons
+                        orderId={o.id}
+                        onChanged={() => setSelectedOrderId(o.id)}
+                      />
                     </div>
                   </div>
                 ))}

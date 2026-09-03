@@ -16,6 +16,8 @@ const WALLET_SERVICE_URL =
   process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
 const ORDER_SERVICE_URL =
   process.env.ORDER_SERVICE_URL || "http://order-service:3004";
+const DRIVER_SERVICE_URL =
+  process.env.DRIVER_SERVICE_URL || "http://driver-service:3007";
 const MIN_COD_BALANCE = 2_000_000;
 
 @Injectable()
@@ -385,10 +387,40 @@ export class DispatchService {
     const dispatch = await this.dispatchRepo.findByIdOrFail(
       DispatchId.from(id),
     );
+
+    // Lấy GPS hiện tại của tài xế từ driver-service (server-to-server)
+    let driverLatitude: number | null = null;
+    let driverLongitude: number | null = null;
+    const driverId = dispatch.dispatchDriverId;
+    if (driverId) {
+      try {
+        const serviceKey =
+          process.env.SERVICE_API_KEY || "mythfood-service-key";
+        const res = await fetch(
+          `${DRIVER_SERVICE_URL}/api/v1/drivers/${driverId}`,
+          { headers: { "x-service-key": serviceKey } },
+        );
+        if (res.ok) {
+          const json: any = await res.json();
+          const d = json?.data ?? json;
+          const lat = Number(d?.currentLatitude ?? d?.latitude);
+          const lng = Number(d?.currentLongitude ?? d?.longitude);
+          if (!Number.isNaN(lat)) driverLatitude = lat;
+          if (!Number.isNaN(lng)) driverLongitude = lng;
+        }
+      } catch {
+        /* non-fatal */
+      }
+    }
+
     return {
       dispatchId: dispatch.id.value,
       status: dispatch.dispatchStatus,
-      driverId: dispatch.dispatchDriverId,
+      driverId,
+      driverLatitude,
+      driverLongitude,
+      merchantLatitude: dispatch.dispatchMerchantLatitude,
+      merchantLongitude: dispatch.dispatchMerchantLongitude,
       deliveryLatitude: dispatch.dispatchDeliveryLatitude,
       deliveryLongitude: dispatch.dispatchDeliveryLongitude,
     };

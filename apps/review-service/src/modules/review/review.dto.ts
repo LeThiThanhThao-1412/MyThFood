@@ -31,6 +31,11 @@ export class CreateReviewDto {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  images?: string[];
 }
 
 export class ReplyReviewDto {

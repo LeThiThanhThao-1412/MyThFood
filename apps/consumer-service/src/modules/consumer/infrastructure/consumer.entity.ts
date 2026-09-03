@@ -33,6 +33,9 @@ export class ConsumerEntity {
   @Column({ type: "jsonb", default: "[]" })
   payment_methods!: string;
 
+  @Column({ type: "jsonb", default: "[]" })
+  favorite_merchant_ids!: string;
+
   @CreateDateColumn({ type: "timestamptz" })
   created_at!: Date;
 
