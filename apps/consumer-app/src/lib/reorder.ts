@@ -27,7 +27,13 @@ export async function reorderOrder(order: any): Promise<ReorderResult> {
   const cart = useCartStore.getState();
   const merchantId = order?.merchantId;
   if (!merchantId) {
-    return { ok: false, added: 0, skipped: 0, merchantName: "", error: "Đơn không có merchantId" };
+    return {
+      ok: false,
+      added: 0,
+      skipped: 0,
+      merchantName: "",
+      error: "Đơn không có merchantId",
+    };
   }
 
   try {

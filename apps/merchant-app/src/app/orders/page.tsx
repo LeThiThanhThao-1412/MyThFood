@@ -153,9 +153,7 @@ export default function MerchantOrdersPage() {
     };
     const onDelivered = (data: any) => {
       setOrders((prev) =>
-        prev.map((o) =>
-          o.id === data.id ? { ...o, status: "DELIVERED" } : o,
-        ),
+        prev.map((o) => (o.id === data.id ? { ...o, status: "DELIVERED" } : o)),
       );
     };
     const onRejected = (data: any) => {
@@ -213,8 +211,7 @@ export default function MerchantOrdersPage() {
 
   async function handlePrintInvoice(orderId: string) {
     try {
-      const base =
-        process.env.NEXT_PUBLIC_ORDER_API || "http://localhost:3004";
+      const base = process.env.NEXT_PUBLIC_ORDER_API || "http://localhost:3004";
       const res = await fetch(`${base}/api/v1/orders/${orderId}/invoice`, {
         headers: { Authorization: `Bearer ${token}` },
       });

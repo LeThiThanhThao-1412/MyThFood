@@ -178,12 +178,10 @@ export default function OrderDetailDrawer({
   async function handlePrintInvoice() {
     if (!order) return;
     try {
-      const base =
-        process.env.NEXT_PUBLIC_ORDER_API || "http://localhost:3004";
-      const res = await fetch(
-        `${base}/api/v1/orders/${order.id}/invoice`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      const base = process.env.NEXT_PUBLIC_ORDER_API || "http://localhost:3004";
+      const res = await fetch(`${base}/api/v1/orders/${order.id}/invoice`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!res.ok) {
         if (res.status === 403) {
           alert("Bạn không có quyền in hóa đơn này");
@@ -196,7 +194,9 @@ export default function OrderDetailDrawer({
       const url = URL.createObjectURL(blob);
       const w = window.open(url, "_blank");
       if (!w) {
-        alert("Trình duyệt đã chặn popup. Vui lòng cho phép popup để xem hóa đơn.");
+        alert(
+          "Trình duyệt đã chặn popup. Vui lòng cho phép popup để xem hóa đơn.",
+        );
         return;
       }
     } catch (err: any) {

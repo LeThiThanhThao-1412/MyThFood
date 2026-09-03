@@ -105,9 +105,7 @@ export class MerchantService {
     return this.merchantRepository.findByIdOrFail(MerchantId.from(id));
   }
 
-  async findAll(
-    query: MerchantQueryDto,
-  ): Promise<{
+  async findAll(query: MerchantQueryDto): Promise<{
     items: Merchant[];
     total: number;
     matchedMenuItems: Map<string, MatchedMenuItemDto[]>;

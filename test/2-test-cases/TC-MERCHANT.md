@@ -217,7 +217,6 @@
 | 19  | `GET`    | `/merchants/:id/capacity/status`        | Get capacity status       |
 | 20  | `GET`    | `/merchants/menu/search`                | Global dish search        |
 
-
 ---
 
 ## 3.8 Discovery: Filter / Sort / Search (35 cases)
@@ -229,70 +228,68 @@
 
 ### Filter by rating
 
-| ID            | Case                   | Request                    | Expected                            | Actual  |
-| ------------- | ---------------------- | -------------------------- | ----------------------------------- | ------- |
-| TC-MERCH-054  | Rating threshold hit   | `?minRating=3.5`           | Only `Mỳ Kiin` (4.0), total=1       | ✅ PASS |
-| TC-MERCH-055  | Threshold excludes all | `?minRating=4.5`           | total=0                             | ✅ PASS |
-| TC-MERCH-056  | Boundary `0` = no-op   | `?minRating=0`             | All merchants (filter skipped)      | ✅ PASS |
-| TC-MERCH-057  | Above max → rejected   | `?minRating=6`             | `400` `minRating must not be greater than 5` | ✅ PASS |
+| ID           | Case                   | Request          | Expected                                     | Actual  |
+| ------------ | ---------------------- | ---------------- | -------------------------------------------- | ------- |
+| TC-MERCH-054 | Rating threshold hit   | `?minRating=3.5` | Only `Mỳ Kiin` (4.0), total=1                | ✅ PASS |
+| TC-MERCH-055 | Threshold excludes all | `?minRating=4.5` | total=0                                      | ✅ PASS |
+| TC-MERCH-056 | Boundary `0` = no-op   | `?minRating=0`   | All merchants (filter skipped)               | ✅ PASS |
+| TC-MERCH-057 | Above max → rejected   | `?minRating=6`   | `400` `minRating must not be greater than 5` | ✅ PASS |
 
 ### Filter open-now
 
-| ID            | Case                          | Request           | Expected                                                         | Actual  |
-| ------------- | ----------------------------- | ----------------- | ---------------------------------------------------------------- | ------- |
-| TC-MERCH-058  | Only currently-open merchants | `?openNow=true`   | Only `Phở` (overnight window still open); `Mỳ Kiin` excluded (closed at 10:05) | ✅ PASS |
-| TC-MERCH-059  | **Overnight window** support  | `?openNow=true`   | Merchant with `08:00 → 04:00` counted as open                    | ✅ PASS |
-| TC-MERCH-060  | `openNow=false` = no-op       | `?openNow=false`  | All merchants                                                    | ✅ PASS |
-| TC-MERCH-061  | Consistency with `isOpenNow`  | `?openNow=true`   | Every returned item has `isOpenNow: true` (SQL mirrors `Merchant.isOpen()`) | ✅ PASS |
+| ID           | Case                          | Request          | Expected                                                                       | Actual  |
+| ------------ | ----------------------------- | ---------------- | ------------------------------------------------------------------------------ | ------- |
+| TC-MERCH-058 | Only currently-open merchants | `?openNow=true`  | Only `Phở` (overnight window still open); `Mỳ Kiin` excluded (closed at 10:05) | ✅ PASS |
+| TC-MERCH-059 | **Overnight window** support  | `?openNow=true`  | Merchant with `08:00 → 04:00` counted as open                                  | ✅ PASS |
+| TC-MERCH-060 | `openNow=false` = no-op       | `?openNow=false` | All merchants                                                                  | ✅ PASS |
+| TC-MERCH-061 | Consistency with `isOpenNow`  | `?openNow=true`  | Every returned item has `isOpenNow: true` (SQL mirrors `Merchant.isOpen()`)    | ✅ PASS |
 
 ### Sorting
 
-| ID            | Case                | Request                             | Expected                        | Actual  |
-| ------------- | ------------------- | ----------------------------------- | ------------------------------- | ------- |
-| TC-MERCH-062  | Rating DESC default | `?sortBy=rating`                    | `Mỳ Kiin(4)` → `Phở(3)`         | ✅ PASS |
-| TC-MERCH-063  | Rating ASC override | `?sortBy=rating&sortOrder=ASC`      | `Phở(3)` → `Mỳ Kiin(4)`         | ✅ PASS |
-| TC-MERCH-064  | Sort by popularity  | `?sortBy=popular`                   | Ordered by `total_orders` DESC  | ✅ PASS |
-| TC-MERCH-065  | Invalid sort key    | `?sortBy=hack`                      | `400` listing allowed values    | ✅ PASS |
-| TC-MERCH-066  | **SQL injection**   | `?sortBy=rating%3BDROP+TABLE`       | `400` — enum whitelist blocks it | ✅ PASS |
-| TC-MERCH-067  | Invalid sort order  | `?sortBy=rating&sortOrder=SIDEWAYS` | `400`                           | ✅ PASS |
-
+| ID           | Case                | Request                             | Expected                         | Actual  |
+| ------------ | ------------------- | ----------------------------------- | -------------------------------- | ------- |
+| TC-MERCH-062 | Rating DESC default | `?sortBy=rating`                    | `Mỳ Kiin(4)` → `Phở(3)`          | ✅ PASS |
+| TC-MERCH-063 | Rating ASC override | `?sortBy=rating&sortOrder=ASC`      | `Phở(3)` → `Mỳ Kiin(4)`          | ✅ PASS |
+| TC-MERCH-064 | Sort by popularity  | `?sortBy=popular`                   | Ordered by `total_orders` DESC   | ✅ PASS |
+| TC-MERCH-065 | Invalid sort key    | `?sortBy=hack`                      | `400` listing allowed values     | ✅ PASS |
+| TC-MERCH-066 | **SQL injection**   | `?sortBy=rating%3BDROP+TABLE`       | `400` — enum whitelist blocks it | ✅ PASS |
+| TC-MERCH-067 | Invalid sort order  | `?sortBy=rating&sortOrder=SIDEWAYS` | `400`                            | ✅ PASS |
 
 ### Filter by category
 
-| ID            | Case                              | Request                    | Expected                        | Actual  |
-| ------------- | --------------------------------- | -------------------------- | ------------------------------- | ------- |
-| TC-MERCH-068  | Single category                   | `?categories=pho`          | Only `Phở`                      | ✅ PASS |
-| TC-MERCH-069  | Multi-category (OR)               | `?categories=pho,rice`     | Both merchants                  | ✅ PASS |
-| TC-MERCH-070  | Matches secondary categories      | `?categories=drink`        | Both (both have `drink` secondary) | ✅ PASS |
-| TC-MERCH-071  | Case-insensitive                  | `?categories=DRINK`        | Same result as `drink`          | ✅ PASS |
-| TC-MERCH-072  | No match                          | `?categories=sushi`        | total=0                         | ✅ PASS |
-| TC-MERCH-073  | **Regression:** partial key NOT match | `?category=ice`        | total=0 (must not match `rice`) | ✅ PASS |
-| TC-MERCH-074  | **Regression:** substring of secondary | `?category=ac`        | total=0 (must not match `snack`) | ✅ PASS |
-| TC-MERCH-075  | Legacy single param still works   | `?category=rice`           | Only `Mỳ Kiin`                  | ✅ PASS |
+| ID           | Case                                   | Request                | Expected                           | Actual  |
+| ------------ | -------------------------------------- | ---------------------- | ---------------------------------- | ------- |
+| TC-MERCH-068 | Single category                        | `?categories=pho`      | Only `Phở`                         | ✅ PASS |
+| TC-MERCH-069 | Multi-category (OR)                    | `?categories=pho,rice` | Both merchants                     | ✅ PASS |
+| TC-MERCH-070 | Matches secondary categories           | `?categories=drink`    | Both (both have `drink` secondary) | ✅ PASS |
+| TC-MERCH-071 | Case-insensitive                       | `?categories=DRINK`    | Same result as `drink`             | ✅ PASS |
+| TC-MERCH-072 | No match                               | `?categories=sushi`    | total=0                            | ✅ PASS |
+| TC-MERCH-073 | **Regression:** partial key NOT match  | `?category=ice`        | total=0 (must not match `rice`)    | ✅ PASS |
+| TC-MERCH-074 | **Regression:** substring of secondary | `?category=ac`         | total=0 (must not match `snack`)   | ✅ PASS |
+| TC-MERCH-075 | Legacy single param still works        | `?category=rice`       | Only `Mỳ Kiin`                     | ✅ PASS |
 
 ### Search by dish
 
-| ID            | Case                                   | Request                             | Expected                                                     | Actual  |
-| ------------- | -------------------------------------- | ----------------------------------- | ------------------------------------------------------------ | ------- |
-| TC-MERCH-076  | Merchant found **via dish name only**  | `?search=cơm`                       | `Mỳ Kiin` returned (name has no "cơm"); `matchedMenuItems=[cơm tấm]` | ✅ PASS |
-| TC-MERCH-077  | `matchedMenuItems` absent without search | `?take=1`                         | Field not present                                            | ✅ PASS |
-| TC-MERCH-078  | No result                              | `?search=zzz`                       | total=0                                                      | ✅ PASS |
-| TC-MERCH-079  | Accent-insensitive (`unaccent`)        | `?search=pho`                       | Finds `Phở Bò`                                               | ✅ PASS |
-| TC-MERCH-080  | Dish search endpoint                   | `/merchants/menu/search?q=cơm`      | `cơm tấm @ Mỳ Kiin` + merchant summary incl. `isOpenNow`     | ✅ PASS |
-| TC-MERCH-081  | Dish search + category filter          | `/merchants/menu/search?q=cơm&category=snack` | Only dishes of `snack` merchants                   | ✅ PASS |
-| TC-MERCH-082  | Missing required `q`                   | `/merchants/menu/search`            | `400` `q should not be empty`                                | ✅ PASS |
-| TC-MERCH-083  | Route ordering not broken              | `/merchants/<uuid>`                 | Still returns the merchant (not captured by `menu/search`)   | ✅ PASS |
-
+| ID           | Case                                     | Request                                       | Expected                                                             | Actual  |
+| ------------ | ---------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------- | ------- |
+| TC-MERCH-076 | Merchant found **via dish name only**    | `?search=cơm`                                 | `Mỳ Kiin` returned (name has no "cơm"); `matchedMenuItems=[cơm tấm]` | ✅ PASS |
+| TC-MERCH-077 | `matchedMenuItems` absent without search | `?take=1`                                     | Field not present                                                    | ✅ PASS |
+| TC-MERCH-078 | No result                                | `?search=zzz`                                 | total=0                                                              | ✅ PASS |
+| TC-MERCH-079 | Accent-insensitive (`unaccent`)          | `?search=pho`                                 | Finds `Phở Bò`                                                       | ✅ PASS |
+| TC-MERCH-080 | Dish search endpoint                     | `/merchants/menu/search?q=cơm`                | `cơm tấm @ Mỳ Kiin` + merchant summary incl. `isOpenNow`             | ✅ PASS |
+| TC-MERCH-081 | Dish search + category filter            | `/merchants/menu/search?q=cơm&category=snack` | Only dishes of `snack` merchants                                     | ✅ PASS |
+| TC-MERCH-082 | Missing required `q`                     | `/merchants/menu/search`                      | `400` `q should not be empty`                                        | ✅ PASS |
+| TC-MERCH-083 | Route ordering not broken                | `/merchants/<uuid>`                           | Still returns the merchant (not captured by `menu/search`)           | ✅ PASS |
 
 ### Combined filters (AND logic)
 
-| ID            | Case                            | Request                                                          | Expected                                              | Actual  |
-| ------------- | ------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------- | ------- |
-| TC-MERCH-084  | openNow + rating (no overlap)   | `?openNow=true&minRating=4`                                      | total=0 (`Phở` open but 3.0; `Mỳ Kiin` 4.0 but closed) | ✅ PASS |
-| TC-MERCH-085  | openNow + rating (overlap)      | `?openNow=true&minRating=3`                                      | Only `Phở`                                            | ✅ PASS |
-| TC-MERCH-086  | search + category + sort        | `?search=cơm&categories=snack&sortBy=rating`                     | Only `Mỳ Kiin`                                        | ✅ PASS |
-| TC-MERCH-087  | All filters at once             | `?categories=pho,rice,drink&minRating=3&openNow=true&sortBy=popular&search=n` | Only `Phở`                              | ✅ PASS |
-| TC-MERCH-088  | Unknown query param rejected    | `?foo=bar`                                                       | `400` `property foo should not exist`                 | ✅ PASS |
+| ID           | Case                          | Request                                                                       | Expected                                               | Actual  |
+| ------------ | ----------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------ | ------- |
+| TC-MERCH-084 | openNow + rating (no overlap) | `?openNow=true&minRating=4`                                                   | total=0 (`Phở` open but 3.0; `Mỳ Kiin` 4.0 but closed) | ✅ PASS |
+| TC-MERCH-085 | openNow + rating (overlap)    | `?openNow=true&minRating=3`                                                   | Only `Phở`                                             | ✅ PASS |
+| TC-MERCH-086 | search + category + sort      | `?search=cơm&categories=snack&sortBy=rating`                                  | Only `Mỳ Kiin`                                         | ✅ PASS |
+| TC-MERCH-087 | All filters at once           | `?categories=pho,rice,drink&minRating=3&openNow=true&sortBy=popular&search=n` | Only `Phở`                                             | ✅ PASS |
+| TC-MERCH-088 | Unknown query param rejected  | `?foo=bar`                                                                    | `400` `property foo should not exist`                  | ✅ PASS |
 
 ---
 
@@ -302,4 +299,3 @@
 | --------- | ------ |
 | ✅ PASS   | 88     |
 | **Total** | **88** |
-

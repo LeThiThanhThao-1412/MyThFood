@@ -5,7 +5,9 @@ import { consumerApi } from "@mythfood/api-client";
  * Falls back to the userId when the profile cannot be found (mirrors the
  * checkout page behaviour so favourites & re-order stay consistent).
  */
-export async function resolveConsumerId(userId: string): Promise<string | null> {
+export async function resolveConsumerId(
+  userId: string,
+): Promise<string | null> {
   if (!userId) return null;
   try {
     const res: any = await consumerApi.getByUserId(userId);

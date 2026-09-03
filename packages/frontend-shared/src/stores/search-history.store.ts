@@ -28,9 +28,7 @@ export const useSearchHistoryStore = create<SearchHistoryState>()(
             return state;
           }
           const lower = cleaned.toLowerCase();
-          const rest = state.keywords.filter(
-            (k) => k.toLowerCase() !== lower,
-          );
+          const rest = state.keywords.filter((k) => k.toLowerCase() !== lower);
           return { keywords: [cleaned, ...rest].slice(0, MAX_SEARCH_HISTORY) };
         }),
 
@@ -38,9 +36,7 @@ export const useSearchHistoryStore = create<SearchHistoryState>()(
         set((state) => {
           const lower = keyword.trim().toLowerCase();
           return {
-            keywords: state.keywords.filter(
-              (k) => k.toLowerCase() !== lower,
-            ),
+            keywords: state.keywords.filter((k) => k.toLowerCase() !== lower),
           };
         }),
 

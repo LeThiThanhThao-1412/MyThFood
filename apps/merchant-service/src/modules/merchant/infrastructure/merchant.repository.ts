@@ -33,13 +33,15 @@ export interface MenuSearchOptions {
 }
 
 /** Whitelisted sort keys -> column + default direction (prevents SQL injection). */
-const SORT_COLUMNS: Record<string, { column: string; defaultOrder: "ASC" | "DESC" }> =
-  {
-    rating: { column: "merchant.rating", defaultOrder: "DESC" },
-    popular: { column: "merchant.total_orders", defaultOrder: "DESC" },
-    newest: { column: "merchant.created_at", defaultOrder: "DESC" },
-    name: { column: "merchant.name", defaultOrder: "ASC" },
-  };
+const SORT_COLUMNS: Record<
+  string,
+  { column: string; defaultOrder: "ASC" | "DESC" }
+> = {
+  rating: { column: "merchant.rating", defaultOrder: "DESC" },
+  popular: { column: "merchant.total_orders", defaultOrder: "DESC" },
+  newest: { column: "merchant.created_at", defaultOrder: "DESC" },
+  name: { column: "merchant.name", defaultOrder: "ASC" },
+};
 
 /** Max number of matched dishes attached to each merchant in search results. */
 const MAX_MATCHED_ITEMS_PER_MERCHANT = 5;
@@ -130,10 +132,7 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
         "merchant.address",
         "merchant.description",
       ]);
-      const menuLike = await this.buildTextMatch([
-        "mi.name",
-        "mi.description",
-      ]);
+      const menuLike = await this.buildTextMatch(["mi.name", "mi.description"]);
       queryBuilder.andWhere(
         `(${like} OR merchant.id IN (SELECT mi.merchant_id FROM menu_items mi WHERE (${menuLike}) AND mi.deleted_at IS NULL))`,
         { search: `%${options.search}%` },
@@ -220,9 +219,10 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
    * Global dish search across all APPROVED merchants.
    * Returns only ids so the application layer can resolve domain objects.
    */
-  async searchMenuItems(
-    options: MenuSearchOptions,
-  ): Promise<{ rows: { menuItemId: string; merchantId: string }[]; total: number }> {
+  async searchMenuItems(options: MenuSearchOptions): Promise<{
+    rows: { menuItemId: string; merchantId: string }[];
+    total: number;
+  }> {
     const queryBuilder = this.menuItemRepo
       .createQueryBuilder("mi")
       .innerJoin(MerchantEntity, "m", "m.id = mi.merchant_id")
@@ -328,7 +328,10 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
     ]);
 
     const menuByMerchant = this.groupBy(menuItems, (mi) => mi.merchant_id);
-    const hoursByMerchant = this.groupBy(operatingHours, (oh) => oh.merchant_id);
+    const hoursByMerchant = this.groupBy(
+      operatingHours,
+      (oh) => oh.merchant_id,
+    );
     const docsByMerchant = this.groupBy(documents, (d) => d.merchant_id);
 
     return entities.map((entity) =>

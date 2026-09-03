@@ -331,10 +331,7 @@ function MapViewBase({
 
     mapRef.current = map;
     map.touchZoomRotate.disableRotation();
-    map.addControl(
-      new NavigationControl({ showCompass: false }),
-      "top-right",
-    );
+    map.addControl(new NavigationControl({ showCompass: false }), "top-right");
 
     map.on("load", () => setStyleReady(true));
     map.on("error", (event) => {
@@ -560,4 +557,3 @@ function MapViewBase({
  * (trang giao hàng của tài xế cập nhật GPS và trạng thái đơn liên tục).
  */
 export default memo(MapViewBase);
-

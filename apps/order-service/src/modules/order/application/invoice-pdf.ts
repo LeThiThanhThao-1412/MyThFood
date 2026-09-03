@@ -125,10 +125,22 @@ export function buildInvoicePdf(
     y += 12;
 
     // ---------- Items header ----------
-    doc.fillColor(LIGHT).fontSize(9).text("MÓN ĂN", left, y, { width: width * 0.5 });
-    doc.text("SL", left + width * 0.5, y, { width: width * 0.1, align: "center" });
-    doc.text("ĐƠN GIÁ", left + width * 0.6, y, { width: width * 0.2, align: "right" });
-    doc.text("THÀNH TIỀN", left + width * 0.8, y, { width: width * 0.2, align: "right" });
+    doc
+      .fillColor(LIGHT)
+      .fontSize(9)
+      .text("MÓN ĂN", left, y, { width: width * 0.5 });
+    doc.text("SL", left + width * 0.5, y, {
+      width: width * 0.1,
+      align: "center",
+    });
+    doc.text("ĐƠN GIÁ", left + width * 0.6, y, {
+      width: width * 0.2,
+      align: "right",
+    });
+    doc.text("THÀNH TIỀN", left + width * 0.8, y, {
+      width: width * 0.2,
+      align: "right",
+    });
     y += 14;
 
     // ---------- Items ----------
@@ -209,7 +221,10 @@ export function buildInvoicePdf(
       .strokeColor(DARK)
       .stroke();
     y += 8;
-    doc.fillColor(ORANGE).fontSize(13).text("Tổng cộng", left, y, { width: 150 });
+    doc
+      .fillColor(ORANGE)
+      .fontSize(13)
+      .text("Tổng cộng", left, y, { width: 150 });
     doc.text(moneyPdf(order.orderTotalAmount), left + 150, y, {
       width: width - 150,
       align: "right",
@@ -219,10 +234,15 @@ export function buildInvoicePdf(
     doc
       .fillColor(LIGHT)
       .fontSize(9)
-      .text("Cảm ơn quý khách đã đặt hàng. Hẹn gặp lại!", left, doc.page.height - 70, {
-        width,
-        align: "center",
-      });
+      .text(
+        "Cảm ơn quý khách đã đặt hàng. Hẹn gặp lại!",
+        left,
+        doc.page.height - 70,
+        {
+          width,
+          align: "center",
+        },
+      );
 
     doc.end();
   });
