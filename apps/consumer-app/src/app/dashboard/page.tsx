@@ -8,6 +8,9 @@ import {
   useCartStore,
   useLocationStore,
   useFavoritesStore,
+  useFavoriteDishesStore,
+  useSearchHistoryStore,
+  FOOD_CATEGORIES,
   LocationGate,
   canAccessApp,
   haversineKm,
@@ -18,16 +21,9 @@ import { resolveConsumerId } from "@/lib/consumer";
 import CartDrawer from "@/components/CartDrawer";
 import CurrentLocationChip from "@/components/CurrentLocationChip";
 import OrderDetailDrawer from "@/components/OrderDetailDrawer";
+import SearchHistoryDropdown from "@/components/SearchHistoryDropdown";
+import FloatingOrderCard from "@/components/FloatingOrderCard";
 import RecentOrdersDrawer from "@/components/RecentOrdersDrawer";
-
-const categories = [
-  { key: "main", icon: "🍜", label: "Món chính" },
-  { key: "drink", icon: "🥤", label: "Đồ uống" },
-  { key: "dessert", icon: "🍰", label: "Tráng miệng" },
-  { key: "side", icon: "🥗", label: "Món ăn kèm" },
-  { key: "combo", icon: "🍱", label: "Combo" },
-  { key: "special", icon: "🌶️", label: "Đặc sắc" },
-];
 
 const gradientPalette = [
   "from-[#f093fb] to-[#f5576c]",
@@ -57,6 +53,8 @@ export default function DashboardPage() {
   const cartTotal = getSubtotal();
   const { location, hasLocation } = useLocationStore();
   const favorites = useFavoritesStore();
+  const favDishes = useFavoriteDishesStore();
+  const addKeyword = useSearchHistoryStore((s) => s.addKeyword);
 
   const [merchants, setMerchants] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
@@ -66,6 +64,7 @@ export default function DashboardPage() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [recentOrdersOpen, setRecentOrdersOpen] = useState(false);
   const [dashboardSearch, setDashboardSearch] = useState("");
+  const [searchHistoryOpen, setSearchHistoryOpen] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -87,11 +86,29 @@ export default function DashboardPage() {
         setMerchants(list.filter((m: any) => m.status === "APPROVED"));
         if (user) {
           try {
-            const cid = await resolveConsumerId(user.id);
-            if (cid) {
-              const oRes = await orderApi.listByConsumer(cid);
-              setOrders(Array.isArray(oRes) ? oRes : []);
+            const cid = await resolveConsumerId(user.id, user.fullName);
+            // Query theo cả consumerId lẫn userId để bắt cả đơn cũ đặt với userId
+            // (fallback cũ của checkout) lẫn đơn mới đặt với consumerId.
+            const idsToQuery = Array.from(
+              new Set([cid, user.id].filter((x): x is string => !!x)),
+            );
+            const allOrders: any[] = [];
+            for (const id of idsToQuery) {
+              try {
+                const oRes = await orderApi.listByConsumer(id);
+                if (Array.isArray(oRes)) allOrders.push(...oRes);
+              } catch {
+                /* ignore */
+              }
             }
+            const seen = new Set<string>();
+            setOrders(
+              allOrders.filter((o) => {
+                if (!o?.id || seen.has(o.id)) return false;
+                seen.add(o.id);
+                return true;
+              }),
+            );
           } catch {
             /* ignore */
           }
@@ -109,14 +126,35 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!isAuthenticated || !user) return;
     (async () => {
-      const cid = await resolveConsumerId(user.id);
-      if (cid) await favorites.load(cid);
+      const cid = await resolveConsumerId(user.id, user.fullName);
+      if (cid) {
+        await favorites.load(cid);
+        await favDishes.load(cid);
+      }
     })();
-  }, [isAuthenticated, user, favorites.load]);
+  }, [isAuthenticated, user, favorites.load, favDishes.load]);
 
   const favoriteMerchants = merchants.filter((m: any) =>
     favorites.ids.includes(m.id),
   );
+  const favoriteDishList = favDishes.getList();
+
+  // Đơn đang hoạt động (chưa giao xong / chưa hủy) để hiển thị floating card theo dõi
+  const activeOrder = orders
+    .filter((o) =>
+      [
+        "PENDING",
+        "CONFIRMED",
+        "PREPARING",
+        "READY_FOR_PICKUP",
+        "OUT_FOR_DELIVERY",
+      ].includes(o.status),
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt || 0).getTime() -
+        new Date(a.createdAt || 0).getTime(),
+    )[0];
 
   // Delivery fee from restaurant → customer's current location (distance-based)
   const feeFor = (m: any) => {
@@ -130,6 +168,15 @@ export default function DashboardPage() {
       return calculateShippingFeeSync(km);
     }
     return 15000;
+  };
+
+  const goToSearchResults = (keyword?: string) => {
+    const q = (keyword ?? dashboardSearch).trim();
+    if (q) {
+      addKeyword(q);
+    }
+    setSearchHistoryOpen(false);
+    router.push(q ? `/restaurants?q=${encodeURIComponent(q)}` : "/restaurants");
   };
 
   if (!isAuthenticated) return null;
@@ -154,22 +201,35 @@ export default function DashboardPage() {
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  const q = dashboardSearch.trim();
-                  router.push(
-                    q
-                      ? `/restaurants?q=${encodeURIComponent(q)}`
-                      : "/restaurants",
-                  );
+                  goToSearchResults();
                 }}
-                className="hidden md:flex flex-1 max-w-md items-center gap-2.5 bg-[#f5f5f5] rounded-xl px-4 py-2.5 hover:bg-gray-100 transition"
+                className="hidden sm:flex flex-1 max-w-md relative items-center gap-2.5 bg-[#f5f5f5] rounded-xl px-4 py-2.5 hover:bg-gray-100 transition"
               >
-                <span className="text-lg text-[#ff6b35]">🔍</span>
+                <button
+                  type="submit"
+                  aria-label="Tìm kiếm"
+                  className="text-lg text-[#ff6b35] cursor-pointer bg-transparent border-none"
+                >
+                  🔍
+                </button>
                 <input
                   type="text"
                   value={dashboardSearch}
                   onChange={(e) => setDashboardSearch(e.target.value)}
+                  onFocus={() => setSearchHistoryOpen(true)}
+                  onBlur={() => setSearchHistoryOpen(false)}
                   placeholder="Tìm món, nhà hàng..."
                   className="flex-1 bg-transparent border-none outline-none text-sm text-gray-700 placeholder:text-gray-400"
+                />
+                <SearchHistoryDropdown
+                  visible={
+                    searchHistoryOpen && dashboardSearch.trim().length === 0
+                  }
+                  onPick={(keyword) => {
+                    setDashboardSearch(keyword);
+                    goToSearchResults(keyword);
+                  }}
+                  onClose={() => setSearchHistoryOpen(false)}
                 />
               </form>
 
@@ -194,6 +254,15 @@ export default function DashboardPage() {
                     </span>
                   )}
                 </button>
+
+                {/* Wallet */}
+                <Link
+                  href="/wallet"
+                  className="relative text-xl hover:scale-110 transition-transform"
+                  title="Ví của tôi"
+                >
+                  💰
+                </Link>
 
                 {/* Notifications */}
                 <div className="hidden sm:block">
@@ -233,6 +302,40 @@ export default function DashboardPage() {
 
         {/* ===== MAIN CONTENT ===== */}
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {/* Mobile search */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              goToSearchResults();
+            }}
+            className="sm:hidden mb-4 relative flex items-center gap-2.5 bg-white rounded-xl px-4 py-3 shadow-sm border border-gray-100"
+          >
+            <button
+              type="submit"
+              aria-label="Tìm kiếm"
+              className="text-lg text-[#ff6b35] bg-transparent border-none"
+            >
+              🔍
+            </button>
+            <input
+              type="text"
+              value={dashboardSearch}
+              onChange={(e) => setDashboardSearch(e.target.value)}
+              onFocus={() => setSearchHistoryOpen(true)}
+              onBlur={() => setSearchHistoryOpen(false)}
+              placeholder="Tìm món, nhà hàng..."
+              className="flex-1 bg-transparent border-none outline-none text-sm text-gray-700 placeholder:text-gray-400"
+            />
+            <SearchHistoryDropdown
+              visible={searchHistoryOpen && dashboardSearch.trim().length === 0}
+              onPick={(keyword) => {
+                setDashboardSearch(keyword);
+                goToSearchResults(keyword);
+              }}
+              onClose={() => setSearchHistoryOpen(false)}
+            />
+          </form>
+
           {/* ===== WELCOME & BANNER ===== */}
           <div className="mb-6">
             {/* Welcome Card */}
@@ -273,10 +376,12 @@ export default function DashboardPage() {
               <h2 className="text-lg font-bold text-[#1a1a2e]">🍽️ Danh mục</h2>
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
-              {categories.map((cat) => (
+              {FOOD_CATEGORIES.map((cat) => (
                 <div
                   key={cat.key}
-                  onClick={() => router.push("/restaurants")}
+                  onClick={() =>
+                    router.push(`/restaurants?category=${cat.key}`)
+                  }
                   className="bg-[#fafafa] rounded-2xl p-4 text-center cursor-pointer hover:bg-[#fff7ed] hover:-translate-y-0.5 transition-all border border-gray-100"
                 >
                   <div className="text-2xl sm:text-3xl mb-2">{cat.icon}</div>
@@ -338,6 +443,61 @@ export default function DashboardPage() {
                           <p className="text-xs text-gray-400 truncate mt-0.5">
                             {m.address}
                           </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Favourite dishes */}
+            {favoriteDishList.length > 0 && (
+              <div>
+                <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-bold text-[#1a1a2e]">
+                      🍲 Món ăn yêu thích
+                    </h2>
+                    <Link
+                      href="/restaurants"
+                      className="text-sm font-semibold text-[#ff6b35] hover:underline"
+                    >
+                      Khám phá món →
+                    </Link>
+                  </div>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {favoriteDishList.slice(0, 4).map((d) => (
+                      <div
+                        key={d.menuItemId}
+                        onClick={() =>
+                          router.push(`/restaurants/${d.merchantId}`)
+                        }
+                        className="bg-white border border-orange-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
+                      >
+                        {d.imageUrl ? (
+                          <img
+                            src={d.imageUrl}
+                            alt={d.name}
+                            className="h-[140px] sm:h-[160px] w-full object-cover"
+                          />
+                        ) : (
+                          <div className="h-[140px] sm:h-[160px] bg-gradient-to-br from-[#f093fb] to-[#f5576c] flex items-center justify-center text-4xl">
+                            🍽️
+                          </div>
+                        )}
+                        <div className="p-3">
+                          <p className="font-semibold text-gray-800 truncate">
+                            {d.name}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate mt-0.5">
+                            {d.merchantName}
+                          </p>
+                          {typeof d.price === "number" && (
+                            <p className="text-sm font-bold text-[#ff6b35] mt-1">
+                              {d.price.toLocaleString("vi-VN")}₫
+                            </p>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -469,6 +629,9 @@ export default function DashboardPage() {
           orderId={selectedOrderId}
           onClose={() => setSelectedOrderId(null)}
         />
+
+        {/* Mini floating card theo dõi đơn đang giao */}
+        <FloatingOrderCard order={activeOrder} />
 
         {/* ===== MOBILE BOTTOM NAV ===== */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">

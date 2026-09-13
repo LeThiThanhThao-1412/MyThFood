@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { Drawer } from "@mythfood/frontend-shared";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
-import { STAGE_ORDER, toNum } from "@/lib/delivery-flow";
+import { STAGE_ORDER, formatKm, toNum } from "@/lib/delivery-flow";
 
 export default function DeliveryDrawer({
   orderId,
@@ -20,6 +20,10 @@ export default function DeliveryDrawer({
   const trip = useDeliveryTrip(orderId);
   const {
     order,
+    merchant,
+    customerInfo,
+    distanceToRestaurantKm,
+    distanceToRestaurantMin,
     loading,
     busy,
     error,
@@ -141,7 +145,79 @@ export default function DeliveryDrawer({
             </div>
           </div>
 
-          <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600">
+          {/* Nhà hàng */}
+          <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 space-y-1">
+            <h4 className="font-semibold text-sm text-gray-700 mb-2">
+              🏪 Nhà hàng
+            </h4>
+            <div className="flex items-center gap-2.5">
+              {merchant?.logoUrl ? (
+                <img
+                  src={merchant.logoUrl}
+                  alt=""
+                  className="w-9 h-9 rounded-lg object-cover shrink-0"
+                />
+              ) : (
+                <span className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center text-lg shrink-0">
+                  🏪
+                </span>
+              )}
+              <p className="font-semibold text-gray-800">
+                {merchant?.name || "Nhà hàng"}
+              </p>
+            </div>
+            {merchant?.address && <p>📍 {merchant.address}</p>}
+            {merchant?.phone && (
+              <a
+                href={`tel:${merchant.phone}`}
+                className="inline-block text-[#ff6b35] font-semibold"
+              >
+                📞 {merchant.phone}
+              </a>
+            )}
+            {distanceToRestaurantKm != null && (
+              <p>
+                📏 Cách bạn {formatKm(distanceToRestaurantKm)}
+                {distanceToRestaurantMin != null
+                  ? ` · ~${distanceToRestaurantMin} phút`
+                  : ""}
+              </p>
+            )}
+          </div>
+
+          {/* Khách hàng */}
+          <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 space-y-1">
+            <h4 className="font-semibold text-sm text-gray-700 mb-2">
+              🏠 Khách hàng
+            </h4>
+            <div className="flex items-center gap-2.5">
+              {customerInfo?.avatar ? (
+                <img
+                  src={customerInfo.avatar}
+                  alt=""
+                  className="w-9 h-9 rounded-full object-cover shrink-0"
+                />
+              ) : (
+                <span className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center text-lg shrink-0">
+                  👤
+                </span>
+              )}
+              <div>
+                {customerInfo?.fullName && (
+                  <p className="font-semibold text-gray-800">
+                    {customerInfo.fullName}
+                  </p>
+                )}
+                {customerInfo?.phone && (
+                  <a
+                    href={`tel:${customerInfo.phone}`}
+                    className="text-[#ff6b35] font-semibold"
+                  >
+                    📞 {customerInfo.phone}
+                  </a>
+                )}
+              </div>
+            </div>
             <p>📍 {order.deliveryAddress}</p>
             {order.notes && (
               <p className="text-xs text-gray-400 mt-1">📝 {order.notes}</p>

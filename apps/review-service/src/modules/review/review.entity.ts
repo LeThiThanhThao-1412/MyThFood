@@ -20,6 +20,12 @@ export class ReviewEntity {
   @Column({ type: "uuid" })
   merchantId!: string;
 
+  @Column({ type: "uuid", nullable: true })
+  driverId!: string | null;
+
+  @Column({ type: "int", nullable: true })
+  driverRating!: number | null;
+
   @Column({ type: "int" })
   rating!: number;
 

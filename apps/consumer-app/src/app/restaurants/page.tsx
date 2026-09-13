@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { merchantApi } from "@mythfood/api-client";
+import type { MenuSearchItem } from "@mythfood/api-client";
 import {
   useAuthStore,
   useCartStore,
@@ -18,6 +19,7 @@ import RestaurantFilterBar, {
   type SortOption,
 } from "@/components/RestaurantFilterBar";
 import SearchHistoryDropdown from "@/components/SearchHistoryDropdown";
+import SearchSuggestionsDropdown from "@/components/SearchSuggestionsDropdown";
 import CurrentLocationChip from "@/components/CurrentLocationChip";
 import { resolveConsumerId } from "@/lib/consumer";
 
@@ -50,6 +52,8 @@ export default function RestaurantsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<MenuSearchItem[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
 
   // --- Filters & sorting ---
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -104,12 +108,23 @@ export default function RestaurantsPage() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // Remember committed keywords (feature: lịch sử tìm kiếm)
+  // Gợi ý món ăn khi gõ (debounce) — chỉ để hiển thị gợi ý, không lưu lịch sử ở đây
   useEffect(() => {
-    if (search.trim()) {
-      addKeyword(search);
+    const q = searchInput.trim();
+    if (!q) {
+      setSuggestions([]);
+      return;
     }
-  }, [search, addKeyword]);
+    const t = setTimeout(async () => {
+      try {
+        const res = await merchantApi.searchMenu({ q, take: 8 });
+        setSuggestions(res.items || []);
+      } catch {
+        setSuggestions([]);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   // FIX #5: Load merchants with category/search/rating/open/sort filters
   useEffect(() => {
@@ -218,12 +233,41 @@ export default function RestaurantsPage() {
   const clearSearch = () => {
     setSearchInput("");
     setSearch("");
+    setSuggestions([]);
+    setSuggestionsOpen(false);
+  };
+
+  /** Ghi lịch sử chỉ khi người dùng "chốt" từ khoá (Enter / chọn gợi ý / chọn lịch sử). */
+  const commitSearch = (keyword: string) => {
+    const cleaned = keyword.trim();
+    setSearchInput(cleaned);
+    setSearch(cleaned);
+    if (cleaned) {
+      addKeyword(cleaned);
+    }
+    setHistoryOpen(false);
+    setSuggestionsOpen(false);
   };
 
   const pickHistoryKeyword = (keyword: string) => {
-    setSearchInput(keyword);
-    setSearch(keyword);
+    commitSearch(keyword);
+  };
+
+  const pickSuggestion = (item: MenuSearchItem) => {
+    if (searchInput.trim()) {
+      addKeyword(searchInput.trim());
+    }
     setHistoryOpen(false);
+    setSuggestionsOpen(false);
+    router.push(`/restaurants/${item.merchantId}`);
+  };
+
+  /** Enter để chốt tìm kiếm + lưu lịch sử (tránh lưu từng ký tự gõ dở). */
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitSearch(searchInput);
+    }
   };
 
   return (
@@ -257,8 +301,15 @@ export default function RestaurantsPage() {
                 type="text"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                onFocus={() => setHistoryOpen(true)}
-                onBlur={() => setHistoryOpen(false)}
+                onFocus={() => {
+                  setHistoryOpen(true);
+                  setSuggestionsOpen(true);
+                }}
+                onBlur={() => {
+                  setHistoryOpen(false);
+                  setSuggestionsOpen(false);
+                }}
+                onKeyDown={handleSearchKeyDown}
                 placeholder="Tìm món ăn, nhà hàng..."
                 className="w-full bg-[#f5f5f5] rounded-xl pl-11 pr-4 py-2.5 text-sm border-none outline-none focus:ring-2 focus:ring-orange-200 transition"
               />
@@ -274,6 +325,11 @@ export default function RestaurantsPage() {
                 visible={historyOpen && searchInput.length === 0}
                 onPick={pickHistoryKeyword}
                 onClose={() => setHistoryOpen(false)}
+              />
+              <SearchSuggestionsDropdown
+                visible={suggestionsOpen && searchInput.trim().length > 0}
+                suggestions={suggestions}
+                onPick={pickSuggestion}
               />
             </div>
 
@@ -346,8 +402,15 @@ export default function RestaurantsPage() {
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            onFocus={() => setHistoryOpen(true)}
-            onBlur={() => setHistoryOpen(false)}
+            onFocus={() => {
+              setHistoryOpen(true);
+              setSuggestionsOpen(true);
+            }}
+            onBlur={() => {
+              setHistoryOpen(false);
+              setSuggestionsOpen(false);
+            }}
+            onKeyDown={handleSearchKeyDown}
             placeholder="Tìm món ăn, nhà hàng..."
             className="w-full bg-white rounded-xl pl-11 pr-10 py-3 text-sm border border-gray-100 outline-none focus:ring-2 focus:ring-orange-200 transition shadow-sm"
           />
@@ -363,6 +426,11 @@ export default function RestaurantsPage() {
             visible={historyOpen && searchInput.length === 0}
             onPick={pickHistoryKeyword}
             onClose={() => setHistoryOpen(false)}
+          />
+          <SearchSuggestionsDropdown
+            visible={suggestionsOpen && searchInput.trim().length > 0}
+            suggestions={suggestions}
+            onPick={pickSuggestion}
           />
         </div>
 

@@ -40,9 +40,15 @@ export class WalletController {
       if (event.type === "payment_intent.succeeded") {
         const pi = event.data.object as any;
         const ownerId = pi.metadata?.ownerId;
+        const ownerType =
+          (pi.metadata?.ownerType as OwnerType) || OwnerType.CONSUMER;
         const amount = pi.amount;
         if (ownerId) {
-          await this.walletService.handleStripeTopup(ownerId, amount);
+          await this.walletService.handleStripeTopup(
+            ownerId,
+            ownerType,
+            amount,
+          );
         }
       }
     } catch (err: any) {
@@ -173,10 +179,19 @@ export class WalletController {
   // ═══════════════════════════════════════════════════════
   @Post("topup/stripe")
   @UseGuards(AuthGuard("jwt"))
-  async topupStripe(@Body() body: { ownerId: string; amount: number }) {
+  async topupStripe(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType?: OwnerType;
+      amount: number;
+    },
+  ) {
+    const ownerType = body.ownerType || OwnerType.CONSUMER;
     const pi = await this.stripeService.createPaymentIntent({
       amount: body.amount,
       ownerId: body.ownerId,
+      ownerType,
     });
     return { clientSecret: pi.client_secret, paymentIntentId: pi.id };
   }
@@ -195,6 +210,50 @@ export class WalletController {
       body.amount,
       "Nạp tiền",
       "TOPUP",
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Pay order with wallet
+  // ═══════════════════════════════════════════════════════
+  @Post("pay")
+  @UseGuards(AuthGuard("jwt"))
+  async pay(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType?: OwnerType;
+      amount: number;
+      orderId: string;
+    },
+  ) {
+    return this.walletService.pay(
+      body.ownerId,
+      (body.ownerType as OwnerType) || OwnerType.CONSUMER,
+      body.amount,
+      body.orderId,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Refund to wallet (store credit) for cancelled online orders
+  // ═══════════════════════════════════════════════════════
+  @Post("refund")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async refund(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType?: OwnerType;
+      amount: number;
+      orderId: string;
+    },
+  ) {
+    return this.walletService.refundCredit(
+      body.ownerId,
+      (body.ownerType as OwnerType) || OwnerType.CONSUMER,
+      body.amount,
+      body.orderId,
     );
   }
 

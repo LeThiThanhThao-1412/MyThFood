@@ -38,8 +38,16 @@ export default function CartDrawer({
             <div className="space-y-3">
               {items.map((item) => (
                 <div key={item.variantKey} className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-xl bg-[#fff7ed] flex items-center justify-center text-2xl shrink-0">
-                    🍽️
+                  <div className="w-14 h-14 rounded-xl bg-[#fff7ed] overflow-hidden flex items-center justify-center shrink-0">
+                    {item.menuItem.imageUrl ? (
+                      <img
+                        src={item.menuItem.imageUrl}
+                        alt={item.menuItem.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-2xl">🍽️</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-gray-800 text-sm truncate">

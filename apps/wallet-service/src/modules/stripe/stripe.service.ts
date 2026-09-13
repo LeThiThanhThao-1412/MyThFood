@@ -24,13 +24,18 @@ export class StripeService {
   async createPaymentIntent(params: {
     amount: number;
     ownerId: string;
+    ownerType?: string;
     description?: string;
   }): Promise<Stripe.PaymentIntent> {
     return this.stripe.paymentIntents.create({
       amount: Math.round(params.amount),
       currency: "vnd",
       capture_method: "automatic",
-      metadata: { ownerId: params.ownerId, type: "topup" },
+      metadata: {
+        ownerId: params.ownerId,
+        ownerType: params.ownerType || "CONSUMER",
+        type: "topup",
+      },
       description: params.description || `Top-up for ${params.ownerId}`,
     });
   }

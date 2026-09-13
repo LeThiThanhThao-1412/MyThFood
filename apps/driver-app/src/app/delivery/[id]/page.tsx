@@ -7,7 +7,7 @@
 // gửi thông báo tới khách hàng.
 // ============================================================================
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -35,8 +35,6 @@ export default function DeliveryPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
   const trip = useDeliveryTrip(id);
-  const [simLat, setSimLat] = useState("10.775");
-  const [simLng, setSimLng] = useState("106.7");
 
   useEffect(() => {
     if (!isAuthenticated) router.push("/login");
@@ -45,6 +43,9 @@ export default function DeliveryPage() {
   const {
     order,
     merchant,
+    customerInfo,
+    distanceToRestaurantKm,
+    distanceToRestaurantMin,
     loading,
     busy,
     error,
@@ -57,9 +58,7 @@ export default function DeliveryPage() {
     route,
     mapMarkers,
     driverEarning,
-    locating,
     advance,
-    simulateLocation,
     reload,
   } = trip;
 
@@ -155,13 +154,6 @@ export default function DeliveryPage() {
   const target = stageMeta.target === "CUSTOMER" ? customer : restaurant;
   const paymentMethod = order.paymentMethod || "CARD";
   const isCod = paymentMethod === "COD" || paymentMethod === "CASH";
-  const midpoint =
-    restaurant && customer
-      ? {
-          latitude: (restaurant.latitude + customer.latitude) / 2,
-          longitude: (restaurant.longitude + customer.longitude) / 2,
-        }
-      : null;
   const steps = [
     { icon: "📥", label: "Nhận đơn" },
     { icon: "📍", label: "Đã đến quán" },
@@ -242,24 +234,6 @@ export default function DeliveryPage() {
           </div>
         </div>
 
-        {/* Nút hành động nổi bật ngay dưới tiến trình */}
-        {stageMeta.actionLabel && (
-          <button
-            onClick={advance}
-            disabled={busy}
-            className="w-full bg-[#ff6b35] text-white py-4 rounded-2xl font-bold text-base hover:bg-orange-600 disabled:opacity-50 transition flex items-center justify-center gap-2"
-          >
-            {busy ? (
-              <>
-                <span className="inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Đang xử lý...
-              </>
-            ) : (
-              stageMeta.actionLabel
-            )}
-          </button>
-        )}
-
         {/* Bản đồ dẫn đường */}
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100">
@@ -304,113 +278,27 @@ export default function DeliveryPage() {
           )}
         </div>
 
-        {/* Mô phỏng vị trí tài xế (dùng khi chưa có GPS thật) */}
-        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-[#1a1a2e]">
-              📍 Mô phỏng vị trí tài xế
-            </h3>
-            {locating && (
-              <span className="text-xs text-gray-400">Đang cập nhật...</span>
-            )}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() =>
-                restaurant &&
-                simulateLocation(
-                  restaurant.latitude,
-                  restaurant.longitude,
-                  "🏪 Tại nhà hàng",
-                )
-              }
-              disabled={!restaurant || locating}
-              className="px-3 py-2 rounded-xl text-sm font-semibold bg-orange-50 text-[#ff6b35] hover:bg-orange-100 disabled:opacity-50 transition"
-            >
-              🏪 Tại nhà hàng
-            </button>
-            <button
-              onClick={() =>
-                customer &&
-                simulateLocation(
-                  customer.latitude,
-                  customer.longitude,
-                  "🏠 Tại khách",
-                )
-              }
-              disabled={!customer || locating}
-              className="px-3 py-2 rounded-xl text-sm font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition"
-            >
-              🏠 Tại khách
-            </button>
-            <button
-              onClick={() =>
-                midpoint &&
-                simulateLocation(
-                  midpoint.latitude,
-                  midpoint.longitude,
-                  "🛣️ Giữa đường",
-                )
-              }
-              disabled={!midpoint || locating}
-              className="px-3 py-2 rounded-xl text-sm font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 transition"
-            >
-              🛣️ Giữa đường
-            </button>
-            <button
-              onClick={() =>
-                simulateLocation(10.775, 106.7, "📍 Quận 1 (mặc định)")
-              }
-              disabled={locating}
-              className="px-3 py-2 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 transition"
-            >
-              📍 Q1 (mặc định)
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              value={simLat}
-              onChange={(e) => setSimLat(e.target.value)}
-              placeholder="Vĩ độ (lat)"
-              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <input
-              value={simLng}
-              onChange={(e) => setSimLng(e.target.value)}
-              placeholder="Kinh độ (lng)"
-              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <button
-              onClick={() =>
-                simulateLocation(
-                  parseFloat(simLat),
-                  parseFloat(simLng),
-                  "📍 Toạ độ tuỳ chỉnh",
-                )
-              }
-              disabled={locating}
-              className="px-3 py-2 rounded-xl text-sm font-bold bg-[#1a1a2e] text-white hover:bg-[#2d2d44] disabled:opacity-50 transition"
-            >
-              Áp dụng
-            </button>
-          </div>
-
-          <p className="text-xs text-gray-400">
-            Dùng để test khi chưa có GPS thật. Vị trí sẽ được lưu vào hồ sơ tài
-            xế và bản đồ sẽ tự vẽ lại tuyến.
-          </p>
-        </div>
-
         {/* Điểm lấy hàng */}
         <div className="bg-white rounded-2xl shadow-sm p-4 space-y-1">
           <p className="text-xs text-gray-400 font-semibold">
             🏪 LẤY MÓN TẠI NHÀ HÀNG
           </p>
-          <p className="font-bold text-[#1a1a2e]">
-            {merchant?.name || "Nhà hàng"}
-          </p>
+          <div className="flex items-center gap-2.5">
+            {merchant?.logoUrl ? (
+              <img
+                src={merchant.logoUrl}
+                alt=""
+                className="w-9 h-9 rounded-lg object-cover shrink-0"
+              />
+            ) : (
+              <span className="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center text-lg shrink-0">
+                🏪
+              </span>
+            )}
+            <p className="font-bold text-[#1a1a2e]">
+              {merchant?.name || "Nhà hàng"}
+            </p>
+          </div>
           <p className="text-sm text-gray-600">
             {merchant?.address || "Chưa có địa chỉ nhà hàng"}
           </p>
@@ -422,6 +310,14 @@ export default function DeliveryPage() {
               📞 Gọi nhà hàng: {merchant.phone}
             </a>
           )}
+          {distanceToRestaurantKm != null && (
+            <p className="text-sm text-gray-600">
+              📏 Cách bạn {formatKm(distanceToRestaurantKm)}
+              {distanceToRestaurantMin != null
+                ? ` · ~${distanceToRestaurantMin} phút`
+                : ""}
+            </p>
+          )}
         </div>
 
         {/* Điểm giao hàng */}
@@ -429,6 +325,34 @@ export default function DeliveryPage() {
           <p className="text-xs text-gray-400 font-semibold">
             🏠 GIAO CHO KHÁCH
           </p>
+          <div className="flex items-center gap-2.5">
+            {customerInfo?.avatar ? (
+              <img
+                src={customerInfo.avatar}
+                alt=""
+                className="w-9 h-9 rounded-full object-cover shrink-0"
+              />
+            ) : (
+              <span className="w-9 h-9 rounded-full bg-gray-200 flex items-center justify-center text-lg shrink-0">
+                👤
+              </span>
+            )}
+            <div>
+              {customerInfo?.fullName && (
+                <p className="font-semibold text-[#1a1a2e]">
+                  {customerInfo.fullName}
+                </p>
+              )}
+              {customerInfo?.phone && (
+                <a
+                  href={`tel:${customerInfo.phone}`}
+                  className="inline-block text-sm text-[#ff6b35] font-semibold"
+                >
+                  📞 Gọi khách: {customerInfo.phone}
+                </a>
+              )}
+            </div>
+          </div>
           <p className="text-sm text-gray-600">{order.deliveryAddress}</p>
           {order.notes && (
             <p className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-1.5 inline-block mt-1">

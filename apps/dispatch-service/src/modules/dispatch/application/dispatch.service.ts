@@ -1,7 +1,16 @@
-import { Injectable, Logger } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from "@nestjs/common";
 import { BusinessRuleViolationError } from "@mythfood/shared-kernel";
 import { DispatchRepository } from "../infrastructure/dispatch.repository";
-import { Dispatch, DispatchStatus } from "../domain/dispatch.aggregate";
+import {
+  Dispatch,
+  DispatchDeclineReason,
+  DispatchStatus,
+} from "../domain/dispatch.aggregate";
 import { DispatchId } from "../domain/dispatch-id";
 import { MatchingEngineService } from "./matching-engine.service";
 import {
@@ -21,13 +30,56 @@ const DRIVER_SERVICE_URL =
 const MIN_COD_BALANCE = 2_000_000;
 
 @Injectable()
-export class DispatchService {
+export class DispatchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DispatchService.name);
+  private timeoutInterval: ReturnType<typeof setInterval> | null = null;
+
+  private static readonly DRIVER_RESPONSE_TIMEOUT_MS = 60_000;
 
   constructor(
     private readonly dispatchRepo: DispatchRepository,
     private readonly matchingEngine: MatchingEngineService,
   ) {}
+
+  onModuleInit(): void {
+    // Re-match dispatches where the assigned driver didn't respond within 1 minute.
+    this.timeoutInterval = setInterval(() => {
+      this.handleDriverNoResponse().catch((err) =>
+        this.logger.warn(`Driver no-response sweep failed: ${err.message}`),
+      );
+    }, 15_000);
+  }
+
+  onModuleDestroy(): void {
+    if (this.timeoutInterval) clearInterval(this.timeoutInterval);
+  }
+
+  /**
+   * Finds DRIVER_ASSIGNED dispatches older than 1 minute and re-matches them
+   * (the current driver is treated as having declined silently).
+   */
+  async handleDriverNoResponse(): Promise<void> {
+    const cutoff = new Date(
+      Date.now() - DispatchService.DRIVER_RESPONSE_TIMEOUT_MS,
+    );
+    const assigned = await this.dispatchRepo.findAssignedOlderThan(cutoff);
+    for (const dispatch of assigned) {
+      try {
+        await this.driverDecline(dispatch.id.value, {
+          driverId: dispatch.dispatchDriverId || "",
+          reason: DispatchDeclineReason.OTHER,
+          detail: "Không phản hồi trong 1 phút",
+        });
+        this.logger.log(
+          `Driver ${dispatch.dispatchDriverId} timed out on dispatch ${dispatch.id.value} - re-matching`,
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Timeout re-match failed for ${dispatch.id.value}: ${err.message}`,
+        );
+      }
+    }
+  }
 
   // ---- Dispatch CRUD ----
 

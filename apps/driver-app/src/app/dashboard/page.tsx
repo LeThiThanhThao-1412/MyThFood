@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { driverApi, orderApi, walletApi } from "@mythfood/api-client";
+import {
+  driverApi,
+  orderApi,
+  walletApi,
+  dispatchApi,
+} from "@mythfood/api-client";
 import {
   useAuthStore,
   useLocationStore,
@@ -15,7 +20,8 @@ import {
   reverseGeocodeAddress,
 } from "@mythfood/frontend-shared";
 import DeliveryDrawer from "@/components/DeliveryDrawer";
-import DeliveryActionButtons from "@/components/DeliveryActionButtons";
+import DeliveredOrdersDrawer from "@/components/DeliveredOrdersDrawer";
+import DriverActiveOrderCard from "@/components/DriverActiveOrderCard";
 import {
   acceptOrder as acceptDispatchOrder,
   friendlyError,
@@ -40,6 +46,19 @@ export default function DriverDashboardPage() {
   const { location, hasLocation } = useLocationStore();
   const [driverAddress, setDriverAddress] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [showDeliveredDrawer, setShowDeliveredDrawer] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  const firstSeen = useRef<Record<string, number>>({});
+  // Đơn đã bị ẩn (hết 60s hoặc tài xế từ chối) → không hiển thị lại trong phiên
+  const hiddenOrderIds = useRef<Set<string>>(new Set());
+  // Trigger reload (vd: sau khi tài xế cập nhật trạng thái đơn từ floating card)
+  const [reloadTick, setReloadTick] = useState(0);
+
+  // Tick every second for the countdown timer on order cards
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   // Reverse geocode vị trí tài xế (lat/lng -> địa chỉ text)
   useEffect(() => {
@@ -116,6 +135,20 @@ export default function DriverDashboardPage() {
   );
   const completedOrders = deliveredOrders.length;
 
+  // Chỉ các đơn đang giao (chưa hoàn thành / chưa hủy) — loại bỏ đơn đã giao thành công
+  const deliveringOrders = activeOrders.filter(
+    (o) => o.status !== "DELIVERED" && o.status !== "CANCELLED",
+  );
+
+  // 1 tài xế chỉ nhận 1 đơn tại một thời điểm → đơn đang giao duy nhất
+  const activeOrder = deliveringOrders[0] ?? null;
+
+  const remainingSeconds = (orderId: string): number => {
+    const seen = firstSeen.current[orderId];
+    if (!seen) return 60;
+    return Math.max(0, 60 - Math.floor((now - seen) / 1000));
+  };
+
   // Load driver data
   useEffect(() => {
     if (!isAuthenticated) {
@@ -139,7 +172,14 @@ export default function DriverDashboardPage() {
             orderApi.listByDriver(d.id),
           ]);
           const availItems = (availRes as any).items || [];
-          setAvailableOrders(Array.isArray(availItems) ? availItems : []);
+          const availList = (
+            Array.isArray(availItems) ? availItems : []
+          ).filter((o: any) => !hiddenOrderIds.current.has(o.id));
+          const seen = firstSeen.current;
+          for (const o of availList) {
+            if (!seen[o.id]) seen[o.id] = Date.now();
+          }
+          setAvailableOrders(availList);
           // activeRes may return all orders assigned to this driver (including DELIVERED)
           const allDriverOrders = Array.isArray(activeRes) ? activeRes : [];
           setActiveOrders(allDriverOrders);
@@ -155,7 +195,7 @@ export default function DriverDashboardPage() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isAuthenticated, user, router]);
+  }, [isAuthenticated, user, router, reloadTick]);
 
   // ─── Actions ──────────────────────────────────────────────
   async function toggleOnline() {
@@ -264,8 +304,43 @@ export default function DriverDashboardPage() {
   }
 
   async function declineOrder(orderId: string) {
-    setAvailableOrders(availableOrders.filter((o) => o.id !== orderId));
+    // Xóa khỏi danh sách ngay (optimistic UI) và ẩn trong phiên
+    hiddenOrderIds.current.add(orderId);
+    setAvailableOrders((prev) => prev.filter((o) => o.id !== orderId));
+
+    if (!driver) return;
+    try {
+      // Tìm dispatch của đơn này
+      const dRes: any = await dispatchApi.getByOrder(orderId).catch(() => null);
+      const dispatch = dRes?.data ?? null;
+      // Nếu đơn đang được gán cho tài xế này và đang chờ phản hồi → từ chối
+      // để backend tìm tài xế khác ngay lập tức.
+      if (
+        dispatch?.id &&
+        dispatch.status === "DRIVER_ASSIGNED" &&
+        dispatch.driverId === driver.id
+      ) {
+        await dispatchApi.driverDecline(dispatch.id, {
+          driverId: driver.id,
+          reason: "OTHER",
+          detail: "Tài xế từ chối",
+        });
+      }
+    } catch {
+      /* non-fatal */
+    }
   }
+
+  // ─── Hết 60s phản hồi → đơn tự động mất & backend tìm tài xế mới ─────
+  useEffect(() => {
+    if (!driver) return;
+    const expired = availableOrders.filter((o) => remainingSeconds(o.id) <= 0);
+    if (expired.length === 0) return;
+    for (const o of expired) {
+      declineOrder(o.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [now]);
 
   // ─── Loading ───────────────────────────────────────────────
   if (loading) {
@@ -396,6 +471,18 @@ export default function DriverDashboardPage() {
                   📍
                 </Link>
                 <button className="text-xl">💬</button>
+                <button
+                  onClick={() => setShowDeliveredDrawer(true)}
+                  className="relative text-xl hover:scale-110 transition-transform"
+                  title="Đơn đã giao"
+                >
+                  📦
+                  {deliveredOrders.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-green-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                      {deliveredOrders.length}
+                    </span>
+                  )}
+                </button>
                 <NotificationBell userId={user?.id} />
                 <button
                   onClick={() => {
@@ -520,7 +607,7 @@ export default function DriverDashboardPage() {
             <div className="text-4xl mb-2">📍</div>
             <p className="font-semibold text-lg">
               {isOnline
-                ? activeOrders.length > 0
+                ? deliveringOrders.length > 0
                   ? "Đang trên đường giao hàng"
                   : "Đang chờ đơn hàng mới"
                 : "Hãy bật Online để nhận đơn"}
@@ -546,45 +633,6 @@ export default function DriverDashboardPage() {
               👆 Nhấn để cập nhật vị trí của bạn
             </div>
           </Link>
-
-          {/* ─── ACTIVE DELIVERIES ─── */}
-          {activeOrders.length > 0 && (
-            <div className="mb-6">
-              <h2 className="text-lg font-bold text-[#1a1a2e] mb-3">
-                🚚 Đơn đang giao ({activeOrders.length})
-              </h2>
-              <div className="space-y-3">
-                {activeOrders.map((o: any) => (
-                  <div
-                    key={o.id}
-                    onClick={() => setSelectedOrderId(o.id)}
-                    className="bg-white rounded-2xl shadow-sm p-4 border-l-4 border-[#ff6b35] cursor-pointer hover:shadow-md transition"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold text-gray-800">
-                        #{o.id?.slice(0, 8)}
-                      </span>
-                      <span className="text-xs bg-[#fce4ec] text-[#c62828] px-2.5 py-0.5 rounded-full font-semibold">
-                        🚚 Đang giao
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-500 space-y-1">
-                      <p>📍 Giao đến: {o.deliveryAddress}</p>
-                      <p className="font-bold text-[#ff6b35]">
-                        💰 {toNum(o.totalAmount).toLocaleString("vi-VN")}₫
-                      </p>
-                    </div>
-                    <div className="mt-3">
-                      <DeliveryActionButtons
-                        orderId={o.id}
-                        onChanged={() => setSelectedOrderId(o.id)}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* ─── AVAILABLE ORDERS ─── */}
           <div>
@@ -664,6 +712,14 @@ export default function DriverDashboardPage() {
                         </p>
                       )}
                     </div>
+                    <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                      <span>⏱ Thời gian phản hồi</span>
+                      <span
+                        className={`font-bold ${remainingSeconds(o.id) <= 10 ? "text-red-500" : "text-[#ff6b35]"}`}
+                      >
+                        {remainingSeconds(o.id)}s
+                      </span>
+                    </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => declineOrder(o.id)}
@@ -684,6 +740,21 @@ export default function DriverDashboardPage() {
             )}
           </div>
         </main>
+
+        {/* Floating card đơn đang giao (1 đơn duy nhất) */}
+        <DriverActiveOrderCard
+          orderId={activeOrder?.id ?? null}
+          onOpen={() => activeOrder && setSelectedOrderId(activeOrder.id)}
+          onChanged={() => setReloadTick((t) => t + 1)}
+        />
+
+        {/* Danh sách đơn đã giao (Drawer/Slide-over) */}
+        <DeliveredOrdersDrawer
+          open={showDeliveredDrawer}
+          onClose={() => setShowDeliveredDrawer(false)}
+          orders={deliveredOrders}
+          onSelectOrder={(id) => setSelectedOrderId(id)}
+        />
 
         {/* Delivery drawer */}
         <DeliveryDrawer

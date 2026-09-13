@@ -37,9 +37,11 @@ export class SplitPaymentService {
       throw new Error("Payment has no Stripe PaymentIntent ID");
     }
 
-    // 1. Capture the PaymentIntent (move from authorized -> captured)
-    this.logger.log(`Capturing PaymentIntent ${paymentIntentId}`);
-    await this.stripeService.capturePaymentIntent(paymentIntentId);
+    // 1. Funds are already captured at payment time (capture_method=automatic),
+    //    so no manual capture is needed here.
+    this.logger.log(
+      `PaymentIntent ${paymentIntentId} already captured at payment time`,
+    );
 
     // 2. Calculate split amounts
     const totalAmount = payment.paymentAmount;

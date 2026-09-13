@@ -10,6 +10,7 @@ import {
   UpdateDriverProfileDto,
   UpdateLocationDto,
   UpdateFatigueDto,
+  RateDriverDto,
 } from "./dtos/driver.dto";
 
 @Injectable()
@@ -145,6 +146,14 @@ export class DriverService {
   async completeOrder(id: string): Promise<Driver> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
     driver.completeOrder();
+    await this.driverRepo.save(driver);
+    return driver;
+  }
+
+  // ---- Rating (called by review-service to keep driver rating in sync) ----
+  async rateDriver(id: string, dto: RateDriverDto): Promise<Driver> {
+    const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
+    driver.addRating(dto.rating);
     await this.driverRepo.save(driver);
     return driver;
   }

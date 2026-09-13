@@ -13,6 +13,7 @@ export {
   MAX_SEARCH_HISTORY,
 } from "./stores/search-history.store";
 export { useFavoritesStore } from "./stores/favorites.store";
+export { useFavoriteDishesStore } from "./stores/favorite-dishes.store";
 
 // Constants
 export {
@@ -24,6 +25,8 @@ export type { FoodCategory } from "./constants/food-categories";
 
 // Utils
 export { haversineKm, formatDistance } from "./utils/distance";
+export { fetchRoute } from "./utils/route";
+export type { RouteInfo, RoutePoint } from "./utils/route";
 export { searchAddress, reverseGeocodeAddress } from "./utils/geocoding";
 export type { GeocodingSuggestion } from "./utils/geocoding";
 export { canAccessApp, APP_ALLOWED_ROLES } from "./utils/role-access";

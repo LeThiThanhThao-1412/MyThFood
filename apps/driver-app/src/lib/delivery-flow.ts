@@ -10,6 +10,8 @@
 // ============================================================================
 
 import {
+  authApi,
+  consumerApi,
   dispatchApi,
   driverApi,
   merchantApi,
@@ -149,25 +151,6 @@ export function toNum(v: unknown, fallback = 0): number {
   return fallback;
 }
 
-/** Khoảng cách đường chim bay (km). */
-export function haversineKm(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number,
-): number {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 /** Suy ra bước hiện tại từ trạng thái dispatch (ưu tiên) hoặc trạng thái đơn. */
 export function resolveStage(
   dispatchStatus?: string | null,
@@ -278,6 +261,44 @@ export async function getMerchant(merchantId: string): Promise<any | null> {
     return unwrap<any>(await merchantApi.getById(merchantId));
   } catch {
     return null;
+  }
+}
+
+/**
+ * Lấy tên + SĐT khách hàng cho tài xế.
+ * consumerId (order) → consumer profile (tên + userId) → identity (SĐT).
+ * Không bao giờ throw — trả null nếu thiếu dữ liệu.
+ */
+export async function getCustomerInfo(order: any): Promise<{
+  fullName: string | null;
+  phone: string | null;
+  avatar?: string | null;
+}> {
+  const consumerId = order?.consumerId;
+  if (!consumerId) return { fullName: null, phone: null };
+
+  let fullName: string | null = null;
+  let userId: string | null = null;
+  let avatar: string | null = null;
+
+  // 1. Lấy tên + userId + avatar từ consumer profile
+  try {
+    const c = unwrap<any>(await consumerApi.getContact(consumerId)) ?? null;
+    fullName = c?.fullName ?? null;
+    userId = c?.userId ?? null;
+    avatar = c?.avatar ?? null;
+  } catch {
+    /* ignore */
+  }
+
+  // 2. Lấy SĐT (và tên fallback) từ identity
+  try {
+    const uid = userId ?? consumerId;
+    const u = unwrap<any>(await authApi.getUserContact(uid)) ?? null;
+    if (!fullName && u?.fullName) fullName = u.fullName;
+    return { fullName, phone: u?.phone ?? null, avatar };
+  } catch {
+    return { fullName, phone: null, avatar };
   }
 }
 
@@ -542,58 +563,12 @@ async function syncOrderOutForDelivery(
 }
 
 // ---------------------------------------------------------------------------
-// Dẫn đường (OSRM public API, fallback đường chim bay)
+// Dẫn đường (OSRM public API, fallback đường chim bay) — dùng chung với
+// consumer-app qua @mythfood/frontend-shared.
 // ---------------------------------------------------------------------------
 
-export interface RouteInfo {
-  /** Danh sách điểm `[lat, lng]` để vẽ polyline trên bản đồ. */
-  points: [number, number][];
-  distanceKm: number;
-  durationMin: number;
-  source: "osrm" | "straight";
-}
-
-const OSRM_BASE = "https://router.project-osrm.org/route/v1/driving";
-const AVG_SPEED_KMH = 25;
-
-/** Lấy tuyến đường thực tế giữa 2 điểm; lỗi mạng → đường thẳng nối 2 điểm. */
-export async function fetchRoute(from: LatLng, to: LatLng): Promise<RouteInfo> {
-  const distanceKm = haversineKm(
-    from.latitude,
-    from.longitude,
-    to.latitude,
-    to.longitude,
-  );
-  const straight: RouteInfo = {
-    points: [
-      [from.latitude, from.longitude],
-      [to.latitude, to.longitude],
-    ],
-    distanceKm,
-    durationMin: Math.max(1, Math.round((distanceKm / AVG_SPEED_KMH) * 60)),
-    source: "straight",
-  };
-
-  try {
-    const url =
-      `${OSRM_BASE}/${from.longitude},${from.latitude};${to.longitude},${to.latitude}` +
-      `?overview=full&geometries=geojson`;
-    const res = await fetch(url);
-    if (!res.ok) return straight;
-    const data: any = await res.json();
-    const route = data?.routes?.[0];
-    const coords: [number, number][] = route?.geometry?.coordinates ?? [];
-    if (!coords.length) return straight;
-    return {
-      points: coords.map(([lng, lat]) => [lat, lng] as [number, number]),
-      distanceKm: toNum(route.distance) / 1000,
-      durationMin: Math.max(1, Math.round(toNum(route.duration) / 60)),
-      source: "osrm",
-    };
-  } catch {
-    return straight;
-  }
-}
+export { fetchRoute } from "@mythfood/frontend-shared";
+export type { RouteInfo } from "@mythfood/frontend-shared";
 
 /** Link mở Google Maps dẫn đường (nếu tài xế muốn dùng app ngoài). */
 export function googleMapsDirections(from: LatLng | null, to: LatLng): string {

@@ -16,6 +16,7 @@ export class WalletService {
 
   static readonly MIN_COD_BALANCE = 2000000;
   static readonly MIN_WITHDRAW = 50000;
+  static readonly MIN_CONSUMER_WITHDRAW = 10000;
   static readonly MAX_WITHDRAWS_PER_DAY = 1;
 
   constructor(private readonly walletRepo: WalletRepository) {}
@@ -42,8 +43,9 @@ export class WalletService {
     referenceId?: string,
   ): Promise<{ id: string; balance: number }> {
     const entity = await this.getOrCreateWallet(ownerId, ownerType);
+    const amountNum = Number(amount);
     const balanceBefore = Number(entity.balance);
-    entity.balance = balanceBefore + amount;
+    entity.balance = balanceBefore + amountNum;
     await this.walletRepo.save(entity);
 
     await this.walletRepo.recordTransaction({
@@ -52,7 +54,7 @@ export class WalletService {
       ownerId,
       ownerType,
       type: "CREDIT",
-      amount,
+      amount: amountNum,
       balanceBefore,
       balanceAfter: Number(entity.balance),
       description,
@@ -61,7 +63,7 @@ export class WalletService {
     });
 
     this.logger.log(
-      `Credit ${ownerType}:${ownerId} +${amount} VND - ${description}`,
+      `Credit ${ownerType}:${ownerId} +${amountNum} VND - ${description}`,
     );
     return { id: entity.id, balance: Number(entity.balance) };
   }
@@ -74,9 +76,13 @@ export class WalletService {
   ): Promise<{ id: string; balance: number }> {
     const entity = await this.getOrCreateWallet(ownerId, ownerType);
 
-    if (amount < WalletService.MIN_WITHDRAW) {
+    const minWithdraw =
+      ownerType === OwnerType.CONSUMER
+        ? WalletService.MIN_CONSUMER_WITHDRAW
+        : WalletService.MIN_WITHDRAW;
+    if (amount < minWithdraw) {
       throw new Error(
-        `Minimum withdraw: ${WalletService.MIN_WITHDRAW.toLocaleString("vi-VN")} VND`,
+        `Minimum withdraw: ${minWithdraw.toLocaleString("vi-VN")} VND`,
       );
     }
 
@@ -102,6 +108,11 @@ export class WalletService {
     }
 
     const balanceBefore = Number(entity.balance);
+    if (balanceBefore < amount) {
+      throw new Error(
+        `Số dư không đủ. Cần ${amount.toLocaleString("vi-VN")} VND, hiện có ${balanceBefore.toLocaleString("vi-VN")} VND`,
+      );
+    }
     entity.balance = balanceBefore - amount;
     await this.walletRepo.save(entity);
 
@@ -259,13 +270,79 @@ export class WalletService {
     return this.walletRepo.getTransactions(ownerId, ownerType);
   }
 
-  async handleStripeTopup(ownerId: string, amount: number): Promise<void> {
+  async handleStripeTopup(
+    ownerId: string,
+    ownerType: OwnerType,
+    amount: number,
+  ): Promise<void> {
     await this.credit(
       ownerId,
-      OwnerType.DRIVER,
+      ownerType,
       amount,
       "Nạp tiền qua Stripe",
       "TOPUP",
+    );
+  }
+
+  /**
+   * Pay an order using the owner's wallet balance.
+   * Debits the wallet for the order total (referenceType ORDER).
+   */
+  async pay(
+    ownerId: string,
+    ownerType: OwnerType,
+    amount: number,
+    orderId: string,
+  ): Promise<{ id: string; balance: number }> {
+    const entity = await this.getOrCreateWallet(ownerId, ownerType);
+    const balanceBefore = Number(entity.balance);
+
+    if (balanceBefore < amount) {
+      throw new Error(
+        `Số dư ví không đủ. Cần ${amount.toLocaleString("vi-VN")} VND, hiện có ${balanceBefore.toLocaleString("vi-VN")} VND`,
+      );
+    }
+
+    entity.balance = balanceBefore - amount;
+    await this.walletRepo.save(entity);
+
+    await this.walletRepo.recordTransaction({
+      id: randomUUID(),
+      walletId: entity.id,
+      ownerId,
+      ownerType,
+      type: "DEBIT",
+      amount,
+      balanceBefore,
+      balanceAfter: Number(entity.balance),
+      description: `Thanh toán đơn #${orderId.slice(0, 8)}`,
+      referenceType: "ORDER",
+      referenceId: orderId,
+    });
+
+    this.logger.log(
+      `Wallet payment ${ownerType}:${ownerId} -${amount} VND for order #${orderId.slice(0, 8)}`,
+    );
+    return { id: entity.id, balance: Number(entity.balance) };
+  }
+
+  /**
+   * Refund an online-paid order back into the owner's wallet (store credit).
+   * Credits the wallet for the refund amount (referenceType REFUND).
+   */
+  async refundCredit(
+    ownerId: string,
+    ownerType: OwnerType,
+    amount: number,
+    orderId: string,
+  ): Promise<{ id: string; balance: number }> {
+    return this.credit(
+      ownerId,
+      ownerType,
+      amount,
+      `Hoàn tiền đơn #${orderId.slice(0, 8)}`,
+      "REFUND",
+      orderId,
     );
   }
 

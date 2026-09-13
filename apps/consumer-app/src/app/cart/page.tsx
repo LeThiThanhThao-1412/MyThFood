@@ -138,9 +138,17 @@ export default function CartPage() {
                     style={{ animationDelay: `${idx * 0.05}s` }}
                   >
                     <div className="flex items-start justify-between gap-4">
-                      {/* Item image placeholder */}
-                      <div className="hidden sm:flex w-16 h-16 bg-[#fff7ed] rounded-xl items-center justify-center text-2xl shrink-0">
-                        🍽️
+                      {/* Item image */}
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 bg-[#fff7ed] rounded-xl overflow-hidden flex items-center justify-center shrink-0">
+                        {item.menuItem.imageUrl ? (
+                          <img
+                            src={item.menuItem.imageUrl}
+                            alt={item.menuItem.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-2xl">🍽️</span>
+                        )}
                       </div>
 
                       {/* Item info */}

@@ -5,9 +5,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   DeleteDateColumn,
+  Index,
 } from "typeorm";
 
 @Entity("consumers")
+@Index(["user_id"], { unique: true })
 export class ConsumerEntity {
   @PrimaryColumn({ type: "uuid" })
   id!: string;
@@ -35,6 +37,9 @@ export class ConsumerEntity {
 
   @Column({ type: "jsonb", default: "[]" })
   favorite_merchant_ids!: string;
+
+  @Column({ type: "jsonb", default: "[]" })
+  favorite_menu_item_ids!: string;
 
   @CreateDateColumn({ type: "timestamptz" })
   created_at!: Date;

@@ -16,6 +16,12 @@ const ADDR_TYPE_META: Record<string, { icon: string; label: string }> = {
   OTHER: { icon: "📍", label: "Khác" },
 };
 
+const PM_TYPE_META: Record<string, { icon: string; label: string }> = {
+  CREDIT_CARD: { icon: "💳", label: "Thẻ tín dụng" },
+  DEBIT_CARD: { icon: "💳", label: "Thẻ ghi nợ" },
+  E_WALLET: { icon: "📱", label: "Ví điện tử" },
+};
+
 export default function ProfilePage() {
   const router = useRouter();
   const { isAuthenticated, user, clearAuth } = useAuthStore();
@@ -41,6 +47,13 @@ export default function ProfilePage() {
   const [showChangePw, setShowChangePw] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+
+  const [showAddPayment, setShowAddPayment] = useState(false);
+  const [pmType, setPmType] = useState<
+    "CREDIT_CARD" | "DEBIT_CARD" | "E_WALLET"
+  >("CREDIT_CARD");
+  const [pmCardNumber, setPmCardNumber] = useState("");
+  const [pmExpiry, setPmExpiry] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -190,9 +203,119 @@ export default function ProfilePage() {
     setStatus("✅ Đã đặt làm vị trí giao hàng hiện tại");
   }
 
+  async function addPaymentMethod() {
+    if (!consumer) return;
+    setSaving(true);
+    setStatus("");
+    try {
+      let body: any;
+      if (pmType === "E_WALLET") {
+        body = {
+          type: "E_WALLET",
+          provider: "MyThFood",
+          token: "wallet",
+          lastFourDigits: "0000",
+        };
+      } else {
+        const digits = pmCardNumber.replace(/\D/g, "");
+        if (digits.length < 4) {
+          setStatus("❌ Vui lòng nhập số thẻ hợp lệ");
+          setSaving(false);
+          return;
+        }
+        const last4 = digits.slice(-4);
+        const firstDigit = digits[0];
+        const provider =
+          firstDigit === "4"
+            ? "Visa"
+            : firstDigit === "5"
+              ? "Mastercard"
+              : firstDigit === "3"
+                ? "JCB/Amex"
+                : "Thẻ";
+        body = {
+          type: pmType,
+          provider,
+          token: `card_${last4}_${Date.now()}`,
+          lastFourDigits: last4,
+          expiryDate: pmExpiry ? `${pmExpiry.replace("/", "-")}-01` : undefined,
+        };
+      }
+      const res: any = await consumerApi.addPaymentMethod(consumer.id, body);
+      setConsumer(res?.data || res);
+      setShowAddPayment(false);
+      setPmCardNumber("");
+      setPmExpiry("");
+      setStatus("✅ Đã thêm phương thức thanh toán");
+    } catch (e: any) {
+      setStatus("❌ " + (e?.message || "Lỗi thêm phương thức thanh toán"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removePaymentMethod(pmId: string) {
+    if (!consumer) return;
+    setSaving(true);
+    setStatus("");
+    try {
+      const res: any = await consumerApi.removePaymentMethod(consumer.id, pmId);
+      setConsumer(res?.data || res);
+      setStatus("✅ Đã xóa phương thức thanh toán");
+    } catch (e: any) {
+      setStatus("❌ " + (e?.message || "Lỗi xóa"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setDefaultPaymentMethod(pmId: string) {
+    if (!consumer) return;
+    setSaving(true);
+    setStatus("");
+    try {
+      const res: any = await consumerApi.setDefaultPaymentMethod(
+        consumer.id,
+        pmId,
+      );
+      setConsumer(res?.data || res);
+      setStatus("✅ Đã đặt làm mặc định");
+    } catch (e: any) {
+      setStatus("❌ " + (e?.message || "Lỗi đặt mặc định"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function translatePasswordError(message?: string): string {
+    const msg = (message || "").toLowerCase();
+    if (msg.includes("current password is incorrect")) {
+      return "Mật khẩu hiện tại không đúng";
+    }
+    if (msg.includes("at least 8 characters") || msg.includes("at least 8")) {
+      return "Mật khẩu mới phải có ít nhất 8 ký tự";
+    }
+    if (
+      msg.includes("uppercase") ||
+      msg.includes("lowercase") ||
+      msg.includes("digit") ||
+      msg.includes("special character")
+    ) {
+      return "Mật khẩu mới phải gồm: chữ HOA, chữ thường, số và ký tự đặc biệt";
+    }
+    if (msg.includes("not found")) {
+      return "Không tìm thấy tài khoản";
+    }
+    return "Lỗi đổi mật khẩu. Vui lòng thử lại";
+  }
+
   async function changePassword() {
     if (!currentPassword || !newPassword) {
-      setStatus("Vui lòng nhập đủ mật khẩu");
+      setStatus("Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới");
+      return;
+    }
+    if (newPassword.length < 8) {
+      setStatus("Mật khẩu mới phải có ít nhất 8 ký tự");
       return;
     }
     setSaving(true);
@@ -204,7 +327,7 @@ export default function ProfilePage() {
       setCurrentPassword("");
       setNewPassword("");
     } catch (e: any) {
-      setStatus("❌ " + (e?.message || "Lỗi đổi mật khẩu"));
+      setStatus("❌ " + translatePasswordError(e?.message));
     } finally {
       setSaving(false);
     }
@@ -219,6 +342,7 @@ export default function ProfilePage() {
   }
 
   const addresses = consumer?.addresses || [];
+  const paymentMethods = consumer?.paymentMethods || [];
 
   return (
     <div className="min-h-screen bg-[#f0f2f5] max-w-2xl mx-auto pb-24">
@@ -240,6 +364,23 @@ export default function ProfilePage() {
             {status}
           </div>
         )}
+
+        {/* Ví khách hàng */}
+        <Link
+          href="/wallet"
+          className="bg-gradient-to-br from-[#ff6b35] to-[#ff8f65] rounded-2xl shadow-sm p-4 flex items-center justify-between text-white"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">💰</span>
+            <div>
+              <p className="font-bold">Ví của tôi</p>
+              <p className="text-xs text-white/80">
+                Nạp tiền, thanh toán & lịch sử giao dịch
+              </p>
+            </div>
+          </div>
+          <span className="text-white/80 text-xl">›</span>
+        </Link>
 
         {/* Avatar + basic info */}
         <div className="bg-white rounded-2xl shadow-sm p-5">
@@ -448,6 +589,123 @@ export default function ProfilePage() {
           )}
         </div>
 
+        {/* Payment methods */}
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-bold text-[#1a1a2e]">
+              💳 Phương thức thanh toán
+            </h3>
+            <button
+              onClick={() => setShowAddPayment(!showAddPayment)}
+              className="text-sm font-semibold text-[#ff6b35]"
+            >
+              {showAddPayment ? "✕ Đóng" : "+ Thêm"}
+            </button>
+          </div>
+
+          {showAddPayment && (
+            <div className="bg-gray-50 rounded-xl p-4 mb-3 space-y-3">
+              <div className="flex gap-2">
+                {(["CREDIT_CARD", "DEBIT_CARD", "E_WALLET"] as const).map(
+                  (t) => (
+                    <button
+                      key={t}
+                      onClick={() => setPmType(t)}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium ${pmType === t ? "bg-[#ff6b35] text-white" : "bg-white text-gray-600 border"}`}
+                    >
+                      {PM_TYPE_META[t].icon} {PM_TYPE_META[t].label}
+                    </button>
+                  ),
+                )}
+              </div>
+
+              {pmType === "E_WALLET" ? (
+                <p className="text-xs text-gray-500">
+                  📱 Ví điện tử MyThFood — dùng số dư ví để thanh toán. Bạn có
+                  thể{" "}
+                  <Link href="/wallet" className="text-[#ff6b35] font-semibold">
+                    nạp tiền vào ví
+                  </Link>
+                  .
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <input
+                    value={pmCardNumber}
+                    onChange={(e) =>
+                      setPmCardNumber(
+                        e.target.value.replace(/\D/g, "").slice(0, 16),
+                      )
+                    }
+                    placeholder="Số thẻ (16 chữ số)"
+                    className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+                  />
+                  <input
+                    value={pmExpiry}
+                    onChange={(e) => setPmExpiry(e.target.value)}
+                    placeholder="Hết hạn (MM/YY)"
+                    className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+                  />
+                </div>
+              )}
+
+              <button
+                onClick={addPaymentMethod}
+                disabled={saving}
+                className="w-full bg-[#ff6b35] text-white py-2 rounded-xl font-semibold text-sm"
+              >
+                ✅ Thêm phương thức
+              </button>
+            </div>
+          )}
+
+          {paymentMethods.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">
+              Chưa có phương thức thanh toán
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {paymentMethods.map((pm: any) => (
+                <div
+                  key={pm.id}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">
+                      {PM_TYPE_META[pm.type]?.icon || "💳"}{" "}
+                      {PM_TYPE_META[pm.type]?.label || pm.type}
+                      {pm.isDefault && (
+                        <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
+                          Mặc định
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {pm.type === "E_WALLET"
+                        ? "MyThFood"
+                        : `${pm.provider || "Thẻ"} •••• ${pm.lastFourDigits}`}
+                    </p>
+                  </div>
+                  {!pm.isDefault && (
+                    <button
+                      onClick={() => setDefaultPaymentMethod(pm.id)}
+                      className="text-xs text-[#ff6b35] hover:text-orange-600 ml-3"
+                    >
+                      Đặt mặc định
+                    </button>
+                  )}
+                  <button
+                    onClick={() => removePaymentMethod(pm.id)}
+                    className="text-red-400 hover:text-red-600 text-sm ml-3"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Change password */}
         <div className="bg-white rounded-2xl shadow-sm p-5">
           <div className="flex items-center justify-between mb-3">
@@ -472,9 +730,13 @@ export default function ProfilePage() {
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Mật khẩu mới (8+ ký tự)"
+                placeholder="Mật khẩu mới (ít nhất 8 ký tự)"
                 className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
               />
+              <p className="text-xs text-gray-400 leading-relaxed">
+                Mật khẩu mới cần tối thiểu 8 ký tự, gồm chữ HOA, chữ thường, số
+                và ký tự đặc biệt (ví dụ: Abc@1234).
+              </p>
               <button
                 onClick={changePassword}
                 disabled={saving}

@@ -3,6 +3,7 @@ import {
   IsOptional,
   IsEmail,
   IsNumber,
+  IsInt,
   Min,
   Max,
 } from "class-validator";
@@ -67,4 +68,11 @@ export class UpdateFatigueDto {
   @IsNumber()
   @Min(0)
   minutesSinceLastCheck!: number;
+}
+
+export class RateDriverDto {
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  rating!: number;
 }

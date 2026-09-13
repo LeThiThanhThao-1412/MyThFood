@@ -1,7 +1,7 @@
 ﻿import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { OrderRepository } from "../infrastructure/order.repository";
-import { OrderGateway } from "../gateway/order.gateway";
+import { OrderService } from "./order.service";
 
 @Injectable()
 export class OrderScheduler {
@@ -10,7 +10,7 @@ export class OrderScheduler {
 
   constructor(
     private readonly orderRepository: OrderRepository,
-    private readonly orderGateway: OrderGateway,
+    private readonly orderService: OrderService,
   ) {}
 
   @Cron(CronExpression.EVERY_30_SECONDS)
@@ -24,20 +24,10 @@ export class OrderScheduler {
 
       for (const order of expiredOrders) {
         try {
-          order.reject("Nha hang khong phan hoi trong 3 phut");
-          await this.orderRepository.save(order);
+          await this.orderService.reject(order.id.toString(), {
+            reason: "Nha hang khong phan hoi trong 3 phut",
+          });
           this.logger.log(`Auto-rejected order ${order.id.toString()}`);
-          try {
-            this.orderGateway.emitOrderUpdate(
-              order.orderMerchantId,
-              "order:rejected",
-              {
-                id: order.id.toString(),
-                status: "REJECTED",
-                rejectionReason: "Nha hang khong phan hoi trong 3 phut",
-              },
-            );
-          } catch {}
         } catch (err: any) {
           this.logger.warn(`Failed to auto-reject: ${err.message}`);
         }

@@ -8,6 +8,7 @@ import {
   useAuthStore,
   useCartStore,
   useFavoritesStore,
+  useFavoriteDishesStore,
 } from "@mythfood/frontend-shared";
 import MenuItemOptionDrawer from "@/components/MenuItemOptionDrawer";
 import CartDrawer from "@/components/CartDrawer";
@@ -19,6 +20,7 @@ export default function RestaurantDetailPage() {
   const { isAuthenticated, user, clearAuth } = useAuthStore();
   const { addItem, items } = useCartStore();
   const favorites = useFavoritesStore();
+  const favDishes = useFavoriteDishesStore();
   const [favoriteBusy, setFavoriteBusy] = useState(false);
   const [merchant, setMerchant] = useState<any>(null);
   const [menu, setMenu] = useState<any[]>([]);
@@ -31,6 +33,7 @@ export default function RestaurantDetailPage() {
   const [avgRating, setAvgRating] = useState(0);
   const [promos, setPromos] = useState<any[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"menu" | "reviews">("menu");
 
   useEffect(() => {
     async function loadReviewsPromos() {
@@ -56,10 +59,13 @@ export default function RestaurantDetailPage() {
   useEffect(() => {
     if (!isAuthenticated || !user) return;
     (async () => {
-      const cid = await resolveConsumerId(user.id);
-      if (cid) await favorites.load(cid);
+      const cid = await resolveConsumerId(user.id, user.fullName);
+      if (cid) {
+        await favorites.load(cid);
+        await favDishes.load(cid);
+      }
     })();
-  }, [isAuthenticated, user, favorites.load]);
+  }, [isAuthenticated, user, favorites.load, favDishes.load]);
 
   const isFav = favorites.isFavorite(id as string);
 
@@ -76,6 +82,23 @@ export default function RestaurantDetailPage() {
     } finally {
       setFavoriteBusy(false);
     }
+  }
+
+  async function handleToggleFavoriteDish(item: any) {
+    if (!isAuthenticated || !user) {
+      router.push("/login");
+      return;
+    }
+    const cid = await resolveConsumerId(user.id, user.fullName);
+    if (!cid) return;
+    await favDishes.toggle(cid, item.id, {
+      menuItemId: item.id,
+      name: item.name,
+      price: item.price,
+      imageUrl: item.imageUrl ?? null,
+      merchantId: id as string,
+      merchantName: merchant?.name || "Nhà hàng",
+    });
   }
 
   useEffect(() => {
@@ -392,187 +415,259 @@ export default function RestaurantDetailPage() {
           </div>
         )}
 
-        {/* Menu section */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-extrabold text-[#1a1a2e]">
-              📋 Thực đơn{" "}
-              <span className="text-gray-400 text-sm font-normal">
-                ({menu.length} món)
-              </span>
-            </h2>
-          </div>
-
-          {/* Category tabs */}
-          {categoryOrder.length > 1 && (
-            <div className="flex gap-2 mb-5 overflow-x-auto hide-scrollbar pb-1">
-              {categoryOrder.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setCurrentCategory(cat)}
-                  className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all shrink-0 ${
-                    currentCategory === cat
-                      ? "bg-[#ff6b35] text-white shadow-md shadow-orange-200"
-                      : "bg-white text-gray-600 border border-gray-100 hover:border-orange-200"
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {menu.length === 0 ? (
-            <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
-              <p className="text-4xl mb-3">📋</p>
-              <p className="text-gray-400 font-medium">
-                Nhà hàng chưa có thực đơn
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {(currentCategory ? [currentCategory] : categoryOrder).map(
-                (cat) => {
-                  const catItems = groupedMenu[cat] || [];
-                  if (catItems.length === 0) return null;
-                  return (
-                    <div key={cat}>
-                      <h3 className="text-base font-bold text-[#ff6b35] mb-3 flex items-center gap-2">
-                        <span>🍽️</span>
-                        {cat}
-                        <span className="text-xs text-gray-400 font-normal">
-                          ({catItems.length})
-                        </span>
-                      </h3>
-                      <div className="space-y-3">
-                        {catItems.map((item: any) => {
-                          const isAdded = addedIds.has(item.id);
-                          return (
-                            <div
-                              key={item.id}
-                              className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 flex items-center gap-4 justify-between hover:shadow-md transition-all"
-                            >
-                              <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
-                                {item.imageUrl ? (
-                                  <img
-                                    src={item.imageUrl}
-                                    alt={item.name}
-                                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shrink-0 bg-gray-100"
-                                  />
-                                ) : (
-                                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-gradient-to-br from-[#f093fb] to-[#f5576c] flex items-center justify-center text-2xl shrink-0">
-                                    🍽️
-                                  </div>
-                                )}
-                                <div className="min-w-0">
-                                  <h4 className="font-semibold text-gray-800 truncate">
-                                    {item.name}
-                                  </h4>
-                                  {item.description && (
-                                    <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">
-                                      {item.description}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-                                <span className="font-bold text-[#ff6b35] text-base whitespace-nowrap">
-                                  {item.price?.toLocaleString("vi-VN")}₫
-                                </span>
-                                <button
-                                  onClick={() => handleAddToCart(item)}
-                                  disabled={!canOrder}
-                                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
-                                    !canOrder
-                                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                      : isAdded
-                                        ? "bg-green-500 text-white scale-105"
-                                        : "bg-[#ff6b35] text-white hover:bg-orange-600 shadow-md shadow-orange-200"
-                                  }`}
-                                >
-                                  {merchant?.isOpen === false
-                                    ? "Đóng cửa"
-                                    : merchant?.isOpenNow === false
-                                      ? "Ngoài giờ"
-                                      : isAdded
-                                        ? "✅ Đã thêm"
-                                        : "+ Thêm"}
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                },
-              )}
-            </div>
-          )}
+        {/* Tabs: Thực đơn / Đánh giá */}
+        <div className="flex gap-2 mb-6 bg-white rounded-2xl p-1.5 shadow-sm border border-gray-100">
+          <button
+            type="button"
+            onClick={() => setActiveTab("menu")}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${
+              activeTab === "menu"
+                ? "bg-[#ff6b35] text-white shadow-md"
+                : "text-gray-500 hover:bg-gray-50"
+            }`}
+          >
+            📋 Thực đơn
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("reviews")}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition ${
+              activeTab === "reviews"
+                ? "bg-[#ff6b35] text-white shadow-md"
+                : "text-gray-500 hover:bg-gray-50"
+            }`}
+          >
+            ⭐ Đánh giá ({reviews.length})
+          </button>
         </div>
 
-        {/* Promotions */}
-        {promos.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-lg font-extrabold text-[#1a1a2e] mb-3">
-              🏷️ Ưu đãi
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {promos.map((p: any) => (
-                <span
-                  key={p.id}
-                  className="bg-[#fff7ed] text-[#ff6b35] border border-orange-200 rounded-xl px-3 py-2 text-sm font-semibold"
-                >
-                  {p.code} ·{" "}
-                  {p.type === "PERCENT" ? `${p.value}%` : `${p.value}đ`}{" "}
-                  {p.target === "SHIPPING" ? "phí ship" : "món ăn"}
-                </span>
-              ))}
+        {/* Menu section */}
+        {activeTab === "menu" && (
+          <>
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-extrabold text-[#1a1a2e]">
+                  📋 Thực đơn{" "}
+                  <span className="text-gray-400 text-sm font-normal">
+                    ({menu.length} món)
+                  </span>
+                </h2>
+              </div>
+
+              {/* Category tabs */}
+              {categoryOrder.length > 1 && (
+                <div className="flex gap-2 mb-5 overflow-x-auto hide-scrollbar pb-1">
+                  {categoryOrder.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setCurrentCategory(cat)}
+                      className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all shrink-0 ${
+                        currentCategory === cat
+                          ? "bg-[#ff6b35] text-white shadow-md shadow-orange-200"
+                          : "bg-white text-gray-600 border border-gray-100 hover:border-orange-200"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {menu.length === 0 ? (
+                <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
+                  <p className="text-4xl mb-3">📋</p>
+                  <p className="text-gray-400 font-medium">
+                    Nhà hàng chưa có thực đơn
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {(currentCategory ? [currentCategory] : categoryOrder).map(
+                    (cat) => {
+                      const catItems = groupedMenu[cat] || [];
+                      if (catItems.length === 0) return null;
+                      return (
+                        <div key={cat}>
+                          <h3 className="text-base font-bold text-[#ff6b35] mb-3 flex items-center gap-2">
+                            <span>🍽️</span>
+                            {cat}
+                            <span className="text-xs text-gray-400 font-normal">
+                              ({catItems.length})
+                            </span>
+                          </h3>
+                          <div className="space-y-3">
+                            {catItems.map((item: any) => {
+                              const isAdded = addedIds.has(item.id);
+                              return (
+                                <div
+                                  key={item.id}
+                                  className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 flex items-center gap-4 justify-between hover:shadow-md transition-all"
+                                >
+                                  <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                                    {item.imageUrl ? (
+                                      <img
+                                        src={item.imageUrl}
+                                        alt={item.name}
+                                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shrink-0 bg-gray-100"
+                                      />
+                                    ) : (
+                                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-gradient-to-br from-[#f093fb] to-[#f5576c] flex items-center justify-center text-2xl shrink-0">
+                                        🍽️
+                                      </div>
+                                    )}
+                                    <div className="min-w-0">
+                                      <h4 className="font-semibold text-gray-800 truncate">
+                                        {item.name}
+                                      </h4>
+                                      {item.description && (
+                                        <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">
+                                          {item.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleToggleFavoriteDish(item)
+                                      }
+                                      aria-label={
+                                        favDishes.isFavorite(item.id)
+                                          ? "Bỏ yêu thích món"
+                                          : "Yêu thích món"
+                                      }
+                                      title={
+                                        favDishes.isFavorite(item.id)
+                                          ? "Bỏ yêu thích món"
+                                          : "Yêu thích món ăn"
+                                      }
+                                      className={`text-lg transition-transform hover:scale-125 ${
+                                        favDishes.isFavorite(item.id)
+                                          ? ""
+                                          : "grayscale opacity-60"
+                                      }`}
+                                    >
+                                      {favDishes.isFavorite(item.id)
+                                        ? "❤️"
+                                        : "🤍"}
+                                    </button>
+                                    <span className="font-bold text-[#ff6b35] text-base whitespace-nowrap">
+                                      {item.price?.toLocaleString("vi-VN")}₫
+                                    </span>
+                                    <button
+                                      onClick={() => handleAddToCart(item)}
+                                      disabled={!canOrder}
+                                      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+                                        !canOrder
+                                          ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                          : isAdded
+                                            ? "bg-green-500 text-white scale-105"
+                                            : "bg-[#ff6b35] text-white hover:bg-orange-600 shadow-md shadow-orange-200"
+                                      }`}
+                                    >
+                                      {merchant?.isOpen === false
+                                        ? "Đóng cửa"
+                                        : merchant?.isOpenNow === false
+                                          ? "Ngoài giờ"
+                                          : isAdded
+                                            ? "✅ Đã thêm"
+                                            : "+ Thêm"}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    },
+                  )}
+                </div>
+              )}
             </div>
-          </div>
+
+            {/* Promotions */}
+            {promos.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-extrabold text-[#1a1a2e] mb-3">
+                  🏷️ Ưu đãi
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {promos.map((p: any) => (
+                    <span
+                      key={p.id}
+                      className="bg-[#fff7ed] text-[#ff6b35] border border-orange-200 rounded-xl px-3 py-2 text-sm font-semibold"
+                    >
+                      {p.code} ·{" "}
+                      {p.type === "PERCENT" ? `${p.value}%` : `${p.value}đ`}{" "}
+                      {p.target === "SHIPPING" ? "phí ship" : "món ăn"}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* Reviews */}
-        <div className="mb-6">
-          <h3 className="text-lg font-extrabold text-[#1a1a2e] mb-3">
-            ⭐ Đánh giá ({reviews.length})
-          </h3>
-          {avgRating > 0 && (
-            <p className="text-sm text-gray-500 mb-3">
-              Trung bình:{" "}
-              <span className="font-bold text-[#ff6b35]">
-                {avgRating.toFixed(1)}
-              </span>{" "}
-              ⭐
-            </p>
-          )}
-          {reviews.length === 0 ? (
-            <p className="text-sm text-gray-400 bg-white rounded-2xl shadow-sm p-4">
-              Chưa có đánh giá nào
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {reviews.slice(0, 10).map((r: any) => (
-                <div key={r.id} className="bg-white rounded-2xl shadow-sm p-4">
-                  <span className="text-yellow-500 text-sm">
-                    {"⭐".repeat(Math.max(0, Math.min(5, r.rating)))}
-                  </span>
-                  {r.comment && (
-                    <p className="text-sm text-gray-700 mt-1">{r.comment}</p>
-                  )}
-                  {r.merchantReply && (
-                    <div className="mt-2 bg-[#fff7ed] rounded-xl p-3 text-sm">
-                      <p className="font-semibold text-[#ff6b35] text-xs mb-1">
-                        🏪 Nhà hàng phản hồi:
-                      </p>
-                      <p className="text-gray-700">{r.merchantReply}</p>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {activeTab === "reviews" && (
+          <div className="mb-6">
+            <h3 className="text-lg font-extrabold text-[#1a1a2e] mb-3">
+              ⭐ Đánh giá ({reviews.length})
+            </h3>
+            {avgRating > 0 && (
+              <p className="text-sm text-gray-500 mb-3">
+                Trung bình:{" "}
+                <span className="font-bold text-[#ff6b35]">
+                  {avgRating.toFixed(1)}
+                </span>{" "}
+                ⭐
+              </p>
+            )}
+            {reviews.length === 0 ? (
+              <p className="text-sm text-gray-400 bg-white rounded-2xl shadow-sm p-4">
+                Chưa có đánh giá nào
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {reviews.slice(0, 10).map((r: any) => (
+                  <div
+                    key={r.id}
+                    className="bg-white rounded-2xl shadow-sm p-4"
+                  >
+                    <span className="text-yellow-500 text-sm">
+                      {"⭐".repeat(Math.max(0, Math.min(5, r.rating)))}
+                    </span>
+                    {r.comment && (
+                      <p className="text-sm text-gray-700 mt-1">{r.comment}</p>
+                    )}
+                    {r.images && r.images.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {r.images.map((img: string, idx: number) => (
+                          <img
+                            key={idx}
+                            src={img}
+                            alt={`Ảnh đánh giá ${idx + 1}`}
+                            className="w-20 h-20 rounded-xl object-cover border border-gray-100"
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {r.merchantReply && (
+                      <div className="mt-2 bg-[#fff7ed] rounded-xl p-3 text-sm">
+                        <p className="font-semibold text-[#ff6b35] text-xs mb-1">
+                          🏪 Nhà hàng phản hồi:
+                        </p>
+                        <p className="text-gray-700">{r.merchantReply}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Spacer */}
         <div className="h-6" />

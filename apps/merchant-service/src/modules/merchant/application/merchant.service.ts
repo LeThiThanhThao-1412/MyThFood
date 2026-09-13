@@ -202,6 +202,67 @@ export class MerchantService {
     return { items, total };
   }
 
+  /**
+   * Resolve menu items (with merchant info) by a list of ids — used by the
+   * favourite-dishes feature to display names even across devices/sessions.
+   */
+  async getMenuItemsByIds(ids: string[]): Promise<MenuSearchItemDto[]> {
+    const uniqueIds = Array.from(
+      new Set((ids ?? []).map((s) => String(s).trim()).filter(Boolean)),
+    );
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    const menuItemEntities =
+      await this.merchantRepository.findMenuItemsByIds(uniqueIds);
+    if (menuItemEntities.length === 0) {
+      return [];
+    }
+
+    const merchantIds = Array.from(
+      new Set(menuItemEntities.map((e) => e.merchant_id)),
+    );
+    const merchants = await this.merchantRepository.findManyByIds(merchantIds);
+    const merchantById = new Map(merchants.map((m) => [m.id.toString(), m]));
+
+    const items: MenuSearchItemDto[] = [];
+    for (const entity of menuItemEntities) {
+      const merchant = merchantById.get(entity.merchant_id);
+      if (!merchant) {
+        continue;
+      }
+      const menuItem = merchant.menuItemList.find(
+        (mi) => mi.id.toString() === entity.id,
+      );
+      if (!menuItem) {
+        continue;
+      }
+      items.push({
+        id: menuItem.id.toString(),
+        merchantId: entity.merchant_id,
+        name: menuItem.itemName,
+        description: menuItem.itemDescription,
+        price: menuItem.itemPrice,
+        imageUrl: menuItem.itemImageUrl,
+        category: menuItem.itemCategory,
+        isAvailable: menuItem.available,
+        merchant: {
+          id: merchant.id.toString(),
+          name: merchant.merchantName,
+          rating: merchant.merchantRating,
+          address: merchant.merchantAddress,
+          latitude: merchant.merchantLatitude,
+          longitude: merchant.merchantLongitude,
+          isOpen: merchant.merchantIsOpen,
+          isOpenNow: merchant.isOpen(),
+        },
+      });
+    }
+
+    return items;
+  }
+
   async softDelete(id: string): Promise<void> {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(id),

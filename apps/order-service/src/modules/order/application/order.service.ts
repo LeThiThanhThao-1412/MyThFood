@@ -460,6 +460,41 @@ export class OrderService {
     order.cancel(dto.reason);
     await this.orderRepository.save(order);
 
+    // Refund online-paid orders (WALLET or card) back to the customer's wallet
+    // as store credit. COD orders have no captured money, so nothing to refund.
+    const isOnlinePaid =
+      order.orderPaymentMethod === "WALLET" ||
+      order.orderPaymentMethod === "CREDIT_CARD";
+    if (isOnlinePaid && order.orderTotalAmount > 0) {
+      try {
+        const walletUrl =
+          process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
+        const serviceKey =
+          process.env.SERVICE_API_KEY || "mythfood-service-key";
+        await firstValueFrom(
+          this.httpService.post(
+            `${walletUrl}/api/v1/wallets/refund`,
+            {
+              ownerId: order.orderConsumerId,
+              ownerType: "CONSUMER",
+              amount: order.orderTotalAmount,
+              orderId: id,
+            },
+            {
+              headers: { "x-service-key": serviceKey },
+            },
+          ),
+        );
+        this.logger.log(
+          `Refunded ${order.orderTotalAmount} VND to consumer ${order.orderConsumerId} wallet for cancelled order ${id}`,
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Wallet refund failed for order ${id}: ${err.message}`,
+        );
+      }
+    }
+
     const events = order.pullDomainEvents();
     for (const event of events) {
       this.eventBus.publish(event);
@@ -474,6 +509,41 @@ export class OrderService {
     }
     order.reject(dto.reason);
     await this.orderRepository.save(order);
+
+    // Refund online-paid orders (WALLET or card) back to the customer's wallet
+    // as store credit. COD orders have no captured money, so nothing to refund.
+    const isOnlinePaid =
+      order.orderPaymentMethod === "WALLET" ||
+      order.orderPaymentMethod === "CREDIT_CARD";
+    if (isOnlinePaid && order.orderTotalAmount > 0) {
+      try {
+        const walletUrl =
+          process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
+        const serviceKey =
+          process.env.SERVICE_API_KEY || "mythfood-service-key";
+        await firstValueFrom(
+          this.httpService.post(
+            `${walletUrl}/api/v1/wallets/refund`,
+            {
+              ownerId: order.orderConsumerId,
+              ownerType: "CONSUMER",
+              amount: order.orderTotalAmount,
+              orderId: id,
+            },
+            {
+              headers: { "x-service-key": serviceKey },
+            },
+          ),
+        );
+        this.logger.log(
+          `Refunded ${order.orderTotalAmount} VND to consumer ${order.orderConsumerId} wallet for rejected order ${id}`,
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Wallet refund failed for order ${id}: ${err.message}`,
+        );
+      }
+    }
 
     const events = order.pullDomainEvents();
     for (const event of events) {

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /** Maximum number of keywords kept in the history. */
-export const MAX_SEARCH_HISTORY = 10;
+export const MAX_SEARCH_HISTORY = 4;
 
 interface SearchHistoryState {
   keywords: string[];

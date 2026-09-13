@@ -69,6 +69,7 @@ export interface ConsumerProfile {
   addresses: Address[];
   paymentMethods: PaymentMethod[];
   favoriteMerchantIds?: string[];
+  favoriteMenuItemIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -84,9 +85,10 @@ export interface Address {
 
 export interface PaymentMethod {
   id: string;
-  type: "CREDIT_CARD" | "DEBIT_CARD" | "CASH" | "WALLET";
+  type: "CREDIT_CARD" | "DEBIT_CARD" | "E_WALLET";
   provider: string;
   lastFourDigits: string;
+  expiryDate?: string | null;
   isDefault: boolean;
 }
 
@@ -121,10 +123,11 @@ export interface ChangePasswordRequest {
 }
 
 export interface AddPaymentMethodRequest {
-  type: "CREDIT_CARD" | "DEBIT_CARD" | "CASH" | "WALLET";
+  type: "CREDIT_CARD" | "DEBIT_CARD" | "E_WALLET";
   provider: string;
+  token: string;
   lastFourDigits: string;
-  isDefault?: boolean;
+  expiryDate?: string;
 }
 
 // --- Merchant ---
@@ -538,6 +541,16 @@ export interface Driver {
   updatedAt: string;
 }
 
+/** Thông tin công khai của tài xế dành cho CONSUMER (không chứa dữ liệu nhạy cảm). */
+export interface DriverPublicProfile {
+  id: string;
+  fullName: string;
+  avatar?: string | null;
+  vehicleRegistrationNumber: string;
+  rating: number;
+  totalRatings: number;
+}
+
 export interface RegisterDriverRequest {
   userId: string;
   fullName: string;
@@ -636,6 +649,8 @@ export interface Review {
   orderId: string;
   consumerId: string;
   merchantId: string;
+  driverId?: string | null;
+  driverRating?: number | null;
   rating: number;
   comment?: string | null;
   tags?: string[];
@@ -649,6 +664,8 @@ export interface CreateReviewRequest {
   orderId: string;
   consumerId: string;
   merchantId: string;
+  driverId?: string;
+  driverRating?: number;
   rating: number;
   comment?: string;
   tags?: string[];

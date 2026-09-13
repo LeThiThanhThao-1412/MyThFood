@@ -20,6 +20,9 @@ export class ConsumerMapper {
     const favoriteMerchantIds = ConsumerMapper.parseFavoriteMerchantIds(
       entity.favorite_merchant_ids,
     );
+    const favoriteMenuItemIds = ConsumerMapper.parseFavoriteMenuItemIds(
+      entity.favorite_menu_item_ids,
+    );
 
     return Consumer.rehydrate(id, {
       userId: entity.user_id,
@@ -30,6 +33,7 @@ export class ConsumerMapper {
       addresses,
       paymentMethods,
       favoriteMerchantIds,
+      favoriteMenuItemIds,
     });
   }
 
@@ -50,10 +54,25 @@ export class ConsumerMapper {
     entity.favorite_merchant_ids = JSON.stringify(
       consumer.favoriteMerchantIdList,
     );
+    entity.favorite_menu_item_ids = JSON.stringify(
+      consumer.favoriteMenuItemIdList,
+    );
     return entity;
   }
 
   private static parseFavoriteMerchantIds(json: string): string[] {
+    try {
+      const raw: unknown = JSON.parse(json ?? "[]");
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .map((item) => (typeof item === "string" ? item : String(item ?? "")))
+        .filter((id) => id.length > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  private static parseFavoriteMenuItemIds(json: string): string[] {
     try {
       const raw: unknown = JSON.parse(json ?? "[]");
       if (!Array.isArray(raw)) return [];

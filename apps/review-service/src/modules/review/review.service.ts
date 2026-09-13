@@ -44,6 +44,8 @@ export class ReviewService {
     review.orderId = dto.orderId;
     review.consumerId = dto.consumerId;
     review.merchantId = dto.merchantId;
+    review.driverId = dto.driverId ?? null;
+    review.driverRating = dto.driverRating ?? null;
     review.rating = dto.rating;
     review.comment = dto.comment ?? null;
     review.tags = dto.tags ?? [];
@@ -53,6 +55,11 @@ export class ReviewService {
 
     // Best-effort: đồng bộ rating trung bình sang merchant-service
     void this.syncMerchantRating(dto.merchantId);
+
+    // Best-effort: đồng bộ rating tài xế sang driver-service
+    if (dto.driverId && dto.driverRating != null) {
+      void this.syncDriverRating(dto.driverId, dto.driverRating);
+    }
 
     return saved;
   }
@@ -91,6 +98,42 @@ export class ReviewService {
     } catch (err: any) {
       this.logger.warn(
         `Failed to sync merchant rating for ${merchantId}: ${err?.message}`,
+      );
+    }
+  }
+
+  private async syncDriverRating(
+    driverId: string,
+    driverRating: number,
+  ): Promise<void> {
+    try {
+      const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+      for (const base of this.serviceCandidates(
+        "DRIVER_SERVICE_URL",
+        "http://driver-service:3007",
+        "http://localhost:3007",
+      )) {
+        try {
+          await firstValueFrom(
+            this.httpService.patch(
+              `${base}/api/v1/drivers/${driverId}/rating`,
+              { rating: driverRating },
+              {
+                headers: {
+                  "Content-Type": "application/json",
+                  "x-service-key": serviceKey,
+                },
+              },
+            ),
+          );
+          return;
+        } catch {
+          // thử base URL tiếp theo
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to sync driver rating for ${driverId}: ${err?.message}`,
       );
     }
   }

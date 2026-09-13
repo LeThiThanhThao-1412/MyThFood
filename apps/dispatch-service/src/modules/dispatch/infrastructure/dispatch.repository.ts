@@ -95,6 +95,17 @@ export class DispatchRepository {
     return entities.map(DispatchMapper.toDomain);
   }
 
+  /** Dispatches stuck in DRIVER_ASSIGNED (driver hasn't responded) older than cutoff. */
+  async findAssignedOlderThan(cutoff: Date): Promise<Dispatch[]> {
+    const entities = await this.repo
+      .createQueryBuilder("d")
+      .where("d.status = :status", { status: "DRIVER_ASSIGNED" })
+      .andWhere("d.updatedAt < :cutoff", { cutoff })
+      .orderBy("d.updatedAt", "ASC")
+      .getMany();
+    return entities.map(DispatchMapper.toDomain);
+  }
+
   async deleteById(id: DispatchId): Promise<void> {
     await this.repo.delete({ id: id.value });
   }

@@ -19,9 +19,10 @@ export class StripeService {
   }
 
   /**
-   * Create a PaymentIntent to hold funds from the customer.
-   * We use capture_method=manual so the funds are authorized but not
-   * captured immediately. Capture happens when the order is delivered.
+   * Create a PaymentIntent to charge the customer immediately at order placement.
+   * We use capture_method=automatic so the card is charged right away and the
+   * platform holds the funds until the order is delivered (settled) or cancelled
+   * (refunded to the customer's wallet as store credit).
    */
   async createPaymentIntent(params: {
     amount: number;
@@ -35,7 +36,7 @@ export class StripeService {
     return this.stripe.paymentIntents.create({
       amount: Math.round(params.amount), // Stripe uses smallest currency unit (VND already in smallest unit)
       currency,
-      capture_method: "manual",
+      capture_method: "automatic",
       metadata: {
         orderId: params.orderId,
         consumerId: params.consumerId,

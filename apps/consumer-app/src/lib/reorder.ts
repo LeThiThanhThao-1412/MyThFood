@@ -42,11 +42,20 @@ export async function reorderOrder(order: any): Promise<ReorderResult> {
     const menu: any[] = Array.isArray(menuData) ? menuData : [];
 
     const menuById = new Map<string, any>(menu.map((m) => [m.id, m]));
+    const menuByName = new Map<string, any>(
+      menu.map((m) => [String(m.name ?? "").toLowerCase(), m]),
+    );
     let added = 0;
     let skipped = 0;
 
     for (const item of order?.items ?? []) {
-      const menuItem = menuById.get(item.menuItemId);
+      let menuItem = item.menuItemId
+        ? menuById.get(item.menuItemId)
+        : undefined;
+      // Fallback: khớp theo tên món khi đơn cũ không còn lưu menuItemId
+      if (!menuItem && item.name) {
+        menuItem = menuByName.get(String(item.name).toLowerCase());
+      }
       if (!menuItem) {
         skipped += 1;
         continue;
@@ -81,7 +90,7 @@ export async function reorderOrder(order: any): Promise<ReorderResult> {
       added: 0,
       skipped: 0,
       merchantName: "",
-      error: err?.message || "Không thể đặt lại đơn",
+      error: "Không thể đặt lại đơn: " + (err?.message || "lỗi không xác định"),
     };
   }
 }

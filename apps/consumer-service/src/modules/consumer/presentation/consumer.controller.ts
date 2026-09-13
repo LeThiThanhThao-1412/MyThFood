@@ -52,6 +52,28 @@ export class ConsumerController {
     };
   }
 
+  // Thông tin liên hệ cơ bản cho tài xế (tên + userId để truy ra SĐT ở identity).
+  @Get(":id/contact")
+  @Roles("DRIVER", "CONSUMER", "ADMIN")
+  async getContact(@Param("id") id: string) {
+    const consumer = await this.consumerService.getById(id);
+    if (!consumer) {
+      return {
+        statusCode: HttpStatus.NOT_FOUND,
+        message: "Consumer not found",
+      };
+    }
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        id: consumer.id.toString(),
+        userId: consumer.userIdValue,
+        fullName: consumer.displayName,
+        avatar: consumer.avatarUrl,
+      },
+    };
+  }
+
   @Get(":id")
   async getById(@Param("id") id: string) {
     const consumer = await this.consumerService.getById(id);
@@ -280,6 +302,35 @@ export class ConsumerController {
     };
   }
 
+  // ---- Favorite menu items (Yêu thích món ăn) ----
+
+  @Get(":id/favorite-menu-items")
+  async getFavoriteMenuItems(@Param("id") id: string) {
+    const favorites = await this.consumerService.getFavoriteMenuItems(id);
+    return { statusCode: HttpStatus.OK, data: { favorites } };
+  }
+
+  @Put(":id/favorite-menu-items/:menuItemId")
+  async toggleFavoriteMenuItem(
+    @Param("id") id: string,
+    @Param("menuItemId") menuItemId: string,
+  ) {
+    const result = await this.consumerService.toggleFavoriteMenuItem(
+      id,
+      menuItemId,
+    );
+    if (result.isFailure) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
+    }
+    return {
+      statusCode: HttpStatus.OK,
+      data: result.value,
+    };
+  }
+
   private toResponse(consumer: Consumer) {
     return {
       id: consumer.id.toString(),
@@ -311,6 +362,7 @@ export class ConsumerController {
         isDefault: p.isDefault,
       })),
       favoriteMerchantIds: consumer.favoriteMerchantIdList,
+      favoriteMenuItemIds: consumer.favoriteMenuItemIdList,
     };
   }
 }

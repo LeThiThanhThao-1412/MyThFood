@@ -8,8 +8,10 @@ import {
   reviewApi,
   dispatchApi,
   uploadApi,
+  driverApi,
 } from "@mythfood/api-client";
-import { useAuthStore } from "@mythfood/frontend-shared";
+import { useAuthStore, fetchRoute } from "@mythfood/frontend-shared";
+import type { RouteInfo } from "@mythfood/frontend-shared";
 import { reorderOrder } from "@/lib/reorder";
 
 const TrackingMap = dynamic(
@@ -79,6 +81,7 @@ export default function OrderDetailPage() {
   const [order, setOrder] = useState<any>(null);
   const [dispatch, setDispatch] = useState<any>(null);
   const [dispatchLocation, setDispatchLocation] = useState<any>(null);
+  const [trackingRoute, setTrackingRoute] = useState<RouteInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [reordering, setReordering] = useState(false);
   const [reorderMsg, setReorderMsg] = useState("");
@@ -91,6 +94,14 @@ export default function OrderDetailPage() {
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewImages, setReviewImages] = useState<string[]>([]);
   const [uploadingImages, setUploadingImages] = useState(false);
+
+  // Driver info + rating
+  const [driverProfile, setDriverProfile] = useState<any>(null);
+  const [driverRating, setDriverRating] = useState(5);
+
+  // Cancel order
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelStatus, setCancelStatus] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -105,11 +116,55 @@ export default function OrderDetailPage() {
         setOrder(o);
         setDispatch(d);
 
+        // Lấy thông tin tài xế (tên, ảnh, biển số, số sao) khi đơn đã có tài xế
+        const driverId = o?.driverId || d?.driverId;
+        if (driverId) {
+          const pRes = await driverApi
+            .getPublicProfile(driverId)
+            .catch(() => null);
+          const p = (pRes as any)?.data ?? null;
+          if (p) setDriverProfile(p);
+        }
+
         if (d?.id) {
           const locRes = await dispatchApi.getLocation(d.id).catch(() => null);
-          setDispatchLocation((locRes as any)?.data ?? null);
+          const loc = (locRes as any)?.data ?? null;
+          setDispatchLocation(loc);
+
+          // Vẽ tuyến đường thực tế (OSRM) giống app tài xế
+          const driverLat = toNum(
+            loc?.driverLatitude ?? loc?.merchantLatitude,
+            Number.NaN,
+          );
+          const driverLng = toNum(
+            loc?.driverLongitude ?? loc?.merchantLongitude,
+            Number.NaN,
+          );
+          const customerLat = toNum(
+            loc?.deliveryLatitude ?? o?.deliveryLatitude,
+            Number.NaN,
+          );
+          const customerLng = toNum(
+            loc?.deliveryLongitude ?? o?.deliveryLongitude,
+            Number.NaN,
+          );
+          if (
+            !Number.isNaN(driverLat) &&
+            !Number.isNaN(driverLng) &&
+            !Number.isNaN(customerLat) &&
+            !Number.isNaN(customerLng)
+          ) {
+            const r = await fetchRoute(
+              { latitude: driverLat, longitude: driverLng },
+              { latitude: customerLat, longitude: customerLng },
+            );
+            setTrackingRoute(r);
+          } else {
+            setTrackingRoute(null);
+          }
         } else {
           setDispatchLocation(null);
+          setTrackingRoute(null);
         }
       } catch {}
     };
@@ -139,6 +194,7 @@ export default function OrderDetailPage() {
     setSubmittingReview(true);
     setReviewStatus("");
     try {
+      const driverId = order.driverId || driverProfile?.id;
       const created: any = await reviewApi.create({
         orderId: order.id,
         consumerId: order.consumerId,
@@ -146,6 +202,7 @@ export default function OrderDetailPage() {
         rating: reviewRating,
         comment: reviewComment.trim() || undefined,
         images: reviewImages.length ? reviewImages : undefined,
+        ...(driverId ? { driverId, driverRating } : {}),
       });
       setExistingReview(
         created?.data ?? {
@@ -204,6 +261,29 @@ export default function OrderDetailPage() {
       }
     } finally {
       setReordering(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!order) return;
+    const reason = window.prompt("Lý do hủy đơn:", "Tôi muốn hủy đơn");
+    if (reason === null) return;
+    if (!reason.trim()) {
+      alert("Vui lòng nhập lý do hủy đơn");
+      return;
+    }
+    setCancelling(true);
+    setCancelStatus("");
+    try {
+      const updated = await orderApi.cancel(order.id, {
+        reason: reason.trim(),
+      });
+      setOrder(updated);
+      setCancelStatus("✅ Đã hủy đơn");
+    } catch (err: any) {
+      setCancelStatus(`❌ ${err?.message || "Không thể hủy đơn"}`);
+    } finally {
+      setCancelling(false);
     }
   }
 
@@ -278,17 +358,6 @@ export default function OrderDetailPage() {
     });
   }
   if (
-    dispatchLocation?.merchantLatitude != null &&
-    dispatchLocation?.merchantLongitude != null
-  ) {
-    trackingMarkers.push({
-      latitude: toNum(dispatchLocation.merchantLatitude),
-      longitude: toNum(dispatchLocation.merchantLongitude),
-      emoji: "🏪",
-      label: "🏪 Nhà hàng",
-    });
-  }
-  if (
     !Number.isNaN(trackingCustomerLat) &&
     !Number.isNaN(trackingCustomerLng)
   ) {
@@ -299,17 +368,6 @@ export default function OrderDetailPage() {
       label: "🏠 Khách hàng",
     });
   }
-
-  const trackingRoute: [number, number][] =
-    !Number.isNaN(trackingDriverLat) &&
-    !Number.isNaN(trackingDriverLng) &&
-    !Number.isNaN(trackingCustomerLat) &&
-    !Number.isNaN(trackingCustomerLng)
-      ? [
-          [trackingDriverLat, trackingDriverLng],
-          [trackingCustomerLat, trackingCustomerLng],
-        ]
-      : [];
 
   return (
     <div className="min-h-screen bg-[#f0f2f5] lg:max-w-3xl mx-auto relative pb-24">
@@ -348,6 +406,23 @@ export default function OrderDetailPage() {
                 ? "Đơn hàng đã bị hủy"
                 : "Đơn hàng đang được xử lý. Tự động cập nhật mỗi 5s."}
           </p>
+
+          {(order.status === "PENDING" || order.status === "CONFIRMED") && (
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="mt-4 bg-red-500 text-white px-6 py-2.5 rounded-xl font-semibold hover:bg-red-600 transition disabled:opacity-50"
+            >
+              {cancelling ? "Đang hủy..." : "❌ Hủy đơn"}
+            </button>
+          )}
+          {cancelStatus && (
+            <p
+              className={`text-sm mt-2 font-medium ${cancelStatus.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
+            >
+              {cancelStatus}
+            </p>
+          )}
         </div>
 
         {/* Real-time tài xế (theo dispatch) */}
@@ -378,6 +453,42 @@ export default function OrderDetailPage() {
             </div>
           )}
 
+        {/* Thông tin tài xế giao hàng */}
+        {driverProfile && (
+          <div className="bg-white rounded-2xl shadow-sm p-5">
+            <h3 className="font-bold text-[#1a1a2e] mb-3">
+              🛵 Tài xế giao hàng
+            </h3>
+            <div className="flex items-center gap-4">
+              {driverProfile.avatar ? (
+                <img
+                  src={driverProfile.avatar}
+                  alt={driverProfile.fullName}
+                  className="w-14 h-14 rounded-full object-cover border border-gray-100 bg-gray-50"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-full bg-[#1a1a2e] text-white flex items-center justify-center text-xl font-bold">
+                  {driverProfile.fullName?.charAt(0)?.toUpperCase() || "🧑"}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="font-semibold text-gray-800">
+                  {driverProfile.fullName || "Tài xế"}
+                </p>
+                <p className="text-sm text-gray-500">
+                  🏍️ Biển số: {driverProfile.vehicleRegistrationNumber || "—"}
+                </p>
+                <p className="text-sm text-gray-500">
+                  ⭐ {Number(driverProfile.rating || 0).toFixed(1)}
+                  {driverProfile.totalRatings
+                    ? ` (${driverProfile.totalRatings} đánh giá)`
+                    : ""}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Bản đồ theo dõi tài xế */}
         {isTrackingDelivery && trackingMarkers.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
@@ -385,11 +496,15 @@ export default function OrderDetailPage() {
               <p className="font-bold text-[#1a1a2e] text-sm">
                 🗺️ Theo dõi tài xế giao hàng
               </p>
-              <span className="text-xs text-gray-400">Cập nhật 5s</span>
+              <span className="text-xs text-gray-400">
+                {trackingRoute
+                  ? `${trackingRoute.distanceKm < 1 ? `${Math.round(trackingRoute.distanceKm * 1000)}m` : `${trackingRoute.distanceKm.toFixed(1)}km`} · ~${trackingRoute.durationMin} phút`
+                  : "Cập nhật 5s"}
+              </span>
             </div>
             <TrackingMap
               locations={trackingMarkers}
-              route={trackingRoute}
+              route={trackingRoute?.points}
               height="260px"
               zoom={14}
               className="border-0 rounded-none"
@@ -580,6 +695,25 @@ export default function OrderDetailPage() {
                     </button>
                   ))}
                 </div>
+                {driverProfile && (
+                  <div className="mb-3 border-t border-gray-100 pt-3">
+                    <p className="text-sm font-semibold text-gray-700 mb-1">
+                      🛵 Đánh giá tài xế giao hàng
+                    </p>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setDriverRating(n)}
+                          className={`text-2xl ${n <= driverRating ? "" : "opacity-30"}`}
+                        >
+                          ⭐
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <textarea
                   value={reviewComment}
                   onChange={(e) => setReviewComment(e.target.value)}

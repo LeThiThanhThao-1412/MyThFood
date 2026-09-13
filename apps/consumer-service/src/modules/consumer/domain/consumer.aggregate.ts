@@ -20,6 +20,7 @@ export interface ConsumerProps {
   addresses: Address[];
   paymentMethods: PaymentMethod[];
   favoriteMerchantIds: string[];
+  favoriteMenuItemIds: string[];
 }
 
 export class Consumer extends AggregateRoot<ConsumerId> {
@@ -31,6 +32,7 @@ export class Consumer extends AggregateRoot<ConsumerId> {
   private addresses: Address[];
   private paymentMethods: PaymentMethod[];
   private favoriteMerchantIds: string[];
+  private favoriteMenuItemIds: string[];
 
   private constructor(id: ConsumerId, props: ConsumerProps) {
     super(id);
@@ -42,6 +44,7 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     this.addresses = props.addresses;
     this.paymentMethods = props.paymentMethods;
     this.favoriteMerchantIds = props.favoriteMerchantIds ?? [];
+    this.favoriteMenuItemIds = props.favoriteMenuItemIds ?? [];
   }
 
   public static create(props: {
@@ -69,6 +72,7 @@ export class Consumer extends AggregateRoot<ConsumerId> {
       addresses: [],
       paymentMethods: [],
       favoriteMerchantIds: [],
+      favoriteMenuItemIds: [],
     });
 
     consumer.addDomainEvent(
@@ -278,6 +282,34 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     return Result.ok(added);
   }
 
+  public isFavoriteMenuItem(menuItemId: string): boolean {
+    return this.favoriteMenuItemIds.includes(menuItemId);
+  }
+
+  /** Returns true when the menu item was added, false when it was removed. */
+  public toggleFavoriteMenuItem(
+    menuItemId: string,
+  ): Result<boolean, DomainError> {
+    if (!menuItemId || menuItemId.trim().length === 0) {
+      return Result.fail(
+        new BusinessRuleViolationError("Menu item ID is required"),
+      );
+    }
+    const index = this.favoriteMenuItemIds.indexOf(menuItemId);
+    let added: boolean;
+    if (index === -1) {
+      this.favoriteMenuItemIds = [...this.favoriteMenuItemIds, menuItemId];
+      added = true;
+    } else {
+      this.favoriteMenuItemIds = this.favoriteMenuItemIds.filter(
+        (id) => id !== menuItemId,
+      );
+      added = false;
+    }
+    this.markUpdated();
+    return Result.ok(added);
+  }
+
   get userIdValue(): string {
     return this.userId;
   }
@@ -301,6 +333,9 @@ export class Consumer extends AggregateRoot<ConsumerId> {
   }
   get favoriteMerchantIdList(): string[] {
     return [...this.favoriteMerchantIds];
+  }
+  get favoriteMenuItemIdList(): string[] {
+    return [...this.favoriteMenuItemIds];
   }
   get favoriteCount(): number {
     return this.favoriteMerchantIds.length;

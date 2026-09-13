@@ -21,6 +21,7 @@ import {
   orderApi,
   consumerApi,
   paymentApi,
+  walletApi,
   merchantApi,
   promotionApi,
   type ConsumerProfile,
@@ -329,9 +330,27 @@ function CheckoutContent() {
         /* getByUserId failed */
       }
 
-      // Fallback: dùng userId làm consumerId
       if (!found) {
-        setConsumerId(currentUser.id);
+        // Tự tạo hồ sơ consumer để đơn hàng luôn gắn đúng consumerId (đồng bộ
+        // với resolveConsumerId ở dashboard). Tránh fallback sang userId làm
+        // đơn hàng "lúc có lúc không" hiện trong lịch sử.
+        try {
+          const created: any = await consumerApi.create({
+            userId: currentUser.id,
+            fullName: currentUser.fullName || "Người dùng",
+          });
+          const createdProfile = created?.data || created;
+          if (createdProfile?.id) {
+            setConsumerId(createdProfile.id);
+            setAddresses([]);
+            setPaymentMethods([]);
+          } else {
+            setConsumerId(currentUser.id);
+          }
+        } catch {
+          // Chỉ fallback khi thực sự không thể tạo hồ sơ (mạng lỗi...)
+          setConsumerId(currentUser.id);
+        }
       }
       setProfileLoading(false);
     }
@@ -664,7 +683,12 @@ function CheckoutContent() {
           ? promoCode.trim().toUpperCase()
           : undefined,
         notes: notes || undefined,
-        paymentMethod: paymentMethod === "CASH" ? "CASH" : "CREDIT_CARD",
+        paymentMethod:
+          paymentMethod === "WALLET"
+            ? "WALLET"
+            : paymentMethod === "CASH"
+              ? "CASH"
+              : "CREDIT_CARD",
       };
 
       const order = await orderApi.place(orderBody);
@@ -686,6 +710,25 @@ function CheckoutContent() {
         setSuccessOrder(order);
       }
       // ─── Stripe ──────────────────────────────────
+      // ─── Ví điện tử ───
+      else if (paymentMethod === "WALLET") {
+        try {
+          await walletApi.pay({
+            ownerId: consumerId,
+            ownerType: "CONSUMER",
+            amount: order.totalAmount,
+            orderId: order.id,
+          });
+          clearCart();
+          setSuccessOrder(order);
+        } catch (err: any) {
+          setError(
+            err.message || "Số dư ví không đủ. Vui lòng nạp thêm tiền vào ví.",
+          );
+          setLoading(false);
+        }
+      }
+      // ─── Stripe ───
       else {
         const cardElement = elementsHook?.getElement(CardNumberElement);
         if (!stripe || !cardElement) {
@@ -1052,7 +1095,7 @@ function CheckoutContent() {
                     type="radio"
                     name="payment"
                     value="CASH"
-                    checked={!isStripe}
+                    checked={paymentMethod === "CASH"}
                     onChange={(e) => {
                       if (merchantCodAccepted) setPaymentMethod(e.target.value);
                     }}
@@ -1071,23 +1114,30 @@ function CheckoutContent() {
                   </div>
                 </label>
 
-                {/* E-Wallet disabled */}
-                <label className="flex items-center gap-4 p-4 rounded-xl border border-gray-100 cursor-not-allowed opacity-60">
+                {/* E-Wallet */}
+                <label
+                  className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${
+                    paymentMethod === "WALLET"
+                      ? "border-blue-400 bg-blue-50/50 ring-2 ring-blue-200"
+                      : "border-gray-100 hover:border-gray-300"
+                  }`}
+                >
                   <input
                     type="radio"
                     name="payment"
-                    disabled
+                    value="WALLET"
+                    checked={paymentMethod === "WALLET"}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
                     className="accent-blue-600"
                   />
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-gray-800">
                       📱 Ví điện tử
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">Sắp ra mắt</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Thanh toán từ số dư ví của bạn
+                    </p>
                   </div>
-                  <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-                    Sắp có
-                  </span>
                 </label>
               </div>
 

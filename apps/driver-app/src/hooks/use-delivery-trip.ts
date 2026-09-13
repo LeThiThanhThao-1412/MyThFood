@@ -8,7 +8,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { driverApi, orderApi } from "@mythfood/api-client";
-import { useAuthStore, useLocationStore } from "@mythfood/frontend-shared";
+import {
+  useAuthStore,
+  useLocationStore,
+  haversineKm,
+} from "@mythfood/frontend-shared";
 import {
   DeliveryStage,
   LatLng,
@@ -20,6 +24,7 @@ import {
   customerLocation,
   fetchRoute,
   friendlyError,
+  getCustomerInfo,
   getDispatchByOrder,
   getMerchant,
   pickUpFood,
@@ -37,18 +42,25 @@ export interface TripMapMarker extends LatLng {
 
 export function useDeliveryTrip(orderId?: string | null) {
   const { user } = useAuthStore();
-  const { location: gps, setLocation } = useLocationStore();
+  const { location: gps } = useLocationStore();
 
   const [order, setOrder] = useState<any>(null);
   const [dispatch, setDispatch] = useState<any>(null);
   const [merchant, setMerchant] = useState<any>(null);
+  const [customerInfo, setCustomerInfo] = useState<{
+    fullName: string | null;
+    phone: string | null;
+    avatar?: string | null;
+  } | null>(null);
   const [driver, setDriver] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [route, setRoute] = useState<RouteInfo | null>(null);
-  const [locating, setLocating] = useState(false);
+  const [routeToRestaurant, setRouteToRestaurant] = useState<RouteInfo | null>(
+    null,
+  );
   const lastOrderIdRef = useRef<string | null>(null);
 
   // ---- Tải dữ liệu chuyến giao ----
@@ -82,6 +94,13 @@ export function useDeliveryTrip(orderId?: string | null) {
 
         const merchantId = (freshOrder as any)?.merchantId;
         if (merchantId) setMerchant(await getMerchant(merchantId));
+
+        // Lấy thông tin liên hệ khách hàng (tên + SĐT) cho tài xế
+        if ((freshOrder as any)?.consumerId) {
+          getCustomerInfo(freshOrder)
+            .then(setCustomerInfo)
+            .catch(() => {});
+        }
       } finally {
         if (!silent) setLoading(false);
       }
@@ -132,6 +151,25 @@ export function useDeliveryTrip(orderId?: string | null) {
     return null;
   }, [gps, driver?.currentLatitude, driver?.currentLongitude]);
 
+  /** Khoảng cách (km) tới nhà hàng: ưu tiên đường đi thực tế (OSRM), fallback đường chim bay. */
+  const distanceToRestaurantKm = useMemo<number | null>(() => {
+    if (routeToRestaurant?.distanceKm != null)
+      return routeToRestaurant.distanceKm;
+    if (!driverLocation || !restaurant) return null;
+    return haversineKm(
+      driverLocation.latitude,
+      driverLocation.longitude,
+      restaurant.latitude,
+      restaurant.longitude,
+    );
+  }, [routeToRestaurant, driverLocation, restaurant]);
+
+  /** Thời gian di chuyển (phút) tới nhà hàng (chỉ có khi dùng đường thực tế). */
+  const distanceToRestaurantMin = useMemo<number | null>(
+    () => routeToRestaurant?.durationMin ?? null,
+    [routeToRestaurant],
+  );
+
   /** Tuyến đường theo bước: tài xế→nhà hàng, rồi nhà hàng→khách. */
   const { routeFrom, routeTo } = useMemo<{
     routeFrom: LatLng | null;
@@ -171,6 +209,31 @@ export function useDeliveryTrip(orderId?: string | null) {
     routeTo?.longitude,
   ]);
 
+  // Tuyến đường thực tế tài xế → nhà hàng (để tính khoảng cách + thời gian chính xác)
+  useEffect(() => {
+    if (!driverLocation || !restaurant) {
+      setRouteToRestaurant(null);
+      return;
+    }
+    let cancelled = false;
+    fetchRoute(driverLocation, restaurant)
+      .then((r) => {
+        if (!cancelled) setRouteToRestaurant(r);
+      })
+      .catch(() => {
+        if (!cancelled) setRouteToRestaurant(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    driverLocation?.latitude,
+    driverLocation?.longitude,
+    restaurant?.latitude,
+    restaurant?.longitude,
+  ]);
+
   const mapMarkers = useMemo<TripMapMarker[]>(() => {
     const markers: TripMapMarker[] = [];
     const restaurantMarker = (emoji: string, label: string) => {
@@ -204,70 +267,19 @@ export function useDeliveryTrip(orderId?: string | null) {
       restaurantMarker("🛵", `🛵 Bạn đang ở ${merchant?.name || "nhà hàng"}`);
       customerMarker("🏠", "🏠 Điểm giao hàng");
     } else if (stage === "DELIVERING") {
-      if (driverLocation)
+      const driverPos = driverLocation ?? restaurant;
+      if (driverPos)
         markers.push({
-          ...driverLocation,
+          ...driverPos,
           emoji: "🛵",
           label: "🛵 Tài xế",
         });
-      restaurantMarker("🏪", `🏪 ${merchant?.name || "Nhà hàng"}`);
       customerMarker("🏠", "🏠 Khách hàng");
     } else {
       customerMarker("🛵", "🛵 Đã giao tại đây");
     }
     return markers;
   }, [stage, driverLocation, restaurant, customer, merchant, order]);
-
-  // ---- Mô phỏng vị trí tài xế (không cần GPS thật) ----
-  const simulateLocation = useCallback(
-    async (latitude: number, longitude: number, label?: string) => {
-      if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
-        setError("Toạ độ mô phỏng không hợp lệ.");
-        return false;
-      }
-
-      setLocating(true);
-      setError("");
-      try {
-        let resolvedDriver = driver;
-        if (!resolvedDriver?.id) {
-          resolvedDriver = await loadDriver();
-        }
-        const driverId = resolvedDriver?.id || order?.driverId || "";
-        if (!driverId) {
-          setError("Không tìm thấy hồ sơ tài xế để cập nhật vị trí.");
-          return false;
-        }
-
-        await driverApi.updateLocation(driverId, { latitude, longitude });
-        setLocation({
-          latitude,
-          longitude,
-          address:
-            label ||
-            `Mô phỏng: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
-          source: "manual",
-        });
-        setDriver((prev: any) =>
-          prev
-            ? {
-                ...prev,
-                currentLatitude: latitude,
-                currentLongitude: longitude,
-              }
-            : prev,
-        );
-        setMessage(`📍 Đã đặt vị trí mô phỏng: ${label || "toạ độ mới"}`);
-        return true;
-      } catch (err: any) {
-        setError(friendlyError(err, "Không cập nhật được vị trí mô phỏng."));
-        return false;
-      } finally {
-        setLocating(false);
-      }
-    },
-    [driver, loadDriver, order?.driverId, setLocation],
-  );
 
   // ---- Thực thi bước kế tiếp ----
   const advance = useCallback(async () => {
@@ -341,6 +353,9 @@ export function useDeliveryTrip(orderId?: string | null) {
     dispatch,
     merchant,
     driver,
+    customerInfo,
+    distanceToRestaurantKm,
+    distanceToRestaurantMin,
     loading,
     busy,
     error,
@@ -353,9 +368,7 @@ export function useDeliveryTrip(orderId?: string | null) {
     route,
     mapMarkers,
     driverEarning,
-    locating,
     advance,
-    simulateLocation,
     reload: load,
     setError,
     setMessage,

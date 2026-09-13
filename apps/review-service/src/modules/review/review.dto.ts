@@ -18,6 +18,16 @@ export class CreateReviewDto {
   @IsUUID("4")
   merchantId!: string;
 
+  @IsOptional()
+  @IsUUID("4")
+  driverId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  driverRating?: number;
+
   @IsInt()
   @Min(1)
   @Max(5)

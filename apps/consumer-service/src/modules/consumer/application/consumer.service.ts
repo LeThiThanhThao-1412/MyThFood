@@ -21,6 +21,12 @@ export class ConsumerService {
     dateOfBirth?: Date;
     gender?: Gender;
   }): Promise<Result<Consumer, DomainError>> {
+    // Idempotent: nếu đã có hồ sơ cho userId thì trả về hồ sơ hiện có,
+    // tránh tạo trùng khi nhiều nơi (dashboard/checkout/profile) đồng thời auto-create.
+    const existing = await this.repository.findByUserId(props.userId);
+    if (existing) {
+      return Result.ok(existing);
+    }
     const result = Consumer.create(props);
     if (result.isFailure) return result;
     await this.repository.save(result.value);
@@ -259,6 +265,35 @@ export class ConsumerService {
     return Result.ok({
       added: r.value,
       favorites: consumer.favoriteMerchantIdList,
+    });
+  }
+
+  // ---- Favorite menu items (Yêu thích món ăn) ----
+
+  async getFavoriteMenuItems(consumerId: string): Promise<string[]> {
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer) return [];
+    return consumer.favoriteMenuItemIdList;
+  }
+
+  /** Returns the new state: `true` = added, `false` = removed. */
+  async toggleFavoriteMenuItem(
+    consumerId: string,
+    menuItemId: string,
+  ): Promise<Result<{ added: boolean; favorites: string[] }, DomainError>> {
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer)
+      return Result.fail(new EntityNotFoundError("Consumer", consumerId));
+    const r = consumer.toggleFavoriteMenuItem(menuItemId);
+    if (r.isFailure) return Result.fail(r.error);
+    await this.repository.save(consumer);
+    return Result.ok({
+      added: r.value,
+      favorites: consumer.favoriteMenuItemIdList,
     });
   }
 }

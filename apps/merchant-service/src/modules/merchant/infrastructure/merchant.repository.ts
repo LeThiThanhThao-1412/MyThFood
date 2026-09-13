@@ -277,6 +277,14 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
     return this.loadRelatedAndMapMany(entities);
   }
 
+  /** Load menu items by their ids (used by the favourite-dishes feature). */
+  async findMenuItemsByIds(ids: string[]): Promise<MenuItemEntity[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    return this.menuItemRepo.find({ where: { id: In(ids) } });
+  }
+
   async exists(id: MerchantId): Promise<boolean> {
     const count = await this.repository.count({ where: { id: id.toString() } });
     return count > 0;

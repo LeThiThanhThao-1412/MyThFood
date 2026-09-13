@@ -90,6 +90,21 @@ export class MerchantController {
     return this.merchantService.searchMenuItems(query);
   }
 
+  /**
+   * Resolve menu items by ids (comma-separated) — used by favourite dishes.
+   * MUST stay declared before `@Get(":id")`.
+   */
+  @Get("menu-items/by-ids")
+  async getMenuItemsByIds(@Query("ids") ids?: string) {
+    const idList = (ids || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return {
+      items: await this.merchantService.getMenuItemsByIds(idList),
+    };
+  }
+
   @Get(":id")
   async findById(@Param("id") id: string): Promise<MerchantResponseDto> {
     const merchant = await this.merchantService.findById(id);

@@ -20,6 +20,7 @@ import {
   UpdateDriverProfileDto,
   UpdateLocationDto,
   UpdateFatigueDto,
+  RateDriverDto,
 } from "../application/dtos/driver.dto";
 
 @Controller("drivers")
@@ -233,6 +234,24 @@ export class DriverController {
     return { statusCode: HttpStatus.OK, data: earnings };
   }
 
+  // ---- Rating (Bổ sung: đánh giá tài xế) ----
+
+  @Patch(":id/rating")
+  @Roles("ADMIN", "DRIVER")
+  async rateDriver(@Param("id") id: string, @Body() dto: RateDriverDto) {
+    const driver = await this.driverService.rateDriver(id, dto);
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  // ---- Public profile (cho CONSUMER xem thông tin tài xế khi có đơn) ----
+
+  @Get(":id/public-profile")
+  @Roles("CONSUMER", "DRIVER", "ADMIN")
+  async getPublicProfile(@Param("id") id: string) {
+    const driver = await this.driverService.getById(id);
+    return { statusCode: HttpStatus.OK, data: this.toPublicProfile(driver) };
+  }
+
   // ---- Helper ----
 
   private toResponse(driver: any) {
@@ -268,6 +287,7 @@ export class DriverController {
         driver.driverGoHomeCountToday ?? driver._goHomeCountToday,
       totalOrders: driver.driverTotalOrders ?? driver._totalOrders,
       rating: driver.driverRating ?? driver._rating,
+      totalRatings: driver.driverTotalRatings ?? driver._totalRatings,
       currentOrderId: driver.driverCurrentOrderId ?? driver._currentOrderId,
       isTrainingCompleted:
         driver.driverIsTrainingCompleted ?? driver._isTrainingCompleted,
@@ -278,6 +298,19 @@ export class DriverController {
         driver.driverIncomeWalletBalance ?? driver._incomeWalletBalance,
       createdAt: driver.createdAt,
       updatedAt: driver.updatedAt,
+    };
+  }
+
+  private toPublicProfile(driver: any) {
+    return {
+      id: driver.id?.toString?.() ?? driver.id,
+      fullName: driver.driverFullName ?? driver._fullName,
+      avatar: driver.driverAvatar ?? driver._avatar,
+      vehicleRegistrationNumber:
+        driver.driverVehicleRegistrationNumber ??
+        driver._vehicleRegistrationNumber,
+      rating: driver.driverRating ?? driver._rating,
+      totalRatings: driver.driverTotalRatings ?? driver._totalRatings,
     };
   }
 }

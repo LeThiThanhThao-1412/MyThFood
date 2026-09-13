@@ -32,6 +32,17 @@ export class UserAdminController {
     return this.userAdminService.listUsers(query);
   }
 
+  // Thông tin liên hệ cơ bản (tên + SĐT) cho tài xế khi cần gọi khách hàng.
+  @Get(":id/contact")
+  @Roles("DRIVER", "ADMIN")
+  async getUserContact(@Param("id") id: string) {
+    const user = await this.userAdminService.getUserById(id);
+    return {
+      statusCode: HttpStatus.OK,
+      data: { id: user.id, fullName: user.fullName, phone: user.phone },
+    };
+  }
+
   @Get(":id")
   async getUserById(@Param("id") id: string): Promise<UserAdminResponseDto> {
     return this.userAdminService.getUserById(id);

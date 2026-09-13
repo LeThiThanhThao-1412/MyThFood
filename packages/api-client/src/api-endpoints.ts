@@ -48,6 +48,7 @@ import type {
   UpdateStockRequest,
   RegisterDriverRequest,
   Driver,
+  DriverPublicProfile,
   UpdateLocationRequest,
   CreateReviewRequest,
   Review,
@@ -99,6 +100,12 @@ export const authApi = {
 
   me: () => httpClient.get<ApiResponse<UserDetail>>(PORTS.IDENTITY, "/auth/me"),
 
+  /** Thông tin liên hệ cơ bản của 1 user (tên + SĐT) — dùng cho tài xế gọi khách. */
+  getUserContact: (id: string) =>
+    httpClient.get<
+      ApiResponse<{ id: string; fullName: string; phone: string }>
+    >(PORTS.IDENTITY, `/auth/users/${id}/contact`),
+
   changePassword: (body: ChangePasswordRequest) =>
     httpClient.post<ApiResponse<{ message: string }>>(
       PORTS.IDENTITY,
@@ -130,6 +137,17 @@ export const consumerApi = {
       `/consumers/${id}`,
     ),
 
+  /** Thông tin liên hệ cơ bản (tên + userId + avatar) cho tài xế. */
+  getContact: (id: string) =>
+    httpClient.get<
+      ApiResponse<{
+        id: string;
+        userId: string;
+        fullName: string;
+        avatar?: string | null;
+      }>
+    >(PORTS.CONSUMER, `/consumers/${id}/contact`),
+
   addAddress: (consumerId: string, body: AddAddressRequest) =>
     httpClient.post<ApiResponse<ConsumerProfile>>(
       PORTS.CONSUMER,
@@ -157,6 +175,18 @@ export const consumerApi = {
       body,
     ),
 
+  removePaymentMethod: (consumerId: string, paymentMethodId: string) =>
+    httpClient.delete<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/payment-methods/${paymentMethodId}`,
+    ),
+
+  setDefaultPaymentMethod: (consumerId: string, paymentMethodId: string) =>
+    httpClient.patch<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/payment-methods/${paymentMethodId}/default`,
+    ),
+
   getFavorites: (consumerId: string) =>
     httpClient.get<ApiResponse<{ favorites: string[] }>>(
       PORTS.CONSUMER,
@@ -167,6 +197,18 @@ export const consumerApi = {
     httpClient.put<ApiResponse<{ added: boolean; favorites: string[] }>>(
       PORTS.CONSUMER,
       `/consumers/${consumerId}/favorites/${merchantId}`,
+    ),
+
+  getFavoriteMenuItems: (consumerId: string) =>
+    httpClient.get<ApiResponse<{ favorites: string[] }>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/favorite-menu-items`,
+    ),
+
+  toggleFavoriteMenuItem: (consumerId: string, menuItemId: string) =>
+    httpClient.put<ApiResponse<{ added: boolean; favorites: string[] }>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/favorite-menu-items/${menuItemId}`,
     ),
 };
 
@@ -196,6 +238,14 @@ export const merchantApi = {
       PORTS.MERCHANT,
       "/merchants/menu/search",
       { params },
+    ),
+
+  /** Resolve menu items (with merchant info) by ids — favourite dishes. */
+  getMenuItemsByIds: (ids: string[]) =>
+    httpClient.get<{ items: MenuSearchItem[] }>(
+      PORTS.MERCHANT,
+      "/merchants/menu-items/by-ids",
+      { params: { ids: ids.join(",") } },
     ),
 
   getById: (id: string) =>
@@ -593,6 +643,19 @@ export const driverApi = {
 
   delete: (id: string) =>
     httpClient.delete<void>(PORTS.DRIVER, `/drivers/${id}`),
+
+  rate: (id: string, rating: number) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/rating`,
+      { rating },
+    ),
+
+  getPublicProfile: (id: string) =>
+    httpClient.get<{ statusCode: number; data: DriverPublicProfile }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/public-profile`,
+    ),
 };
 
 // ============================================================================
@@ -799,11 +862,11 @@ export const walletApi = {
     ),
 
   // Top-up via Stripe (returns clientSecret)
-  topupStripe: (ownerId: string, amount: number) =>
+  topupStripe: (ownerId: string, ownerType: string, amount: number) =>
     httpClient.post<{ clientSecret: string; paymentIntentId: string }>(
       PORTS.WALLET,
       "/wallets/topup/stripe",
-      { ownerId, amount },
+      { ownerId, ownerType, amount },
     ),
 
   // Direct top-up (internal/testing)
@@ -820,6 +883,32 @@ export const walletApi = {
       PORTS.WALLET,
       "/wallets/withdraw",
       { ownerId, ownerType, amount },
+    ),
+
+  // Pay an order using wallet balance
+  pay: (data: {
+    ownerId: string;
+    ownerType?: string;
+    amount: number;
+    orderId: string;
+  }) =>
+    httpClient.post<{ id: string; balance: number }>(
+      PORTS.WALLET,
+      "/wallets/pay",
+      data,
+    ),
+
+  // Refund to wallet (store credit) for cancelled online orders
+  refund: (data: {
+    ownerId: string;
+    ownerType?: string;
+    amount: number;
+    orderId: string;
+  }) =>
+    httpClient.post<{ id: string; balance: number }>(
+      PORTS.WALLET,
+      "/wallets/refund",
+      data,
     ),
 
   // COD settlement
