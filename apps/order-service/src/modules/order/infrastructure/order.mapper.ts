@@ -13,6 +13,7 @@ export class OrderMapper {
     const entity = new OrderEntity();
     entity.id = order.id.toString();
     entity.consumer_id = order.orderConsumerId;
+    entity.user_id = order.orderUserId;
     entity.merchant_id = order.orderMerchantId;
     entity.order_type = order.orderTypeValue;
     entity.status = order.orderStatus;
@@ -72,6 +73,7 @@ export class OrderMapper {
 
     return Order.rehydrate(OrderId.from(orderEntity.id), {
       consumerId: orderEntity.consumer_id,
+      userId: orderEntity.user_id,
       merchantId: orderEntity.merchant_id,
       orderType: orderEntity.order_type as "DELIVERY" | "PICKUP",
       status: orderEntity.status as Order["orderStatus"],

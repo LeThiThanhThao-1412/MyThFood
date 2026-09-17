@@ -23,6 +23,8 @@ import {
   DriverDeclineDto,
   CancelDispatchDto,
   QueryDispatchDto,
+  DriverCancelDto,
+  DeliveryFailedDto,
 } from "../application/dtos/dispatch.dto";
 
 @Controller("dispatches")
@@ -211,6 +213,31 @@ export class DispatchController {
   @Roles("DRIVER", "ADMIN")
   async driverDecline(@Param("id") id: string, @Body() dto: DriverDeclineDto) {
     const dispatch = await this.dispatchService.driverDecline(id, dto);
+    return {
+      statusCode: HttpStatus.OK,
+      data: this._toResponse(dispatch),
+    };
+  }
+
+  // Case 7: tài xế đã nhận đơn nhưng hủy → ghi lý do + tìm tài xế khác.
+  @Patch(":id/driver-cancel")
+  @Roles("DRIVER", "ADMIN")
+  async driverCancel(@Param("id") id: string, @Body() dto: DriverCancelDto) {
+    const dispatch = await this.dispatchService.driverCancelAfterAccept(id, dto);
+    return {
+      statusCode: HttpStatus.OK,
+      data: this._toResponse(dispatch),
+    };
+  }
+
+  // Case 8: tài xế giao hàng thất bại (khách không nhận hàng).
+  @Patch(":id/delivery-failed")
+  @Roles("DRIVER", "ADMIN")
+  async deliveryFailed(
+    @Param("id") id: string,
+    @Body() dto: DeliveryFailedDto,
+  ) {
+    const dispatch = await this.dispatchService.deliveryFailed(id, dto);
     return {
       statusCode: HttpStatus.OK,
       data: this._toResponse(dispatch),

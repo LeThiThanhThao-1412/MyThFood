@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { EntityNotFoundError } from "@mythfood/shared-kernel";
-import { Dispatch } from "../domain/dispatch.aggregate";
+import { Dispatch, DispatchStatus } from "../domain/dispatch.aggregate";
 import { DispatchId } from "../domain/dispatch-id";
 import { DispatchEntity } from "./dispatch.entity";
 import { DispatchMapper } from "./dispatch.mapper";
@@ -108,6 +108,22 @@ export class DispatchRepository {
 
   async deleteById(id: DispatchId): Promise<void> {
     await this.repo.delete({ id: id.value });
+  }
+
+  /**
+   * Chốt đơn cho tài xế một cách nguyên tử (Case 6):
+   * chỉ update thành công khi dispatch vẫn đang ở DRIVER_ASSIGNED.
+   * Trả về true nếu accept thành công, false nếu đã bị tài xế khác nhận trước.
+   */
+  async acceptAtomic(id: string): Promise<boolean> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(DispatchEntity)
+      .set({ status: DispatchStatus.DRIVER_ACCEPTED })
+      .where("id = :id", { id })
+      .andWhere("status = :status", { status: DispatchStatus.DRIVER_ASSIGNED })
+      .execute();
+    return (result.affected ?? 0) > 0;
   }
 
   // ═══════════════════════════════════════════════════════

@@ -36,6 +36,8 @@ export class DriverMapper {
       totalOrders: entity.totalOrders,
       rating: entity.rating,
       totalRatings: entity.totalRatings,
+      reputationScore: entity.reputationScore,
+      acceptBlockedUntil: entity.acceptBlockedUntil,
       currentOrderId: entity.currentOrderId,
       isTrainingCompleted: entity.isTrainingCompleted,
       depositAmount: entity.depositAmount,
@@ -71,6 +73,8 @@ export class DriverMapper {
     entity.totalOrders = domain.driverTotalOrders;
     entity.rating = domain.driverRating;
     entity.totalRatings = domain.driverTotalRatings;
+    entity.reputationScore = domain.driverReputationScore;
+    entity.acceptBlockedUntil = domain.driverAcceptBlockedUntil;
     entity.currentOrderId = domain.driverCurrentOrderId;
     entity.isTrainingCompleted = domain.driverIsTrainingCompleted;
     entity.depositAmount = domain.driverDepositAmount;

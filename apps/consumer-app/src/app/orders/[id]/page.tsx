@@ -32,6 +32,7 @@ const DRIVER_STATUS_LABELS: Record<string, { icon: string; text: string }> = {
   PICKED_UP: { icon: "📦", text: "Tài xế đã nhận món, đang giao" },
   DELIVERING: { icon: "🚚", text: "Tài xế đang giao tới bạn" },
   DELIVERED: { icon: "✅", text: "Đơn hàng đã được giao" },
+  DELIVERY_FAILED: { icon: "❌", text: "Giao hàng thất bại" },
 };
 
 const STEPS = [
@@ -42,6 +43,8 @@ const STEPS = [
   { key: "READY", icon: "📦", label: "Sẵn sàng" },
   { key: "OUT_FOR_DELIVERY", icon: "🛵", label: "Đang giao" },
   { key: "DELIVERED", icon: "🏠", label: "Đã giao" },
+  { key: "CANCELLED_NO_DRIVER", icon: "🛑", label: "Không có tài xế" },
+  { key: "DELIVERY_FAILED", icon: "❌", label: "Giao hàng thất bại" },
 ];
 
 /** Các bước hiển thị dạng thanh ngang (không trùng trạng thái). */
@@ -62,6 +65,8 @@ const STATUS_COLORS: Record<string, string> = {
   OUT_FOR_DELIVERY: "bg-purple-50 border-purple-200 text-purple-700",
   DELIVERED: "bg-green-50 border-green-200 text-green-700",
   CANCELLED: "bg-red-50 border-red-200 text-red-700",
+  CANCELLED_NO_DRIVER: "bg-red-50 border-red-200 text-red-700",
+  DELIVERY_FAILED: "bg-red-50 border-red-200 text-red-700",
   REJECTED: "bg-red-50 border-red-200 text-red-700",
 };
 
@@ -320,7 +325,9 @@ export default function OrderDetailPage() {
       (order.status === "READY" && s.key === "READY_FOR_PICKUP"),
   );
   const isCancelled =
-    order.status === "CANCELLED" || order.status === "REJECTED";
+    order.status === "CANCELLED" ||
+    order.status === "REJECTED" ||
+    order.status === "CANCELLED_NO_DRIVER";
   const isDelivered = order.status === "DELIVERED";
 
   // Theo dõi tài xế trên bản đồ khi đang giao
@@ -402,9 +409,13 @@ export default function OrderDetailPage() {
           <p className="text-sm mt-1 opacity-70">
             {isDelivered
               ? "Đơn hàng đã giao thành công!"
-              : isCancelled
-                ? "Đơn hàng đã bị hủy"
-                : "Đơn hàng đang được xử lý. Tự động cập nhật mỗi 5s."}
+              : order.status === "CANCELLED_NO_DRIVER"
+                ? "Không có tài xế nhận đơn. Bạn có thể đặt lại vào lúc khác."
+                : order.status === "DELIVERY_FAILED"
+                  ? "Giao hàng thất bại. Vui lòng kiểm tra thông báo để biết chi tiết."
+                  : isCancelled
+                    ? "Đơn hàng đã bị hủy"
+                    : "Đơn hàng đang được xử lý. Tự động cập nhật mỗi 5s."}
           </p>
 
           {(order.status === "PENDING" || order.status === "CONFIRMED") && (

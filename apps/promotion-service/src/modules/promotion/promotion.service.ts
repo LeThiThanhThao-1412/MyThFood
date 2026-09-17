@@ -5,12 +5,21 @@ import {
 } from "@nestjs/common";
 import { v4 as uuidv4 } from "uuid";
 import { PromotionRepository } from "./promotion.repository";
-import { PromotionEntity, PromotionUsageEntity } from "./promotion.entity";
+import {
+  PromotionEntity,
+  PromotionUsageEntity,
+  CompensationConfigEntity,
+  CompensationVoucherEntity,
+  COMPENSATION_CONFIG_ID,
+} from "./promotion.entity";
 import {
   CreatePromotionDto,
   UpdatePromotionDto,
   ValidatePromotionDto,
   ApplyPromotionDto,
+  UpdateCompensationConfigDto,
+  IssueCompensationVoucherDto,
+  ApplyCompensationVoucherDto,
 } from "./promotion.dto";
 
 @Injectable()
@@ -276,5 +285,80 @@ export class PromotionService {
     return items
       .filter((i) => i.menuItemId === menuItemId)
       .reduce((sum, i) => sum + (i.unitPrice ?? 0) * (i.quantity ?? 0), 0);
+  }
+
+  // ---- Compensation voucher (voucher bồi thường) ----
+
+  async getCompensationConfig(): Promise<CompensationConfigEntity> {
+    let config = await this.promoRepo.getCompensationConfig();
+    if (!config) {
+      config = new CompensationConfigEntity();
+      config.id = COMPENSATION_CONFIG_ID;
+      config.value = 15000;
+      config.isActive = true;
+      config = await this.promoRepo.saveCompensationConfig(config);
+    }
+    return config;
+  }
+
+  async updateCompensationConfig(
+    dto: UpdateCompensationConfigDto,
+  ): Promise<CompensationConfigEntity> {
+    const config = await this.getCompensationConfig();
+    if (dto.value !== undefined) config.value = dto.value;
+    if (dto.isActive !== undefined) config.isActive = dto.isActive;
+    return this.promoRepo.saveCompensationConfig(config);
+  }
+
+  async issueCompensationVoucher(
+    dto: IssueCompensationVoucherDto,
+  ): Promise<CompensationVoucherEntity | null> {
+    const config = await this.getCompensationConfig();
+    if (!config.isActive) {
+      return null; // tính năng đang tắt
+    }
+    const existing = await this.promoRepo.findVoucherBySourceOrder(
+      dto.sourceOrderId,
+    );
+    if (existing) {
+      return existing; // idempotent
+    }
+    const voucher = new CompensationVoucherEntity();
+    voucher.id = uuidv4();
+    voucher.name = `Bồi thường #${dto.sourceOrderId.slice(0, 8)}`;
+    voucher.consumerId = dto.consumerId;
+    voucher.value = Number(config.value);
+    voucher.sourceOrderId = dto.sourceOrderId;
+    voucher.isUsed = false;
+    voucher.usedOrderId = null;
+    voucher.issuedAt = new Date();
+    voucher.usedAt = null;
+    return this.promoRepo.saveVoucher(voucher);
+  }
+
+  async listCompensationVouchers(
+    consumerId: string,
+  ): Promise<CompensationVoucherEntity[]> {
+    return this.promoRepo.findUnusedVouchers(consumerId);
+  }
+
+  async applyCompensationVoucher(
+    dto: ApplyCompensationVoucherDto,
+  ): Promise<{ discount: number }> {
+    const voucher = await this.promoRepo.findVoucherById(dto.voucherId);
+    if (!voucher || voucher.consumerId !== dto.consumerId) {
+      throw new BadRequestException("Voucher bồi thường không hợp lệ");
+    }
+    if (voucher.isUsed) {
+      if (voucher.usedOrderId === dto.orderId) {
+        return { discount: Number(voucher.value) }; // idempotent
+      }
+      throw new BadRequestException("Voucher bồi thường đã được sử dụng");
+    }
+    voucher.isUsed = true;
+    voucher.usedOrderId = dto.orderId;
+    voucher.usedAt = new Date();
+    await this.promoRepo.saveVoucher(voucher);
+    return { discount: Number(voucher.value) };
   }
 }

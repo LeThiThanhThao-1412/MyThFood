@@ -7,6 +7,7 @@ import {
   IsInt,
   Min,
   Max,
+  IsIn,
 } from "class-validator";
 import { DispatchDeclineReason } from "../../domain/dispatch.aggregate";
 
@@ -60,6 +61,24 @@ export class DriverDeclineDto {
   @IsOptional()
   @IsString()
   detail?: string;
+}
+
+export class DriverCancelDto {
+  @IsString()
+  reason!: string;
+}
+
+export class DeliveryFailedDto {
+  @IsString()
+  reason!: string;
+
+  @IsOptional()
+  @IsString()
+  photoUrl?: string;
+
+  @IsOptional()
+  @IsIn(["DRIVER", "CUSTOMER"])
+  faultParty?: string;
 }
 
 export class CancelDispatchDto {

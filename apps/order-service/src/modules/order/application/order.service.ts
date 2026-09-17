@@ -1,7 +1,13 @@
-import { Injectable, Logger, ForbiddenException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  ForbiddenException,
+  ConflictException,
+} from "@nestjs/common";
 import { EventBus } from "@nestjs/cqrs";
 import { HttpService } from "@nestjs/axios";
 import { firstValueFrom } from "rxjs";
+import { randomUUID } from "node:crypto";
 import { Order } from "../domain/order.aggregate";
 import { OrderId } from "../domain/order-id";
 import { OrderRepository } from "../infrastructure/order.repository";
@@ -30,6 +36,15 @@ export class OrderService {
   // ===================== Order Placement =====================
 
   async placeOrder(dto: PlaceOrderDto): Promise<Order> {
+    // Case 2: mỗi tài khoản/thiết bị chỉ được có 1 đơn đang hoạt động tại một thời điểm.
+    const hasActiveOrder =
+      await this.orderRepository.hasActiveOrderByConsumerId(dto.consumerId);
+    if (hasActiveOrder) {
+      throw new ConflictException(
+        "Bạn đang có một đơn hàng chưa hoàn tất, vui lòng chờ giao xong hoặc hủy đơn cũ trước khi đặt đơn mới",
+      );
+    }
+
     let discount = dto.discount ?? 0;
     let discountFundedBy = "MERCHANT";
 
@@ -48,6 +63,7 @@ export class OrderService {
 
     const result = Order.place({
       consumerId: dto.consumerId,
+      userId: dto.userId,
       merchantId: dto.merchantId,
       orderType: dto.orderType as "DELIVERY" | "PICKUP",
       items: dto.items.map((item) => ({
@@ -78,6 +94,9 @@ export class OrderService {
 
     const order = result.value;
     await this.orderRepository.save(order);
+
+    // Tiêu thụ voucher bồi thường (nếu khách dùng) — best-effort.
+    await this.consumeCompensationVoucher(dto, order.id.toString());
 
     if (dto.promotionCode) {
       try {
@@ -571,6 +590,336 @@ export class OrderService {
       );
     } catch {}
     return order;
+  }
+
+  /**
+   * Case 3: không có tài xế nhận đơn → tự động hủy đơn.
+   * - Chuyển trạng thái sang CANCELLED_NO_DRIVER.
+   * - Hoàn tiền 100% nếu khách đã thanh toán online (WALLET/CREDIT_CARD).
+   * - Gửi thông báo cho khách kèm gợi ý đặt lại.
+   */
+  async cancelNoDriver(id: string, reason?: string): Promise<Order> {
+    const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
+
+    // Nếu đơn đã ở trạng thái kết thúc thì không làm gì thêm (idempotent).
+    if (!order.isActive()) {
+      return order;
+    }
+
+    order.cancelNoDriver(reason);
+    await this.orderRepository.save(order);
+
+    // Hoàn tiền 100% nếu đã thanh toán online (COD không có tiền đã thu).
+    const isOnlinePaid =
+      order.orderPaymentMethod === "WALLET" ||
+      order.orderPaymentMethod === "CREDIT_CARD";
+    if (isOnlinePaid && order.orderTotalAmount > 0) {
+      try {
+        const walletUrl =
+          process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
+        const serviceKey =
+          process.env.SERVICE_API_KEY || "mythfood-service-key";
+        await firstValueFrom(
+          this.httpService.post(
+            `${walletUrl}/api/v1/wallets/refund`,
+            {
+              ownerId: order.orderConsumerId,
+              ownerType: "CONSUMER",
+              amount: order.orderTotalAmount,
+              orderId: id,
+            },
+            {
+              headers: { "x-service-key": serviceKey },
+            },
+          ),
+        );
+        this.logger.log(
+          `Refunded ${order.orderTotalAmount} VND to consumer ${order.orderConsumerId} for no-driver order ${id}`,
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Wallet refund failed for no-driver order ${id}: ${err.message}`,
+        );
+      }
+    }
+
+    // Gửi thông báo in-app cho khách (best-effort).
+    try {
+      await this.sendNoDriverNotification(order);
+    } catch (err: any) {
+      this.logger.warn(
+        `No-driver notification failed for order ${id}: ${err.message}`,
+      );
+    }
+
+    // Bồi thường voucher cho khách (best-effort, giá trị do admin cấu hình).
+    try {
+      await this.issueCompensationVoucher(order);
+    } catch (err: any) {
+      this.logger.warn(
+        `Compensation voucher issue failed for order ${id}: ${err.message}`,
+      );
+    }
+
+    const events = order.pullDomainEvents();
+    for (const event of events) {
+      this.eventBus.publish(event);
+    }
+
+    // Emit real-time
+    try {
+      this.orderGateway.emitOrderUpdate(
+        order.orderMerchantId,
+        "order:cancelled-no-driver",
+        { id: order.id.toString(), status: "CANCELLED_NO_DRIVER" },
+      );
+      this.orderGateway.emitConsumerUpdate(
+        order.orderConsumerId,
+        "order:cancelled-no-driver",
+        { id: order.id.toString(), status: "CANCELLED_NO_DRIVER" },
+      );
+    } catch {}
+
+    return order;
+  }
+
+  private async sendNoDriverNotification(order: Order): Promise<void> {
+    const userId = order.orderUserId;
+    if (!userId) {
+      this.logger.warn(
+        `Cannot notify consumer for order ${order.id.toString()}: userId not recorded on order`,
+      );
+      return;
+    }
+
+    const notificationUrl =
+      process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:3013";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    await firstValueFrom(
+      this.httpService.post(
+        `${notificationUrl}/api/v1/notifications`,
+        {
+          userId,
+          type: "ORDER_CANCELLED_NO_DRIVER",
+          title: "Đơn hàng của bạn đã bị hủy",
+          body: `Không có tài xế nhận đơn. Bạn nhận được voucher "Bồi thường #${order.id.toString().slice(0, 8)}" dùng 1 lần cho đơn tiếp theo.`,
+          data: {
+            orderId: order.id.toString(),
+            status: "CANCELLED_NO_DRIVER",
+          },
+        },
+        {
+          headers: { "x-service-key": serviceKey },
+        },
+      ),
+    );
+  }
+
+  private async issueCompensationVoucher(order: Order): Promise<void> {
+    const promoUrl =
+      process.env.PROMOTION_SERVICE_URL || "http://promotion-service:3012";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    await firstValueFrom(
+      this.httpService.post(
+        `${promoUrl}/api/v1/promotions/compensation-vouchers/issue`,
+        {
+          consumerId: order.orderConsumerId,
+          sourceOrderId: order.id.toString(),
+        },
+        {
+          headers: { "x-service-key": serviceKey },
+        },
+      ),
+    );
+  }
+
+  private async consumeCompensationVoucher(
+    dto: PlaceOrderDto,
+    orderId: string,
+  ): Promise<void> {
+    if (!dto.compensationVoucherId) return;
+    const promoUrl =
+      process.env.PROMOTION_SERVICE_URL || "http://promotion-service:3012";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      await firstValueFrom(
+        this.httpService.post(
+          `${promoUrl}/api/v1/promotions/compensation-vouchers/apply`,
+          {
+            voucherId: dto.compensationVoucherId,
+            consumerId: dto.consumerId,
+            orderId,
+          },
+          {
+            headers: { "x-service-key": serviceKey },
+          },
+        ),
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Compensation voucher apply failed for order ${orderId}: ${err.message}`,
+      );
+    }
+  }
+
+  /**
+   * Case 7: ghi lý do tài xế hủy đơn (sau khi đã nhận) vào lịch sử + thông báo khách.
+   */
+  async recordDriverCancel(id: string, reason: string): Promise<Order> {
+    const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
+
+    await this.orderTimelineRepository.record({
+      id: randomUUID(),
+      orderId: id,
+      previousStatus: order.orderStatus,
+      newStatus: order.orderStatus,
+      reason: `Tài xế hủy đơn: ${reason}`,
+      occurredAt: new Date(),
+    });
+
+    try {
+      await this.sendDriverCancelNotification(order, reason);
+    } catch (err: any) {
+      this.logger.warn(`Driver-cancel notification failed: ${err.message}`);
+    }
+
+    return order;
+  }
+
+  /**
+   * Case 8: tài xế giao hàng thất bại → chuyển trạng thái + thông báo khẩn.
+   */
+  async deliveryFailed(
+    id: string,
+    reason: string,
+    _photoUrl?: string,
+    faultParty?: string,
+  ): Promise<Order> {
+    const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
+
+    if (!order.isActive()) {
+      return order;
+    }
+
+    order.markDeliveryFailed(reason);
+    await this.orderRepository.save(order);
+
+    const events = order.pullDomainEvents();
+    for (const event of events) {
+      this.eventBus.publish(event);
+    }
+
+    try {
+      await this.sendDeliveryFailedNotification(order, reason);
+    } catch (err: any) {
+      this.logger.warn(`Delivery-failed notification failed: ${err.message}`);
+    }
+
+    // Case 8 bồi thường: lỗi khách → bồi thường phí ship cho tài xế;
+    // lỗi tài xế → hoàn tiền khách hàng.
+    try {
+      await this.settleDeliveryFailure(order, faultParty);
+    } catch (err: any) {
+      this.logger.warn(`Delivery-failure settlement failed: ${err.message}`);
+    }
+
+    return order;
+  }
+
+  private async settleDeliveryFailure(
+    order: Order,
+    faultParty?: string,
+  ): Promise<void> {
+    const walletUrl =
+      process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+
+    if (faultParty === "DRIVER") {
+      // Lỗi tài xế → hoàn tiền khách (store credit).
+      if (
+        (order.orderPaymentMethod === "WALLET" ||
+          order.orderPaymentMethod === "CREDIT_CARD") &&
+        order.orderTotalAmount > 0
+      ) {
+        await firstValueFrom(
+          this.httpService.post(
+            `${walletUrl}/api/v1/wallets/refund`,
+            {
+              ownerId: order.orderConsumerId,
+              ownerType: "CONSUMER",
+              amount: order.orderTotalAmount,
+              orderId: order.id.toString(),
+            },
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      }
+      return;
+    }
+
+    // Lỗi khách (bùng đơn/không liên lạc) → tài xế được đền bù phí ship.
+    if (order.orderDriverId && order.orderDeliveryFee > 0) {
+      await firstValueFrom(
+        this.httpService.post(
+          `${walletUrl}/api/v1/wallets/compensate-driver`,
+          {
+            driverId: order.orderDriverId,
+            orderId: order.id.toString(),
+            shippingFee: order.orderDeliveryFee,
+          },
+          { headers: { "x-service-key": serviceKey } },
+        ),
+      );
+    }
+  }
+
+  private async sendDriverCancelNotification(
+    order: Order,
+    reason: string,
+  ): Promise<void> {
+    const userId = order.orderUserId;
+    if (!userId) return;
+    await this.postNotification({
+      userId,
+      type: "ORDER_DRIVER_CANCELLED",
+      title: "Tài xế đã hủy đơn của bạn",
+      body: `Lý do: ${reason}. Hệ thống đang tìm tài xế khác.`,
+      data: { orderId: order.id.toString(), reason },
+    });
+  }
+
+  private async sendDeliveryFailedNotification(
+    order: Order,
+    reason: string,
+  ): Promise<void> {
+    const userId = order.orderUserId;
+    if (!userId) return;
+    await this.postNotification({
+      userId,
+      type: "ORDER_DELIVERY_FAILED",
+      title: "Giao hàng thất bại",
+      body: `Không thể giao đơn hàng: ${reason}. Vui lòng kiểm tra thông tin chi tiết.`,
+      data: { orderId: order.id.toString(), reason },
+    });
+  }
+
+  private async postNotification(payload: {
+    userId: string;
+    type: string;
+    title: string;
+    body?: string;
+    data?: Record<string, unknown>;
+  }): Promise<void> {
+    const notificationUrl =
+      process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:3013";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    await firstValueFrom(
+      this.httpService.post(
+        `${notificationUrl}/api/v1/notifications`,
+        payload,
+        { headers: { "x-service-key": serviceKey } },
+      ),
+    );
   }
 
   // ===================== Timeline =====================

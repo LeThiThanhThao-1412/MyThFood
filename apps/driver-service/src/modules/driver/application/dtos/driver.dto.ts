@@ -76,3 +76,11 @@ export class RateDriverDto {
   @Max(5)
   rating!: number;
 }
+
+export class PenalizeCancellationDto {
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(24 * 60)
+  blockMinutes?: number;
+}

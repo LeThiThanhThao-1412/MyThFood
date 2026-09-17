@@ -15,6 +15,7 @@ export enum DispatchStatus {
   PICKED_UP = "PICKED_UP",
   DELIVERING = "DELIVERING",
   DELIVERED = "DELIVERED",
+  DELIVERY_FAILED = "DELIVERY_FAILED",
   EXPIRED = "EXPIRED",
   CANCELLED = "CANCELLED",
 }
@@ -360,6 +361,72 @@ export class Dispatch extends AggregateRoot<DispatchId> {
     );
   }
 
+  /**
+   * Tài xế đã nhận đơn nhưng sau đó hủy (Case 7).
+   * Ghi nhận lý do, tăng retry, đưa đơn quay lại tìm tài xế khác.
+   * Tài xế cũ vẫn nằm trong matchedDriverIds nên sẽ không bị gán lại.
+   */
+  public driverCancelAfterAccept(reason: string): void {
+    if (this._status !== DispatchStatus.DRIVER_ACCEPTED) {
+      throw new BusinessRuleViolationError(
+        `Driver can only cancel after accept when dispatch is in DRIVER_ACCEPTED status, current: ${this._status}`,
+      );
+    }
+
+    const previousStatus = this._status;
+    const previousDriverId = this._driverId;
+    this._cancellationReason = reason;
+    this._retryCount += 1;
+    this._driverId = null;
+    this.markUpdated();
+
+    this.addDomainEvent(
+      new DispatchStatusChangedEvent(this.id, {
+        dispatchId: this.id.value,
+        orderId: this._orderId,
+        previousStatus,
+        newStatus:
+          this._retryCount < MAX_MATCHING_ATTEMPTS
+            ? DispatchStatus.MATCHING
+            : DispatchStatus.EXPIRED,
+        driverId: previousDriverId!,
+        reason,
+      }),
+    );
+
+    this._status =
+      this._retryCount < MAX_MATCHING_ATTEMPTS
+        ? DispatchStatus.MATCHING
+        : DispatchStatus.EXPIRED;
+  }
+
+  /**
+   * Tài xế giao hàng thất bại (Case 8): khách không nhận hàng.
+   */
+  public deliveryFailed(reason: string): void {
+    if (this._status !== DispatchStatus.DELIVERING) {
+      throw new BusinessRuleViolationError(
+        `Can only mark delivery failed when dispatch is in DELIVERING status, current: ${this._status}`,
+      );
+    }
+
+    const previousStatus = this._status;
+    this._status = DispatchStatus.DELIVERY_FAILED;
+    this._cancellationReason = reason;
+    this.markUpdated();
+
+    this.addDomainEvent(
+      new DispatchStatusChangedEvent(this.id, {
+        dispatchId: this.id.value,
+        orderId: this._orderId,
+        previousStatus,
+        newStatus: DispatchStatus.DELIVERY_FAILED,
+        driverId: this._driverId!,
+        reason,
+      }),
+    );
+  }
+
   public expire(): void {
     if (
       this._status !== DispatchStatus.MATCHING &&
@@ -481,6 +548,7 @@ export class Dispatch extends AggregateRoot<DispatchId> {
   get isTerminal(): boolean {
     return [
       DispatchStatus.DELIVERED,
+      DispatchStatus.DELIVERY_FAILED,
       DispatchStatus.EXPIRED,
       DispatchStatus.CANCELLED,
     ].includes(this._status);

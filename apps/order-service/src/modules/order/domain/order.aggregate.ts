@@ -15,10 +15,24 @@ export type OrderStatus =
   | "READY_FOR_PICKUP"
   | "OUT_FOR_DELIVERY"
   | "DELIVERED"
+  | "DELIVERY_FAILED"
   | "CANCELLED"
+  | "CANCELLED_NO_DRIVER"
   | "REJECTED";
 
 export type OrderType = "DELIVERY" | "PICKUP";
+
+/**
+ * Statuses in which an order is still "open" from the customer's perspective:
+ * chờ tài xế nhận (PENDING) → đang giao (CONFIRMED/PREPARING/READY/OUT_FOR_DELIVERY).
+ */
+export const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
+  "PENDING",
+  "CONFIRMED",
+  "PREPARING",
+  "READY_FOR_PICKUP",
+  "OUT_FOR_DELIVERY",
+];
 
 export interface OrderItemOption {
   optionId: string;
@@ -41,6 +55,7 @@ export interface OrderItemProps {
 
 export interface OrderProps {
   consumerId: string;
+  userId?: string | null;
   merchantId: string;
   orderType: OrderType;
   status: OrderStatus;
@@ -65,17 +80,20 @@ export interface OrderProps {
 /** Valid status transitions for the order state machine */
 const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   PENDING: ["CONFIRMED", "REJECTED", "CANCELLED"],
-  CONFIRMED: ["PREPARING", "CANCELLED"],
-  PREPARING: ["READY_FOR_PICKUP", "CANCELLED"],
-  READY_FOR_PICKUP: ["OUT_FOR_DELIVERY", "CANCELLED"],
-  OUT_FOR_DELIVERY: ["DELIVERED", "CANCELLED"],
+  CONFIRMED: ["PREPARING", "CANCELLED", "CANCELLED_NO_DRIVER"],
+  PREPARING: ["READY_FOR_PICKUP", "CANCELLED", "CANCELLED_NO_DRIVER"],
+  READY_FOR_PICKUP: ["OUT_FOR_DELIVERY", "CANCELLED", "CANCELLED_NO_DRIVER"],
+  OUT_FOR_DELIVERY: ["DELIVERED", "CANCELLED", "DELIVERY_FAILED"],
   DELIVERED: [],
   CANCELLED: [],
+  CANCELLED_NO_DRIVER: [],
+  DELIVERY_FAILED: [],
   REJECTED: [],
 };
 
 export class Order extends AggregateRoot<OrderId> {
   private consumerId: string;
+  private userId: string | null;
   private merchantId: string;
   private orderType: OrderType;
   private status: OrderStatus;
@@ -99,6 +117,7 @@ export class Order extends AggregateRoot<OrderId> {
   private constructor(id: OrderId, props: OrderProps) {
     super(id);
     this.consumerId = props.consumerId;
+    this.userId = props.userId ?? null;
     this.merchantId = props.merchantId;
     this.orderType = props.orderType;
     this.status = props.status;
@@ -127,6 +146,7 @@ export class Order extends AggregateRoot<OrderId> {
    */
   public static place(props: {
     consumerId: string;
+    userId?: string | null;
     merchantId: string;
     orderType: OrderType;
     items: Array<{
@@ -218,6 +238,7 @@ export class Order extends AggregateRoot<OrderId> {
 
     const order = new Order(OrderId.create(), {
       consumerId: props.consumerId,
+      userId: props.userId ?? null,
       merchantId: props.merchantId,
       orderType: props.orderType,
       status: "PENDING",
@@ -285,6 +306,12 @@ export class Order extends AggregateRoot<OrderId> {
     // Set reason fields based on new status
     if (newStatus === "CANCELLED" && reason) {
       this.cancelReason = reason;
+    }
+    if (newStatus === "CANCELLED_NO_DRIVER") {
+      this.cancelReason = reason ?? "Không có tài xế nhận đơn";
+    }
+    if (newStatus === "DELIVERY_FAILED") {
+      this.cancelReason = reason ?? "Giao hàng thất bại";
     }
     if (newStatus === "REJECTED" && reason) {
       this.rejectionReason = reason;
@@ -362,6 +389,28 @@ export class Order extends AggregateRoot<OrderId> {
     this.transitionTo("REJECTED", reason);
   }
 
+  /**
+   * Auto-cancel the order because no driver accepted the dispatch in time.
+   */
+  public cancelNoDriver(reason?: string): void {
+    this.transitionTo(
+      "CANCELLED_NO_DRIVER",
+      reason ?? "Không có tài xế nhận đơn",
+    );
+  }
+
+  /**
+   * Tài xế giao hàng thất bại (Case 8): khách không nhận hàng.
+   */
+  public markDeliveryFailed(reason: string): void {
+    if (!reason || reason.trim().length === 0) {
+      throw new BusinessRuleViolationError(
+        "Delivery failure reason is required",
+      );
+    }
+    this.transitionTo("DELIVERY_FAILED", reason);
+  }
+
   // ===================== Mutations =====================
 
   /**
@@ -399,7 +448,7 @@ export class Order extends AggregateRoot<OrderId> {
   // ===================== Queries =====================
 
   public isActive(): boolean {
-    return !["DELIVERED", "CANCELLED", "REJECTED"].includes(this.status);
+    return ACTIVE_ORDER_STATUSES.includes(this.status);
   }
 
   public isDelivery(): boolean {
@@ -410,6 +459,10 @@ export class Order extends AggregateRoot<OrderId> {
 
   get orderConsumerId(): string {
     return this.consumerId;
+  }
+
+  get orderUserId(): string | null {
+    return this.userId;
   }
 
   get orderMerchantId(): string {

@@ -41,6 +41,16 @@ const STATUS_LABELS: Record<
     cls: "bg-green-100 text-green-700",
   },
   CANCELLED: { icon: "❌", label: "Đã hủy", cls: "bg-gray-100 text-gray-500" },
+  CANCELLED_NO_DRIVER: {
+    icon: "🛑",
+    label: "Hủy - Không có tài xế",
+    cls: "bg-red-100 text-red-700",
+  },
+  DELIVERY_FAILED: {
+    icon: "❌",
+    label: "Giao hàng thất bại",
+    cls: "bg-red-100 text-red-700",
+  },
   REJECTED: { icon: "🚫", label: "Từ chối", cls: "bg-red-100 text-red-700" },
 };
 
@@ -82,7 +92,13 @@ export default function OrdersPage() {
       ? orders
       : orders.filter((o) => {
           if (filter === "ACTIVE")
-            return !["DELIVERED", "CANCELLED", "REJECTED"].includes(o.status);
+            return ![
+              "DELIVERED",
+              "CANCELLED",
+              "CANCELLED_NO_DRIVER",
+              "DELIVERY_FAILED",
+              "REJECTED",
+            ].includes(o.status);
           return o.status === filter;
         });
 

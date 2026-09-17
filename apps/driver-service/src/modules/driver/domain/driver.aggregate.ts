@@ -51,6 +51,8 @@ export class Driver extends AggregateRoot<DriverId> {
   private _totalOrders: number;
   private _rating: number;
   private _totalRatings: number;
+  private _reputationScore: number;
+  private _acceptBlockedUntil: Date | null;
   private _currentOrderId: string | null;
   private _isTrainingCompleted: boolean;
   private _depositAmount: number;
@@ -84,6 +86,8 @@ export class Driver extends AggregateRoot<DriverId> {
       totalOrders: number;
       rating: number;
       totalRatings: number;
+      reputationScore?: number;
+      acceptBlockedUntil?: Date | null;
       currentOrderId: string | null;
       isTrainingCompleted: boolean;
       depositAmount: number;
@@ -116,6 +120,8 @@ export class Driver extends AggregateRoot<DriverId> {
     this._totalOrders = props.totalOrders;
     this._rating = props.rating;
     this._totalRatings = props.totalRatings;
+    this._reputationScore = props.reputationScore ?? 100;
+    this._acceptBlockedUntil = props.acceptBlockedUntil ?? null;
     this._currentOrderId = props.currentOrderId;
     this._isTrainingCompleted = props.isTrainingCompleted;
     this._depositAmount = props.depositAmount;
@@ -163,6 +169,8 @@ export class Driver extends AggregateRoot<DriverId> {
       totalOrders: 0,
       rating: 0,
       totalRatings: 0,
+      reputationScore: 100,
+      acceptBlockedUntil: null,
       currentOrderId: null,
       isTrainingCompleted: false,
       depositAmount: 0,
@@ -198,6 +206,8 @@ export class Driver extends AggregateRoot<DriverId> {
       totalOrders: number;
       rating: number;
       totalRatings: number;
+      reputationScore?: number;
+      acceptBlockedUntil?: Date | null;
       currentOrderId: string | null;
       isTrainingCompleted: boolean;
       depositAmount: number;
@@ -347,6 +357,18 @@ export class Driver extends AggregateRoot<DriverId> {
     this.markUpdated();
   }
 
+  /**
+   * Giải phóng tài xế khỏi đơn hiện tại (khi hủy/giao thất bại)
+   * mà không tính vào số đơn hoàn thành.
+   */
+  public releaseOrder(): void {
+    if (!this._currentOrderId) {
+      throw new BusinessRuleViolationError("Driver has no active order");
+    }
+    this._currentOrderId = null;
+    this.markUpdated();
+  }
+
   // ---- Fatigue Management ----
 
   /**
@@ -472,6 +494,16 @@ export class Driver extends AggregateRoot<DriverId> {
     this.markUpdated();
   }
 
+  /**
+   * Phạt tài xế khi hủy đơn sau khi đã nhận (Case 7):
+   * giảm điểm uy tín và tạm khóa nhận đơn trong `blockMinutes`.
+   */
+  public penalizeCancellation(blockMinutes: number): void {
+    this._reputationScore = Math.max(0, this._reputationScore - 5);
+    this._acceptBlockedUntil = new Date(Date.now() + blockMinutes * 60 * 1000);
+    this.markUpdated();
+  }
+
   // ---- Queries / Accessors ----
 
   get driverUserId(): string {
@@ -546,6 +578,12 @@ export class Driver extends AggregateRoot<DriverId> {
   get driverTotalRatings(): number {
     return this._totalRatings;
   }
+  get driverReputationScore(): number {
+    return this._reputationScore;
+  }
+  get driverAcceptBlockedUntil(): Date | null {
+    return this._acceptBlockedUntil;
+  }
   get driverCurrentOrderId(): string | null {
     return this._currentOrderId;
   }
@@ -567,7 +605,16 @@ export class Driver extends AggregateRoot<DriverId> {
       this._status === DriverStatus.ACTIVE &&
       this._onlineStatus === DriverOnlineStatus.ONLINE &&
       this._fatigueLevel !== FatigueLevel.CRITICAL &&
-      !this._currentOrderId
+      !this._currentOrderId &&
+      !this.isBlocked
+    );
+  }
+
+  /** Tài xế đang bị tạm khóa nhận đơn (do hủy đơn quá nhiều). */
+  get isBlocked(): boolean {
+    return (
+      this._acceptBlockedUntil != null &&
+      this._acceptBlockedUntil.getTime() > Date.now()
     );
   }
 

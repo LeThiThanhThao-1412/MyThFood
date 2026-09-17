@@ -10,6 +10,7 @@ import {
   IsArray,
   ValidateNested,
   Min,
+  IsBoolean,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -169,6 +170,37 @@ export class ValidatePromotionDto {
   @ValidateNested({ each: true })
   @Type(() => PromotionItemDto)
   items?: PromotionItemDto[];
+}
+
+export class UpdateCompensationConfigDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  value?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class IssueCompensationVoucherDto {
+  @IsUUID("4")
+  consumerId!: string;
+
+  @IsUUID("4")
+  sourceOrderId!: string;
+}
+
+export class ApplyCompensationVoucherDto {
+  @IsUUID("4")
+  voucherId!: string;
+
+  @IsUUID("4")
+  consumerId!: string;
+
+  @IsUUID("4")
+  orderId!: string;
 }
 
 export class ApplyPromotionDto {

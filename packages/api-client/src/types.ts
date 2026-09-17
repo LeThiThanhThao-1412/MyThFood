@@ -346,7 +346,9 @@ export type OrderStatus =
   | "READY_FOR_PICKUP"
   | "OUT_FOR_DELIVERY"
   | "DELIVERED"
+  | "DELIVERY_FAILED"
   | "CANCELLED"
+  | "CANCELLED_NO_DRIVER"
   | "REJECTED";
 
 export interface OrderItem {
@@ -386,6 +388,8 @@ export interface Order {
 
 export interface PlaceOrderRequest {
   consumerId: string;
+  userId?: string;
+  compensationVoucherId?: string;
   merchantId: string;
   orderType: OrderType;
   items: {
@@ -576,6 +580,7 @@ export type DispatchStatus =
   | "PICKED_UP"
   | "DELIVERING"
   | "DELIVERED"
+  | "DELIVERY_FAILED"
   | "EXPIRED"
   | "CANCELLED";
 
@@ -627,6 +632,16 @@ export interface DeclineDispatchRequest {
   driverId: string;
   reason: DispatchDeclineReason;
   detail?: string;
+}
+
+export interface DriverCancelRequest {
+  reason: string;
+}
+
+export interface DeliveryFailedRequest {
+  reason: string;
+  photoUrl?: string;
+  faultParty?: "DRIVER" | "CUSTOMER";
 }
 
 // --- Socket Events ---
@@ -772,6 +787,43 @@ export interface ApplyPromotionRequest {
   shippingFee?: number;
   itemTotal?: number;
   items?: PromotionItem[];
+}
+
+// --- Compensation voucher (voucher bồi thường) ---
+export interface CompensationConfig {
+  id: string;
+  value: number;
+  isActive: boolean;
+  updatedAt: string;
+}
+
+export interface CompensationVoucher {
+  id: string;
+  name: string;
+  consumerId: string;
+  value: number;
+  sourceOrderId: string;
+  isUsed: boolean;
+  usedOrderId: string | null;
+  issuedAt: string;
+  usedAt: string | null;
+  createdAt: string;
+}
+
+export interface UpdateCompensationConfigRequest {
+  value?: number;
+  isActive?: boolean;
+}
+
+export interface IssueCompensationVoucherRequest {
+  consumerId: string;
+  sourceOrderId: string;
+}
+
+export interface ApplyCompensationVoucherRequest {
+  voucherId: string;
+  consumerId: string;
+  orderId: string;
 }
 
 // --- Notification ---

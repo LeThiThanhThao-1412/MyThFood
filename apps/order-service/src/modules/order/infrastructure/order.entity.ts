@@ -15,6 +15,9 @@ export class OrderEntity {
   @Column("uuid", { name: "consumer_id" })
   consumer_id!: string;
 
+  @Column("uuid", { name: "user_id", nullable: true })
+  user_id!: string | null;
+
   @Column("uuid", { name: "merchant_id" })
   merchant_id!: string;
 

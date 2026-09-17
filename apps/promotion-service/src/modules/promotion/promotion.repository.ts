@@ -1,7 +1,13 @@
 import { Injectable, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { DataSource, Repository as TypeOrmRepo } from "typeorm";
-import { PromotionEntity, PromotionUsageEntity } from "./promotion.entity";
+import {
+  PromotionEntity,
+  PromotionUsageEntity,
+  CompensationConfigEntity,
+  CompensationVoucherEntity,
+  COMPENSATION_CONFIG_ID,
+} from "./promotion.entity";
 
 @Injectable()
 export class PromotionRepository {
@@ -10,6 +16,10 @@ export class PromotionRepository {
     private readonly promoRepo: TypeOrmRepo<PromotionEntity>,
     @InjectRepository(PromotionUsageEntity)
     private readonly usageRepo: TypeOrmRepo<PromotionUsageEntity>,
+    @InjectRepository(CompensationConfigEntity)
+    private readonly configRepo: TypeOrmRepo<CompensationConfigEntity>,
+    @InjectRepository(CompensationVoucherEntity)
+    private readonly voucherRepo: TypeOrmRepo<CompensationVoucherEntity>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -166,5 +176,42 @@ export class PromotionRepository {
       totalDiscount: Number(rows?.totalDiscount ?? 0),
       totalOrders: Number(rows?.totalOrders ?? 0),
     };
+  }
+
+  // ---- Compensation voucher (voucher bồi thường) ----
+
+  async getCompensationConfig(): Promise<CompensationConfigEntity | null> {
+    return this.configRepo.findOne({ where: { id: COMPENSATION_CONFIG_ID } });
+  }
+
+  async saveCompensationConfig(
+    config: CompensationConfigEntity,
+  ): Promise<CompensationConfigEntity> {
+    return this.configRepo.save(config);
+  }
+
+  async findVoucherBySourceOrder(
+    sourceOrderId: string,
+  ): Promise<CompensationVoucherEntity | null> {
+    return this.voucherRepo.findOne({ where: { sourceOrderId } });
+  }
+
+  async findVoucherById(id: string): Promise<CompensationVoucherEntity | null> {
+    return this.voucherRepo.findOne({ where: { id } });
+  }
+
+  async findUnusedVouchers(
+    consumerId: string,
+  ): Promise<CompensationVoucherEntity[]> {
+    return this.voucherRepo.find({
+      where: { consumerId, isUsed: false },
+      order: { issuedAt: "ASC" },
+    });
+  }
+
+  async saveVoucher(
+    voucher: CompensationVoucherEntity,
+  ): Promise<CompensationVoucherEntity> {
+    return this.voucherRepo.save(voucher);
   }
 }

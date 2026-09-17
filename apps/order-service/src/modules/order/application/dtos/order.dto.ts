@@ -11,6 +11,7 @@ import {
   IsDateString,
   ArrayMinSize,
   IsInt,
+  IsIn,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -76,6 +77,14 @@ export class PlaceOrderDto {
   @IsUUID("4")
   @IsNotEmpty()
   consumerId!: string;
+
+  @IsUUID("4")
+  @IsOptional()
+  userId?: string;
+
+  @IsUUID("4")
+  @IsOptional()
+  compensationVoucherId?: string;
 
   @IsUUID("4")
   @IsNotEmpty()
@@ -153,6 +162,26 @@ export class UpdateOrderDto {
   @IsUUID("4")
   @IsOptional()
   driverId?: string;
+}
+
+export class RecordDriverCancelDto {
+  @IsString()
+  @IsNotEmpty()
+  reason!: string;
+}
+
+export class DeliveryFailedDto {
+  @IsString()
+  @IsNotEmpty()
+  reason!: string;
+
+  @IsString()
+  @IsOptional()
+  photoUrl?: string;
+
+  @IsOptional()
+  @IsIn(["DRIVER", "CUSTOMER"])
+  faultParty?: string;
 }
 
 export class StatusTransitionDto {

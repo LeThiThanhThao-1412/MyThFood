@@ -89,3 +89,63 @@ export class PromotionUsageEntity {
   @CreateDateColumn({ type: "timestamptz" })
   createdAt!: Date;
 }
+
+/** Fixed id of the single-row compensation voucher configuration. */
+export const COMPENSATION_CONFIG_ID = "00000000-0000-0000-0000-000000000001";
+
+/**
+ * Cấu hình voucher bồi thường (đơn bị hủy do không có tài xế).
+ * Singleton — admin có thể thay đổi giá trị / bật tắt.
+ */
+@Entity("compensation_config")
+export class CompensationConfigEntity {
+  @PrimaryColumn({ type: "uuid" })
+  id!: string;
+
+  @Column({ type: "decimal", precision: 12, scale: 2, default: 15000 })
+  value!: number;
+
+  @Column({ type: "boolean", default: true })
+  isActive!: boolean;
+
+  @UpdateDateColumn({ type: "timestamptz" })
+  updatedAt!: Date;
+}
+
+/**
+ * Voucher bồi thường đã phát cho khách hàng (dùng 1 lần cho đơn tiếp theo).
+ */
+@Index(["sourceOrderId"], { unique: true })
+@Entity("compensation_vouchers")
+export class CompensationVoucherEntity {
+  @PrimaryColumn({ type: "uuid" })
+  id!: string;
+
+  @Column({ type: "varchar", length: 120 })
+  name!: string;
+
+  @Column({ type: "uuid" })
+  @Index()
+  consumerId!: string;
+
+  @Column({ type: "decimal", precision: 12, scale: 2 })
+  value!: number;
+
+  @Column({ type: "uuid" })
+  sourceOrderId!: string;
+
+  @Column({ type: "boolean", default: false })
+  isUsed!: boolean;
+
+  @Column({ type: "uuid", nullable: true })
+  usedOrderId!: string | null;
+
+  @Column({ type: "timestamptz", default: () => "CURRENT_TIMESTAMP" })
+  issuedAt!: Date;
+
+  @Column({ type: "timestamptz", nullable: true })
+  usedAt!: Date | null;
+
+  @CreateDateColumn({ type: "timestamptz" })
+  createdAt!: Date;
+}

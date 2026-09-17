@@ -97,6 +97,12 @@ export class DriverEntity {
   @Column({ type: "int", default: 0 })
   totalRatings!: number;
 
+  @Column({ type: "int", default: 100 })
+  reputationScore!: number;
+
+  @Column({ type: "timestamptz", nullable: true })
+  acceptBlockedUntil!: Date | null;
+
   @Column({ type: "uuid", nullable: true })
   currentOrderId!: string | null;
 

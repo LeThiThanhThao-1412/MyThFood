@@ -59,6 +59,11 @@ import type {
   PromotionStats,
   ValidatePromotionRequest,
   ApplyPromotionRequest,
+  CompensationConfig,
+  CompensationVoucher,
+  UpdateCompensationConfigRequest,
+  IssueCompensationVoucherRequest,
+  ApplyCompensationVoucherRequest,
   CreateNotificationRequest,
   Notification,
 } from "./types";
@@ -381,8 +386,12 @@ export const merchantApi = {
 // Order (Port 3004)
 // ============================================================================
 export const orderApi = {
-  place: (body: PlaceOrderRequest) =>
-    httpClient.post<Order>(PORTS.ORDER, "/orders", body),
+  place: (body: PlaceOrderRequest, idempotencyKey?: string) =>
+    httpClient.post<Order>(PORTS.ORDER, "/orders", body, {
+      headers: idempotencyKey
+        ? { "Idempotency-Key": idempotencyKey }
+        : {},
+    }),
 
   getById: (id: string) => httpClient.get<Order>(PORTS.ORDER, `/orders/${id}`),
 
@@ -785,6 +794,22 @@ export const dispatchApi = {
       `/dispatches/${id}/delivered`,
     ),
 
+  /** Case 7: tài xế hủy đơn sau khi đã nhận → ghi lý do + tìm tài xế khác. */
+  driverCancel: (id: string, body: import("./types").DriverCancelRequest) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/driver-cancel`,
+      body,
+    ),
+
+  /** Case 8: tài xế giao hàng thất bại (khách không nhận hàng). */
+  deliveryFailed: (id: string, body: import("./types").DeliveryFailedRequest) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/delivery-failed`,
+      body,
+    ),
+
   cancel: (id: string, reason: string) =>
     httpClient.patch<DispatchEnvelope>(
       PORTS.DISPATCH,
@@ -1128,6 +1153,39 @@ export const promotionApi = {
         totalOrders: number;
       }>
     >(PORTS.PROMOTION, `/promotions/merchant/${merchantId}/stats`),
+
+  getCompensationConfig: () =>
+    httpClient.get<ApiResponse<CompensationConfig>>(
+      PORTS.PROMOTION,
+      "/promotions/compensation-config",
+    ),
+
+  updateCompensationConfig: (body: UpdateCompensationConfigRequest) =>
+    httpClient.patch<ApiResponse<CompensationConfig>>(
+      PORTS.PROMOTION,
+      "/promotions/compensation-config",
+      body,
+    ),
+
+  issueCompensationVoucher: (body: IssueCompensationVoucherRequest) =>
+    httpClient.post<ApiResponse<CompensationVoucher | null>>(
+      PORTS.PROMOTION,
+      "/promotions/compensation-vouchers/issue",
+      body,
+    ),
+
+  listCompensationVouchers: (consumerId: string) =>
+    httpClient.get<ApiResponse<CompensationVoucher[]>>(
+      PORTS.PROMOTION,
+      `/promotions/compensation-vouchers/consumer/${consumerId}`,
+    ),
+
+  applyCompensationVoucher: (body: ApplyCompensationVoucherRequest) =>
+    httpClient.post<ApiResponse<{ discount: number }>>(
+      PORTS.PROMOTION,
+      "/promotions/compensation-vouchers/apply",
+      body,
+    ),
 };
 
 // ============================================================================

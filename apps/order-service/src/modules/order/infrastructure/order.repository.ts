@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository as TypeOrmRepo } from "typeorm";
 import { IRepository } from "@mythfood/shared-kernel";
-import { Order } from "../domain/order.aggregate";
+import { Order, ACTIVE_ORDER_STATUSES } from "../domain/order.aggregate";
 import { OrderId } from "../domain/order-id";
 import { OrderEntity } from "./order.entity";
 import { OrderItemEntity } from "./order-item.entity";
@@ -61,6 +61,18 @@ export class OrderRepository implements IRepository<Order, OrderId> {
       order: { created_at: "DESC" },
     });
     return Promise.all(entities.map((e) => this.loadRelatedAndMap(e)));
+  }
+
+  async hasActiveOrderByConsumerId(consumerId: string): Promise<boolean> {
+    const count = await this.repository
+      .createQueryBuilder("order")
+      .where("order.consumer_id = :consumerId", { consumerId })
+      .andWhere("order.deleted_at IS NULL")
+      .andWhere("order.status IN (:...statuses)", {
+        statuses: ACTIVE_ORDER_STATUSES,
+      })
+      .getCount();
+    return count > 0;
   }
 
   async findByMerchantId(merchantId: string): Promise<Order[]> {

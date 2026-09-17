@@ -160,12 +160,16 @@ services:
       JWT_SECRET: ${JWT_SECRET_ORDER}
       JWT_EXPIRATION: 1h
       SERVICE_API_KEY: ${SERVICE_API_KEY}
+      REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
       DISPATCH_SERVICE_URL: http://dispatch-service:3008
       MERCHANT_SERVICE_URL: http://merchant-service:3003
       DRIVER_SERVICE_URL: http://driver-service:3007
       PROMOTION_SERVICE_URL: http://promotion-service:3012
+      NOTIFICATION_SERVICE_URL: http://notification-service:3013
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - mythfood-network

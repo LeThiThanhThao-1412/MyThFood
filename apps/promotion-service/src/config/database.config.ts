@@ -3,6 +3,8 @@ import { ConfigService } from "@nestjs/config";
 import {
   PromotionEntity,
   PromotionUsageEntity,
+  CompensationConfigEntity,
+  CompensationVoucherEntity,
 } from "../modules/promotion/promotion.entity";
 
 export const getDatabaseConfig = (
@@ -14,7 +16,12 @@ export const getDatabaseConfig = (
   username: configService.get<string>("DATABASE_USER") ?? "mythfood",
   password: configService.get<string>("DATABASE_PASSWORD") ?? "mythfood_secret",
   database: configService.get<string>("DATABASE_NAME") ?? "mythfood_promotion",
-  entities: [PromotionEntity, PromotionUsageEntity],
+  entities: [
+    PromotionEntity,
+    PromotionUsageEntity,
+    CompensationConfigEntity,
+    CompensationVoucherEntity,
+  ],
   synchronize: configService.get<string>("NODE_ENV") === "development",
   logging: configService.get<string>("NODE_ENV") === "development",
 });

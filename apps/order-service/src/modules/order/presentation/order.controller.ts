@@ -10,14 +10,16 @@ import {
   Req,
   Res,
   UseGuards,
+  UseInterceptors,
   HttpCode,
   HttpStatus,
   Patch,
 } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
 import { Response } from "express";
-import { Roles, RolesGuard } from "@mythfood/common";
+import { Roles, RolesGuard, Idempotency } from "@mythfood/common";
 import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
+import { IdempotencyInterceptor } from "../../cache/idempotency.interceptor";
 import { OrderService } from "../application/order.service";
 import {
   PlaceOrderDto,
@@ -25,6 +27,8 @@ import {
   StatusTransitionDto,
   OrderQueryDto,
   OrderResponseDto,
+  RecordDriverCancelDto,
+  DeliveryFailedDto,
 } from "../application/dtos/order.dto";
 import { Order } from "../domain/order.aggregate";
 
@@ -36,6 +40,8 @@ export class OrderController {
   // ===================== Order Placement =====================
 
   @Post()
+  @UseInterceptors(IdempotencyInterceptor)
+  @Idempotency({ keyField: "idempotency-key", ttlSeconds: 600 })
   async placeOrder(@Body() dto: PlaceOrderDto): Promise<OrderResponseDto> {
     const order = await this.orderService.placeOrder(dto);
     return this.toOrderResponse(order);
@@ -151,6 +157,38 @@ export class OrderController {
     @Body() dto: StatusTransitionDto,
   ): Promise<OrderResponseDto> {
     const order = await this.orderService.reject(id, dto);
+    return this.toOrderResponse(order);
+  }
+
+  @Patch(":id/cancel-no-driver")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  async cancelNoDriver(@Param("id") id: string): Promise<OrderResponseDto> {
+    const order = await this.orderService.cancelNoDriver(id);
+    return this.toOrderResponse(order);
+  }
+
+  @Patch(":id/driver-cancel")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  async recordDriverCancel(
+    @Param("id") id: string,
+    @Body() dto: RecordDriverCancelDto,
+  ): Promise<OrderResponseDto> {
+    const order = await this.orderService.recordDriverCancel(id, dto.reason);
+    return this.toOrderResponse(order);
+  }
+
+  @Patch(":id/delivery-failed")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  async deliveryFailed(
+    @Param("id") id: string,
+    @Body() dto: DeliveryFailedDto,
+  ): Promise<OrderResponseDto> {
+    const order = await this.orderService.deliveryFailed(
+      id,
+      dto.reason,
+      dto.photoUrl,
+      dto.faultParty,
+    );
     return this.toOrderResponse(order);
   }
 

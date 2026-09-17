@@ -35,6 +35,10 @@ export default function AdminPromotionsPage() {
   const [status, setStatus] = useState("");
   const [form, setForm] = useState({ ...emptyForm });
   const [creating, setCreating] = useState(false);
+  const [compConfig, setCompConfig] = useState<any>(null);
+  const [compValue, setCompValue] = useState("");
+  const [compActive, setCompActive] = useState(true);
+  const [compStatus, setCompStatus] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -47,6 +51,17 @@ export default function AdminPromotionsPage() {
         setMerchants(mRes.items || []);
         const pRes: any = await promotionApi.list({ take: 200 });
         setPromos(pRes.items || []);
+        try {
+          const cRes: any = await promotionApi.getCompensationConfig();
+          const cfg = cRes?.data ?? cRes;
+          if (cfg) {
+            setCompConfig(cfg);
+            setCompValue(String(cfg.value ?? 15000));
+            setCompActive(cfg.isActive !== false);
+          }
+        } catch {
+          /* ignore */
+        }
       } catch {
         /* ignore */
       } finally {
@@ -124,6 +139,26 @@ export default function AdminPromotionsPage() {
     }
   }
 
+  async function saveCompConfig() {
+    const value = Number(compValue);
+    if (!value || value <= 0) {
+      setCompStatus("❌ Giá trị voucher phải lớn hơn 0");
+      return;
+    }
+    setCompStatus("");
+    try {
+      const res: any = await promotionApi.updateCompensationConfig({
+        value,
+        isActive: compActive,
+      });
+      const cfg = res?.data ?? res;
+      setCompConfig(cfg);
+      setCompStatus("✅ Đã cập nhật voucher bồi thường");
+    } catch (err: any) {
+      setCompStatus(`❌ ${err?.message || "Cập nhật thất bại"}`);
+    }
+  }
+
   const merchantName = (id: string) =>
     merchants.find((m) => m.id === id)?.name || id.slice(0, 8);
 
@@ -148,6 +183,46 @@ export default function AdminPromotionsPage() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <h2 className="font-bold text-lg mb-4">
+            🎁 Voucher bồi thường (đơn hủy do không có tài xế)
+          </h2>
+          <div className="grid sm:grid-cols-3 gap-3 items-end">
+            <label className="text-sm">
+              <span className="text-gray-500 block mb-1">Giá trị (VND)</span>
+              <input
+                type="number"
+                min={0}
+                value={compValue}
+                onChange={(e) => setCompValue(e.target.value)}
+                className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+                placeholder="15000"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm font-medium text-gray-700 py-2.5">
+              <input
+                type="checkbox"
+                checked={compActive}
+                onChange={(e) => setCompActive(e.target.checked)}
+              />
+              Bật tự động phát voucher
+            </label>
+            <button
+              onClick={saveCompConfig}
+              className="bg-[#ff6b35] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
+            >
+              💾 Lưu cấu hình
+            </button>
+          </div>
+          {compStatus && (
+            <p
+              className={`mt-2 text-sm font-medium ${compStatus.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
+            >
+              {compStatus}
+            </p>
+          )}
+        </div>
+
         <div className="bg-white rounded-2xl shadow-sm p-5">
           <h2 className="font-bold text-lg mb-4">
             ➕ Tạo mã khuyến mãi (Admin → Platform tài trợ)

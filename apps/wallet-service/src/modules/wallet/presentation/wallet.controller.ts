@@ -258,6 +258,24 @@ export class WalletController {
   }
 
   // ═══════════════════════════════════════════════════════
+  // Bồi thường phí ship cho tài xế khi giao thất bại do lỗi khách (Case 8)
+  // ═══════════════════════════════════════════════════════
+  @Post("compensate-driver")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async compensateDriver(
+    @Body() body: { driverId: string; orderId: string; shippingFee: number },
+  ) {
+    return this.walletService.credit(
+      body.driverId,
+      OwnerType.DRIVER,
+      body.shippingFee,
+      `Bồi thường phí ship đơn giao thất bại #${body.orderId.slice(0, 8)}`,
+      "DELIVERY_FAILED_COMPENSATION",
+      body.orderId,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
   // Withdraw
   // ═══════════════════════════════════════════════════════
   @Post("withdraw")

@@ -3,6 +3,7 @@ import {
   Logger,
   OnModuleInit,
   OnModuleDestroy,
+  ConflictException,
 } from "@nestjs/common";
 import { BusinessRuleViolationError } from "@mythfood/shared-kernel";
 import { DispatchRepository } from "../infrastructure/dispatch.repository";
@@ -19,6 +20,8 @@ import {
   DriverDeclineDto,
   CancelDispatchDto,
   UpdateDispatchNotesDto,
+  DriverCancelDto,
+  DeliveryFailedDto,
 } from "./dtos/dispatch.dto";
 
 const WALLET_SERVICE_URL =
@@ -316,8 +319,93 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const dispatch = await this.dispatchRepo.findByIdOrFail(
       DispatchId.from(id),
     );
-    dispatch.driverAccept();
+    const driverId = dispatch.dispatchDriverId;
+    if (!driverId) {
+      throw new BusinessRuleViolationError(
+        "No driver assigned to this dispatch",
+      );
+    }
+
+    // Case 5: tài xế đang bận (có đơn dở dang / bị tạm khóa) thì không cho nhận.
+    const available = await this.checkDriverAvailable(driverId);
+    if (!available) {
+      throw new BusinessRuleViolationError(
+        "Tài xế đang có đơn khác hoặc bị tạm khóa nhận đơn",
+      );
+    }
+
+    // Case 6: chốt đơn nguyên tử — đảm bảo 1 đơn chỉ 1 tài xế nhận được.
+    const accepted = await this.dispatchRepo.acceptAtomic(id);
+    if (!accepted) {
+      throw new ConflictException("Đơn đã được tài xế khác nhận");
+    }
+
+    // Đánh dấu tài xế bận ngay lập tức.
+    await this.markDriverBusy(driverId, dispatch.dispatchOrderId);
+
+    return this.dispatchRepo.findByIdOrFail(DispatchId.from(id));
+  }
+
+  /**
+   * Case 7: tài xế đã nhận đơn nhưng hủy → ghi lý do, phạt tài xế,
+   * đưa đơn quay lại tìm tài xế khác.
+   */
+  async driverCancelAfterAccept(
+    id: string,
+    dto: DriverCancelDto,
+  ): Promise<Dispatch> {
+    const dispatch = await this.dispatchRepo.findByIdOrFail(
+      DispatchId.from(id),
+    );
+    const driverId = dispatch.dispatchDriverId;
+    dispatch.driverCancelAfterAccept(dto.reason);
     await this.dispatchRepo.save(dispatch);
+
+    if (driverId) {
+      await this.penalizeDriver(driverId);
+      await this.releaseDriver(driverId);
+    }
+
+    // Báo order-service ghi lý do vào lịch sử + thông báo khách hàng.
+    await this.notifyOrderDriverCancel(dispatch, dto.reason);
+
+    if (dispatch.dispatchStatus === DispatchStatus.EXPIRED) {
+      await this.notifyOrderNoDriver(dispatch);
+      return dispatch;
+    }
+
+    if (dispatch.hasRemainingRetries) {
+      try {
+        return await this.autoMatchDispatch(id);
+      } catch {
+        /* ignore */
+      }
+    }
+    return dispatch;
+  }
+
+  /**
+   * Case 8: tài xế giao hàng thất bại (khách không nhận hàng).
+   */
+  async deliveryFailed(id: string, dto: DeliveryFailedDto): Promise<Dispatch> {
+    const dispatch = await this.dispatchRepo.findByIdOrFail(
+      DispatchId.from(id),
+    );
+    dispatch.deliveryFailed(dto.reason);
+    await this.dispatchRepo.save(dispatch);
+
+    await this.notifyOrderDeliveryFailed(
+      dispatch,
+      dto.reason,
+      dto.photoUrl,
+      dto.faultParty,
+    );
+
+    const driverId = dispatch.dispatchDriverId;
+    if (driverId) {
+      await this.releaseDriver(driverId);
+    }
+
     return dispatch;
   }
 
@@ -327,6 +415,13 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     );
     dispatch.driverDecline(dto.reason, dto.detail);
     await this.dispatchRepo.save(dispatch);
+
+    // Hết lượt tìm tài xế → không còn tài xế nhận đơn → hủy đơn (Case 3).
+    if (dispatch.dispatchStatus === DispatchStatus.EXPIRED) {
+      await this.notifyOrderNoDriver(dispatch);
+      return dispatch;
+    }
+
     // Tự tìm tài xế khác khi còn lượt retry
     if (dispatch.hasRemainingRetries) {
       try {
@@ -382,6 +477,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     );
     dispatch.expire();
     await this.dispatchRepo.save(dispatch);
+    await this.notifyOrderNoDriver(dispatch);
     return dispatch;
   }
 
@@ -392,6 +488,157 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     dispatch.cancel(dto.reason);
     await this.dispatchRepo.save(dispatch);
     return dispatch;
+  }
+
+  /**
+   * Case 3: khi dispatch hết thời gian chờ mà không có tài xế nhận,
+   * báo order-service hủy đơn với trạng thái CANCELLED_NO_DRIVER.
+   */
+  private async notifyOrderNoDriver(dispatch: Dispatch): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      await fetch(
+        `${ORDER_SERVICE_URL}/api/v1/orders/${dispatch.dispatchOrderId}/cancel-no-driver`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-service-key": serviceKey,
+          },
+          body: JSON.stringify({}),
+        },
+      );
+      this.logger.log(
+        `Notified order ${dispatch.dispatchOrderId} as CANCELLED_NO_DRIVER`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to notify no-driver cancellation for order ${dispatch.dispatchOrderId}: ${err.message}`,
+      );
+    }
+  }
+
+  private async checkDriverAvailable(driverId: string): Promise<boolean> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      const res = await fetch(
+        `${DRIVER_SERVICE_URL}/api/v1/drivers/${driverId}`,
+        { headers: { "x-service-key": serviceKey } },
+      );
+      if (!res.ok) return false;
+      const json: any = await res.json();
+      const d = json?.data ?? json;
+      return (
+        d?.status === "ACTIVE" &&
+        d?.onlineStatus === "ONLINE" &&
+        !d?.currentOrderId &&
+        !d?.isBlocked
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private async markDriverBusy(
+    driverId: string,
+    orderId: string,
+  ): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      await fetch(
+        `${DRIVER_SERVICE_URL}/api/v1/drivers/${driverId}/assign-order`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-service-key": serviceKey,
+          },
+          body: JSON.stringify({ orderId }),
+        },
+      );
+    } catch (err: any) {
+      this.logger.warn(`markDriverBusy failed for ${driverId}: ${err.message}`);
+    }
+  }
+
+  private async releaseDriver(driverId: string): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      await fetch(
+        `${DRIVER_SERVICE_URL}/api/v1/drivers/${driverId}/release-order`,
+        {
+          method: "PATCH",
+          headers: { "x-service-key": serviceKey },
+        },
+      );
+    } catch (err: any) {
+      this.logger.warn(`releaseDriver failed for ${driverId}: ${err.message}`);
+    }
+  }
+
+  private async penalizeDriver(driverId: string): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      await fetch(
+        `${DRIVER_SERVICE_URL}/api/v1/drivers/${driverId}/penalize-cancellation`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-service-key": serviceKey,
+          },
+          body: JSON.stringify({ blockMinutes: 30 }),
+        },
+      );
+    } catch (err: any) {
+      this.logger.warn(`penalizeDriver failed for ${driverId}: ${err.message}`);
+    }
+  }
+
+  private async notifyOrderDriverCancel(
+    dispatch: Dispatch,
+    reason: string,
+  ): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      await fetch(
+        `${ORDER_SERVICE_URL}/api/v1/orders/${dispatch.dispatchOrderId}/driver-cancel`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-service-key": serviceKey,
+          },
+          body: JSON.stringify({ reason }),
+        },
+      );
+    } catch (err: any) {
+      this.logger.warn(`notifyOrderDriverCancel failed: ${err.message}`);
+    }
+  }
+
+  private async notifyOrderDeliveryFailed(
+    dispatch: Dispatch,
+    reason: string,
+    photoUrl?: string,
+    faultParty?: string,
+  ): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      await fetch(
+        `${ORDER_SERVICE_URL}/api/v1/orders/${dispatch.dispatchOrderId}/delivery-failed`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-service-key": serviceKey,
+          },
+          body: JSON.stringify({ reason, photoUrl, faultParty }),
+        },
+      );
+    } catch (err: any) {
+      this.logger.warn(`notifyOrderDeliveryFailed failed: ${err.message}`);
+    }
   }
 
   // ---- Cron: Expire Stale Dispatches ----
@@ -406,6 +653,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       if (expiresAt && expiresAt < now && dispatch.isActive) {
         dispatch.expire();
         await this.dispatchRepo.save(dispatch);
+        await this.notifyOrderNoDriver(dispatch);
         expiredCount++;
       }
     }

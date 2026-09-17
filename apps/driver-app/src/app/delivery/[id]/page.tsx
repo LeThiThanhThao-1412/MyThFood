@@ -7,11 +7,12 @@
 // gửi thông báo tới khách hàng.
 // ============================================================================
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import { dispatchApi } from "@mythfood/api-client";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
 import {
   STAGE_ORDER,
@@ -42,6 +43,7 @@ export default function DeliveryPage() {
 
   const {
     order,
+    dispatch,
     merchant,
     customerInfo,
     distanceToRestaurantKm,
@@ -60,7 +62,39 @@ export default function DeliveryPage() {
     driverEarning,
     advance,
     reload,
+    setError,
   } = trip;
+
+  // Case 7 & 8: hủy đơn sau khi nhận / báo giao hàng thất bại.
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [failOpen, setFailOpen] = useState(false);
+  const [failReason, setFailReason] = useState("");
+  const [faultParty, setFaultParty] = useState<"DRIVER" | "CUSTOMER">(
+    "CUSTOMER",
+  );
+
+  async function doCancel(reason: string) {
+    if (!dispatch?.id) return;
+    try {
+      await dispatchApi.driverCancel(dispatch.id, { reason });
+      router.push("/dashboard");
+    } catch (err: any) {
+      setError(err?.message || "Không thể hủy đơn");
+    }
+  }
+
+  async function doFail() {
+    if (!dispatch?.id || !failReason) return;
+    try {
+      await dispatchApi.deliveryFailed(dispatch.id, {
+        reason: failReason,
+        faultParty,
+      });
+      router.push("/dashboard");
+    } catch (err: any) {
+      setError(err?.message || "Không thể báo giao thất bại");
+    }
+  }
 
   if (loading) {
     return (
@@ -402,6 +436,123 @@ export default function DeliveryPage() {
           </div>
         )}
       </main>
+
+      {/* Hủy đơn / Giao hàng thất bại (Case 7 & 8) */}
+      {dispatch &&
+        (stage === "GOING_TO_RESTAURANT" || stage === "AT_RESTAURANT") && (
+          <div className="max-w-5xl mx-auto px-4 pb-2">
+            {!cancelOpen ? (
+              <button
+                onClick={() => setCancelOpen(true)}
+                className="w-full bg-white border border-red-200 text-red-600 py-3 rounded-2xl font-semibold hover:bg-red-50 transition"
+              >
+                ❌ Hủy đơn
+              </button>
+            ) : (
+              <div className="bg-white rounded-2xl shadow-sm p-4 border border-red-100">
+                <p className="font-semibold text-gray-800 mb-2">
+                  Lý do hủy đơn:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {["Xe hỏng", "Nhà hàng quá đông", "Lý do cá nhân"].map(
+                    (r) => (
+                      <button
+                        key={r}
+                        onClick={() => doCancel(r)}
+                        disabled={busy}
+                        className="px-3 py-1.5 rounded-full border border-gray-200 text-sm hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {r}
+                      </button>
+                    ),
+                  )}
+                </div>
+                <button
+                  onClick={() => setCancelOpen(false)}
+                  className="mt-2 text-xs text-gray-400"
+                >
+                  Hủy bỏ
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+      {dispatch && stage === "DELIVERING" && (
+        <div className="max-w-5xl mx-auto px-4 pb-2">
+          {!failOpen ? (
+            <button
+              onClick={() => setFailOpen(true)}
+              className="w-full bg-white border border-amber-300 text-amber-700 py-3 rounded-2xl font-semibold hover:bg-amber-50 transition"
+            >
+              ⚠️ Giao hàng thất bại
+            </button>
+          ) : (
+            <div className="bg-white rounded-2xl shadow-sm p-4 border border-amber-100 space-y-2">
+              <p className="font-semibold text-gray-800">
+                Lý do giao thất bại:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  "Khách không nghe máy",
+                  "Khách không có nhà",
+                  "Khách từ chối nhận hàng",
+                  "Giao nhầm địa chỉ",
+                  "Đồ ăn bị hỏng",
+                ].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setFailReason(r)}
+                    className={`px-3 py-1.5 rounded-full border text-sm ${
+                      failReason === r
+                        ? "bg-amber-100 border-amber-300"
+                        : "border-gray-200"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-3 pt-1">
+                <span className="text-xs text-gray-500">Trách nhiệm:</span>
+                <button
+                  onClick={() => setFaultParty("CUSTOMER")}
+                  className={`px-3 py-1.5 rounded-full text-sm border ${
+                    faultParty === "CUSTOMER"
+                      ? "bg-blue-100 border-blue-300"
+                      : "border-gray-200"
+                  }`}
+                >
+                  Lỗi khách
+                </button>
+                <button
+                  onClick={() => setFaultParty("DRIVER")}
+                  className={`px-3 py-1.5 rounded-full text-sm border ${
+                    faultParty === "DRIVER"
+                      ? "bg-blue-100 border-blue-300"
+                      : "border-gray-200"
+                  }`}
+                >
+                  Lỗi tôi
+                </button>
+              </div>
+              <button
+                onClick={doFail}
+                disabled={busy || !failReason}
+                className="w-full bg-red-500 text-white py-2.5 rounded-xl font-semibold disabled:opacity-50"
+              >
+                Xác nhận giao thất bại
+              </button>
+              <button
+                onClick={() => setFailOpen(false)}
+                className="w-full text-xs text-gray-400"
+              >
+                Hủy bỏ
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Nút hành động của bước hiện tại */}
       {stageMeta.actionLabel && (

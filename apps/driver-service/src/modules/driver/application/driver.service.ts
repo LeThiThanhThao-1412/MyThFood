@@ -158,6 +158,26 @@ export class DriverService {
     return driver;
   }
 
+  /**
+   * Phạt tài xế (Case 7): giảm điểm uy tín + tạm khóa nhận đơn trong `blockMinutes`.
+   */
+  async penalizeCancellation(id: string, blockMinutes: number): Promise<Driver> {
+    const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
+    driver.penalizeCancellation(blockMinutes);
+    await this.driverRepo.save(driver);
+    return driver;
+  }
+
+  /**
+   * Giải phóng tài xế khỏi đơn hiện tại (khi hủy/giao thất bại).
+   */
+  async releaseOrder(id: string): Promise<Driver> {
+    const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
+    driver.releaseOrder();
+    await this.driverRepo.save(driver);
+    return driver;
+  }
+
   // ---- Fatigue Management ----
 
   async updateFatigue(id: string, dto: UpdateFatigueDto): Promise<Driver> {

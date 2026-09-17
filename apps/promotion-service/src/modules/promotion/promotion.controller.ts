@@ -20,6 +20,9 @@ import {
   UpdatePromotionDto,
   ValidatePromotionDto,
   ApplyPromotionDto,
+  UpdateCompensationConfigDto,
+  IssueCompensationVoucherDto,
+  ApplyCompensationVoucherDto,
 } from "./promotion.dto";
 
 @Controller("promotions")
@@ -69,6 +72,54 @@ export class PromotionController {
     return {
       statusCode: HttpStatus.OK,
       data: await this.promotionService.getMerchantStats(merchantId),
+    };
+  }
+
+  // ---- Compensation voucher (voucher bồi thường) ----
+
+  @Get("compensation-config")
+  @Roles("ADMIN")
+  async getCompensationConfig() {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.getCompensationConfig(),
+    };
+  }
+
+  @Patch("compensation-config")
+  @Roles("ADMIN")
+  async updateCompensationConfig(@Body() dto: UpdateCompensationConfigDto) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.updateCompensationConfig(dto),
+    };
+  }
+
+  @Post("compensation-vouchers/issue")
+  @Roles("ADMIN")
+  @HttpCode(HttpStatus.CREATED)
+  async issueCompensationVoucher(@Body() dto: IssueCompensationVoucherDto) {
+    return {
+      statusCode: HttpStatus.CREATED,
+      data: await this.promotionService.issueCompensationVoucher(dto),
+    };
+  }
+
+  @Get("compensation-vouchers/consumer/:consumerId")
+  @Roles("CONSUMER", "ADMIN")
+  async listCompensationVouchers(@Param("consumerId") consumerId: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.listCompensationVouchers(consumerId),
+    };
+  }
+
+  @Post("compensation-vouchers/apply")
+  @Roles("ADMIN")
+  async applyCompensationVoucher(@Body() dto: ApplyCompensationVoucherDto) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.applyCompensationVoucher(dto),
     };
   }
 

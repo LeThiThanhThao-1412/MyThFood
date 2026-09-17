@@ -273,12 +273,17 @@ function CheckoutContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successOrder, setSuccessOrder] = useState<Order | null>(null);
+  // Voucher bồi thường (đơn bị hủy do không có tài xế) — tự áp dụng cho đơn sau.
+  const [compensationVoucher, setCompensationVoucher] = useState<any>(null);
 
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [fetchingLocation, setFetchingLocation] = useState(false);
   const suggestionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestionRef = useRef<HTMLDivElement | null>(null);
+  // Idempotency key (Case 1): dùng chung cho mỗi lần checkout để chặn tạo trùng
+  // khi người dùng bấm nhanh nhiều lần (double-click).
+  const idempotencyKeyRef = useRef<string | null>(null);
 
   // Stripe card state
   const [cardBrand, setCardBrand] = useState<{ label: string } | null>(null);
@@ -325,6 +330,18 @@ function CheckoutContent() {
           setAddresses(profile.addresses || []);
           setPaymentMethods(profile.paymentMethods || []);
           found = true;
+
+          try {
+            const vRes: any = await promotionApi.listCompensationVouchers(
+              profile.id,
+            );
+            const vouchers = vRes?.data ?? vRes ?? [];
+            if (Array.isArray(vouchers) && vouchers.length > 0) {
+              setCompensationVoucher(vouchers[0]);
+            }
+          } catch {
+            /* ignore */
+          }
         }
       } catch {
         /* getByUserId failed */
@@ -549,7 +566,11 @@ function CheckoutContent() {
   const subtotal = getSubtotal();
   const deliveryFee = dynamicFee?.totalFee || 15000;
   const serviceFee = Math.round(subtotal * 0.02);
-  const total = Math.max(0, subtotal + deliveryFee + serviceFee - discount);
+  const voucherValue = Number(compensationVoucher?.value ?? 0);
+  const total = Math.max(
+    0,
+    subtotal + deliveryFee + serviceFee - discount - voucherValue,
+  );
 
   if (!isAuthenticated) return null;
   if (items.length === 0 && !successOrder) {
@@ -663,6 +684,7 @@ function CheckoutContent() {
 
       const orderBody: PlaceOrderRequest = {
         consumerId,
+        userId: user?.id,
         merchantId,
         orderType: "DELIVERY",
         items: items.map((i) => ({
@@ -678,7 +700,8 @@ function CheckoutContent() {
         deliveryLongitude: lng,
         deliveryFee,
         serviceFee,
-        discount,
+        discount: discount + voucherValue,
+        compensationVoucherId: compensationVoucher?.id ?? undefined,
         promotionCode: promoApplied
           ? promoCode.trim().toUpperCase()
           : undefined,
@@ -691,7 +714,14 @@ function CheckoutContent() {
               : "CREDIT_CARD",
       };
 
-      const order = await orderApi.place(orderBody);
+      if (!idempotencyKeyRef.current) {
+        idempotencyKeyRef.current =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `idem-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
+
+      const order = await orderApi.place(orderBody, idempotencyKeyRef.current);
 
       // ─── COD ─────────────────────────────────────
       if (paymentMethod === "CASH") {
@@ -1217,6 +1247,15 @@ function CheckoutContent() {
                 </span>
                 Mã khuyến mãi
               </h2>
+              {compensationVoucher && voucherValue > 0 && (
+                <div className="mb-3 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2.5 rounded-xl text-sm flex items-center gap-2">
+                  <span>🎁</span>
+                  <span>
+                    {compensationVoucher?.name || "Voucher bồi thường"}: giảm{" "}
+                    <b>{voucherValue.toLocaleString("vi-VN")}₫</b> — tự áp dụng
+                  </span>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => setPromoOpen(true)}

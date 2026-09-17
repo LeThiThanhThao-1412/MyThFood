@@ -13,6 +13,8 @@ import { OrderItemEntity } from "./infrastructure/order-item.entity";
 import { OrderTimelineEntity } from "./infrastructure/order-timeline.entity";
 import { OrderTimelineRepository } from "./infrastructure/order-timeline.repository";
 import { AuthModule } from "../auth/auth.module";
+import { CacheModule } from "../cache/cache.module";
+import { IdempotencyInterceptor } from "../cache/idempotency.interceptor";
 
 @Module({
   imports: [
@@ -24,6 +26,7 @@ import { AuthModule } from "../auth/auth.module";
     CqrsModule,
     AuthModule,
     HttpModule,
+    CacheModule,
   ],
   controllers: [OrderController],
   providers: [
@@ -33,6 +36,7 @@ import { AuthModule } from "../auth/auth.module";
     OrderGateway,
     OrderRepository,
     OrderTimelineRepository,
+    IdempotencyInterceptor,
   ],
   exports: [OrderService, OrderGateway],
 })

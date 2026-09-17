@@ -21,6 +21,7 @@ import {
   UpdateLocationDto,
   UpdateFatigueDto,
   RateDriverDto,
+  PenalizeCancellationDto,
 } from "../application/dtos/driver.dto";
 
 @Controller("drivers")
@@ -176,6 +177,13 @@ export class DriverController {
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
+  @Patch(":id/release-order")
+  @Roles("DRIVER", "ADMIN")
+  async releaseOrder(@Param("id") id: string) {
+    const driver = await this.driverService.releaseOrder(id);
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
   // ---- Fatigue ----
 
   @Patch(":id/fatigue")
@@ -243,6 +251,19 @@ export class DriverController {
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
+  @Patch(":id/penalize-cancellation")
+  @Roles("ADMIN")
+  async penalizeCancellation(
+    @Param("id") id: string,
+    @Body() dto: PenalizeCancellationDto,
+  ) {
+    const driver = await this.driverService.penalizeCancellation(
+      id,
+      dto.blockMinutes ?? 30,
+    );
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
   // ---- Public profile (cho CONSUMER xem thông tin tài xế khi có đơn) ----
 
   @Get(":id/public-profile")
@@ -288,6 +309,9 @@ export class DriverController {
       totalOrders: driver.driverTotalOrders ?? driver._totalOrders,
       rating: driver.driverRating ?? driver._rating,
       totalRatings: driver.driverTotalRatings ?? driver._totalRatings,
+      reputationScore: driver.driverReputationScore ?? driver._reputationScore,
+      acceptBlockedUntil:
+        driver.driverAcceptBlockedUntil ?? driver._acceptBlockedUntil,
       currentOrderId: driver.driverCurrentOrderId ?? driver._currentOrderId,
       isTrainingCompleted:
         driver.driverIsTrainingCompleted ?? driver._isTrainingCompleted,

@@ -12,6 +12,8 @@ const STATUS_LABELS: Record<string, string> = {
   OUT_FOR_DELIVERY: "🛵 Đang giao",
   DELIVERED: "🏠 Đã giao",
   CANCELLED: "❌ Đã hủy",
+  CANCELLED_NO_DRIVER: "🛑 Hủy - Không có tài xế",
+  DELIVERY_FAILED: "❌ Giao hàng thất bại",
   REJECTED: "🚫 Từ chối",
 };
 

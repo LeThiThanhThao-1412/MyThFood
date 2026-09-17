@@ -191,7 +191,12 @@ export default function AdminDashboardPage() {
 
         for (const o of orders) {
           // Only count revenue for orders that are not PENDING/CANCELLED/REJECTED
-          const excludeStatuses = ["PENDING", "CANCELLED", "REJECTED"];
+          const excludeStatuses = [
+            "PENDING",
+            "CANCELLED",
+            "CANCELLED_NO_DRIVER",
+            "REJECTED",
+          ];
           if (excludeStatuses.includes(o.status)) continue;
 
           const createdAt = o.createdAt ? new Date(o.createdAt).getTime() : 0;
@@ -263,6 +268,7 @@ export default function AdminDashboardPage() {
           OUT_FOR_DELIVERY: "🛵",
           DELIVERED: "🏠",
           CANCELLED: "❌",
+          CANCELLED_NO_DRIVER: "🛑",
           REJECTED: "🚫",
         };
 
