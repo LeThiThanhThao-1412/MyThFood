@@ -47,6 +47,7 @@ export default function ProfilePage() {
   const [showChangePw, setShowChangePw] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [pmType, setPmType] = useState<
@@ -310,12 +311,18 @@ export default function ProfilePage() {
   }
 
   async function changePassword() {
-    if (!currentPassword || !newPassword) {
-      setStatus("Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới");
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setStatus(
+        "Vui lòng nhập đầy đủ mật khẩu hiện tại, mật khẩu mới và xác nhận mật khẩu mới",
+      );
       return;
     }
     if (newPassword.length < 8) {
       setStatus("Mật khẩu mới phải có ít nhất 8 ký tự");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setStatus("Mật khẩu mới và xác nhận không khớp");
       return;
     }
     setSaving(true);
@@ -326,6 +333,7 @@ export default function ProfilePage() {
       setShowChangePw(false);
       setCurrentPassword("");
       setNewPassword("");
+      setConfirmPassword("");
     } catch (e: any) {
       setStatus("❌ " + translatePasswordError(e?.message));
     } finally {
@@ -731,6 +739,13 @@ export default function ProfilePage() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Mật khẩu mới (ít nhất 8 ký tự)"
+                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Nhập lại mật khẩu mới"
                 className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
               />
               <p className="text-xs text-gray-400 leading-relaxed">

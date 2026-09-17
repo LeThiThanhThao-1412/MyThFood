@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/reviews", icon: "⭐", label: "Đánh giá" },
   { href: "/wallet", icon: "💰", label: "Ví" },
   { href: "/settings", icon: "⚙️", label: "Cài đặt" },
+  { href: "/profile", icon: "👤", label: "Hồ sơ" },
 ];
 
 export default function TopNav({

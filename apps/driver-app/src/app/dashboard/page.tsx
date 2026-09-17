@@ -792,16 +792,13 @@ export default function DriverDashboardPage() {
             <span className="text-[22px]">💰</span>
             <span>Thu nhập</span>
           </Link>
-          <button
-            onClick={() => {
-              clearAuth();
-              router.push("/");
-            }}
-            className="flex flex-col items-center text-[10px] text-gray-400 bg-transparent border-none font-sans cursor-pointer"
+          <Link
+            href="/profile"
+            className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
           >
             <span className="text-[22px]">👤</span>
             <span>Tài khoản</span>
-          </button>
+          </Link>
         </nav>
       </div>
     </>
