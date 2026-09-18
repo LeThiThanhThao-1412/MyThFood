@@ -15,7 +15,6 @@ import {
   HttpStatus,
   Patch,
 } from "@nestjs/common";
-import { AuthGuard } from "@nestjs/passport";
 import { Response } from "express";
 import { Roles, RolesGuard, Idempotency } from "@mythfood/common";
 import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
@@ -33,7 +32,7 @@ import {
 import { Order } from "../domain/order.aggregate";
 
 @Controller("orders")
-@UseGuards(AuthGuard("jwt"), RolesGuard)
+@UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
 export class OrderController {
   constructor(private readonly orderService: OrderService) {}
 

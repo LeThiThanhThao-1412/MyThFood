@@ -404,7 +404,14 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
 
     if (dispatch.hasRemainingRetries) {
       try {
-        return await this.autoMatchDispatch(id);
+        const rematched = await this.autoMatchDispatch(id);
+        // Tìm không ra tài xế mới → hủy đơn ngay (Case 3).
+        if (rematched.dispatchStatus === DispatchStatus.MATCHING) {
+          rematched.expire();
+          await this.dispatchRepo.save(rematched);
+          await this.notifyOrderNoDriver(rematched);
+        }
+        return rematched;
       } catch {
         /* ignore */
       }

@@ -200,4 +200,41 @@ describe("Dispatch Aggregate", () => {
       expect(() => dispatch.expire()).toThrow(BusinessRuleViolationError);
     });
   });
+
+  describe("driverCancelAfterAccept", () => {
+    it("should cancel and re-match when in DRIVER_ACCEPTED status", () => {
+      const dispatch = Dispatch.create(validProps);
+      const driverId = "550e8400-e29b-41d4-a716-446655440099";
+      dispatch.assignDriver(driverId);
+      dispatch.driverAccept();
+      dispatch.driverCancelAfterAccept("Xe hỏng");
+      expect(dispatch.dispatchStatus).toBe(DispatchStatus.MATCHING);
+      expect(dispatch.dispatchRetryCount).toBe(1);
+      expect(dispatch.dispatchDriverId).toBeNull();
+    });
+
+    it("should cancel and re-match when in DRIVER_ARRIVED status", () => {
+      const dispatch = Dispatch.create(validProps);
+      const driverId = "550e8400-e29b-41d4-a716-446655440099";
+      dispatch.assignDriver(driverId);
+      dispatch.driverAccept();
+      dispatch.driverArrived();
+      dispatch.driverCancelAfterAccept("Nhà hàng quá đông");
+      expect(dispatch.dispatchStatus).toBe(DispatchStatus.MATCHING);
+      expect(dispatch.dispatchRetryCount).toBe(1);
+      expect(dispatch.dispatchDriverId).toBeNull();
+    });
+
+    it("should throw when in PICKED_UP status", () => {
+      const dispatch = Dispatch.create(validProps);
+      const driverId = "550e8400-e29b-41d4-a716-446655440099";
+      dispatch.assignDriver(driverId);
+      dispatch.driverAccept();
+      dispatch.driverArrived();
+      dispatch.markPickedUp();
+      expect(() => dispatch.driverCancelAfterAccept("Too late")).toThrow(
+        BusinessRuleViolationError,
+      );
+    });
+  });
 });

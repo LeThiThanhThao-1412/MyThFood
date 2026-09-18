@@ -445,6 +445,15 @@ export class Order extends AggregateRoot<OrderId> {
     this.markUpdated();
   }
 
+  /**
+   * Gỡ tài xế khỏi đơn (khi tài xế hủy sau khi đã nhận) để đơn quay lại trạng thái
+   * "chưa có tài xế" và có thể tìm tài xế mới.
+   */
+  public clearDriver(): void {
+    this.driverId = null;
+    this.markUpdated();
+  }
+
   // ===================== Queries =====================
 
   public isActive(): boolean {

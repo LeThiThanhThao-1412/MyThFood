@@ -844,6 +844,11 @@ export class OrderService {
       occurredAt: new Date(),
     });
 
+    // Gỡ tài xế khỏi đơn để đơn quay lại "chưa có tài xế" (tìm tài xế mới)
+    // và xóa floating card bên tài xế cũ.
+    order.clearDriver();
+    await this.orderRepository.save(order);
+
     try {
       await this.sendDriverCancelNotification(order, reason);
     } catch (err: any) {

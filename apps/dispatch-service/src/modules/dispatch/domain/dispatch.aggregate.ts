@@ -380,9 +380,12 @@ export class Dispatch extends AggregateRoot<DispatchId> {
    * Tài xế cũ vẫn nằm trong matchedDriverIds nên sẽ không bị gán lại.
    */
   public driverCancelAfterAccept(reason: string): void {
-    if (this._status !== DispatchStatus.DRIVER_ACCEPTED) {
+    if (
+      this._status !== DispatchStatus.DRIVER_ACCEPTED &&
+      this._status !== DispatchStatus.DRIVER_ARRIVED
+    ) {
       throw new BusinessRuleViolationError(
-        `Driver can only cancel after accept when dispatch is in DRIVER_ACCEPTED status, current: ${this._status}`,
+        `Driver can only cancel after accept when dispatch is in DRIVER_ACCEPTED or DRIVER_ARRIVED status, current: ${this._status}`,
       );
     }
 

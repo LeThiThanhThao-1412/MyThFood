@@ -151,6 +151,13 @@ describe("Order Aggregate", () => {
       expect(order.orderDriverId).toBe("550e8400-e29b-41d4-a716-446655440005");
     });
 
+    it("should assign and clear a driver", () => {
+      order.assignDriver("550e8400-e29b-41d4-a716-446655440005");
+      expect(order.orderDriverId).toBe("550e8400-e29b-41d4-a716-446655440005");
+      order.clearDriver();
+      expect(order.orderDriverId).toBeNull();
+    });
+
     it("should transition from OUT_FOR_DELIVERY to DELIVERED", () => {
       order.confirm();
       order.startPreparing();
