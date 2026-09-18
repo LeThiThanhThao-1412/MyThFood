@@ -161,7 +161,10 @@ export class DriverService {
   /**
    * Phạt tài xế (Case 7): giảm điểm uy tín + tạm khóa nhận đơn trong `blockMinutes`.
    */
-  async penalizeCancellation(id: string, blockMinutes: number): Promise<Driver> {
+  async penalizeCancellation(
+    id: string,
+    blockMinutes: number,
+  ): Promise<Driver> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
     driver.penalizeCancellation(blockMinutes);
     await this.driverRepo.save(driver);

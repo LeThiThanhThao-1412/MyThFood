@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { authApi, driverApi } from "@mythfood/api-client";
+import { authApi, driverApi, uploadApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -11,12 +11,6 @@ const ROLE_LABELS: Record<string, string> = {
   MERCHANT_OWNER: "Chủ nhà hàng",
   DRIVER: "Tài xế",
   ADMIN: "Quản trị viên",
-};
-
-const VEHICLE_LABELS: Record<string, string> = {
-  MOTORBIKE: "Xe máy",
-  CAR: "Ô tô",
-  BICYCLE: "Xe đạp",
 };
 
 const DRIVER_STATUS_LABELS: Record<string, string> = {
@@ -56,6 +50,12 @@ export default function DriverProfilePage() {
   const [driver, setDriver] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  const [fullName, setFullName] = useState("");
+  const [avatar, setAvatar] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -70,8 +70,13 @@ export default function DriverProfilePage() {
     async function load() {
       try {
         if (user?.id) {
-          const res = await driverApi.getByUserId(user.id);
-          setDriver(res.data);
+          const res: any = await driverApi.getByUserId(user.id);
+          const d = res?.data ?? res;
+          setDriver(d);
+          if (d?.id) {
+            setFullName(d.fullName || "");
+            setAvatar(d.avatar || "");
+          }
         }
       } catch {
         // Bỏ qua nếu chưa có hồ sơ tài xế
@@ -112,6 +117,40 @@ export default function DriverProfilePage() {
     }
   }
 
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setStatus("");
+    try {
+      const res: any = await uploadApi.uploadImage(file, "avatars");
+      setAvatar(res?.data?.url || res?.url || "");
+      setStatus("✅ Đã tải ảnh đại diện");
+    } catch {
+      setStatus("❌ Upload ảnh thất bại");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function saveProfile() {
+    if (!driver?.id) return;
+    setSavingProfile(true);
+    setStatus("");
+    try {
+      const res: any = await driverApi.updateProfile(driver.id, {
+        fullName: fullName || undefined,
+        avatar: avatar || undefined,
+      });
+      setDriver(res?.data ?? res);
+      setStatus("✅ Đã lưu hồ sơ");
+    } catch (e: any) {
+      setStatus("❌ " + (e?.message || "Lỗi lưu hồ sơ"));
+    } finally {
+      setSavingProfile(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f0f2f5]">
@@ -145,12 +184,72 @@ export default function DriverProfilePage() {
           </div>
         )}
 
+        {/* Chỉnh sửa hồ sơ */}
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <h3 className="font-bold text-lg mb-4">✏️ Chỉnh sửa hồ sơ</h3>
+          <div className="flex items-center gap-4 mb-4">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="w-16 h-16 rounded-full overflow-hidden bg-[#ff6b35] flex items-center justify-center text-white font-bold text-xl shrink-0"
+            >
+              {avatar ? (
+                <img
+                  src={avatar}
+                  alt="avatar"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                (fullName || driver?.fullName || "?")[0]?.toUpperCase()
+              )}
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarUpload}
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-500 mb-1">Ảnh đại diện</p>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="text-sm font-semibold text-[#ff6b35] hover:text-orange-600 disabled:opacity-50"
+              >
+                {uploading ? "Đang tải..." : "📷 Tải ảnh lên"}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm text-gray-500">Họ tên</label>
+              <input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Họ tên"
+                className="mt-1 w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+              />
+            </div>
+            <button
+              onClick={saveProfile}
+              disabled={savingProfile}
+              className="w-full bg-[#ff6b35] text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-50"
+            >
+              {savingProfile ? "Đang lưu..." : "Lưu hồ sơ"}
+            </button>
+          </div>
+        </div>
+
         {/* Thông tin tài khoản */}
         <div className="bg-white rounded-2xl shadow-sm p-5">
           <h3 className="font-bold text-lg mb-4">👤 Thông tin tài khoản</h3>
           <div className="space-y-3">
             <div className="flex items-start gap-3">
-              <span className="w-24 shrink-0 text-sm text-gray-500">Họ tên</span>
+              <span className="w-24 shrink-0 text-sm text-gray-500">
+                Họ tên
+              </span>
               <span className="font-medium text-gray-800">
                 {driver?.fullName || user?.fullName || "—"}
               </span>
@@ -158,7 +257,7 @@ export default function DriverProfilePage() {
             <div className="flex items-start gap-3">
               <span className="w-24 shrink-0 text-sm text-gray-500">SĐT</span>
               <span className="font-medium text-gray-800">
-                {driver?.phone || user?.phone || "—"}
+                {driver?.phoneNumber || user?.phone || "—"}
               </span>
             </div>
             <div className="flex items-start gap-3">
@@ -168,11 +267,11 @@ export default function DriverProfilePage() {
               </span>
             </div>
             <div className="flex items-start gap-3">
-              <span className="w-24 shrink-0 text-sm text-gray-500">Vai trò</span>
+              <span className="w-24 shrink-0 text-sm text-gray-500">
+                Vai trò
+              </span>
               <span className="font-medium text-gray-800">
-                {(user?.roles || [])
-                  .map((r) => ROLE_LABELS[r] || r)
-                  .join(", ")}
+                {(user?.roles || []).map((r) => ROLE_LABELS[r] || r).join(", ")}
               </span>
             </div>
           </div>
@@ -184,33 +283,35 @@ export default function DriverProfilePage() {
             <h3 className="font-bold text-lg mb-4">🛵 Thông tin xe</h3>
             <div className="space-y-3">
               <div className="flex items-start gap-3">
-                <span className="w-24 shrink-0 text-sm text-gray-500">Loại xe</span>
+                <span className="w-24 shrink-0 text-sm text-gray-500">
+                  Biển số
+                </span>
                 <span className="font-medium text-gray-800">
-                  {VEHICLE_LABELS[driver.vehicleType] || driver.vehicleType}
+                  {driver.vehicleRegistrationNumber || "—"}
                 </span>
               </div>
               <div className="flex items-start gap-3">
-                <span className="w-24 shrink-0 text-sm text-gray-500">Biển số</span>
-                <span className="font-medium text-gray-800">
-                  {driver.licensePlate || "—"}
+                <span className="w-24 shrink-0 text-sm text-gray-500">
+                  Trạng thái
                 </span>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="w-24 shrink-0 text-sm text-gray-500">Trạng thái</span>
                 <span className="font-medium text-gray-800">
                   {DRIVER_STATUS_LABELS[driver.status] || driver.status}
                 </span>
               </div>
               <div className="flex items-start gap-3">
-                <span className="w-24 shrink-0 text-sm text-gray-500">Đánh giá</span>
+                <span className="w-24 shrink-0 text-sm text-gray-500">
+                  Đánh giá
+                </span>
                 <span className="font-medium text-gray-800">
                   ⭐ {driver.rating ?? 0} ({driver.totalRatings ?? 0} đánh giá)
                 </span>
               </div>
               <div className="flex items-start gap-3">
-                <span className="w-24 shrink-0 text-sm text-gray-500">Đơn đã giao</span>
+                <span className="w-24 shrink-0 text-sm text-gray-500">
+                  Đơn đã giao
+                </span>
                 <span className="font-medium text-gray-800">
-                  {driver.totalDeliveries ?? 0}
+                  {driver.totalOrders ?? 0}
                 </span>
               </div>
             </div>

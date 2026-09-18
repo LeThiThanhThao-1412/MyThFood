@@ -26,6 +26,9 @@ export class ReviewEntity {
   @Column({ type: "int", nullable: true })
   driverRating!: number | null;
 
+  @Column({ type: "text", nullable: true })
+  driverComment!: string | null;
+
   @Column({ type: "int" })
   rating!: number;
 

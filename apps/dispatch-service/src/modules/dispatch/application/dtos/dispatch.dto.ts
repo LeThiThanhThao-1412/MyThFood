@@ -9,6 +9,7 @@ import {
   Max,
   IsIn,
 } from "class-validator";
+import { Type } from "class-transformer";
 import { DispatchDeclineReason } from "../../domain/dispatch.aggregate";
 
 export class CreateDispatchDto {
@@ -22,17 +23,21 @@ export class CreateDispatchDto {
   deliveryAddress!: string;
 
   @IsNumber()
+  @Type(() => Number)
   deliveryLatitude!: number;
 
   @IsNumber()
+  @Type(() => Number)
   deliveryLongitude!: number;
 
   @IsOptional()
   @IsNumber()
+  @Type(() => Number)
   merchantLatitude?: number;
 
   @IsOptional()
   @IsNumber()
+  @Type(() => Number)
   merchantLongitude?: number;
 }
 
@@ -61,6 +66,11 @@ export class DriverDeclineDto {
   @IsOptional()
   @IsString()
   detail?: string;
+}
+
+export class RecordDriverDeclineDto {
+  @IsUUID("4")
+  driverId!: string;
 }
 
 export class DriverCancelDto {

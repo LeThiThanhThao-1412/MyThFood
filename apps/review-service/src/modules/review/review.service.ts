@@ -46,6 +46,7 @@ export class ReviewService {
     review.merchantId = dto.merchantId;
     review.driverId = dto.driverId ?? null;
     review.driverRating = dto.driverRating ?? null;
+    review.driverComment = dto.driverComment ?? null;
     review.rating = dto.rating;
     review.comment = dto.comment ?? null;
     review.tags = dto.tags ?? [];

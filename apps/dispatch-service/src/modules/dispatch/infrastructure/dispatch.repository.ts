@@ -95,6 +95,18 @@ export class DispatchRepository {
     return entities.map(DispatchMapper.toDomain);
   }
 
+  /** Danh sách orderId mà tài xế đã từ chối (Case 4) — để driver-app ẩn triệt để. */
+  async findDeclinedOrderIdsByDriver(driverId: string): Promise<string[]> {
+    const rows = await this.repo
+      .createQueryBuilder("d")
+      .select("d.orderId", "orderId")
+      .where("d.matchedDriverIds @> :driverIdJson", {
+        driverIdJson: JSON.stringify([driverId]),
+      })
+      .getRawMany();
+    return (rows ?? []).map((r) => r.orderId).filter(Boolean);
+  }
+
   /** Dispatches stuck in DRIVER_ASSIGNED (driver hasn't responded) older than cutoff. */
   async findAssignedOlderThan(cutoff: Date): Promise<Dispatch[]> {
     const entities = await this.repo

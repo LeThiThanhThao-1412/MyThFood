@@ -29,6 +29,14 @@ const STATUS_META: Record<string, { label: string; cls: string }> = {
   },
   DELIVERED: { label: "🏠 Đã giao", cls: "bg-green-100 text-green-800" },
   CANCELLED: { label: "❌ Đã hủy", cls: "bg-gray-100 text-gray-600" },
+  CANCELLED_NO_DRIVER: {
+    label: "🛑 Đã hủy - Không có tài xế",
+    cls: "bg-gray-100 text-gray-600",
+  },
+  DELIVERY_FAILED: {
+    label: "❌ Giao hàng thất bại",
+    cls: "bg-red-100 text-red-700",
+  },
   REJECTED: { label: "🚫 Đã từ chối", cls: "bg-red-100 text-red-700" },
 };
 
@@ -244,7 +252,10 @@ export default function MerchantOrdersPage() {
     if (activeTab === "PREPARING") return s === "PREPARING";
     if (activeTab === "READY") return s === "READY_FOR_PICKUP";
     if (activeTab === "DELIVERED") return s === "DELIVERED";
-    if (activeTab === "CANCELLED") return s === "CANCELLED";
+    if (activeTab === "CANCELLED")
+      return ["CANCELLED", "CANCELLED_NO_DRIVER", "DELIVERY_FAILED"].includes(
+        s,
+      );
     if (activeTab === "REJECTED") return s === "REJECTED";
     return true;
   });
@@ -283,7 +294,11 @@ export default function MerchantOrdersPage() {
     {
       key: "CANCELLED",
       label: "❌ Đã hủy",
-      count: orders.filter((o) => o.status === "CANCELLED").length,
+      count: orders.filter((o) =>
+        ["CANCELLED", "CANCELLED_NO_DRIVER", "DELIVERY_FAILED"].includes(
+          o.status,
+        ),
+      ).length,
     },
     {
       key: "REJECTED",

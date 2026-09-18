@@ -388,9 +388,7 @@ export const merchantApi = {
 export const orderApi = {
   place: (body: PlaceOrderRequest, idempotencyKey?: string) =>
     httpClient.post<Order>(PORTS.ORDER, "/orders", body, {
-      headers: idempotencyKey
-        ? { "Idempotency-Key": idempotencyKey }
-        : {},
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
     }),
 
   getById: (id: string) => httpClient.get<Order>(PORTS.ORDER, `/orders/${id}`),
@@ -433,6 +431,11 @@ export const orderApi = {
 
   delivered: (id: string) =>
     httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/delivered`),
+
+  assignDriver: (id: string, driverId: string) =>
+    httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/assign-driver`, {
+      driverId,
+    }),
 
   cancel: (id: string, body: CancelOrderRequest) =>
     httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/cancel`, body),
@@ -699,6 +702,13 @@ export const dispatchApi = {
       `/dispatches/driver/${driverId}`,
     ),
 
+  /** Case 4: danh sách orderId mà tài xế đã từ chối (để ẩn triệt để). */
+  getDeclinedOrderIds: (driverId: string) =>
+    httpClient.get<{ statusCode: number; data: string[] }>(
+      PORTS.DISPATCH,
+      `/dispatches/declined-by/${driverId}`,
+    ),
+
   getByMerchant: (merchantId: string) =>
     httpClient.get<DispatchListEnvelope>(
       PORTS.DISPATCH,
@@ -764,6 +774,14 @@ export const dispatchApi = {
       PORTS.DISPATCH,
       `/dispatches/${id}/driver-decline`,
       body,
+    ),
+
+  /** Case 4: ghi nhận tài xế đã từ chối (dù dispatch ở trạng thái nào) để không gán lại. */
+  recordDriverDecline: (id: string, driverId: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/record-driver-decline`,
+      { driverId },
     ),
 
   /** Bấm “Đã đến quán” → DRIVER_ARRIVED. */

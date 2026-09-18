@@ -166,6 +166,8 @@ services:
       DRIVER_SERVICE_URL: http://driver-service:3007
       PROMOTION_SERVICE_URL: http://promotion-service:3012
       NOTIFICATION_SERVICE_URL: http://notification-service:3013
+      ORDER_NO_DRIVER_TIMEOUT_MINUTES: ${ORDER_NO_DRIVER_TIMEOUT_MINUTES:-5}
+      ORDER_MERCHANT_RESPONSE_TIMEOUT_MINUTES: ${ORDER_MERCHANT_RESPONSE_TIMEOUT_MINUTES:-15}
     depends_on:
       postgres:
         condition: service_healthy
@@ -288,6 +290,7 @@ services:
       ORDER_SERVICE_URL: http://order-service:3004
       DRIVER_SERVICE_URL: http://driver-service:3007
       SERVICE_API_KEY: ${SERVICE_API_KEY}
+      DISPATCH_MATCHING_TIMEOUT_SECONDS: ${DISPATCH_MATCHING_TIMEOUT_SECONDS:-300}
     depends_on:
       postgres:
         condition: service_healthy

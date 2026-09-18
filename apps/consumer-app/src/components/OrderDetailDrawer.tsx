@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { orderApi, reviewApi, uploadApi } from "@mythfood/api-client";
+import { useRouter } from "next/navigation";
+import {
+  orderApi,
+  reviewApi,
+  uploadApi,
+  merchantApi,
+} from "@mythfood/api-client";
 import { Drawer } from "@mythfood/frontend-shared";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -30,7 +36,9 @@ export default function OrderDetailDrawer({
   orderId: string | null;
   onClose: () => void;
 }) {
+  const router = useRouter();
   const [order, setOrder] = useState<any>(null);
+  const [merchant, setMerchant] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [existingReview, setExistingReview] = useState<any>(null);
   const [reviewRating, setReviewRating] = useState(5);
@@ -51,6 +59,13 @@ export default function OrderDetailDrawer({
       try {
         const o = await orderApi.getById(orderId);
         setOrder(o);
+        // Lấy thông tin nhà hàng (tên, ảnh, đánh giá)
+        if (o?.merchantId) {
+          const mRes = await merchantApi
+            .getById(o.merchantId)
+            .catch(() => null);
+          setMerchant((mRes as any)?.data ?? mRes ?? null);
+        }
         try {
           const r: any = await reviewApi.getByOrder(orderId);
           setExistingReview(r?.data ?? null);
@@ -143,6 +158,45 @@ export default function OrderDetailDrawer({
                 : ""}
             </span>
           </div>
+
+          {/* Nhà hàng của đơn */}
+          {merchant && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                router.push(`/restaurants/${merchant.id}`);
+              }}
+              className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-3 hover:border-[#ff6b35] transition text-left"
+            >
+              {merchant.logoUrl || merchant.coverImageUrl ? (
+                <img
+                  src={merchant.logoUrl || merchant.coverImageUrl}
+                  alt={merchant.name}
+                  className="w-12 h-12 rounded-xl object-cover border border-gray-100 bg-gray-50 shrink-0"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-xl bg-[#fff7ed] flex items-center justify-center text-xl shrink-0">
+                  🏪
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-gray-800 truncate">
+                  {merchant.name}
+                </p>
+                <p className="text-xs text-gray-500 flex items-center gap-1">
+                  <span className="text-yellow-500">⭐</span>{" "}
+                  {Number(merchant.rating || 0).toFixed(1)}
+                  {merchant.totalRatings
+                    ? ` (${merchant.totalRatings} đánh giá)`
+                    : ""}
+                </p>
+              </div>
+              <span className="text-[#ff6b35] text-xs font-semibold shrink-0">
+                Xem ›
+              </span>
+            </button>
+          )}
 
           <div className="bg-gray-50 rounded-xl p-4">
             <h4 className="font-semibold text-sm text-gray-700 mb-2">

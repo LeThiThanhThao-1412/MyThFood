@@ -28,6 +28,10 @@ export class CreateReviewDto {
   @Max(5)
   driverRating?: number;
 
+  @IsOptional()
+  @IsString()
+  driverComment?: string;
+
   @IsInt()
   @Min(1)
   @Max(5)

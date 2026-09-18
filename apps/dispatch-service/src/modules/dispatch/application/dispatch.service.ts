@@ -36,8 +36,17 @@ const MIN_COD_BALANCE = 2_000_000;
 export class DispatchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DispatchService.name);
   private timeoutInterval: ReturnType<typeof setInterval> | null = null;
+  private expireInterval: ReturnType<typeof setInterval> | null = null;
 
   private static readonly DRIVER_RESPONSE_TIMEOUT_MS = 60_000;
+
+  /** Thời gian chờ tối đa để tìm tài xế (mặc định 5 phút, cấu hình qua env). */
+  private static get MATCHING_TIMEOUT_MS(): number {
+    const seconds = Number(
+      process.env.DISPATCH_MATCHING_TIMEOUT_SECONDS || 300,
+    );
+    return (Number.isFinite(seconds) && seconds > 0 ? seconds : 300) * 1000;
+  }
 
   constructor(
     private readonly dispatchRepo: DispatchRepository,
@@ -51,10 +60,22 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(`Driver no-response sweep failed: ${err.message}`),
       );
     }, 15_000);
+
+    // Case 3: quét các dispatch đang MATCHING quá thời gian chờ → hết hạn → hủy đơn.
+    this.expireInterval = setInterval(() => {
+      this.expireStaleDispatches()
+        .then((n) => {
+          if (n > 0) this.logger.log(`Expired ${n} stale dispatches`);
+        })
+        .catch((err) =>
+          this.logger.warn(`Stale dispatch sweep failed: ${err.message}`),
+        );
+    }, 15_000);
   }
 
   onModuleDestroy(): void {
     if (this.timeoutInterval) clearInterval(this.timeoutInterval);
+    if (this.expireInterval) clearInterval(this.expireInterval);
   }
 
   /**
@@ -93,18 +114,21 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         "Dispatch already exists for this order",
       );
     }
-    const dispatch = Dispatch.create(dto);
+    const dispatch = Dispatch.create({
+      orderId: dto.orderId,
+      merchantId: dto.merchantId,
+      deliveryAddress: dto.deliveryAddress,
+      deliveryLatitude: dto.deliveryLatitude,
+      deliveryLongitude: dto.deliveryLongitude,
+      merchantLatitude: dto.merchantLatitude,
+      merchantLongitude: dto.merchantLongitude,
+      expiresAt: new Date(Date.now() + DispatchService.MATCHING_TIMEOUT_MS),
+    });
     await this.dispatchRepo.save(dispatch);
 
-    // Auto-match: tìm & gán tài xế gần nhất ngay lập tức
-    try {
-      return await this.autoMatchDispatch(dispatch.id.value);
-    } catch (err: any) {
-      this.logger.warn(
-        `Auto-match failed for dispatch ${dispatch.id.value}: ${err.message}`,
-      );
-      return dispatch;
-    }
+    // Đã tắt auto-match: KHÔNG tự gán tài xế ngay khi tạo dispatch.
+    // Tài xế sẽ tự xem danh sách đơn khả dụng rồi bấm "Nhận đơn".
+    return dispatch;
   }
 
   /**
@@ -343,6 +367,10 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     // Đánh dấu tài xế bận ngay lập tức.
     await this.markDriverBusy(driverId, dispatch.dispatchOrderId);
 
+    // Báo order-service gán tài xế cho đơn để đơn biết "đã có tài xế"
+    // (tránh bị hủy nhầm do hết thời gian chờ tài xế).
+    await this.notifyOrderDriverAssigned(dispatch);
+
     return this.dispatchRepo.findByIdOrFail(DispatchId.from(id));
   }
 
@@ -433,6 +461,24 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     return dispatch;
   }
 
+  /**
+   * Case 4: ghi nhận tài xế đã từ chối (dù dispatch ở trạng thái nào)
+   * để matching engine không gán lại cho họ.
+   */
+  async recordDriverDecline(id: string, driverId: string): Promise<Dispatch> {
+    const dispatch = await this.dispatchRepo.findByIdOrFail(
+      DispatchId.from(id),
+    );
+    dispatch.recordDriverDecline(driverId);
+    await this.dispatchRepo.save(dispatch);
+    return dispatch;
+  }
+
+  /** Danh sách orderId mà tài xế đã từ chối (Case 4). */
+  async getDeclinedOrderIds(driverId: string): Promise<string[]> {
+    return this.dispatchRepo.findDeclinedOrderIdsByDriver(driverId);
+  }
+
   // ---- Dispatch Lifecycle ----
 
   async driverArrived(id: string): Promise<Dispatch> {
@@ -514,6 +560,34 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     } catch (err: any) {
       this.logger.warn(
         `Failed to notify no-driver cancellation for order ${dispatch.dispatchOrderId}: ${err.message}`,
+      );
+    }
+  }
+
+  /**
+   * Báo order-service gán tài xế cho đơn (khi tài xế đã nhận đơn) để đơn biết
+   * "đã có tài xế" và không bị hủy nhầm do hết thời gian chờ tài xế.
+   */
+  private async notifyOrderDriverAssigned(dispatch: Dispatch): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      await fetch(
+        `${ORDER_SERVICE_URL}/api/v1/orders/${dispatch.dispatchOrderId}/assign-driver`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-service-key": serviceKey,
+          },
+          body: JSON.stringify({ driverId: dispatch.dispatchDriverId }),
+        },
+      );
+      this.logger.log(
+        `Notified order ${dispatch.dispatchOrderId} assigned driver ${dispatch.dispatchDriverId}`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `notifyOrderDriverAssigned failed for order ${dispatch.dispatchOrderId}: ${err.message}`,
       );
     }
   }
@@ -650,7 +724,14 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
 
     for (const dispatch of matchingDispatches) {
       const expiresAt = dispatch.dispatchExpiresAt;
-      if (expiresAt && expiresAt < now && dispatch.isActive) {
+      const createdAgo =
+        now.getTime() - (dispatch.createdAt?.getTime() ?? now.getTime());
+      // Fallback theo createdAt cho các dispatch cũ (chưa có expiresAt).
+      const isExpired =
+        (expiresAt != null && expiresAt < now) ||
+        createdAgo > DispatchService.MATCHING_TIMEOUT_MS;
+
+      if (isExpired && dispatch.isActive) {
         dispatch.expire();
         await this.dispatchRepo.save(dispatch);
         await this.notifyOrderNoDriver(dispatch);

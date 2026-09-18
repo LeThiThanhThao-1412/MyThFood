@@ -167,6 +167,16 @@ export class OrderController {
     return this.toOrderResponse(order);
   }
 
+  @Patch(":id/assign-driver")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  async assignDriver(
+    @Param("id") id: string,
+    @Body() dto: StatusTransitionDto,
+  ): Promise<OrderResponseDto> {
+    const order = await this.orderService.assignDriver(id, dto.driverId ?? "");
+    return this.toOrderResponse(order);
+  }
+
   @Patch(":id/driver-cancel")
   @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
   async recordDriverCancel(

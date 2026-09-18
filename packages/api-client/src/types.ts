@@ -560,6 +560,7 @@ export interface RegisterDriverRequest {
   fullName: string;
   phone: string;
   email?: string;
+  avatar?: string | null;
   vehicleType: VehicleType;
   licensePlate: string;
 }
@@ -666,6 +667,7 @@ export interface Review {
   merchantId: string;
   driverId?: string | null;
   driverRating?: number | null;
+  driverComment?: string | null;
   rating: number;
   comment?: string | null;
   tags?: string[];
@@ -681,6 +683,7 @@ export interface CreateReviewRequest {
   merchantId: string;
   driverId?: string;
   driverRating?: number;
+  driverComment?: string;
   rating: number;
   comment?: string;
   tags?: string[];

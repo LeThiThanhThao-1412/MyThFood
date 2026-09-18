@@ -419,6 +419,13 @@ export async function acceptOrder(
     /* non-fatal */
   }
 
+  // Gán tài xế cho ĐƠN để đơn biết "đã có tài xế" (tránh bị hủy nhầm do hết giờ chờ).
+  try {
+    await orderApi.assignDriver(order.id, driverId);
+  } catch {
+    /* non-fatal */
+  }
+
   // Mô phỏng GPS: đặt tài xế tại nhà hàng sau khi bấm “Nhận đơn”
   if (restaurant && driverId) {
     try {
@@ -513,11 +520,16 @@ export async function completeDelivery(
 
   // Đơn hàng: OUT_FOR_DELIVERY → DELIVERED (order-service tự chia tiền ví)
   let updatedOrder = order;
-  if (order.status !== "DELIVERED") {
-    updatedOrder = await syncOrderOutForDelivery(order, driverId);
-    if (updatedOrder?.status !== "DELIVERED") {
-      updatedOrder = await orderApi.delivered(order.id);
+  try {
+    if (order.status !== "DELIVERED") {
+      updatedOrder = await syncOrderOutForDelivery(order, driverId);
+      if (updatedOrder?.status !== "DELIVERED") {
+        updatedOrder = await orderApi.delivered(order.id);
+      }
     }
+  } catch {
+    // Đơn có thể đã bị hủy trước đó (VD: CANCELLED_NO_DRIVER) → bỏ qua,
+    // vẫn phải giải phóng tài xế bên dưới để không bị kẹt currentOrderId.
   }
 
   // Xác nhận vị trí tài xế tại nhà khách

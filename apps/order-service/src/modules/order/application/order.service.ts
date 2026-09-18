@@ -189,6 +189,28 @@ export class OrderService {
     return order;
   }
 
+  /**
+   * Gán tài xế cho đơn (không đổi trạng thái) — dispatch-service gọi khi tài xế
+   * nhận đơn. Giúp đơn biết "đã có tài xế" ngay từ lúc nhận, tránh bị hủy nhầm
+   * do hết thời gian chờ tài xế.
+   */
+  async assignDriver(id: string, driverId: string): Promise<Order> {
+    const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
+
+    // Thiếu driverId hoặc đơn đã kết thúc thì không làm gì.
+    if (!driverId || !order.isActive()) {
+      return order;
+    }
+    // Idempotent: đã gán đúng tài xế này rồi thì không làm gì thêm.
+    if (order.orderDriverId === driverId) {
+      return order;
+    }
+
+    order.assignDriver(driverId);
+    await this.orderRepository.save(order);
+    return order;
+  }
+
   // ===================== Status Transitions =====================
 
   async confirm(id: string): Promise<Order> {
@@ -291,10 +313,12 @@ export class OrderService {
           orderId: order.id.toString(),
           merchantId: order.orderMerchantId,
           deliveryAddress: order.orderDeliveryAddress ?? "",
-          deliveryLatitude: order.orderDeliveryLatitude ?? 10.775,
-          deliveryLongitude: order.orderDeliveryLongitude ?? 106.7,
-          merchantLatitude: merchantLat,
-          merchantLongitude: merchantLng,
+          deliveryLatitude: Number(order.orderDeliveryLatitude ?? 10.775),
+          deliveryLongitude: Number(order.orderDeliveryLongitude ?? 106.7),
+          merchantLatitude:
+            merchantLat != null ? Number(merchantLat) : undefined,
+          merchantLongitude:
+            merchantLng != null ? Number(merchantLng) : undefined,
         },
         {
           headers: {
@@ -334,6 +358,37 @@ export class OrderService {
     } catch (err: any) {
       this.logger.warn(
         `Failed to update driver location after delivery: ${err.message}`,
+      );
+    }
+  }
+
+  /** Giải phóng tài xế khỏi đơn khi đơn bị hủy (clear currentOrderId). */
+  private async releaseDriverIfAssigned(order: Order): Promise<void> {
+    const driverId = order.orderDriverId;
+    if (!driverId) return;
+
+    const driverUrl =
+      process.env.DRIVER_SERVICE_URL || "http://driver-service:3007";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      await firstValueFrom(
+        this.httpService.patch(
+          `${driverUrl}/api/v1/drivers/${driverId}/release-order`,
+          {},
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "x-service-key": serviceKey,
+            },
+          },
+        ),
+      );
+      this.logger.log(
+        `Released driver ${driverId} after order ${order.id.toString()} cancelled`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to release driver ${driverId} after order ${order.id.toString()} cancelled: ${err.message}`,
       );
     }
   }
@@ -479,6 +534,9 @@ export class OrderService {
     order.cancel(dto.reason);
     await this.orderRepository.save(order);
 
+    // Giải phóng tài xế nếu đơn đã có tài xế (tránh kẹt currentOrderId).
+    await this.releaseDriverIfAssigned(order);
+
     // Refund online-paid orders (WALLET or card) back to the customer's wallet
     // as store credit. COD orders have no captured money, so nothing to refund.
     const isOnlinePaid =
@@ -606,6 +664,14 @@ export class OrderService {
       return order;
     }
 
+    // Đơn đã có tài xế nhận → KHÔNG hủy do "không có tài xế".
+    if (order.orderDriverId) {
+      this.logger.log(
+        `Skip no-driver cancellation: order ${id} already has driver ${order.orderDriverId}`,
+      );
+      return order;
+    }
+
     order.cancelNoDriver(reason);
     await this.orderRepository.save(order);
 
@@ -693,7 +759,8 @@ export class OrderService {
     }
 
     const notificationUrl =
-      process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:3013";
+      process.env.NOTIFICATION_SERVICE_URL ||
+      "http://notification-service:3013";
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
     await firstValueFrom(
       this.httpService.post(
@@ -911,7 +978,8 @@ export class OrderService {
     data?: Record<string, unknown>;
   }): Promise<void> {
     const notificationUrl =
-      process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:3013";
+      process.env.NOTIFICATION_SERVICE_URL ||
+      "http://notification-service:3013";
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
     await firstValueFrom(
       this.httpService.post(

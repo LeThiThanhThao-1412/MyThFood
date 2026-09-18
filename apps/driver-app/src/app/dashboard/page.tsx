@@ -51,6 +51,8 @@ export default function DriverDashboardPage() {
   const firstSeen = useRef<Record<string, number>>({});
   // Đơn đã bị ẩn (hết 60s hoặc tài xế từ chối) → không hiển thị lại trong phiên
   const hiddenOrderIds = useRef<Set<string>>(new Set());
+  // Đơn đã từ chối (ghi nhận ở backend) → ẩn kể cả sau khi refresh trang.
+  const declinedOrderIds = useRef<Set<string>>(new Set());
   // Trigger reload (vd: sau khi tài xế cập nhật trạng thái đơn từ floating card)
   const [reloadTick, setReloadTick] = useState(0);
 
@@ -135,9 +137,16 @@ export default function DriverDashboardPage() {
   );
   const completedOrders = deliveredOrders.length;
 
-  // Chỉ các đơn đang giao (chưa hoàn thành / chưa hủy) — loại bỏ đơn đã giao thành công
+  // Chỉ các đơn đang giao (chưa hoàn thành / chưa hủy) — loại bỏ các đơn đã kết thúc.
   const deliveringOrders = activeOrders.filter(
-    (o) => o.status !== "DELIVERED" && o.status !== "CANCELLED",
+    (o) =>
+      ![
+        "DELIVERED",
+        "CANCELLED",
+        "CANCELLED_NO_DRIVER",
+        "DELIVERY_FAILED",
+        "REJECTED",
+      ].includes(o.status),
   );
 
   // 1 tài xế chỉ nhận 1 đơn tại một thời điểm → đơn đang giao duy nhất
@@ -167,14 +176,24 @@ export default function DriverDashboardPage() {
         const d = (dRes as any).data ?? dRes;
         setDriver(d);
         if (d && d.status === "ACTIVE") {
-          const [availRes, activeRes] = await Promise.all([
+          const [availRes, activeRes, declinedRes] = await Promise.all([
             orderApi.list({ status: "READY_FOR_PICKUP", take: 20 }),
             orderApi.listByDriver(d.id),
+            dispatchApi.getDeclinedOrderIds(d.id).catch(() => null),
           ]);
+          // Cập nhật danh sách đơn đã từ chối (tồn tại qua các lần refresh).
+          const declined = (declinedRes as any)?.data ?? [];
+          declinedOrderIds.current = new Set(
+            Array.isArray(declined) ? declined : [],
+          );
           const availItems = (availRes as any).items || [];
           const availList = (
             Array.isArray(availItems) ? availItems : []
-          ).filter((o: any) => !hiddenOrderIds.current.has(o.id));
+          ).filter(
+            (o: any) =>
+              !hiddenOrderIds.current.has(o.id) &&
+              !declinedOrderIds.current.has(o.id),
+          );
           const seen = firstSeen.current;
           for (const o of availList) {
             if (!seen[o.id]) seen[o.id] = Date.now();
@@ -182,6 +201,20 @@ export default function DriverDashboardPage() {
           setAvailableOrders(availList);
           // activeRes may return all orders assigned to this driver (including DELIVERED)
           const allDriverOrders = Array.isArray(activeRes) ? activeRes : [];
+          // Đảm bảo đơn tài xế đang nhận (currentOrderId) luôn hiện trên floating card
+          // ngay cả khi order chưa OUT_FOR_DELIVERY (driver_id của order chưa được set).
+          const currentOrderId = (d as any)?.currentOrderId;
+          if (
+            currentOrderId &&
+            !allDriverOrders.some((o: any) => o.id === currentOrderId)
+          ) {
+            try {
+              const co = await orderApi.getById(currentOrderId);
+              if (co) allDriverOrders.push(co);
+            } catch {
+              /* ignore */
+            }
+          }
           setActiveOrders(allDriverOrders);
         }
       } catch {
@@ -313,18 +346,23 @@ export default function DriverDashboardPage() {
       // Tìm dispatch của đơn này
       const dRes: any = await dispatchApi.getByOrder(orderId).catch(() => null);
       const dispatch = dRes?.data ?? null;
-      // Nếu đơn đang được gán cho tài xế này và đang chờ phản hồi → từ chối
-      // để backend tìm tài xế khác ngay lập tức.
-      if (
-        dispatch?.id &&
-        dispatch.status === "DRIVER_ASSIGNED" &&
-        dispatch.driverId === driver.id
-      ) {
-        await dispatchApi.driverDecline(dispatch.id, {
-          driverId: driver.id,
-          reason: "OTHER",
-          detail: "Tài xế từ chối",
-        });
+      if (dispatch?.id) {
+        // Case 4: luôn ghi nhận tài xế đã từ chối → backend không gán lại đơn này
+        // cho tài xế nữa (dù dispatch đang MATCHING hay gán cho người khác).
+        await dispatchApi.recordDriverDecline(dispatch.id, driver.id);
+
+        // Nếu đơn đang gán cho chính tài xế này và chờ phản hồi → từ chối
+        // để backend tìm tài xế khác ngay lập tức.
+        if (
+          dispatch.status === "DRIVER_ASSIGNED" &&
+          dispatch.driverId === driver.id
+        ) {
+          await dispatchApi.driverDecline(dispatch.id, {
+            driverId: driver.id,
+            reason: "OTHER",
+            detail: "Tài xế từ chối",
+          });
+        }
       }
     } catch {
       /* non-fatal */
@@ -498,13 +536,19 @@ export default function DriverDashboardPage() {
 
             {/* Driver status card */}
             <div className="mt-3 flex items-center gap-4 bg-white/8 rounded-2xl p-3 sm:p-4">
-              <div className="w-11 h-11 bg-[#ff6b35] rounded-full flex items-center justify-center text-white font-bold text-lg shrink-0">
+              <Link
+                href="/profile"
+                className="w-11 h-11 bg-[#ff6b35] rounded-full flex items-center justify-center text-white font-bold text-lg shrink-0 hover:scale-105 transition-transform"
+              >
                 {(driver.fullName || "?")[0].toUpperCase()}
-              </div>
+              </Link>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm sm:text-base truncate">
+                <Link
+                  href="/profile"
+                  className="font-semibold text-sm sm:text-base truncate hover:text-[#ff6b35] transition block"
+                >
                   {driver.fullName}
-                </p>
+                </Link>
                 <p
                   className={`text-xs font-medium ${isOnline ? "text-[#2ecc71]" : "text-gray-400"}`}
                 >
@@ -742,11 +786,7 @@ export default function DriverDashboardPage() {
         </main>
 
         {/* Floating card đơn đang giao (1 đơn duy nhất) */}
-        <DriverActiveOrderCard
-          orderId={activeOrder?.id ?? null}
-          onOpen={() => activeOrder && setSelectedOrderId(activeOrder.id)}
-          onChanged={() => setReloadTick((t) => t + 1)}
-        />
+        <DriverActiveOrderCard orderId={activeOrder?.id ?? null} />
 
         {/* Danh sách đơn đã giao (Drawer/Slide-over) */}
         <DeliveredOrdersDrawer

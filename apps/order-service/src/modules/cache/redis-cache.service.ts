@@ -85,7 +85,11 @@ export class RedisCacheService implements ICache, OnModuleDestroy {
     }
   }
 
-  async setNX(key: string, value: string, ttlSeconds?: number): Promise<boolean> {
+  async setNX(
+    key: string,
+    value: string,
+    ttlSeconds?: number,
+  ): Promise<boolean> {
     try {
       const client = this.getClient();
       const result =

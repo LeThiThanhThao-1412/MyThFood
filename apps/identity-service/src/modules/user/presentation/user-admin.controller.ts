@@ -34,7 +34,7 @@ export class UserAdminController {
 
   // Thông tin liên hệ cơ bản (tên + SĐT) cho tài xế khi cần gọi khách hàng.
   @Get(":id/contact")
-  @Roles("DRIVER", "ADMIN")
+  @Roles("DRIVER", "MERCHANT_OWNER", "ADMIN")
   async getUserContact(@Param("id") id: string) {
     const user = await this.userAdminService.getUserById(id);
     return {

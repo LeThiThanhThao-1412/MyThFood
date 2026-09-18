@@ -29,6 +29,14 @@ const STATUS_BADGES: Record<string, { cls: string; label: string }> = {
   },
   DELIVERED: { cls: "bg-[#e8f5e9] text-[#2e7d32]", label: "🏠 Đã giao" },
   CANCELLED: { cls: "bg-[#f5f5f5] text-[#888]", label: "❌ Đã hủy" },
+  CANCELLED_NO_DRIVER: {
+    cls: "bg-[#f5f5f5] text-[#888]",
+    label: "🛑 Đã hủy - Không có tài xế",
+  },
+  DELIVERY_FAILED: {
+    cls: "bg-[#f5f5f5] text-[#888]",
+    label: "❌ Giao hàng thất bại",
+  },
   REJECTED: { cls: "bg-[#f5f5f5] text-[#888]", label: "🚫 Từ chối" },
 };
 

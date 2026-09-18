@@ -1377,6 +1377,12 @@ function CheckoutContent() {
                       <span>-{discount.toLocaleString("vi-VN")}₫</span>
                     </div>
                   )}
+                  {voucherValue > 0 && (
+                    <div className="flex justify-between text-amber-600 font-semibold">
+                      <span>🎁 Voucher bồi thường</span>
+                      <span>-{voucherValue.toLocaleString("vi-VN")}₫</span>
+                    </div>
+                  )}
                 </div>
                 <div className="mt-4 pt-4 border-t-2 border-gray-100 flex justify-between items-center">
                   <span className="text-base font-bold text-[#1a1a2e]">

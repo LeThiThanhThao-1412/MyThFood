@@ -103,7 +103,9 @@ export default function MerchantProfilePage() {
           <h3 className="font-bold text-lg mb-4">👤 Hồ sơ tài khoản</h3>
           <div className="space-y-3">
             <div className="flex items-start gap-3">
-              <span className="w-20 shrink-0 text-sm text-gray-500">Họ tên</span>
+              <span className="w-20 shrink-0 text-sm text-gray-500">
+                Họ tên
+              </span>
               <span className="font-medium text-gray-800">
                 {user?.fullName || "—"}
               </span>
@@ -121,11 +123,11 @@ export default function MerchantProfilePage() {
               </span>
             </div>
             <div className="flex items-start gap-3">
-              <span className="w-20 shrink-0 text-sm text-gray-500">Vai trò</span>
+              <span className="w-20 shrink-0 text-sm text-gray-500">
+                Vai trò
+              </span>
               <span className="font-medium text-gray-800">
-                {(user?.roles || [])
-                  .map((r) => ROLE_LABELS[r] || r)
-                  .join(", ")}
+                {(user?.roles || []).map((r) => ROLE_LABELS[r] || r).join(", ")}
               </span>
             </div>
           </div>

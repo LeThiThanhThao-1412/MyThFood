@@ -153,6 +153,19 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     return Promise.all(expired.map((e) => this.loadRelatedAndMap(e)));
   }
 
+  /**
+   * Các đơn đang READY_FOR_PICKUP (chờ tài xế) quá lâu → để tự hủy do không có tài xế.
+   * Dùng updated_at (thời điểm merchant bấm "Sẵn sàng") làm mốc.
+   */
+  async findReadyForPickupOlderThan(cutoff: Date): Promise<Order[]> {
+    const entities = await this.repository.find({
+      where: { status: "READY_FOR_PICKUP" },
+      order: { updated_at: "ASC" },
+    });
+    const expired = entities.filter((e) => new Date(e.updated_at) < cutoff);
+    return Promise.all(expired.map((e) => this.loadRelatedAndMap(e)));
+  }
+
   async getDailyStats(options?: {
     startDate?: string;
     endDate?: string;

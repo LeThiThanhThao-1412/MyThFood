@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { orderApi, driverApi } from "@mythfood/api-client";
+import {
+  orderApi,
+  driverApi,
+  consumerApi,
+  authApi,
+} from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { useMerchantSocket } from "./SocketProvider";
 
@@ -62,6 +67,14 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   },
   DELIVERED: { label: "🏠 Đã giao", cls: "bg-green-100 text-green-800" },
   CANCELLED: { label: "❌ Đã hủy", cls: "bg-gray-100 text-gray-600" },
+  CANCELLED_NO_DRIVER: {
+    label: "🛑 Đã hủy - Không có tài xế",
+    cls: "bg-gray-100 text-gray-600",
+  },
+  DELIVERY_FAILED: {
+    label: "❌ Giao hàng thất bại",
+    cls: "bg-red-100 text-red-700",
+  },
   REJECTED: { label: "🚫 Đã từ chối", cls: "bg-red-100 text-red-700" },
 };
 
@@ -76,6 +89,7 @@ export default function OrderDetailDrawer({
   const { token } = useAuthStore();
   const [order, setOrder] = useState<any>(null);
   const [driver, setDriver] = useState<any>(null);
+  const [customer, setCustomer] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -86,6 +100,7 @@ export default function OrderDetailDrawer({
     if (!orderId) {
       setOrder(null);
       setDriver(null);
+      setCustomer(null);
       setRejecting(false);
       setRejectReason("");
       return;
@@ -96,6 +111,32 @@ export default function OrderDetailDrawer({
       try {
         const o = await orderApi.getById(id);
         setOrder(o);
+        // Lấy thông tin khách hàng (tên + SĐT + ảnh)
+        if (o.consumerId) {
+          try {
+            const c = (await consumerApi.getContact(o.consumerId)) as any;
+            const contact = c?.data ?? c ?? null;
+            let phone: string | null = null;
+            const uid = contact?.userId;
+            if (uid) {
+              try {
+                const u = (await authApi.getUserContact(uid)) as any;
+                const uContact = u?.data ?? u ?? null;
+                phone = uContact?.phone ?? null;
+                if (contact && !contact.fullName && uContact?.fullName) {
+                  contact.fullName = uContact.fullName;
+                }
+              } catch {
+                /* ignore */
+              }
+            }
+            setCustomer({ ...(contact || {}), phone });
+          } catch {
+            setCustomer(null);
+          }
+        } else {
+          setCustomer(null);
+        }
         if (o.driverId) {
           try {
             const dr = await driverApi.getById(o.driverId);
@@ -248,13 +289,51 @@ export default function OrderDetailDrawer({
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Khách hàng */}
+              {customer && (
+                <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-3">
+                  {customer.avatar ? (
+                    <img
+                      src={customer.avatar}
+                      alt={customer.fullName || "Khách hàng"}
+                      className="w-12 h-12 rounded-full object-cover border border-gray-100 bg-gray-50 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-[#fff7ed] flex items-center justify-center text-xl shrink-0">
+                      👤
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-sm text-[#1a1a2e] truncate">
+                      {customer.fullName || "Khách hàng"}
+                    </p>
+                    {customer.phone ? (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        📞 {customer.phone}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Không có SĐT
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Stepper */}
               <div className="bg-gray-50 rounded-xl p-3">
-                {order.status === "REJECTED" || order.status === "CANCELLED" ? (
+                {order.status === "REJECTED" ||
+                order.status === "CANCELLED" ||
+                order.status === "CANCELLED_NO_DRIVER" ||
+                order.status === "DELIVERY_FAILED" ? (
                   <p className="text-xs text-gray-500 text-center py-2">
                     {order.status === "REJECTED"
                       ? "🚫 Đơn đã bị từ chối"
-                      : "❌ Đơn đã bị hủy"}
+                      : order.status === "CANCELLED_NO_DRIVER"
+                        ? "🛑 Đơn đã bị hủy - không có tài xế"
+                        : order.status === "DELIVERY_FAILED"
+                          ? "❌ Giao hàng thất bại"
+                          : "❌ Đơn đã bị hủy"}
                   </p>
                 ) : (
                   <>
@@ -516,7 +595,9 @@ export default function OrderDetailDrawer({
               )}
               {(order.status === "DELIVERED" ||
                 order.status === "REJECTED" ||
-                order.status === "CANCELLED") && (
+                order.status === "CANCELLED" ||
+                order.status === "CANCELLED_NO_DRIVER" ||
+                order.status === "DELIVERY_FAILED") && (
                 <button
                   onClick={onClose}
                   className="w-full bg-gray-100 text-gray-600 py-3 rounded-xl text-sm font-semibold"

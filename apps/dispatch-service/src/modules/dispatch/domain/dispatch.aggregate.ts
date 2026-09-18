@@ -271,6 +271,19 @@ export class Dispatch extends AggregateRoot<DispatchId> {
     }
   }
 
+  /**
+   * Case 4: ghi nhận tài xế đã từ chối đơn để không bao giờ gán lại cho họ,
+   * bất kể dispatch đang ở trạng thái nào (MATCHING / DRIVER_ASSIGNED / ...).
+   * Idempotent — gọi nhiều lần cũng không thêm trùng.
+   */
+  public recordDriverDecline(driverId: string): void {
+    if (!driverId || this._matchedDriverIds.includes(driverId)) {
+      return;
+    }
+    this._matchedDriverIds.push(driverId);
+    this.markUpdated();
+  }
+
   public driverArrived(): void {
     if (this._status !== DispatchStatus.DRIVER_ACCEPTED) {
       throw new BusinessRuleViolationError(

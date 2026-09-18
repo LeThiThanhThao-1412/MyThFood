@@ -54,7 +54,7 @@ export class ConsumerController {
 
   // Thông tin liên hệ cơ bản cho tài xế (tên + userId để truy ra SĐT ở identity).
   @Get(":id/contact")
-  @Roles("DRIVER", "CONSUMER", "ADMIN")
+  @Roles("DRIVER", "CONSUMER", "MERCHANT_OWNER", "ADMIN")
   async getContact(@Param("id") id: string) {
     const consumer = await this.consumerService.getById(id);
     if (!consumer) {

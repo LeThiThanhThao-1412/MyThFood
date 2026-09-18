@@ -25,6 +25,7 @@ import {
   QueryDispatchDto,
   DriverCancelDto,
   DeliveryFailedDto,
+  RecordDriverDeclineDto,
 } from "../application/dtos/dispatch.dto";
 
 @Controller("dispatches")
@@ -70,6 +71,16 @@ export class DispatchController {
       statusCode: HttpStatus.OK,
       data: dispatches.map((d) => this._toResponse(d)),
       total: dispatches.length,
+    };
+  }
+
+  // Case 4: danh sách orderId mà tài xế đã từ chối (để driver-app ẩn triệt để).
+  @Get("declined-by/:driverId")
+  @Roles("DRIVER", "ADMIN")
+  async getDeclinedByDriver(@Param("driverId") driverId: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.dispatchService.getDeclinedOrderIds(driverId),
     };
   }
 
@@ -219,11 +230,31 @@ export class DispatchController {
     };
   }
 
+  // Case 4: ghi nhận tài xế đã từ chối (dù dispatch ở trạng thái nào) để không gán lại.
+  @Patch(":id/record-driver-decline")
+  @Roles("DRIVER", "ADMIN")
+  async recordDriverDecline(
+    @Param("id") id: string,
+    @Body() dto: RecordDriverDeclineDto,
+  ) {
+    const dispatch = await this.dispatchService.recordDriverDecline(
+      id,
+      dto.driverId,
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      data: this._toResponse(dispatch),
+    };
+  }
+
   // Case 7: tài xế đã nhận đơn nhưng hủy → ghi lý do + tìm tài xế khác.
   @Patch(":id/driver-cancel")
   @Roles("DRIVER", "ADMIN")
   async driverCancel(@Param("id") id: string, @Body() dto: DriverCancelDto) {
-    const dispatch = await this.dispatchService.driverCancelAfterAccept(id, dto);
+    const dispatch = await this.dispatchService.driverCancelAfterAccept(
+      id,
+      dto,
+    );
     return {
       statusCode: HttpStatus.OK,
       data: this._toResponse(dispatch),
