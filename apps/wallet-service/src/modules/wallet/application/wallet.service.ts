@@ -1,6 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { WalletRepository } from "../infrastructure/wallet.repository";
+import { SettlementRepository } from "../infrastructure/settlement.repository";
+import { SettlementEntryEntity } from "../infrastructure/settlement-entry.entity";
 import { OwnerType } from "../domain/wallet.aggregate";
 
 /**
@@ -19,7 +21,10 @@ export class WalletService {
   static readonly MIN_CONSUMER_WITHDRAW = 10000;
   static readonly MAX_WITHDRAWS_PER_DAY = 1;
 
-  constructor(private readonly walletRepo: WalletRepository) {}
+  constructor(
+    private readonly walletRepo: WalletRepository,
+    private readonly settlementRepo: SettlementRepository,
+  ) {}
 
   async getOrCreateWallet(ownerId: string, ownerType: OwnerType) {
     const result = await this.walletRepo.findByOwnerOrCreate(
@@ -111,6 +116,16 @@ export class WalletService {
     if (balanceBefore < amount) {
       throw new Error(
         `Số dư không đủ. Cần ${amount.toLocaleString("vi-VN")} VND, hiện có ${balanceBefore.toLocaleString("vi-VN")} VND`,
+      );
+    }
+    // Hold clawback: không rút quá phần còn lại sau khi trừ nợ refund.
+    const openClawback = await this.settlementRepo.sumOpenClawback(
+      ownerId,
+      ownerType,
+    );
+    if (openClawback > 0 && balanceBefore - amount < openClawback) {
+      throw new Error(
+        `Bạn còn nợ ${openClawback.toLocaleString("vi-VN")} VND (refund chờ thu hồi), không thể rút quá số dư còn lại`,
       );
     }
     entity.balance = balanceBefore - amount;
@@ -440,6 +455,11 @@ export class WalletService {
   ): Promise<{ id: string; balance: number }> {
     const entity = await this.getOrCreateWallet(ownerId, ownerType);
     const balanceBefore = Number(entity.balance);
+    if (balanceBefore < amount) {
+      throw new Error(
+        `Số dư không đủ để trừ tiền món COD. Cần ${amount.toLocaleString("vi-VN")} VND, hiện có ${balanceBefore.toLocaleString("vi-VN")} VND`,
+      );
+    }
     entity.balance = balanceBefore - amount;
     await this.walletRepo.save(entity);
 
@@ -560,6 +580,541 @@ export class WalletService {
       process.env.DRIVER_COMMISSION_PERCENT || "20",
     );
     return { merchantCommissionPct, driverCommissionPct };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Settlement: accrue (ghi nhận doanh thu chưa cộng vào ví)
+  // ═══════════════════════════════════════════════════════
+
+  async accrueRevenue(input: {
+    merchantId: string;
+    driverId: string;
+    orderId: string;
+    foodTotal: number;
+    shippingFee: number;
+    serviceFee?: number;
+    discount?: number;
+    discountFundedBy?: string;
+    paymentMethod: string;
+    deliveredAt?: string;
+  }): Promise<{ orderId: string; entries: number; paymentMethod: string }> {
+    const { merchantId, driverId, orderId, paymentMethod } = input;
+    const foodTotal = Number(input.foodTotal) || 0;
+    const shippingFee = Number(input.shippingFee) || 0;
+    const serviceFee = Number(input.serviceFee) || 0;
+    const discount = Number(input.discount) || 0;
+    const discountFundedBy = input.discountFundedBy || "MERCHANT";
+
+    // Idempotency: mỗi đơn chỉ ghi nhận doanh thu 1 lần.
+    const existing = await this.settlementRepo.findEntriesByOrderId(orderId);
+    if (existing.length > 0) {
+      this.logger.warn(
+        `Settlement entries đã tồn tại cho đơn ${orderId}, bỏ qua accrue`,
+      );
+      return { orderId, entries: existing.length, paymentMethod };
+    }
+
+    const { merchantCommissionPct, driverCommissionPct } =
+      this.getCommissionRates();
+    const merchantCommission = Math.round(
+      (foodTotal * merchantCommissionPct) / 100,
+    );
+    const driverCommission = Math.round(
+      (shippingFee * driverCommissionPct) / 100,
+    );
+    const merchantDiscount = discountFundedBy === "MERCHANT" ? discount : 0;
+    const platformDiscount = discountFundedBy === "PLATFORM" ? discount : 0;
+    const totalCustomerPaid = foodTotal + shippingFee + serviceFee - discount;
+    const merchantShare = Math.max(
+      0,
+      foodTotal - merchantCommission - merchantDiscount,
+    );
+    const driverShippingIncome = Math.max(0, shippingFee - driverCommission);
+    // Platform hấp thụ phần lẻ do làm tròn + khuyến mãi nền tảng tài trợ.
+    const platformShare =
+      totalCustomerPaid - merchantShare - driverShippingIncome;
+
+    const isCod = paymentMethod === "CASH" || paymentMethod === "COD";
+    const deliveredAt = input.deliveredAt
+      ? new Date(input.deliveredAt)
+      : new Date();
+
+    const entries: Partial<SettlementEntryEntity>[] = [];
+    const push = (
+      ownerId: string,
+      ownerType: string,
+      amount: number,
+      kind: string,
+    ) => {
+      if (amount <= 0) return;
+      entries.push({
+        id: randomUUID(),
+        orderId,
+        ownerId,
+        ownerType,
+        amount,
+        kind,
+        status: "PENDING",
+        settlementBatchId: null,
+        deliveredAt,
+      });
+    };
+
+    if (isCod) {
+      // COD: tài xế thu tiền mặt → trừ ngay tiền món phải nộp (không âm).
+      const driverCodPayable =
+        foodTotal - discount + driverCommission + serviceFee;
+      if (driverCodPayable > 0 && driverId) {
+        await this.debitForCOD(
+          driverId,
+          OwnerType.DRIVER,
+          driverCodPayable,
+          `COD: chuyển tiền món + phí nền tảng đơn #${orderId.slice(0, 8)}`,
+          orderId,
+        );
+      }
+      // Phí ship tài xế giữ tiền mặt: ghi REVENUE (không đổi balance).
+      if (driverShippingIncome > 0 && driverId) {
+        const driverWallet = await this.getOrCreateWallet(
+          driverId,
+          OwnerType.DRIVER,
+        );
+        await this.walletRepo.recordTransaction({
+          id: randomUUID(),
+          walletId: driverWallet.id,
+          ownerId: driverId,
+          ownerType: OwnerType.DRIVER,
+          type: "REVENUE",
+          amount: driverShippingIncome,
+          balanceBefore: Number(driverWallet.balance),
+          balanceAfter: Number(driverWallet.balance),
+          description: `Doanh thu phí ship COD ${driverShippingIncome.toLocaleString("vi-VN")}đ (đã trừ ${driverCommissionPct}% phí) - Đơn #${orderId.slice(0, 8)}`,
+          referenceType: "SETTLEMENT",
+          referenceId: orderId,
+        });
+      }
+      push(
+        merchantId,
+        OwnerType.MERCHANT,
+        merchantShare,
+        "MERCHANT_FOOD_REVENUE",
+      );
+      push(
+        "PLATFORM_DEFAULT",
+        OwnerType.PLATFORM,
+        platformShare,
+        "PLATFORM_COMMISSION",
+      );
+    } else {
+      push(
+        merchantId,
+        OwnerType.MERCHANT,
+        merchantShare,
+        "MERCHANT_FOOD_REVENUE",
+      );
+      if (driverId) {
+        push(
+          driverId,
+          OwnerType.DRIVER,
+          driverShippingIncome,
+          "DRIVER_SHIPPING_FEE",
+        );
+      }
+      push(
+        "PLATFORM_DEFAULT",
+        OwnerType.PLATFORM,
+        platformShare,
+        "PLATFORM_COMMISSION",
+      );
+    }
+
+    if (platformShare < 0) {
+      this.logger.warn(
+        `Platform share âm ${platformShare} cho đơn ${orderId}: khuyến mãi nền tảng vượt hoa hồng, cần xem xét`,
+      );
+    }
+
+    await this.settlementRepo.insertEntries(entries);
+    this.logger.log(
+      `Accrue đơn ${orderId}: ${entries.length} entries (${paymentMethod})`,
+    );
+    return { orderId, entries: entries.length, paymentMethod };
+  }
+
+  async settleDaily(options?: {
+    periodStart?: string | Date;
+    periodEnd?: string | Date;
+    triggeredBy?: string;
+    dryRun?: boolean;
+  }): Promise<any> {
+    const opts = options || {};
+    const window = this.computeSettlementWindow(
+      opts.periodStart,
+      opts.periodEnd,
+    );
+
+    if (opts.dryRun) {
+      return this.previewSettlement(window);
+    }
+
+    let batch = await this.settlementRepo.findBatchByPeriod(
+      window.periodStart,
+      window.periodEnd,
+    );
+    if (batch && batch.status === "SUCCESS") {
+      return {
+        batchId: batch.id,
+        status: "ALREADY_SETTLED",
+        periodStart: window.periodStart,
+        periodEnd: window.periodEnd,
+      };
+    }
+    if (!batch) {
+      batch = await this.settlementRepo.saveBatch({
+        id: randomUUID(),
+        periodStart: window.periodStart,
+        periodEnd: window.periodEnd,
+        status: "PROCESSING",
+        triggeredBy: opts.triggeredBy || "CRON",
+      });
+    }
+    const batchId = batch.id;
+
+    try {
+      const entries = await this.settlementRepo.findPendingByPeriod(
+        window.periodStart,
+        window.periodEnd,
+      );
+
+      const groups = new Map<
+        string,
+        { ownerId: string; ownerType: string; gross: number }
+      >();
+      for (const e of entries) {
+        const key = `${e.ownerType}:${e.ownerId}`;
+        const g = groups.get(key) ?? {
+          ownerId: e.ownerId,
+          ownerType: e.ownerType,
+          gross: 0,
+        };
+        g.gross += Number(e.amount);
+        groups.set(key, g);
+      }
+
+      const groupResults: any[] = [];
+      let totalGross = 0;
+      let totalClawback = 0;
+      let totalCredit = 0;
+
+      for (const g of groups.values()) {
+        totalGross += g.gross;
+        const already = await this.settlementRepo.hasSettlementCredit(
+          g.ownerId,
+          g.ownerType,
+          batchId,
+        );
+        let clawbackApplied = 0;
+        if (!already) {
+          const openClawbacks = await this.settlementRepo.findOpenClawbacks(
+            g.ownerId,
+            g.ownerType,
+          );
+          let remainingToClaw = g.gross;
+          for (const c of openClawbacks) {
+            const take = Math.min(Number(c.remainingAmount), remainingToClaw);
+            if (take <= 0) break;
+            await this.settlementRepo.recordDeduction({
+              id: randomUUID(),
+              clawbackId: c.id,
+              settlementBatchId: batchId,
+              amount: take,
+            });
+            await this.settlementRepo.reduceClawback(c.id, take);
+            clawbackApplied += take;
+            remainingToClaw -= take;
+          }
+          const net = g.gross - clawbackApplied;
+          if (net > 0) {
+            await this.credit(
+              g.ownerId,
+              g.ownerType as OwnerType,
+              net,
+              `Quyết toán ngày ${window.periodStart.toISOString().slice(0, 10)}`,
+              "SETTLEMENT",
+              batchId,
+            );
+          }
+        }
+        totalClawback += clawbackApplied;
+        const net = g.gross - clawbackApplied;
+        if (net > 0) totalCredit += net;
+        groupResults.push({
+          ownerId: g.ownerId,
+          ownerType: g.ownerType,
+          gross: g.gross,
+          clawback: clawbackApplied,
+          netCredit: net,
+        });
+      }
+
+      await this.settlementRepo.markEntriesSettled(
+        entries.map((e) => e.id),
+        batchId,
+      );
+
+      const sumBy = (t: string) =>
+        groupResults
+          .filter((x) => x.ownerType === t)
+          .reduce((s, x) => s + x.netCredit, 0);
+
+      const reconciled = totalCredit === totalGross - totalClawback;
+      const finalStatus = reconciled ? "SUCCESS" : "NEEDS_REVIEW";
+      await this.settlementRepo.saveBatch({
+        id: batchId,
+        status: finalStatus,
+        totalDriverPayout: sumBy("DRIVER"),
+        totalMerchantPayout: sumBy("MERCHANT"),
+        totalPlatformPayout: sumBy("PLATFORM"),
+      });
+
+      this.logger.log(
+        `Quyết toán ${window.periodStart.toISOString()} hoàn tất: credit=${totalCredit}, clawback=${totalClawback}, reconciled=${reconciled}`,
+      );
+
+      return {
+        batchId,
+        status: finalStatus,
+        periodStart: window.periodStart,
+        periodEnd: window.periodEnd,
+        groups: groupResults,
+        summary: { totalGross, totalClawback, totalCredit, reconciled },
+        triggeredBy: opts.triggeredBy || "CRON",
+      };
+    } catch (err: any) {
+      this.logger.error(`Quyết toán lỗi: ${err.message}`);
+      await this.settlementRepo
+        .saveBatch({
+          id: batchId,
+          status: "FAILED",
+          failureReason: err.message,
+        })
+        .catch(() => undefined);
+      throw err;
+    }
+  }
+
+  private async previewSettlement(window: {
+    periodStart: Date;
+    periodEnd: Date;
+  }): Promise<any> {
+    const entries = await this.settlementRepo.findPendingByPeriod(
+      window.periodStart,
+      window.periodEnd,
+    );
+    const groups = new Map<
+      string,
+      { ownerId: string; ownerType: string; gross: number }
+    >();
+    for (const e of entries) {
+      const key = `${e.ownerType}:${e.ownerId}`;
+      const g = groups.get(key) ?? {
+        ownerId: e.ownerId,
+        ownerType: e.ownerType,
+        gross: 0,
+      };
+      g.gross += Number(e.amount);
+      groups.set(key, g);
+    }
+    const groupResults: any[] = [];
+    let totalGross = 0;
+    let totalClawback = 0;
+    let totalCredit = 0;
+    for (const g of groups.values()) {
+      totalGross += g.gross;
+      let clawbackApplied = 0;
+      const openClawbacks = await this.settlementRepo.findOpenClawbacks(
+        g.ownerId,
+        g.ownerType,
+      );
+      let remainingToClaw = g.gross;
+      for (const c of openClawbacks) {
+        const take = Math.min(Number(c.remainingAmount), remainingToClaw);
+        clawbackApplied += take;
+        remainingToClaw -= take;
+      }
+      totalClawback += clawbackApplied;
+      const net = g.gross - clawbackApplied;
+      if (net > 0) totalCredit += net;
+      groupResults.push({
+        ownerId: g.ownerId,
+        ownerType: g.ownerType,
+        gross: g.gross,
+        clawback: clawbackApplied,
+        netCredit: net,
+      });
+    }
+    return {
+      batchId: null,
+      status: "DRY_RUN",
+      periodStart: window.periodStart,
+      periodEnd: window.periodEnd,
+      groups: groupResults,
+      summary: {
+        totalGross,
+        totalClawback,
+        totalCredit,
+        reconciled: totalCredit === totalGross - totalClawback,
+      },
+    };
+  }
+
+  private computeSettlementWindow(
+    periodStart?: string | Date,
+    periodEnd?: string | Date,
+  ): { periodStart: Date; periodEnd: Date } {
+    if (periodStart && periodEnd) {
+      return {
+        periodStart: new Date(periodStart),
+        periodEnd: new Date(periodEnd),
+      };
+    }
+    // Mốc 23:00 Asia/Ho_Chi_Minh (UTC+7) = 16:00 UTC.
+    const now = new Date();
+    const end = new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        16,
+        0,
+        0,
+        0,
+      ),
+    );
+    const start = new Date(end.getTime() - 24 * 3600 * 1000);
+    return { periodStart: start, periodEnd: end };
+  }
+
+  async getPendingSettlement(ownerId: string, ownerType: string) {
+    const entries = await this.settlementRepo.findPendingForOwner(
+      ownerId,
+      ownerType,
+    );
+    const totalPending = entries.reduce((s, e) => s + Number(e.amount), 0);
+    return {
+      ownerId,
+      ownerType,
+      totalPending,
+      entries: entries.map((e) => ({
+        id: e.id,
+        orderId: e.orderId,
+        kind: e.kind,
+        amount: Number(e.amount),
+        status: e.status,
+        deliveredAt: e.deliveredAt,
+        createdAt: e.createdAt,
+      })),
+    };
+  }
+
+  async getSettlementBatches(from?: string, to?: string, status?: string) {
+    const batches = await this.settlementRepo.listBatches(
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      status,
+    );
+    return batches.map((b) => ({
+      id: b.id,
+      status: b.status,
+      periodStart: b.periodStart,
+      periodEnd: b.periodEnd,
+      totalDriverPayout: Number(b.totalDriverPayout),
+      totalMerchantPayout: Number(b.totalMerchantPayout),
+      totalPlatformPayout: Number(b.totalPlatformPayout),
+      triggeredBy: b.triggeredBy,
+      failureReason: b.failureReason,
+      createdAt: b.createdAt,
+    }));
+  }
+
+  async getSettlementBatchDetail(id: string) {
+    const batch = await this.settlementRepo.findBatchById(id);
+    if (!batch) throw new Error("Settlement batch không tồn tại");
+    return {
+      id: batch.id,
+      status: batch.status,
+      periodStart: batch.periodStart,
+      periodEnd: batch.periodEnd,
+      totalDriverPayout: Number(batch.totalDriverPayout),
+      totalMerchantPayout: Number(batch.totalMerchantPayout),
+      totalPlatformPayout: Number(batch.totalPlatformPayout),
+      triggeredBy: batch.triggeredBy,
+      failureReason: batch.failureReason,
+      createdAt: batch.createdAt,
+    };
+  }
+
+  async retryBatch(id: string) {
+    const batch = await this.settlementRepo.findBatchById(id);
+    if (!batch) throw new Error("Settlement batch không tồn tại");
+    if (batch.status === "SUCCESS") {
+      throw new Error("Batch đã SUCCESS, không cần retry");
+    }
+    return this.settleDaily({
+      periodStart: batch.periodStart,
+      periodEnd: batch.periodEnd,
+      triggeredBy: "RETRY",
+    });
+  }
+
+  async createClawback(input: {
+    ownerId: string;
+    ownerType: string;
+    sourceOrderId?: string;
+    sourceBatchId?: string;
+    refundId?: string;
+    amount: number;
+  }) {
+    const amount = Number(input.amount);
+    if (amount <= 0) throw new Error("Số tiền clawback phải lớn hơn 0");
+    const id = randomUUID();
+    await this.settlementRepo.createClawback({
+      id,
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+      sourceOrderId: input.sourceOrderId || null,
+      sourceBatchId: input.sourceBatchId || null,
+      refundId: input.refundId || null,
+      originalAmount: amount,
+      remainingAmount: amount,
+      status: "OPEN",
+    });
+    this.logger.log(
+      `Tạo clawback ${id}: ${input.ownerType}:${input.ownerId} nợ ${amount}`,
+    );
+    return { id, ownerId: input.ownerId, ownerType: input.ownerType, amount };
+  }
+
+  async getOpenClawback(ownerId: string, ownerType: string) {
+    const total = await this.settlementRepo.sumOpenClawback(ownerId, ownerType);
+    const items = await this.settlementRepo.findOpenClawbacks(
+      ownerId,
+      ownerType,
+    );
+    return {
+      ownerId,
+      ownerType,
+      totalOpenClawback: total,
+      items: items.map((c) => ({
+        id: c.id,
+        sourceOrderId: c.sourceOrderId,
+        sourceBatchId: c.sourceBatchId,
+        refundId: c.refundId,
+        originalAmount: Number(c.originalAmount),
+        remainingAmount: Number(c.remainingAmount),
+        status: c.status,
+      })),
+    };
   }
 
   async getAdminTransactions(params: {

@@ -416,10 +416,7 @@ export class OrderService {
     order.markDelivered();
     await this.orderRepository.save(order);
 
-    // Only settle COD if payment method is CASH/COD
-    this.logger.log(
-      `🔍 [COD-DEBUG] Order ${id} delivered - paymentMethod=${order.orderPaymentMethod}`,
-    );
+    // Ghi nhận doanh thu (accrue) — chưa cộng vào ví; quyết toán cuối ngày 23:00.
     const walletUrl =
       process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
@@ -429,67 +426,32 @@ export class OrderService {
     const discount = order.orderDiscount || 0;
     const discountFundedBy = order.orderDiscountFundedBy || "MERCHANT";
 
-    if (
-      order.orderPaymentMethod === "CASH" ||
-      order.orderPaymentMethod === "COD"
-    ) {
-      this.logger.log(`🔍 [COD-DEBUG] → COD order - settling...`);
-      try {
-        await firstValueFrom(
-          this.httpService.post(
-            `${walletUrl}/api/v1/wallets/settle/cod`,
-            {
-              merchantId: order.orderMerchantId,
-              driverId: order.orderDriverId,
-              orderId: id,
-              foodTotal,
-              shippingFee,
-              serviceFee,
-              discount,
-              discountFundedBy,
-            },
-            {
-              headers: { "x-service-key": serviceKey },
-            },
-          ),
-        );
-        this.logger.log(
-          `COD Settled for order ${id}: food=${foodTotal} ship=${shippingFee} discount=${discount} fundedBy=${discountFundedBy}`,
-        );
-      } catch (err: any) {
-        this.logger.warn(`COD settle failed for order ${id}: ${err.message}`);
-      }
-    } else {
-      this.logger.log(
-        `🔍 [COD-DEBUG] → Card order - online settlement (driver +ship, merchant/platform/tax split)`,
+    try {
+      await firstValueFrom(
+        this.httpService.post(
+          `${walletUrl}/api/v1/wallets/settlement/accrue`,
+          {
+            merchantId: order.orderMerchantId,
+            driverId: order.orderDriverId,
+            orderId: id,
+            foodTotal,
+            shippingFee,
+            serviceFee,
+            discount,
+            discountFundedBy,
+            paymentMethod: order.orderPaymentMethod,
+            deliveredAt: new Date().toISOString(),
+          },
+          {
+            headers: { "x-service-key": serviceKey },
+          },
+        ),
       );
-      try {
-        await firstValueFrom(
-          this.httpService.post(
-            `${walletUrl}/api/v1/wallets/settle/online`,
-            {
-              merchantId: order.orderMerchantId,
-              driverId: order.orderDriverId,
-              orderId: id,
-              foodTotal,
-              shippingFee,
-              serviceFee,
-              discount,
-              discountFundedBy,
-            },
-            {
-              headers: { "x-service-key": serviceKey },
-            },
-          ),
-        );
-        this.logger.log(
-          `Online Settled for order ${id}: driver +${shippingFee} ship, food=${foodTotal} discount=${discount} fundedBy=${discountFundedBy}`,
-        );
-      } catch (err: any) {
-        this.logger.warn(
-          `Online settle failed for order ${id}: ${err.message}`,
-        );
-      }
+      this.logger.log(
+        `Accrue doanh thu đơn ${id}: method=${order.orderPaymentMethod} food=${foodTotal} ship=${shippingFee}`,
+      );
+    } catch (err: any) {
+      this.logger.warn(`Accrue failed for order ${id}: ${err.message}`);
     }
 
     // Cập nhật vị trí tài xế về điểm giao vừa hoàn thành

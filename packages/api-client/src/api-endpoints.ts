@@ -1026,6 +1026,98 @@ export const walletApi = {
       balance: number;
       currency: string;
     }>(PORTS.WALLET, "/wallets", { ownerId, ownerType }),
+
+  // ───────── Settlement (quyết toán cuối ngày 23:00) ─────────
+
+  // Doanh thu chờ quyết toán
+  getPendingSettlement: (ownerId: string, ownerType: string) =>
+    httpClient.get<{
+      ownerId: string;
+      ownerType: string;
+      totalPending: number;
+      entries: {
+        id: string;
+        orderId: string;
+        kind: string;
+        amount: number;
+        status: string;
+        deliveredAt: string;
+        createdAt: string;
+      }[];
+    }>(PORTS.WALLET, "/wallets/settlement/pending", {
+      params: { ownerId, ownerType },
+    }),
+
+  // Lịch sử lô quyết toán
+  getSettlementBatches: (params?: {
+    from?: string;
+    to?: string;
+    status?: string;
+  }) =>
+    httpClient.get<
+      {
+        id: string;
+        status: string;
+        periodStart: string;
+        periodEnd: string;
+        totalDriverPayout: number;
+        totalMerchantPayout: number;
+        totalPlatformPayout: number;
+        triggeredBy: string;
+        failureReason: string | null;
+        createdAt: string;
+      }[]
+    >(PORTS.WALLET, "/wallets/settlement/batches", { params }),
+
+  // Chi tiết lô quyết toán
+  getSettlementBatchDetail: (id: string) =>
+    httpClient.get<any>(PORTS.WALLET, `/wallets/settlement/batches/${id}`),
+
+  // Manual trigger: chạy batch (có dryRun)
+  runSettlementBatch: (data?: {
+    periodStart?: string;
+    periodEnd?: string;
+    dryRun?: boolean;
+  }) =>
+    httpClient.post<any>(
+      PORTS.WALLET,
+      "/wallets/settlement/batches/run",
+      data || {},
+    ),
+
+  // Quyết toán thủ công ngay (settle cửa sổ hiện tại, không dry-run)
+  manualRunSettlement: () =>
+    httpClient.post<any>(PORTS.WALLET, "/wallets/settlement/manual-run", {}),
+
+  // Retry batch FAILED
+  retrySettlementBatch: (id: string) =>
+    httpClient.post<any>(
+      PORTS.WALLET,
+      `/wallets/settlement/batches/${id}/retry`,
+      {},
+    ),
+
+  // Nợ clawback đang mở
+  getOpenClawback: (ownerId: string, ownerType: string) =>
+    httpClient.get<{
+      ownerId: string;
+      ownerType: string;
+      totalOpenClawback: number;
+      items: any[];
+    }>(PORTS.WALLET, "/wallets/settlement/clawback", {
+      params: { ownerId, ownerType },
+    }),
+
+  // Tạo clawback (refund sau settle)
+  createClawback: (data: {
+    ownerId: string;
+    ownerType: string;
+    sourceOrderId?: string;
+    sourceBatchId?: string;
+    refundId?: string;
+    amount: number;
+  }) =>
+    httpClient.post<any>(PORTS.WALLET, "/wallets/settlement/clawback", data),
 };
 
 export const shippingApi = {

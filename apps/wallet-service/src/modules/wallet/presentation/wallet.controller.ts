@@ -384,6 +384,129 @@ export class WalletController {
   }
 
   // ═══════════════════════════════════════════════════════
+  // Settlement - Accrue (ghi nhận doanh thu, chưa cộng vào ví)
+  // ═══════════════════════════════════════════════════════
+  @Post("settlement/accrue")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async accrueSettlement(
+    @Body()
+    body: {
+      merchantId: string;
+      driverId: string;
+      orderId: string;
+      foodTotal: number;
+      shippingFee: number;
+      serviceFee?: number;
+      discount?: number;
+      discountFundedBy?: string;
+      paymentMethod: string;
+      deliveredAt?: string;
+    },
+  ) {
+    return this.walletService.accrueRevenue(body);
+  }
+
+  // Doanh thu chưa quyết toán
+  @Get("settlement/pending")
+  @UseGuards(AuthGuard("jwt"))
+  async pendingSettlement(
+    @Query("ownerId") ownerId: string,
+    @Query("ownerType") ownerType: string,
+  ) {
+    return this.walletService.getPendingSettlement(
+      ownerId,
+      (ownerType || "DRIVER") as OwnerType,
+    );
+  }
+
+  // Nợ clawback đang mở
+  @Get("settlement/clawback")
+  @UseGuards(AuthGuard("jwt"))
+  async openClawback(
+    @Query("ownerId") ownerId: string,
+    @Query("ownerType") ownerType: string,
+  ) {
+    return this.walletService.getOpenClawback(
+      ownerId,
+      (ownerType || "DRIVER") as OwnerType,
+    );
+  }
+
+  // Tạo clawback (refund sau settle)
+  @Post("settlement/clawback")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async createClawback(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType: string;
+      sourceOrderId?: string;
+      sourceBatchId?: string;
+      refundId?: string;
+      amount: number;
+    },
+  ) {
+    return this.walletService.createClawback(body);
+  }
+
+  // Lịch sử lô quyết toán
+  @Get("settlement/batches")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async settlementBatches(
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("status") status?: string,
+  ) {
+    return this.walletService.getSettlementBatches(from, to, status);
+  }
+
+  // Chi tiết lô quyết toán
+  @Get("settlement/batches/:id")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async settlementBatchDetail(@Param("id") id: string) {
+    return this.walletService.getSettlementBatchDetail(id);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Quyết toán thủ công (settle ngay cửa sổ hiện tại)
+  // ═══════════════════════════════════════════════════════
+  @Post("settlement/manual-run")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async manualRunSettlement(@Req() req: Request) {
+    return this.walletService.settleDaily({
+      triggeredBy: (req as any).user?.id || "ADMIN_MANUAL",
+    });
+  }
+
+  // Manual trigger: chạy batch quyết toán (có dryRun)
+  @Post("settlement/batches/run")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async runSettlementBatch(
+    @Body()
+    body: { periodStart?: string; periodEnd?: string; dryRun?: boolean },
+    @Req() req: Request,
+  ) {
+    return this.walletService.settleDaily({
+      periodStart: body.periodStart,
+      periodEnd: body.periodEnd,
+      dryRun: body.dryRun ?? false,
+      triggeredBy: (req as any).user?.id || "ADMIN",
+    });
+  }
+
+  // Retry batch FAILED
+  @Post("settlement/batches/:id/retry")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async retrySettlementBatch(@Param("id") id: string) {
+    return this.walletService.retryBatch(id);
+  }
+
+  // ═══════════════════════════════════════════════════════
   // Admin: All Transactions (must come BEFORE :ownerId wildcard)
   // ═══════════════════════════════════════════════════════
   @Get("transactions/admin")

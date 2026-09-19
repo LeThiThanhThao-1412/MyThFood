@@ -513,6 +513,12 @@ export default function AdminDashboardPage() {
           💰 Giao dịch
         </Link>
         <Link
+          href="/settlement"
+          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+        >
+          💼 Quyết toán
+        </Link>
+        <Link
           href="/users"
           className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
         >
