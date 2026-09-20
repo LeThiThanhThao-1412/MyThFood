@@ -4,7 +4,10 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { v4 as uuid } from "uuid";
-import { PenaltyRepository, PenaltyListFilters } from "../infrastructure/penalty.repository";
+import {
+  PenaltyRepository,
+  PenaltyListFilters,
+} from "../infrastructure/penalty.repository";
 import { Penalty } from "../domain/penalty.aggregate";
 import { AppealEntity } from "../infrastructure/appeal.entity";
 import { AppealStatus, PenaltyType } from "../domain/penalty.enums";
@@ -34,7 +37,10 @@ export class PenaltyService {
 
   async issue(dto: IssuePenaltyDto, user: AuthUser) {
     const c = await this.caseRepo.findByIdOrFail(dto.caseId);
-    if (c.caseStatus !== CaseStatus.RESOLVED || c.caseVerdict !== Verdict.VALID) {
+    if (
+      c.caseStatus !== CaseStatus.RESOLVED ||
+      c.caseVerdict !== Verdict.VALID
+    ) {
       throw new BadRequestException(
         "Penalties can only be issued for VALID resolved cases",
       );
@@ -172,7 +178,9 @@ export class PenaltyService {
 
     const appeal = await this.repo.findAppealByPenaltyId(id);
     if (appeal) {
-      appeal.status = dto.upheld ? AppealStatus.UPHELD : AppealStatus.OVERTURNED;
+      appeal.status = dto.upheld
+        ? AppealStatus.UPHELD
+        : AppealStatus.OVERTURNED;
       appeal.decidedBy = user.userId;
       appeal.decidedAt = new Date();
       await this.repo.saveAppeal(appeal);
@@ -221,4 +229,3 @@ export class PenaltyService {
     return entity;
   }
 }
-

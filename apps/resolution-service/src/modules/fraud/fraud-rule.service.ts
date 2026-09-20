@@ -5,11 +5,7 @@ import { FraudRuleRepository } from "./fraud-rule.repository";
 import { CreateFraudRuleDto, UpdateFraudRuleDto } from "./fraud-rule.dto";
 import { Case } from "../case/domain/case.aggregate";
 import { CaseRepository } from "../case/infrastructure/case.repository";
-import {
-  CaseCategory,
-  CaseType,
-  Severity,
-} from "../case/domain/case.enums";
+import { CaseCategory, CaseType, Severity } from "../case/domain/case.enums";
 
 @Injectable()
 export class FraudRuleService {

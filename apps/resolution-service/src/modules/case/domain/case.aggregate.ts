@@ -1,4 +1,7 @@
-import { AggregateRoot, BusinessRuleViolationError } from "@mythfood/shared-kernel";
+import {
+  AggregateRoot,
+  BusinessRuleViolationError,
+} from "@mythfood/shared-kernel";
 import { CaseId } from "./case-id";
 import {
   ActorType,
@@ -81,7 +84,13 @@ export class Case extends AggregateRoot<CaseId> {
   public static create(
     props: Omit<
       CaseProps,
-      "evidence" | "verdict" | "resolutionNote" | "status" | "penaltyIds" | "resolvedBy" | "resolvedAt"
+      | "evidence"
+      | "verdict"
+      | "resolutionNote"
+      | "status"
+      | "penaltyIds"
+      | "resolvedBy"
+      | "resolvedAt"
     > & { evidence?: string[] },
   ): Case {
     if (!props.reporterId || props.reporterId.trim().length === 0) {
@@ -131,7 +140,11 @@ export class Case extends AggregateRoot<CaseId> {
     this.markUpdated();
   }
 
-  public resolve(verdict: Verdict, note: string | null, resolvedBy: string): void {
+  public resolve(
+    verdict: Verdict,
+    note: string | null,
+    resolvedBy: string,
+  ): void {
     this.assertActive("resolve");
     if (verdict === Verdict.VALID) {
       this.status = CaseStatus.RESOLVED;
@@ -250,4 +263,3 @@ export class Case extends AggregateRoot<CaseId> {
     return this.resolvedAt;
   }
 }
-

@@ -47,7 +47,10 @@ export class CaseService {
     return `CASE-${year}-${String(seq).padStart(6, "0")}`;
   }
 
-  private suggestSeverity(category: CaseCategory, repeatCount: number): Severity {
+  private suggestSeverity(
+    category: CaseCategory,
+    repeatCount: number,
+  ): Severity {
     let base: Severity;
     switch (category) {
       case CaseCategory.FOOD_SAFETY:
@@ -70,7 +73,8 @@ export class CaseService {
     }
     if (repeatCount >= 3) return Severity.CRITICAL;
     if (repeatCount === 2) return Severity.HIGH;
-    if (repeatCount === 1) return base === Severity.LOW ? Severity.MEDIUM : base;
+    if (repeatCount === 1)
+      return base === Severity.LOW ? Severity.MEDIUM : base;
     return base;
   }
 
@@ -281,4 +285,3 @@ export class CaseService {
     return entity;
   }
 }
-

@@ -340,20 +340,14 @@ services:
     restart: unless-stopped
     ports:
       - "3010:3010"
+    env_file:
+      - apps/upload-service/.env
     environment:
       NODE_ENV: development
       PORT: 3010
       TZ: Asia/Ho_Chi_Minh
       JWT_SECRET: ${JWT_SECRET_UPLOAD}
       JWT_EXPIRATION: 1h
-      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
-      AWS_REGION: ${AWS_REGION:-ap-southeast-1}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
-      UPLOAD_BASE_URL: http://localhost:3010
-      STORAGE_MAX_FILE_SIZE: 5242880
-      STORAGE_ALLOWED_TYPES: image/jpeg,image/png,image/webp
     networks:
       - mythfood-network
 

@@ -282,7 +282,12 @@ export default function AdminCasesPage() {
         severity: ruleForm.severity,
       });
       setMsg("✅ Đã tạo rule");
-      setRuleForm({ name: "", category: "REFUND_ABUSE", severity: "MEDIUM", description: "" });
+      setRuleForm({
+        name: "",
+        category: "REFUND_ABUSE",
+        severity: "MEDIUM",
+        description: "",
+      });
       await loadRules();
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Tạo rule thất bại"}`);
@@ -319,7 +324,9 @@ export default function AdminCasesPage() {
           >
             ← Quay lại
           </button>
-          <h1 className="text-xl font-bold">🛡️ Khiếu nại · Gian lận · Xử phạt</h1>
+          <h1 className="text-xl font-bold">
+            🛡️ Khiếu nại · Gian lận · Xử phạt
+          </h1>
         </div>
         <div className="flex gap-2">
           {(
@@ -398,11 +405,15 @@ export default function AdminCasesPage() {
 
               {showCreate && (
                 <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
-                  <p className="font-semibold text-[#1a1a2e]">Tạo khiếu nại mới (Admin)</p>
+                  <p className="font-semibold text-[#1a1a2e]">
+                    Tạo khiếu nại mới (Admin)
+                  </p>
                   <div className="grid grid-cols-2 gap-3">
                     <select
                       value={createForm.type}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, type: e.target.value }))}
+                      onChange={(e) =>
+                        setCreateForm((f) => ({ ...f, type: e.target.value }))
+                      }
                       className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
                     >
                       <option value="COMPLAINT">COMPLAINT</option>
@@ -410,7 +421,12 @@ export default function AdminCasesPage() {
                     </select>
                     <select
                       value={createForm.category}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, category: e.target.value }))}
+                      onChange={(e) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          category: e.target.value,
+                        }))
+                      }
                       className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
                     >
                       {Object.keys(CATEGORY_LABEL).map((k) => (
@@ -421,7 +437,12 @@ export default function AdminCasesPage() {
                     </select>
                     <select
                       value={createForm.respondentType}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, respondentType: e.target.value }))}
+                      onChange={(e) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          respondentType: e.target.value,
+                        }))
+                      }
                       className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
                     >
                       <option value="MERCHANT">MERCHANT</option>
@@ -430,26 +451,46 @@ export default function AdminCasesPage() {
                     </select>
                     <input
                       value={createForm.respondentId}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, respondentId: e.target.value }))}
+                      onChange={(e) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          respondentId: e.target.value,
+                        }))
+                      }
                       placeholder="respondentId"
                       className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
                     />
                     <input
                       value={createForm.orderId}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, orderId: e.target.value }))}
+                      onChange={(e) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          orderId: e.target.value,
+                        }))
+                      }
                       placeholder="orderId (tùy chọn)"
                       className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
                     />
                     <input
                       value={createForm.subject}
-                      onChange={(e) => setCreateForm((f) => ({ ...f, subject: e.target.value }))}
+                      onChange={(e) =>
+                        setCreateForm((f) => ({
+                          ...f,
+                          subject: e.target.value,
+                        }))
+                      }
                       placeholder="Tiêu đề"
                       className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
                     />
                   </div>
                   <textarea
                     value={createForm.description}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, description: e.target.value }))}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({
+                        ...f,
+                        description: e.target.value,
+                      }))
+                    }
                     placeholder="Mô tả chi tiết"
                     rows={2}
                     className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
@@ -472,10 +513,18 @@ export default function AdminCasesPage() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b">
                       <tr>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">Vụ việc</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">Mức độ</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">Trạng thái</th>
-                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase hidden md:table-cell">Thời gian</th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                          Vụ việc
+                        </th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                          Mức độ
+                        </th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                          Trạng thái
+                        </th>
+                        <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase hidden md:table-cell">
+                          Thời gian
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -486,28 +535,40 @@ export default function AdminCasesPage() {
                           className={`cursor-pointer hover:bg-orange-50/50 transition ${selected?.id === c.id ? "bg-orange-50" : ""}`}
                         >
                           <td className="px-4 py-3">
-                            <p className="font-semibold text-gray-800">{c.subject}</p>
+                            <p className="font-semibold text-gray-800">
+                              {c.subject}
+                            </p>
                             <p className="text-xs text-gray-400">
-                              {c.caseNumber} · {CATEGORY_LABEL[c.category] || c.category} ·{" "}
+                              {c.caseNumber} ·{" "}
+                              {CATEGORY_LABEL[c.category] || c.category} ·{" "}
                               {c.reporterType} → {c.respondentType}
                             </p>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${SEVERITY_BADGE[c.severity] || "bg-gray-100 text-gray-600"}`}>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs font-semibold ${SEVERITY_BADGE[c.severity] || "bg-gray-100 text-gray-600"}`}
+                            >
                               {c.severity}
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${CASE_STATUS_BADGE[c.status] || "bg-gray-100 text-gray-600"}`}>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs font-semibold ${CASE_STATUS_BADGE[c.status] || "bg-gray-100 text-gray-600"}`}
+                            >
                               {c.status}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">{timeAgo(c.createdAt)}</td>
+                          <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">
+                            {timeAgo(c.createdAt)}
+                          </td>
                         </tr>
                       ))}
                       {cases.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
+                          <td
+                            colSpan={4}
+                            className="px-4 py-8 text-center text-gray-400"
+                          >
                             Chưa có vụ việc nào
                           </td>
                         </tr>
@@ -523,47 +584,96 @@ export default function AdminCasesPage() {
                 <div className="bg-white rounded-2xl shadow-sm p-5 space-y-4">
                   <div className="flex items-start justify-between">
                     <div>
-                      <h2 className="font-bold text-[#1a1a2e]">{selected.subject}</h2>
+                      <h2 className="font-bold text-[#1a1a2e]">
+                        {selected.subject}
+                      </h2>
                       <p className="text-xs text-gray-400">
                         {selected.caseNumber} ·{" "}
                         {CATEGORY_LABEL[selected.category] || selected.category}
                       </p>
                     </div>
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${CASE_STATUS_BADGE[selected.status] || "bg-gray-100 text-gray-600"}`}>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-semibold ${CASE_STATUS_BADGE[selected.status] || "bg-gray-100 text-gray-600"}`}
+                    >
                       {selected.status}
                     </span>
                   </div>
 
-                  <p className="text-sm text-gray-600">{selected.description}</p>
+                  <p className="text-sm text-gray-600">
+                    {selected.description}
+                  </p>
                   <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
-                    <p>Người khiếu nại: {selected.reporterId?.slice(0, 8)}… ({selected.reporterType})</p>
-                    <p>Bên bị: {selected.respondentId?.slice(0, 8)}… ({selected.respondentType})</p>
+                    <p>
+                      Người khiếu nại: {selected.reporterId?.slice(0, 8)}… (
+                      {selected.reporterType})
+                    </p>
+                    <p>
+                      Bên bị: {selected.respondentId?.slice(0, 8)}… (
+                      {selected.respondentType})
+                    </p>
                     <p>Order: {selected.orderId || "-"}</p>
                     <p>Verdict: {selected.verdict || "-"}</p>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => act(() => resolutionApi.review(selected.id), "Chuyển điều tra")} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100">
+                    <button
+                      onClick={() =>
+                        act(
+                          () => resolutionApi.review(selected.id),
+                          "Chuyển điều tra",
+                        )
+                      }
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100"
+                    >
                       Điều tra
                     </button>
-                    <button onClick={() => act(() => resolutionApi.requestEvidence(selected.id), "Yêu cầu thêm bằng chứng")} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-600 hover:bg-amber-100">
+                    <button
+                      onClick={() =>
+                        act(
+                          () => resolutionApi.requestEvidence(selected.id),
+                          "Yêu cầu thêm bằng chứng",
+                        )
+                      }
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-600 hover:bg-amber-100"
+                    >
                       Cần bằng chứng
                     </button>
-                    <button onClick={() => setShowPenalty(!showPenalty)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-50 text-green-700 hover:bg-green-100">
+                    <button
+                      onClick={() => setShowPenalty(!showPenalty)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-50 text-green-700 hover:bg-green-100"
+                    >
                       + Ban hành phạt
                     </button>
-                    <button onClick={() => act(() => resolutionApi.escalate(selected.id), "Leo thang")} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100">
+                    <button
+                      onClick={() =>
+                        act(
+                          () => resolutionApi.escalate(selected.id),
+                          "Leo thang",
+                        )
+                      }
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100"
+                    >
                       Leo thang
                     </button>
                   </div>
 
                   <div className="space-y-2">
-                    <p className="text-xs font-semibold text-gray-400 uppercase">Phán quyết</p>
+                    <p className="text-xs font-semibold text-gray-400 uppercase">
+                      Phán quyết
+                    </p>
                     <div className="flex flex-wrap gap-2">
                       {["VALID", "INVALID", "INCONCLUSIVE"].map((v) => (
                         <button
                           key={v}
-                          onClick={() => act(() => resolutionApi.resolve(selected.id, { verdict: v }), `Phán quyết ${v}`)}
+                          onClick={() =>
+                            act(
+                              () =>
+                                resolutionApi.resolve(selected.id, {
+                                  verdict: v,
+                                }),
+                              `Phán quyết ${v}`,
+                            )
+                          }
                           className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#ff6b35] text-white hover:bg-[#e85a26]"
                         >
                           {v}
@@ -574,38 +684,85 @@ export default function AdminCasesPage() {
 
                   {showPenalty && (
                     <div className="border border-gray-100 rounded-xl p-3 space-y-2">
-                      <p className="text-sm font-semibold">Ban hành hình phạt</p>
+                      <p className="text-sm font-semibold">
+                        Ban hành hình phạt
+                      </p>
                       <select
                         value={penaltyForm.type}
-                        onChange={(e) => setPenaltyForm((f) => ({ ...f, type: e.target.value }))}
+                        onChange={(e) =>
+                          setPenaltyForm((f) => ({
+                            ...f,
+                            type: e.target.value,
+                          }))
+                        }
                         className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
                       >
                         {Object.keys(PENALTY_TYPE_LABEL).map((k) => (
-                          <option key={k} value={k}>{PENALTY_TYPE_LABEL[k]}</option>
+                          <option key={k} value={k}>
+                            {PENALTY_TYPE_LABEL[k]}
+                          </option>
                         ))}
                       </select>
                       <div className="grid grid-cols-2 gap-2">
-                        <input value={penaltyForm.amount} onChange={(e) => setPenaltyForm((f) => ({ ...f, amount: e.target.value }))} placeholder="Số tiền/điểm" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" />
-                        <input value={penaltyForm.durationDays} onChange={(e) => setPenaltyForm((f) => ({ ...f, durationDays: e.target.value }))} placeholder="Số ngày khóa" className="px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                        <input
+                          value={penaltyForm.amount}
+                          onChange={(e) =>
+                            setPenaltyForm((f) => ({
+                              ...f,
+                              amount: e.target.value,
+                            }))
+                          }
+                          placeholder="Số tiền/điểm"
+                          className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                        />
+                        <input
+                          value={penaltyForm.durationDays}
+                          onChange={(e) =>
+                            setPenaltyForm((f) => ({
+                              ...f,
+                              durationDays: e.target.value,
+                            }))
+                          }
+                          placeholder="Số ngày khóa"
+                          className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                        />
                       </div>
-                      <input value={penaltyForm.reason} onChange={(e) => setPenaltyForm((f) => ({ ...f, reason: e.target.value }))} placeholder="Lý do" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" />
-                      <button onClick={handleIssuePenalty} className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-green-600 text-white hover:bg-green-700">
+                      <input
+                        value={penaltyForm.reason}
+                        onChange={(e) =>
+                          setPenaltyForm((f) => ({
+                            ...f,
+                            reason: e.target.value,
+                          }))
+                        }
+                        placeholder="Lý do"
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                      />
+                      <button
+                        onClick={handleIssuePenalty}
+                        className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-green-600 text-white hover:bg-green-700"
+                      >
                         Thi hành ngay
                       </button>
                     </div>
                   )}
 
                   <div>
-                    <p className="text-xs font-semibold text-gray-400 uppercase mb-2">Timeline</p>
+                    <p className="text-xs font-semibold text-gray-400 uppercase mb-2">
+                      Timeline
+                    </p>
                     <div className="space-y-1 max-h-48 overflow-y-auto">
                       {timeline.map((t: any, i: number) => (
                         <p key={i} className="text-xs text-gray-500">
                           <span className="font-semibold">{t.toStatus}</span>{" "}
-                          {t.fromStatus ? `(từ ${t.fromStatus})` : ""} · {timeAgo(t.createdAt)}
+                          {t.fromStatus ? `(từ ${t.fromStatus})` : ""} ·{" "}
+                          {timeAgo(t.createdAt)}
                           {t.note ? ` — ${t.note}` : ""}
                         </p>
                       ))}
-                      {timeline.length === 0 && <p className="text-xs text-gray-300">Chưa có log</p>}
+                      {timeline.length === 0 && (
+                        <p className="text-xs text-gray-300">Chưa có log</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -636,54 +793,117 @@ export default function AdminCasesPage() {
                 <option value="OVERTURNED">OVERTURNED</option>
                 <option value="WAIVED">WAIVED</option>
               </select>
-              {pLoading && <span className="text-xs text-gray-400">Đang tải...</span>}
+              {pLoading && (
+                <span className="text-xs text-gray-400">Đang tải...</span>
+              )}
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">Hình phạt</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">Đối tượng</th>
-                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase">Giá trị</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">Trạng thái</th>
-                    <th className="text-center px-4 py-3 text-xs font-semibold text-gray-400 uppercase">Hành động</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                      Hình phạt
+                    </th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                      Đối tượng
+                    </th>
+                    <th className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                      Giá trị
+                    </th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                      Trạng thái
+                    </th>
+                    <th className="text-center px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                      Hành động
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {penalties.map((p: any) => (
                     <tr key={p.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <p className="font-semibold text-gray-800">{PENALTY_TYPE_LABEL[p.type] || p.type}</p>
+                        <p className="font-semibold text-gray-800">
+                          {PENALTY_TYPE_LABEL[p.type] || p.type}
+                        </p>
                         <p className="text-xs text-gray-400">{p.reason}</p>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500">{p.targetType} · {p.targetId?.slice(0, 8)}…</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">
+                        {p.targetType} · {p.targetId?.slice(0, 8)}…
+                      </td>
                       <td className="px-4 py-3 text-right text-sm">
-                        {p.amount != null ? formatVnd(p.amount) : p.durationDays ? `${p.durationDays} ngày` : "-"}
+                        {p.amount != null
+                          ? formatVnd(p.amount)
+                          : p.durationDays
+                            ? `${p.durationDays} ngày`
+                            : "-"}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${PENALTY_STATUS_BADGE[p.status] || "bg-gray-100 text-gray-600"}`}>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-xs font-semibold ${PENALTY_STATUS_BADGE[p.status] || "bg-gray-100 text-gray-600"}`}
+                        >
                           {p.status}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex gap-1 justify-center">
                           {p.status === "EXECUTED" && (
-                            <button onClick={() => act(() => resolutionApi.appealPenalty(p.id, { reason: "Kháng nghị" }), "Kháng nghị")} className="px-2 py-1 rounded text-xs bg-amber-50 text-amber-600 hover:bg-amber-100">
+                            <button
+                              onClick={() =>
+                                act(
+                                  () =>
+                                    resolutionApi.appealPenalty(p.id, {
+                                      reason: "Kháng nghị",
+                                    }),
+                                  "Kháng nghị",
+                                )
+                              }
+                              className="px-2 py-1 rounded text-xs bg-amber-50 text-amber-600 hover:bg-amber-100"
+                            >
                               Appeal
                             </button>
                           )}
                           {p.status === "APPEALED" && (
                             <>
-                              <button onClick={() => act(() => resolutionApi.decideAppeal(p.id, { upheld: true }), "Giữ phạt")} className="px-2 py-1 rounded text-xs bg-green-50 text-green-700 hover:bg-green-100">
+                              <button
+                                onClick={() =>
+                                  act(
+                                    () =>
+                                      resolutionApi.decideAppeal(p.id, {
+                                        upheld: true,
+                                      }),
+                                    "Giữ phạt",
+                                  )
+                                }
+                                className="px-2 py-1 rounded text-xs bg-green-50 text-green-700 hover:bg-green-100"
+                              >
                                 Giữ
                               </button>
-                              <button onClick={() => act(() => resolutionApi.decideAppeal(p.id, { upheld: false }), "Hủy phạt")} className="px-2 py-1 rounded text-xs bg-purple-50 text-purple-700 hover:bg-purple-100">
+                              <button
+                                onClick={() =>
+                                  act(
+                                    () =>
+                                      resolutionApi.decideAppeal(p.id, {
+                                        upheld: false,
+                                      }),
+                                    "Hủy phạt",
+                                  )
+                                }
+                                className="px-2 py-1 rounded text-xs bg-purple-50 text-purple-700 hover:bg-purple-100"
+                              >
                                 Hủy
                               </button>
                             </>
                           )}
-                          <button onClick={() => act(() => resolutionApi.waivePenalty(p.id), "Bỏ phạt")} className="px-2 py-1 rounded text-xs bg-gray-50 text-gray-500 hover:bg-gray-100">
+                          <button
+                            onClick={() =>
+                              act(
+                                () => resolutionApi.waivePenalty(p.id),
+                                "Bỏ phạt",
+                              )
+                            }
+                            className="px-2 py-1 rounded text-xs bg-gray-50 text-gray-500 hover:bg-gray-100"
+                          >
                             Waive
                           </button>
                         </div>
@@ -692,7 +912,12 @@ export default function AdminCasesPage() {
                   ))}
                   {penalties.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-gray-400">Chưa có hình phạt</td>
+                      <td
+                        colSpan={5}
+                        className="px-4 py-8 text-center text-gray-400"
+                      >
+                        Chưa có hình phạt
+                      </td>
                     </tr>
                   )}
                 </tbody>
@@ -704,21 +929,40 @@ export default function AdminCasesPage() {
         {tab === "fraud" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-2xl shadow-sm p-5 space-y-3">
-              <h2 className="font-bold text-[#1a1a2e]">Rule phát hiện gian lận</h2>
+              <h2 className="font-bold text-[#1a1a2e]">
+                Rule phát hiện gian lận
+              </h2>
               <div className="flex gap-2">
                 <input
                   value={ruleForm.name}
-                  onChange={(e) => setRuleForm((f) => ({ ...f, name: e.target.value }))}
+                  onChange={(e) =>
+                    setRuleForm((f) => ({ ...f, name: e.target.value }))
+                  }
                   placeholder="Tên rule"
                   className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm"
                 />
                 <select
                   value={ruleForm.category}
-                  onChange={(e) => setRuleForm((f) => ({ ...f, category: e.target.value }))}
+                  onChange={(e) =>
+                    setRuleForm((f) => ({ ...f, category: e.target.value }))
+                  }
                   className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
                 >
                   {Object.keys(CATEGORY_LABEL)
-                    .filter((k) => !["ORDER_QUALITY", "MISSING_ITEM", "WRONG_ITEM", "DELIVERY_LATE", "NOT_RECEIVED", "DRIVER_BEHAVIOR", "MERCHANT_BEHAVIOR", "DAMAGED_ITEM", "UNAUTHORIZED_CANCEL"].includes(k))
+                    .filter(
+                      (k) =>
+                        ![
+                          "ORDER_QUALITY",
+                          "MISSING_ITEM",
+                          "WRONG_ITEM",
+                          "DELIVERY_LATE",
+                          "NOT_RECEIVED",
+                          "DRIVER_BEHAVIOR",
+                          "MERCHANT_BEHAVIOR",
+                          "DAMAGED_ITEM",
+                          "UNAUTHORIZED_CANCEL",
+                        ].includes(k),
+                    )
                     .map((k) => (
                       <option key={k} value={k}>
                         {CATEGORY_LABEL[k]}
@@ -734,31 +978,48 @@ export default function AdminCasesPage() {
               </div>
               <div className="space-y-2">
                 {rules.map((r: any) => (
-                  <div key={r.id} className="flex items-center justify-between border border-gray-100 rounded-xl px-3 py-2">
+                  <div
+                    key={r.id}
+                    className="flex items-center justify-between border border-gray-100 rounded-xl px-3 py-2"
+                  >
                     <div>
-                      <p className="text-sm font-semibold text-gray-800">{r.name}</p>
+                      <p className="text-sm font-semibold text-gray-800">
+                        {r.name}
+                      </p>
                       <p className="text-xs text-gray-400">
-                        {CATEGORY_LABEL[r.category] || r.category} · {r.severity}
+                        {CATEGORY_LABEL[r.category] || r.category} ·{" "}
+                        {r.severity}
                       </p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => handleToggleRule(r)} className="px-2 py-1 rounded text-xs bg-blue-50 text-blue-600 hover:bg-blue-100">
+                      <button
+                        onClick={() => handleToggleRule(r)}
+                        className="px-2 py-1 rounded text-xs bg-blue-50 text-blue-600 hover:bg-blue-100"
+                      >
                         {r.enabled ? "Tắt" : "Bật"}
                       </button>
-                      <button onClick={() => handleDeleteRule(r.id)} className="px-2 py-1 rounded text-xs bg-red-50 text-red-600 hover:bg-red-100">
+                      <button
+                        onClick={() => handleDeleteRule(r.id)}
+                        className="px-2 py-1 rounded text-xs bg-red-50 text-red-600 hover:bg-red-100"
+                      >
                         Xóa
                       </button>
                     </div>
                   </div>
                 ))}
-                {rules.length === 0 && <p className="text-sm text-gray-300">Chưa có rule</p>}
+                {rules.length === 0 && (
+                  <p className="text-sm text-gray-300">Chưa có rule</p>
+                )}
               </div>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm p-5 space-y-3">
-              <h2 className="font-bold text-[#1a1a2e]">Quét gian lận tự động</h2>
+              <h2 className="font-bold text-[#1a1a2e]">
+                Quét gian lận tự động
+              </h2>
               <p className="text-xs text-gray-400">
-                Phát hiện đối tượng có ≥3 vụ việc trong 30 ngày → tự tạo FRAUD_REPORT.
+                Phát hiện đối tượng có ≥3 vụ việc trong 30 ngày → tự tạo
+                FRAUD_REPORT.
               </p>
               <button
                 onClick={handleDetect}
@@ -785,19 +1046,31 @@ export default function AdminCasesPage() {
       </div>
 
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">
-        <Link href="/" className="flex flex-col items-center text-[10px] text-gray-400 no-underline">
+        <Link
+          href="/"
+          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
+        >
           <span className="text-[22px]">📊</span>
           <span>Dashboard</span>
         </Link>
-        <Link href="/cases" className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline">
+        <Link
+          href="/cases"
+          className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline"
+        >
           <span className="text-[22px]">🛡️</span>
           <span>Khiếu nại</span>
         </Link>
-        <Link href="/orders" className="flex flex-col items-center text-[10px] text-gray-400 no-underline">
+        <Link
+          href="/orders"
+          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
+        >
           <span className="text-[22px]">📋</span>
           <span>Orders</span>
         </Link>
-        <Link href="/users" className="flex flex-col items-center text-[10px] text-gray-400 no-underline">
+        <Link
+          href="/users"
+          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
+        >
           <span className="text-[22px]">👥</span>
           <span>Users</span>
         </Link>
@@ -805,11 +1078,3 @@ export default function AdminCasesPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-

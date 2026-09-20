@@ -1,4 +1,7 @@
-import { AggregateRoot, BusinessRuleViolationError } from "@mythfood/shared-kernel";
+import {
+  AggregateRoot,
+  BusinessRuleViolationError,
+} from "@mythfood/shared-kernel";
 import { PenaltyId } from "./penalty-id";
 import { PenaltyStatus, PenaltyType } from "./penalty.enums";
 
@@ -45,7 +48,10 @@ export class Penalty extends AggregateRoot<PenaltyId> {
   }
 
   public static create(
-    props: Omit<PenaltyProps, "status" | "deadline" | "appliedBy" | "appliedAt">,
+    props: Omit<
+      PenaltyProps,
+      "status" | "deadline" | "appliedBy" | "appliedAt"
+    >,
   ): Penalty {
     if (!props.targetId || props.targetId.trim().length === 0) {
       throw new BusinessRuleViolationError("Penalty target is required");

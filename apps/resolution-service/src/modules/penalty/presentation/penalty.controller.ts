@@ -55,7 +55,10 @@ export class PenaltyController {
 
   @Get(":id")
   async get(@Param("id") id: string) {
-    return { statusCode: HttpStatus.OK, data: await this.penaltyService.get(id) };
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.penaltyService.get(id),
+    };
   }
 
   @Post(":id/appeal")

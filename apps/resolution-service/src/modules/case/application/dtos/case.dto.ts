@@ -5,7 +5,12 @@ import {
   IsString,
   MinLength,
 } from "class-validator";
-import { CaseCategory, CaseType, Severity, Verdict } from "../../domain/case.enums";
+import {
+  CaseCategory,
+  CaseType,
+  Severity,
+  Verdict,
+} from "../../domain/case.enums";
 
 export class CreateCaseDto {
   @IsEnum(CaseType)
