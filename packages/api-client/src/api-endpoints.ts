@@ -83,6 +83,7 @@ export const PORTS = {
   REVIEW: 3011,
   PROMOTION: 3012,
   NOTIFICATION: 3013,
+  RESOLUTION: 3014,
 } as const;
 
 // ============================================================================
@@ -1330,5 +1331,193 @@ export const notificationApi = {
       {
         userId,
       },
+    ),
+};
+
+// ============================================================================
+// Resolution Service (Port 3014) — Khiếu nại · Gian lận · Xử phạt
+// ============================================================================
+export const resolutionApi = {
+  // ─── Cases ─────────────────────────────────────────────────────────────
+  listCases: (params?: {
+    status?: string;
+    type?: string;
+    category?: string;
+    severity?: string;
+    actorId?: string;
+    skip?: number;
+    take?: number;
+  }) =>
+    httpClient.get<{ statusCode: number; data: any[]; total: number }>(
+      PORTS.RESOLUTION,
+      "/cases",
+      { params },
+    ),
+
+  getCase: (id: string) =>
+    httpClient.get<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}`,
+    ),
+
+  getTimeline: (id: string) =>
+    httpClient.get<{ statusCode: number; data: any[] }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/timeline`,
+    ),
+
+  createCase: (body: {
+    type: string;
+    category: string;
+    orderId?: string;
+    respondentId: string;
+    respondentType: string;
+    subject: string;
+    description: string;
+    evidence?: string[];
+    severity?: string;
+  }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      "/cases",
+      body,
+    ),
+
+  addEvidence: (id: string, body: { urls: string[] }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/evidence`,
+      body,
+    ),
+
+  review: (id: string) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/review`,
+    ),
+
+  requestEvidence: (id: string) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/request-evidence`,
+    ),
+
+  resolve: (id: string, body: { verdict: string; note?: string }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/resolve`,
+      body,
+    ),
+
+  withdraw: (id: string) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/withdraw`,
+    ),
+
+  escalate: (id: string) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/escalate`,
+    ),
+
+  // ─── Penalties ─────────────────────────────────────────────────────────
+  listPenalties: (params?: {
+    targetId?: string;
+    targetType?: string;
+    status?: string;
+    skip?: number;
+    take?: number;
+  }) =>
+    httpClient.get<{ statusCode: number; data: any[]; total: number }>(
+      PORTS.RESOLUTION,
+      "/penalties",
+      { params },
+    ),
+
+  getPenalty: (id: string) =>
+    httpClient.get<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/penalties/${id}`,
+    ),
+
+  issuePenalty: (body: {
+    caseId: string;
+    type: string;
+    targetId: string;
+    targetType: string;
+    amount?: number;
+    durationDays?: number;
+    reason: string;
+  }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      "/penalties",
+      body,
+    ),
+
+  appealPenalty: (id: string, body: { reason: string; evidence?: string[] }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/penalties/${id}/appeal`,
+      body,
+    ),
+
+  decideAppeal: (id: string, body: { upheld: boolean; note?: string }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/penalties/${id}/appeal/decide`,
+      body,
+    ),
+
+  waivePenalty: (id: string) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/penalties/${id}/waive`,
+    ),
+
+  // ─── Fraud ─────────────────────────────────────────────────────────────
+  listFraudRules: () =>
+    httpClient.get<{ statusCode: number; data: any[] }>(
+      PORTS.RESOLUTION,
+      "/fraud-rules",
+    ),
+
+  createFraudRule: (body: {
+    name: string;
+    category: string;
+    description?: string;
+    severity?: string;
+    config?: Record<string, unknown>;
+  }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      "/fraud-rules",
+      body,
+    ),
+
+  updateFraudRule: (
+    id: string,
+    body: {
+      name?: string;
+      description?: string;
+      severity?: string;
+      enabled?: boolean;
+      config?: Record<string, unknown>;
+    },
+  ) =>
+    httpClient.patch<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/fraud-rules/${id}`,
+      body,
+    ),
+
+  deleteFraudRule: (id: string) =>
+    httpClient.delete<void>(PORTS.RESOLUTION, `/fraud-rules/${id}`),
+
+  detectFraud: () =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      "/fraud/detect",
     ),
 };

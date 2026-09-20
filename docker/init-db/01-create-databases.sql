@@ -45,3 +45,7 @@ GRANT ALL PRIVILEGES ON DATABASE mythfood_promotion TO mythfood;
 -- Notification Service database
 CREATE DATABASE mythfood_notification;
 GRANT ALL PRIVILEGES ON DATABASE mythfood_notification TO mythfood;
+
+-- Resolution Service database
+CREATE DATABASE mythfood_resolution;
+GRANT ALL PRIVILEGES ON DATABASE mythfood_resolution TO mythfood;

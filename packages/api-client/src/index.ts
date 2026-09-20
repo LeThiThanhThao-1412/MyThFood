@@ -15,6 +15,7 @@ export {
   reviewApi,
   promotionApi,
   notificationApi,
+  resolutionApi,
   PORTS,
 } from "./api-endpoints";
 export type { ShippingFeeRequest, ShippingFeeResponse } from "./api-endpoints";
