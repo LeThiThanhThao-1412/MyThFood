@@ -266,6 +266,23 @@ export class Driver extends AggregateRoot<DriverId> {
     this.markUpdated();
   }
 
+  /** Tạm khóa tài xế trong N ngày + chặn nhận đơn tới hết hạn. */
+  public suspendFor(durationDays: number): void {
+    this._status = DriverStatus.SUSPENDED;
+    this._onlineStatus = DriverOnlineStatus.OFFLINE;
+    this._acceptBlockedUntil = new Date(
+      Date.now() + durationDays * 24 * 60 * 60 * 1000,
+    );
+    this._releaseCurrentSession();
+    this.markUpdated();
+  }
+
+  /** Trừ điểm uy tín (điểm không âm). */
+  public deductReputation(points: number): void {
+    this._reputationScore = Math.max(0, this._reputationScore - points);
+    this.markUpdated();
+  }
+
   // ---- Online/Offline Status ----
 
   public goOnline(): void {

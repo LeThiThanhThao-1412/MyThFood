@@ -364,6 +364,17 @@ export default function OrderDetailDrawer({
               )}
             </div>
           )}
+
+          {/* Khiếu nại đơn hàng */}
+          <button
+            onClick={() => {
+              onClose();
+              router.push(`/complaints?orderId=${order.id}`);
+            }}
+            className="w-full border-2 border-gray-300 text-gray-600 py-3 rounded-xl font-semibold hover:bg-gray-50 transition"
+          >
+            🛡️ Khiếu nại
+          </button>
         </div>
       )}
     </Drawer>

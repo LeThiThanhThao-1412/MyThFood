@@ -70,6 +70,21 @@ export class CaseEntity {
   @Column({ type: "timestamptz", nullable: true })
   resolvedAt!: Date | null;
 
+  @Column({ type: "text", nullable: true })
+  respondentResponse!: string | null;
+
+  @Column({ type: "jsonb", nullable: true })
+  respondentEvidence!: string[] | null;
+
+  @Column({ type: "timestamptz", nullable: true })
+  respondentRespondedAt!: Date | null;
+
+  @Column({ type: "timestamptz", nullable: true })
+  responseDeadline!: Date | null;
+
+  @Column({ type: "varchar", length: 20, nullable: true })
+  faultParty!: string | null;
+
   @CreateDateColumn({ type: "timestamptz" })
   createdAt!: Date;
 

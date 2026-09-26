@@ -27,6 +27,14 @@ export enum Verdict {
   INCONCLUSIVE = "INCONCLUSIVE",
 }
 
+export enum FaultParty {
+  CUSTOMER = "CUSTOMER",
+  DRIVER = "DRIVER",
+  MERCHANT = "MERCHANT",
+  SYSTEM = "SYSTEM",
+  INCONCLUSIVE = "INCONCLUSIVE",
+}
+
 export enum CaseCategory {
   // Complaints
   ORDER_QUALITY = "ORDER_QUALITY",

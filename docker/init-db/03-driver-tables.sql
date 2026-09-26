@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS drivers (
   "totalOrders" INT NOT NULL DEFAULT 0,
   rating DECIMAL(3, 2) NOT NULL DEFAULT 0,
   "totalRatings" INT NOT NULL DEFAULT 0,
+  "reputationScore" INT NOT NULL DEFAULT 100,
+  "acceptBlockedUntil" TIMESTAMPTZ,
+
   "currentOrderId" UUID,
   "isTrainingCompleted" BOOLEAN NOT NULL DEFAULT FALSE,
   "depositAmount" DECIMAL(12, 2) NOT NULL DEFAULT 0,

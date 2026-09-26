@@ -17,6 +17,8 @@ import {
   formatDistance,
   canAccessApp,
   NotificationBell,
+  ChatListDrawer,
+  ChatDrawer,
   reverseGeocodeAddress,
 } from "@mythfood/frontend-shared";
 import DeliveryDrawer from "@/components/DeliveryDrawer";
@@ -47,6 +49,12 @@ export default function DriverDashboardPage() {
   const [driverAddress, setDriverAddress] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [showDeliveredDrawer, setShowDeliveredDrawer] = useState(false);
+  const [chatListOpen, setChatListOpen] = useState(false);
+  const [chatConversation, setChatConversation] = useState<any>(null);
+  const [chatCounterpart, setChatCounterpart] = useState<{
+    name: string;
+    avatar?: string | null;
+  }>({ name: "" });
   const [now, setNow] = useState(Date.now());
   const firstSeen = useRef<Record<string, number>>({});
   // Đơn đã bị ẩn (hết 60s hoặc tài xế từ chối) → không hiển thị lại trong phiên
@@ -508,16 +516,29 @@ export default function DriverDashboardPage() {
                 >
                   📍
                 </Link>
-                <button className="text-xl">💬</button>
+                <Link
+                  href="/complaints"
+                  className="text-xl hover:scale-110 transition-transform"
+                  title="Khiếu nại & hỗ trợ"
+                >
+                  🛡️
+                </Link>
+                <button
+                  onClick={() => setChatListOpen(true)}
+                  className="relative text-xl hover:scale-110 transition-transform"
+                  title="Tin nhắn"
+                >
+                  💬
+                </button>
                 <button
                   onClick={() => setShowDeliveredDrawer(true)}
                   className="relative text-xl hover:scale-110 transition-transform"
-                  title="Đơn đã giao"
+                  title="Lịch sử đơn"
                 >
                   📦
-                  {deliveredOrders.length > 0 && (
+                  {activeOrders.length > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-green-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                      {deliveredOrders.length}
+                      {activeOrders.length}
                     </span>
                   )}
                 </button>
@@ -788,11 +809,15 @@ export default function DriverDashboardPage() {
         {/* Floating card đơn đang giao (1 đơn duy nhất) */}
         <DriverActiveOrderCard orderId={activeOrder?.id ?? null} />
 
-        {/* Danh sách đơn đã giao (Drawer/Slide-over) */}
+        {/* Lịch sử đơn (tất cả trạng thái: thành công, thất bại, đã hủy...) */}
         <DeliveredOrdersDrawer
           open={showDeliveredDrawer}
           onClose={() => setShowDeliveredDrawer(false)}
-          orders={deliveredOrders}
+          orders={[...activeOrders].sort(
+            (a: any, b: any) =>
+              new Date(b.updatedAt || b.createdAt).getTime() -
+              new Date(a.updatedAt || a.createdAt).getTime(),
+          )}
           onSelectOrder={(id) => setSelectedOrderId(id)}
         />
 
@@ -800,6 +825,26 @@ export default function DriverDashboardPage() {
         <DeliveryDrawer
           orderId={selectedOrderId}
           onClose={() => setSelectedOrderId(null)}
+        />
+
+        {/* Chat drawers */}
+        <ChatListDrawer
+          open={chatListOpen}
+          onClose={() => setChatListOpen(false)}
+          myUserId={user?.id}
+          onOpenConversation={(conv, counterpart) => {
+            setChatConversation(conv);
+            setChatCounterpart(counterpart);
+            setChatListOpen(false);
+          }}
+        />
+        <ChatDrawer
+          open={!!chatConversation}
+          onClose={() => setChatConversation(null)}
+          conversationId={chatConversation?.id ?? null}
+          myUserId={user?.id}
+          counterpartName={chatCounterpart.name}
+          counterpartAvatar={chatCounterpart.avatar}
         />
 
         {/* ≡≡≡≡≡ MOBILE BOTTOM NAV ≡≡≡≡≡ */}
@@ -831,6 +876,13 @@ export default function DriverDashboardPage() {
           >
             <span className="text-[22px]">💰</span>
             <span>Thu nhập</span>
+          </Link>
+          <Link
+            href="/complaints"
+            className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
+          >
+            <span className="text-[22px]">🛡️</span>
+            <span>Khiếu nại</span>
           </Link>
           <Link
             href="/profile"

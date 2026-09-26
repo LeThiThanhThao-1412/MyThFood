@@ -4,7 +4,11 @@ import {
   DomainError,
   EntityNotFoundError,
 } from "@mythfood/shared-kernel";
-import { Consumer, Gender } from "../domain/consumer.aggregate";
+import {
+  Consumer,
+  ConsumerStatus,
+  Gender,
+} from "../domain/consumer.aggregate";
 import { ConsumerId } from "../domain/consumer-id";
 import { Address, GpsCoordinates } from "../domain/address.vo";
 import { PaymentMethod, PaymentMethodType } from "../domain/payment-method.vo";
@@ -39,6 +43,34 @@ export class ConsumerService {
 
   async getByUserId(userId: string): Promise<Consumer | null> {
     return this.repository.findByUserId(userId);
+  }
+
+  async updateStatus(
+    id: string,
+    status: ConsumerStatus,
+  ): Promise<Result<Consumer, DomainError>> {
+    const consumer = await this.repository.findById(ConsumerId.from(id));
+    if (!consumer) return Result.fail(new EntityNotFoundError("Consumer", id));
+    if (status === "SUSPENDED") {
+      consumer.suspend();
+    } else if (status === "BANNED") {
+      consumer.ban();
+    } else {
+      consumer.reactivate();
+    }
+    await this.repository.save(consumer);
+    return Result.ok(consumer);
+  }
+
+  async verify(
+    id: string,
+    idCardNumber: string,
+  ): Promise<Result<Consumer, DomainError>> {
+    const consumer = await this.repository.findById(ConsumerId.from(id));
+    if (!consumer) return Result.fail(new EntityNotFoundError("Consumer", id));
+    consumer.verify(idCardNumber);
+    await this.repository.save(consumer);
+    return Result.ok(consumer);
   }
 
   async updateProfile(

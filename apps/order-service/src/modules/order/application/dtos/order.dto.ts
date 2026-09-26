@@ -52,6 +52,10 @@ export class OrderItemDto {
   @IsNotEmpty()
   name!: string;
 
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
   @IsNumber()
   @Min(1)
   @Type(() => Number)
@@ -244,6 +248,7 @@ export class OrderResponseDto {
 export class OrderItemResponseDto {
   menuItemId!: string;
   name!: string;
+  imageUrl!: string | null;
   quantity!: number;
   unitPrice!: number;
   subtotal!: number;

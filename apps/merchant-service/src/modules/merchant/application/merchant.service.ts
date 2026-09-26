@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { EventBus } from "@nestjs/cqrs";
 import { HttpService } from "@nestjs/axios";
 import { firstValueFrom } from "rxjs";
@@ -103,6 +103,10 @@ export class MerchantService {
 
   async findById(id: string): Promise<Merchant> {
     return this.merchantRepository.findByIdOrFail(MerchantId.from(id));
+  }
+
+  async getByUserId(userId: string): Promise<Merchant | null> {
+    return this.merchantRepository.findByUserId(userId);
   }
 
   async findAll(query: MerchantQueryDto): Promise<{
@@ -263,6 +267,93 @@ export class MerchantService {
     return items;
   }
 
+  /**
+   * Global top dishes (one per merchant) — used as a fallback recommendation
+   * for new customers. Delegates order-count aggregation to order-service, then
+   * resolves full dish + merchant info here (approved + available only).
+   */
+  async getTopMenuItems(take = 12): Promise<MenuSearchItemDto[]> {
+    const url = process.env.ORDER_SERVICE_URL || "http://order-service:3004";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+
+    let topRows: Array<{
+      menuItemId: string;
+      merchantId: string;
+      name: string;
+      quantity: number;
+    }> = [];
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(`${url}/api/v1/orders/stats/top-items`, {
+          params: { take },
+          headers: { "x-service-key": serviceKey },
+        }),
+      );
+      topRows = Array.isArray(res?.data) ? res.data : [];
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch top menu items: ${err?.message}`);
+      return [];
+    }
+
+    if (topRows.length === 0) {
+      return [];
+    }
+
+    const menuItemEntities = await this.merchantRepository.findMenuItemsByIds(
+      topRows.map((r) => r.menuItemId),
+    );
+    const entityById = new Map(menuItemEntities.map((e) => [e.id, e]));
+    const merchantIds = Array.from(
+      new Set(
+        menuItemEntities
+          .filter((e) => e.is_available && !e.deleted_at)
+          .map((e) => e.merchant_id),
+      ),
+    );
+    const merchants = await this.merchantRepository.findManyByIds(merchantIds);
+    const merchantById = new Map(merchants.map((m) => [m.id.toString(), m]));
+
+    const items: MenuSearchItemDto[] = [];
+    for (const row of topRows) {
+      const entity = entityById.get(row.menuItemId);
+      if (!entity || entity.is_available === false || entity.deleted_at) {
+        continue;
+      }
+      const merchant = merchantById.get(entity.merchant_id);
+      if (!merchant || merchant.merchantStatus !== "APPROVED") {
+        continue;
+      }
+      const menuItem = merchant.menuItemList.find(
+        (mi) => mi.id.toString() === entity.id,
+      );
+      if (!menuItem) {
+        continue;
+      }
+      items.push({
+        id: menuItem.id.toString(),
+        merchantId: entity.merchant_id,
+        name: menuItem.itemName,
+        description: menuItem.itemDescription,
+        price: menuItem.itemPrice,
+        imageUrl: menuItem.itemImageUrl,
+        category: menuItem.itemCategory,
+        isAvailable: menuItem.available,
+        merchant: {
+          id: merchant.id.toString(),
+          name: merchant.merchantName,
+          rating: merchant.merchantRating,
+          address: merchant.merchantAddress,
+          latitude: merchant.merchantLatitude,
+          longitude: merchant.merchantLongitude,
+          isOpen: merchant.merchantIsOpen,
+          isOpenNow: merchant.isOpen(),
+        },
+      });
+    }
+
+    return items;
+  }
+
   async softDelete(id: string): Promise<void> {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(id),
@@ -286,6 +377,35 @@ export class MerchantService {
       MerchantId.from(id),
     );
     merchant.reject();
+    await this.merchantRepository.save(merchant);
+    return merchant;
+  }
+
+  /** Cập nhật trạng thái nhà hàng (dùng cho resolution-service compliance). */
+  async updateStatus(id: string, status: string): Promise<Merchant> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(id),
+    );
+    switch (status) {
+      case "SUSPENDED":
+        merchant.suspend();
+        break;
+      case "APPROVED":
+      case "ACTIVE":
+        if (merchant.merchantStatus === "SUSPENDED") {
+          merchant.reactivate();
+        } else {
+          merchant.approve();
+        }
+        break;
+      case "REJECTED":
+        merchant.reject();
+        break;
+      default:
+        throw new BadRequestException(
+          `Unsupported merchant status: ${status}`,
+        );
+    }
     await this.merchantRepository.save(merchant);
     return merchant;
   }

@@ -84,3 +84,18 @@ export class PenalizeCancellationDto {
   @Max(24 * 60)
   blockMinutes?: number;
 }
+
+export class DriverComplianceDto {
+  @IsString()
+  action!: string; // SUSPEND | DEDUCT_REPUTATION
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  durationDays?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  points?: number;
+}

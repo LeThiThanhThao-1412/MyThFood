@@ -55,6 +55,29 @@ export default function ProfilePage() {
   >("CREDIT_CARD");
   const [pmCardNumber, setPmCardNumber] = useState("");
   const [pmExpiry, setPmExpiry] = useState("");
+  const [idCardNumber, setIdCardNumber] = useState("");
+  const [verifyMsg, setVerifyMsg] = useState("");
+
+  async function handleVerify() {
+    if (!consumer?.id) return;
+    if (!idCardNumber.trim()) {
+      setVerifyMsg("Vui lòng nhập số CMND/CCCD");
+      return;
+    }
+    setVerifyMsg("");
+    try {
+      const res: any = await consumerApi.verify(
+        consumer.id,
+        idCardNumber.trim(),
+      );
+      const updated = res?.data || res;
+      if (updated?.id) setConsumer(updated);
+      setVerifyMsg("✅ Đã xác minh danh tính");
+      setIdCardNumber("");
+    } catch (e: any) {
+      setVerifyMsg(`❌ ${e?.message || "Xác minh thất bại"}`);
+    }
+  }
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -418,6 +441,33 @@ export default function ProfilePage() {
               className="hidden"
               onChange={handleAvatarUpload}
             />
+          </div>
+
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 space-y-2">
+            <p className="text-sm font-semibold text-gray-800">
+              {consumer?.isVerified
+                ? "✅ Đã xác minh danh tính"
+                : "🪪 Xác minh danh tính (để đặt COD đơn lớn)"}
+            </p>
+            {!consumer?.isVerified && (
+              <>
+                <input
+                  value={idCardNumber}
+                  onChange={(e) => setIdCardNumber(e.target.value)}
+                  placeholder="Số CMND/CCCD"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={handleVerify}
+                  className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-[#ff6b35] text-white"
+                >
+                  Xác minh
+                </button>
+              </>
+            )}
+            {verifyMsg && (
+              <p className="text-xs text-gray-600">{verifyMsg}</p>
+            )}
           </div>
 
           <div className="space-y-3">

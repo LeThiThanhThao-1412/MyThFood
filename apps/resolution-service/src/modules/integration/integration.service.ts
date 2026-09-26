@@ -83,6 +83,39 @@ export class IntegrationService {
     }
   }
 
+  private async get(
+    envKey: string,
+    dockerUrl: string,
+    localUrl: string,
+    path: string,
+  ): Promise<any> {
+    for (const base of this.candidates(envKey, dockerUrl, localUrl)) {
+      try {
+        const res = await firstValueFrom(
+          this.httpService.get(`${base}${path}`, {
+            headers: { "x-service-key": this.serviceKey },
+          }),
+        );
+        return res.data;
+      } catch (err: any) {
+        this.logger.warn(
+          `GET ${envKey}${path} failed against ${base}: ${err?.message}`,
+        );
+      }
+    }
+    return null;
+  }
+
+  async getOrder(orderId: string): Promise<any> {
+    if (!orderId) return null;
+    return this.get(
+      "ORDER_SERVICE_URL",
+      "http://order-service:3004",
+      "http://localhost:3004",
+      `/api/v1/orders/${orderId}`,
+    );
+  }
+
   async holdSettlement(orderId: string): Promise<void> {
     if (!orderId) return;
     await this.post(
@@ -102,6 +135,21 @@ export class IntegrationService {
       "http://localhost:3009",
       "/api/v1/wallets/settlement/release",
       { orderId },
+    );
+  }
+
+  async settleFailureMoney(
+    orderId: string,
+    faultParty: string,
+    severity: string,
+  ): Promise<void> {
+    if (!orderId) return;
+    await this.post(
+      "ORDER_SERVICE_URL",
+      "http://order-service:3004",
+      "http://localhost:3004",
+      `/api/v1/orders/${orderId}/settle-failure-money`,
+      { faultParty, severity },
     );
   }
 
@@ -162,6 +210,19 @@ export class IntegrationService {
       "http://localhost:3003",
       `/api/v1/merchants/${merchantId}/status`,
       { status: "SUSPENDED" },
+    );
+  }
+
+  async suspendConsumer(
+    consumerId: string,
+    status: "SUSPENDED" | "BANNED",
+  ): Promise<void> {
+    await this.patch(
+      "CONSUMER_SERVICE_URL",
+      "http://consumer-service:3002",
+      "http://localhost:3002",
+      `/api/v1/consumers/${consumerId}/status`,
+      { status },
     );
   }
 

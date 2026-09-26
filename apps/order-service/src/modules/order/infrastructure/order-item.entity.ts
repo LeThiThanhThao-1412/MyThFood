@@ -17,6 +17,9 @@ export class OrderItemEntity {
   @Column("uuid", { name: "menu_item_id" })
   menu_item_id!: string;
 
+  @Column("varchar", { length: 500, name: "image_url", nullable: true })
+  image_url!: string | null;
+
   @Column("varchar", { length: 255 })
   name!: string;
 

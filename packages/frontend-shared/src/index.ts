@@ -31,6 +31,13 @@ export { searchAddress, reverseGeocodeAddress } from "./utils/geocoding";
 export type { GeocodingSuggestion } from "./utils/geocoding";
 export { canAccessApp, APP_ALLOWED_ROLES } from "./utils/role-access";
 export type { AppKey } from "./utils/role-access";
+export {
+  MEAL_PERIODS,
+  getMealPeriod,
+  deriveFoodTheme,
+  dedupeByMerchant,
+} from "./utils/discovery";
+export type { MealPeriod } from "./utils/discovery";
 
 // Hooks
 export { useAuth } from "./hooks/use-auth";
@@ -62,6 +69,8 @@ export type { LocationGateProps } from "./components/LocationGate";
 export { default as NotificationBell } from "./components/NotificationBell";
 export { default as Drawer } from "./components/Drawer";
 export type { DrawerProps } from "./components/Drawer";
+export { default as ChatDrawer } from "./components/ChatDrawer";
+export { default as ChatListDrawer } from "./components/ChatListDrawer";
 // MapView is NOT re-exported here because it imports maplibre-gl (which needs a
 // browser/WebGL context and accesses `window`) and would break SSR for ALL pages
 // that import anything from this package.

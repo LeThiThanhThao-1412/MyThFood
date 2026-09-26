@@ -1,6 +1,8 @@
 import { io, Socket } from "socket.io-client";
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3004";
+const CHAT_SOCKET_URL =
+  process.env.NEXT_PUBLIC_CHAT_WS_URL || "http://localhost:3015/chat";
 
 type EventHandler = (data: unknown) => void;
 
@@ -8,10 +10,12 @@ class SocketClient {
   private socket: Socket | null = null;
   private listeners: Map<string, Set<EventHandler>> = new Map();
 
+  constructor(private readonly url: string) {}
+
   connect(token?: string) {
     if (this.socket?.connected) return;
 
-    this.socket = io(SOCKET_URL, {
+    this.socket = io(this.url, {
       auth: token ? { token } : undefined,
       transports: ["websocket", "polling"],
       reconnection: true,
@@ -69,4 +73,6 @@ class SocketClient {
   }
 }
 
-export const socketClient = new SocketClient();
+export const socketClient = new SocketClient(SOCKET_URL);
+export const chatSocketClient = new SocketClient(CHAT_SOCKET_URL);
+

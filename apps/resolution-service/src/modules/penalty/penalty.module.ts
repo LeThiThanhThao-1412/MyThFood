@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, forwardRef } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { PenaltyEntity } from "./infrastructure/penalty.entity";
 import { AppealEntity } from "./infrastructure/appeal.entity";
@@ -10,7 +10,7 @@ import { CaseModule } from "../case/case.module";
 @Module({
   imports: [
     TypeOrmModule.forFeature([PenaltyEntity, AppealEntity]),
-    CaseModule,
+    forwardRef(() => CaseModule),
   ],
   controllers: [PenaltyController],
   providers: [PenaltyRepository, PenaltyService],

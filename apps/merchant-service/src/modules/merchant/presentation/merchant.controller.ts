@@ -105,6 +105,28 @@ export class MerchantController {
     };
   }
 
+  /**
+   * Global top dishes (one per merchant) — fallback recommendation for new
+   * customers. MUST stay declared before `@Get(":id")`.
+   */
+  @Get("menu/top")
+  async getTopMenuItems(@Query("take") take?: string) {
+    const limit = take
+      ? Math.min(Math.max(parseInt(take, 10) || 12, 1), 50)
+      : 12;
+    return {
+      items: await this.merchantService.getTopMenuItems(limit),
+    };
+  }
+
+  @Get("user/:userId")
+  async getByUserId(
+    @Param("userId") userId: string,
+  ): Promise<MerchantResponseDto | null> {
+    const merchant = await this.merchantService.getByUserId(userId);
+    return merchant ? this.toMerchantResponse(merchant) : null;
+  }
+
   @Get(":id")
   async findById(@Param("id") id: string): Promise<MerchantResponseDto> {
     const merchant = await this.merchantService.findById(id);
@@ -151,6 +173,16 @@ export class MerchantController {
   @Roles("ADMIN")
   async reject(@Param("id") id: string): Promise<MerchantResponseDto> {
     const merchant = await this.merchantService.reject(id);
+    return this.toMerchantResponse(merchant);
+  }
+
+  @Patch(":id/status")
+  @Roles("ADMIN")
+  async updateStatus(
+    @Param("id") id: string,
+    @Body() dto: { status: string },
+  ): Promise<MerchantResponseDto> {
+    const merchant = await this.merchantService.updateStatus(id, dto.status);
     return this.toMerchantResponse(merchant);
   }
 

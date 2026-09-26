@@ -20,4 +20,17 @@ export class CaseScheduler {
       this.logger.warn(`SLA escalation run failed: ${err?.message}`);
     }
   }
+
+  /** Auto-resolve: khách không phản hồi trong 72h → tự chốt lỗi khách. */
+  @Cron("0 * * * *")
+  async autoResolveExpired(): Promise<void> {
+    try {
+      const count = await this.caseService.autoResolveExpiredResponse();
+      if (count > 0) {
+        this.logger.log(`Auto-resolved ${count} cases (no response)`);
+      }
+    } catch (err: any) {
+      this.logger.warn(`Auto-resolve run failed: ${err?.message}`);
+    }
+  }
 }

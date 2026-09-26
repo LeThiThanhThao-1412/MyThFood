@@ -22,6 +22,7 @@ import {
   UpdateFatigueDto,
   RateDriverDto,
   PenalizeCancellationDto,
+  DriverComplianceDto,
 } from "../application/dtos/driver.dto";
 
 @Controller("drivers")
@@ -264,10 +265,18 @@ export class DriverController {
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
+  // ---- Compliance (resolution-service) ----
+  @Patch(":id/compliance")
+  @Roles("ADMIN")
+  async compliance(@Param("id") id: string, @Body() dto: DriverComplianceDto) {
+    const driver = await this.driverService.applyCompliance(id, dto);
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
   // ---- Public profile (cho CONSUMER xem thông tin tài xế khi có đơn) ----
 
   @Get(":id/public-profile")
-  @Roles("CONSUMER", "DRIVER", "ADMIN")
+  @Roles("CONSUMER", "DRIVER", "MERCHANT_OWNER", "ADMIN")
   async getPublicProfile(@Param("id") id: string) {
     const driver = await this.driverService.getById(id);
     return { statusCode: HttpStatus.OK, data: this.toPublicProfile(driver) };
@@ -328,6 +337,7 @@ export class DriverController {
   private toPublicProfile(driver: any) {
     return {
       id: driver.id?.toString?.() ?? driver.id,
+      userId: driver.driverUserId ?? driver._userId,
       fullName: driver.driverFullName ?? driver._fullName,
       avatar: driver.driverAvatar ?? driver._avatar,
       vehicleRegistrationNumber:

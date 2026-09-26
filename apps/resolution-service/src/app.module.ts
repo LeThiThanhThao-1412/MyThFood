@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ScheduleModule } from "@nestjs/schedule";
 import { getDatabaseConfig } from "./config/database.config";
+import { AuthModule } from "./modules/auth/auth.module";
 import { IntegrationModule } from "./modules/integration/integration.module";
 import { CaseModule } from "./modules/case/case.module";
 import { PenaltyModule } from "./modules/penalty/penalty.module";
@@ -20,6 +21,7 @@ import { FraudModule } from "./modules/fraud/fraud.module";
       useFactory: getDatabaseConfig,
     }),
     ScheduleModule.forRoot(),
+    AuthModule,
     IntegrationModule,
     CaseModule,
     PenaltyModule,

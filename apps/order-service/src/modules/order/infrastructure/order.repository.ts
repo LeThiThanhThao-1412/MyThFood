@@ -301,6 +301,53 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     };
   }
 
+  /**
+   * Global "top dishes" across all merchants: aggregates order items and keeps
+   * only the single best-selling dish per merchant, ordered by total quantity.
+   * Used by the consumer app to show popular dishes for new customers.
+   */
+  async getTopMenuItems(
+    take = 12,
+  ): Promise<
+    Array<{
+      menuItemId: string;
+      merchantId: string;
+      name: string;
+      quantity: number;
+    }>
+  > {
+    const raw: Array<{
+      menuItemId: string;
+      merchantId: string;
+      name: string;
+      quantity: string;
+    }> = await this.orderItemRepo.query(
+      `SELECT * FROM (
+         SELECT DISTINCT ON (o.merchant_id)
+           mi.menu_item_id AS "menuItemId",
+           o.merchant_id AS "merchantId",
+           MAX(mi.name) AS name,
+           SUM(mi.quantity) AS quantity
+         FROM order_items mi
+         INNER JOIN orders o ON o.id = mi.order_id
+         WHERE o.deleted_at IS NULL
+           AND o.status NOT IN ('CANCELLED', 'REJECTED')
+         GROUP BY mi.menu_item_id, o.merchant_id
+         ORDER BY o.merchant_id, SUM(mi.quantity) DESC
+       ) top
+       ORDER BY top.quantity DESC
+       LIMIT $1`,
+      [take],
+    );
+
+    return raw.map((r) => ({
+      menuItemId: r.menuItemId,
+      merchantId: r.merchantId,
+      name: r.name,
+      quantity: Number(r.quantity ?? 0),
+    }));
+  }
+
   private async loadRelatedAndMap(entity: OrderEntity): Promise<Order> {
     const items = await this.orderItemRepo.find({
       where: { order_id: entity.id },

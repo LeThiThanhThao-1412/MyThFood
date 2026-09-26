@@ -49,3 +49,7 @@ GRANT ALL PRIVILEGES ON DATABASE mythfood_notification TO mythfood;
 -- Resolution Service database
 CREATE DATABASE mythfood_resolution;
 GRANT ALL PRIVILEGES ON DATABASE mythfood_resolution TO mythfood;
+
+-- Chat Service database
+CREATE DATABASE mythfood_chat;
+GRANT ALL PRIVILEGES ON DATABASE mythfood_chat TO mythfood;

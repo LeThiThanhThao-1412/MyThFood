@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { merchantApi, orderApi } from "@mythfood/api-client";
@@ -15,9 +15,15 @@ import {
   canAccessApp,
   haversineKm,
   NotificationBell,
+  ChatListDrawer,
+  ChatDrawer,
+  getMealPeriod,
+  deriveFoodTheme,
+  dedupeByMerchant,
 } from "@mythfood/frontend-shared";
 import { calculateShippingFeeSync } from "@/app/checkout/shipping-utils";
 import { resolveConsumerId } from "@/lib/consumer";
+import { reorderOrder } from "@/lib/reorder";
 import CartDrawer from "@/components/CartDrawer";
 import CurrentLocationChip from "@/components/CurrentLocationChip";
 import OrderDetailDrawer from "@/components/OrderDetailDrawer";
@@ -55,6 +61,7 @@ export default function DashboardPage() {
   const favorites = useFavoritesStore();
   const favDishes = useFavoriteDishesStore();
   const addKeyword = useSearchHistoryStore((s) => s.addKeyword);
+  const searchKeywords = useSearchHistoryStore((s) => s.keywords);
 
   const [merchants, setMerchants] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
@@ -65,6 +72,18 @@ export default function DashboardPage() {
   const [recentOrdersOpen, setRecentOrdersOpen] = useState(false);
   const [dashboardSearch, setDashboardSearch] = useState("");
   const [searchHistoryOpen, setSearchHistoryOpen] = useState(false);
+  const [chatListOpen, setChatListOpen] = useState(false);
+  const [chatConversation, setChatConversation] = useState<any>(null);
+  const [chatCounterpart, setChatCounterpart] = useState<{
+    name: string;
+    avatar?: string | null;
+  }>({ name: "" });
+  const [newMerchants, setNewMerchants] = useState<any[]>([]);
+  const [mealDishes, setMealDishes] = useState<any[]>([]);
+  const [recommendedDishes, setRecommendedDishes] = useState<any[]>([]);
+  const [recommendTheme, setRecommendTheme] = useState<string | null>(null);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [reorderMsg, setReorderMsg] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -134,10 +153,141 @@ export default function DashboardPage() {
     })();
   }, [isAuthenticated, user, favorites.load, favDishes.load]);
 
+  // Load "quán mới dùng thử ngay" (newest approved merchants)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res: any = await merchantApi.list({
+          status: "APPROVED",
+          sortBy: "newest",
+          take: 10,
+        });
+        setNewMerchants(res?.items ?? []);
+      } catch {
+        setNewMerchants([]);
+      }
+    })();
+  }, []);
+
+  // Load "món theo bữa" (dishes matching the current meal period)
+  useEffect(() => {
+    const period = getMealPeriod();
+    (async () => {
+      try {
+        const results = await Promise.all(
+          period.keywords
+            .slice(0, 3)
+            .map((kw) => merchantApi.searchMenu({ q: kw, take: 8 })),
+        );
+        const merged: any[] = [];
+        for (const r of results) {
+          merged.push(...((r as any)?.items ?? []));
+        }
+        setMealDishes(dedupeByMerchant(merged).slice(0, 8));
+      } catch {
+        setMealDishes([]);
+      }
+    })();
+  }, []);
+
+  // Load "gợi ý món cho bạn" (personalized, or top dishes for new users)
+  useEffect(() => {
+    (async () => {
+      try {
+        const theme = deriveFoodTheme(orders, searchKeywords);
+        if (theme) {
+          setRecommendTheme(theme);
+          const res: any = await merchantApi.searchMenu({ q: theme, take: 24 });
+          const items = res?.items ?? [];
+          setRecommendedDishes(dedupeByMerchant(items).slice(0, 8));
+        } else {
+          const res: any = await merchantApi.getTopMenuItems({ take: 12 });
+          setRecommendedDishes(res?.items ?? []);
+        }
+      } catch {
+        setRecommendedDishes([]);
+      }
+    })();
+  }, [orders, searchKeywords]);
+
   const favoriteMerchants = merchants.filter((m: any) =>
     favorites.ids.includes(m.id),
   );
   const favoriteDishList = favDishes.getList();
+
+  // Khung giờ bữa hiện tại (sáng/trưa/tối/đêm)
+  const mealPeriod = getMealPeriod();
+
+  // Gộp các món từ những đơn đặt lại được thành danh sách món riêng lẻ (đã loại trùng),
+  // mỗi món hiển thị: ảnh món + tên món + nút "Đặt lại".
+  const reorderableDishes = useMemo(() => {
+    const reorderable = orders
+      .filter((o) => (o.items?.length ?? 0) > 0)
+      .filter(
+        (o) =>
+          ![
+            "CANCELLED",
+            "CANCELLED_NO_DRIVER",
+            "REJECTED",
+            "DELIVERY_FAILED",
+          ].includes(o.status),
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime(),
+      )
+      .slice(0, 6);
+
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const o of reorderable) {
+      for (const item of o.items ?? []) {
+        const key = item.menuItemId || item.name;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ key, merchantId: o.merchantId, ...item });
+      }
+    }
+    return out.slice(0, 8);
+  }, [orders]);
+
+  // Ảnh món: ưu tiên snapshot đã lưu trong order (đơn mới); nếu đơn cũ chưa có
+  // thì tự nạp ảnh từ menu hiện tại để danh sách đặt lại luôn hiển thị đúng ảnh.
+  const [dishImageMap, setDishImageMap] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const byMerchant = new Map<string, Set<string>>();
+    for (const d of reorderableDishes) {
+      if (d.imageUrl || !d.menuItemId) continue;
+      const ids = byMerchant.get(d.merchantId) ?? new Set<string>();
+      ids.add(d.menuItemId);
+      byMerchant.set(d.merchantId, ids);
+    }
+    if (byMerchant.size === 0) return;
+
+    (async () => {
+      const resolved: Record<string, string> = {};
+      await Promise.all(
+        [...byMerchant.entries()].map(async ([merchantId, ids]) => {
+          try {
+            const menu: any = await merchantApi.getMenu(merchantId, true);
+            const items = Array.isArray(menu) ? menu : [];
+            for (const mi of items) {
+              if (ids.has(mi.id) && mi.imageUrl) resolved[mi.id] = mi.imageUrl;
+            }
+          } catch {
+            /* ignore */
+          }
+        }),
+      );
+      if (!cancelled) setDishImageMap((prev) => ({ ...prev, ...resolved }));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reorderableDishes]);
 
   // Đơn đang hoạt động (chưa giao xong / chưa hủy) để hiển thị floating card theo dõi
   const activeOrder = orders
@@ -177,6 +327,29 @@ export default function DashboardPage() {
     }
     setSearchHistoryOpen(false);
     router.push(q ? `/restaurants?q=${encodeURIComponent(q)}` : "/restaurants");
+  };
+
+  const handleReorderDish = async (d: any) => {
+    setReorderingId(d.key);
+    setReorderMsg("");
+    try {
+      const result = await reorderOrder({
+        merchantId: d.merchantId,
+        items: [d],
+      });
+      if (result.ok) {
+        setReorderMsg(
+          result.skipped > 0
+            ? `✅ Đã thêm ${result.added} món (bỏ qua ${result.skipped} món hết bán)`
+            : `✅ Đã thêm ${result.added} món vào giỏ`,
+        );
+        router.push("/cart");
+      } else {
+        setReorderMsg(result.error || "Không có món nào còn bán để đặt lại");
+      }
+    } finally {
+      setReorderingId(null);
+    }
   };
 
   if (!isAuthenticated) return null;
@@ -263,6 +436,24 @@ export default function DashboardPage() {
                 >
                   💰
                 </Link>
+
+                {/* Khiếu nại / giải quyết sự cố */}
+                <Link
+                  href="/complaints"
+                  className="relative text-xl hover:scale-110 transition-transform"
+                  title="Khiếu nại & hỗ trợ"
+                >
+                  🛡️
+                </Link>
+
+                {/* Chat */}
+                <button
+                  onClick={() => setChatListOpen(true)}
+                  className="relative text-xl hover:scale-110 transition-transform"
+                  title="Tin nhắn"
+                >
+                  💬
+                </button>
 
                 {/* Notifications */}
                 <div className="hidden sm:block">
@@ -391,6 +582,183 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* ===== KHÁM PHÁ (đặt lại / theo bữa / quán mới / gợi ý) ===== */}
+          <div className="grid gap-6 mb-6">
+            {/* Đặt lại lần nữa */}
+            {reorderableDishes.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-[#1a1a2e]">
+                    🔄 Đặt lại lần nữa
+                  </h2>
+                  <Link
+                    href="/orders"
+                    className="text-sm font-semibold text-[#ff6b35] hover:underline"
+                  >
+                    Xem tất cả
+                  </Link>
+                </div>
+                {reorderMsg && (
+                  <p className="text-sm text-green-600 mb-3">{reorderMsg}</p>
+                )}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {reorderableDishes.map((d) => (
+                    <div
+                      key={d.key}
+                      className="border border-gray-100 rounded-xl overflow-hidden flex flex-col"
+                    >
+                      <div className="h-24 sm:h-28 bg-[#fff7ed] flex items-center justify-center overflow-hidden">
+                        {d.imageUrl || dishImageMap[d.menuItemId] ? (
+                          <img
+                            src={d.imageUrl || dishImageMap[d.menuItemId]}
+                            alt={d.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-3xl">🍽️</span>
+                        )}
+                      </div>
+                      <div className="p-3 flex-1">
+                        <p className="text-sm font-semibold text-gray-800 line-clamp-2">
+                          {d.name}
+                        </p>
+                      </div>
+                      <div className="px-3 pb-3">
+                        <button
+                          type="button"
+                          disabled={reorderingId === d.key}
+                          onClick={() => handleReorderDish(d)}
+                          className="w-full text-xs font-semibold text-[#ff6b35] bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-lg transition disabled:opacity-50"
+                        >
+                          {reorderingId === d.key
+                            ? "Đang thêm..."
+                            : "🔄 Đặt lại"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Món theo bữa */}
+            {mealDishes.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-[#1a1a2e]">
+                    {mealPeriod.icon} {mealPeriod.label} cho bạn
+                  </h2>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {mealDishes.map((d, idx) => (
+                    <Link
+                      key={`${d.merchantId}-${d.id}`}
+                      href={`/restaurants/${d.merchantId}`}
+                      className="border border-gray-100 rounded-xl overflow-hidden hover:shadow-md transition no-underline"
+                    >
+                      <div
+                        className={`h-24 bg-gradient-to-br ${gradientPalette[idx % gradientPalette.length]} flex items-center justify-center text-3xl`}
+                      >
+                        🍜
+                      </div>
+                      <div className="p-3">
+                        <div className="text-sm font-semibold text-gray-800 line-clamp-1">
+                          {d.name}
+                        </div>
+                        <div className="text-xs text-gray-400 line-clamp-1 mt-0.5">
+                          {d.merchant?.name}
+                        </div>
+                        <div className="text-[#ff6b35] font-bold text-sm mt-1">
+                          {Number(d.price || 0).toLocaleString("vi-VN")}đ
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Quán mới */}
+            {newMerchants.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-[#1a1a2e]">
+                    🆕 Quán mới dùng thử ngay
+                  </h2>
+                  <Link
+                    href="/restaurants"
+                    className="text-sm font-semibold text-[#ff6b35] hover:underline"
+                  >
+                    Xem tất cả
+                  </Link>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                  {newMerchants.map((m, idx) => (
+                    <Link
+                      key={m.id}
+                      href={`/restaurants/${m.id}`}
+                      className="border border-gray-100 rounded-xl overflow-hidden hover:shadow-md transition no-underline"
+                    >
+                      <div
+                        className={`h-20 bg-gradient-to-br ${gradientPalette[idx % gradientPalette.length]} flex items-center justify-center text-2xl`}
+                      >
+                        🏪
+                      </div>
+                      <div className="p-3">
+                        <div className="text-sm font-semibold text-gray-800 line-clamp-1">
+                          {m.name}
+                        </div>
+                        <div className="text-xs text-gray-400 line-clamp-1 mt-0.5">
+                          📍 {m.address}
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Gợi ý món */}
+            {recommendedDishes.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm p-4 sm:p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-[#1a1a2e]">
+                    🍲{" "}
+                    {recommendTheme
+                      ? `Món ${recommendTheme} ngon cho bạn`
+                      : "Món được yêu thích"}
+                  </h2>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {recommendedDishes.map((d, idx) => (
+                    <Link
+                      key={`${d.merchantId}-${d.id}`}
+                      href={`/restaurants/${d.merchantId}`}
+                      className="border border-gray-100 rounded-xl overflow-hidden hover:shadow-md transition no-underline"
+                    >
+                      <div
+                        className={`h-24 bg-gradient-to-br ${gradientPalette[(idx + 2) % gradientPalette.length]} flex items-center justify-center text-3xl`}
+                      >
+                        🍲
+                      </div>
+                      <div className="p-3">
+                        <div className="text-sm font-semibold text-gray-800 line-clamp-1">
+                          {d.name}
+                        </div>
+                        <div className="text-xs text-gray-400 line-clamp-1 mt-0.5">
+                          {d.merchant?.name}
+                        </div>
+                        <div className="text-[#ff6b35] font-bold text-sm mt-1">
+                          {Number(d.price || 0).toLocaleString("vi-VN")}đ
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ===== MERCHANTS ===== */}
@@ -630,6 +998,26 @@ export default function DashboardPage() {
           onClose={() => setSelectedOrderId(null)}
         />
 
+        {/* Chat drawers */}
+        <ChatListDrawer
+          open={chatListOpen}
+          onClose={() => setChatListOpen(false)}
+          myUserId={user?.id}
+          onOpenConversation={(conv, counterpart) => {
+            setChatConversation(conv);
+            setChatCounterpart(counterpart);
+            setChatListOpen(false);
+          }}
+        />
+        <ChatDrawer
+          open={!!chatConversation}
+          onClose={() => setChatConversation(null)}
+          conversationId={chatConversation?.id ?? null}
+          myUserId={user?.id}
+          counterpartName={chatCounterpart.name}
+          counterpartAvatar={chatCounterpart.avatar}
+        />
+
         {/* Mini floating card theo dõi đơn đang giao */}
         <FloatingOrderCard order={activeOrder} />
 
@@ -668,6 +1056,13 @@ export default function DashboardPage() {
             <span className="text-[22px]">📦</span>
             <span>Đơn hàng</span>
           </button>
+          <Link
+            href="/complaints"
+            className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
+          >
+            <span className="text-[22px]">🛡️</span>
+            <span>Khiếu nại</span>
+          </Link>
           <Link
             href="/profile"
             className="flex flex-col items-center text-[10px] text-gray-400 no-underline"

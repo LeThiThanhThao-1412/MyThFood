@@ -32,7 +32,7 @@ export class SettlementEntryEntity {
 
   @Index()
   @Column({ type: "varchar", length: 20, default: "PENDING" })
-  status!: string; // PENDING | SETTLED
+  status!: string; // PENDING | HELD_BY_DISPUTE | SETTLED
 
   @Index()
   @Column({ type: "varchar", length: 100, nullable: true })

@@ -11,6 +11,7 @@ import {
   UpdateLocationDto,
   UpdateFatigueDto,
   RateDriverDto,
+  DriverComplianceDto,
 } from "./dtos/driver.dto";
 
 @Injectable()
@@ -98,6 +99,29 @@ export class DriverService {
   async suspendDriver(id: string): Promise<Driver> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
     driver.suspend();
+    await this.driverRepo.save(driver);
+    return driver;
+  }
+
+  /**
+   * Endpoint compliance cho resolution-service:
+   * - SUSPEND → tạm khóa + chặn nhận đơn durationDays ngày
+   * - DEDUCT_REPUTATION → trừ điểm uy tín
+   */
+  async applyCompliance(id: string, dto: DriverComplianceDto): Promise<Driver> {
+    const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
+    switch (dto.action) {
+      case "SUSPEND":
+        driver.suspendFor(dto.durationDays ?? 7);
+        break;
+      case "DEDUCT_REPUTATION":
+        driver.deductReputation(dto.points ?? 0);
+        break;
+      default:
+        throw new BusinessRuleViolationError(
+          `Unknown compliance action: ${dto.action}`,
+        );
+    }
     await this.driverRepo.save(driver);
     return driver;
   }

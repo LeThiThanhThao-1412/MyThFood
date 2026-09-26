@@ -144,8 +144,15 @@ export class OrderController {
   async cancel(
     @Param("id") id: string,
     @Body() dto: StatusTransitionDto,
+    @Req() req: any,
   ): Promise<OrderResponseDto> {
-    const order = await this.orderService.cancel(id, dto);
+    const roles: string[] = req.user?.roles ?? [];
+    const actorType = roles.includes("MERCHANT_OWNER")
+      ? "MERCHANT"
+      : roles.includes("ADMIN")
+        ? "ADMIN"
+        : "CONSUMER";
+    const order = await this.orderService.cancel(id, dto, actorType);
     return this.toOrderResponse(order);
   }
 
@@ -201,6 +208,21 @@ export class OrderController {
     return this.toOrderResponse(order);
   }
 
+  @Post(":id/settle-failure-money")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  @Roles("ADMIN", "SERVICE")
+  async settleFailureMoney(
+    @Param("id") id: string,
+    @Body() body: { faultParty: string; severity: string },
+  ): Promise<{ statusCode: number; data: { ok: boolean } }> {
+    await this.orderService.settleFailureMoney(
+      id,
+      body.faultParty,
+      body.severity,
+    );
+    return { statusCode: 200, data: { ok: true } };
+  }
+
   // ===================== Timeline (B6) =====================
 
   @Get(":id/timeline")
@@ -233,6 +255,17 @@ export class OrderController {
     @Query("endDate") endDate?: string,
   ): Promise<any> {
     return this.orderService.getDailyStats(startDate, endDate);
+  }
+
+  // ===================== Top menu items (global) =====================
+
+  @Get("stats/top-items")
+  @Roles("ADMIN")
+  async getTopMenuItems(@Query("take") take?: string): Promise<any> {
+    const limit = take
+      ? Math.min(Math.max(parseInt(take, 10) || 12, 1), 50)
+      : 12;
+    return this.orderService.getTopMenuItems(limit);
   }
 
   // ===================== Merchant Stats (B7) =====================
@@ -269,6 +302,7 @@ export class OrderController {
       items: order.orderItems.map((item) => ({
         menuItemId: item.menuItemId,
         name: item.name,
+        imageUrl: item.imageUrl ?? null,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         subtotal: item.subtotal,

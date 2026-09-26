@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS order_items (
   id UUID PRIMARY KEY,
   order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   menu_item_id UUID NOT NULL,
+  image_url VARCHAR(500),
   name VARCHAR(255) NOT NULL,
   quantity INT NOT NULL CHECK (quantity > 0),
   unit_price DECIMAL(12, 2) NOT NULL,

@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/menu", icon: "📋", label: "Menu" },
   { href: "/promotions", icon: "🏷️", label: "Khuyến mãi" },
   { href: "/reviews", icon: "⭐", label: "Đánh giá" },
+  { href: "/complaints", icon: "🛡️", label: "Khiếu nại" },
   { href: "/wallet", icon: "💰", label: "Ví" },
   { href: "/settings", icon: "⚙️", label: "Cài đặt" },
   { href: "/profile", icon: "👤", label: "Hồ sơ" },

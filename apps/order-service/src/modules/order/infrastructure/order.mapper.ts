@@ -44,6 +44,7 @@ export class OrderMapper {
       entity.id = uuid();
       entity.order_id = order.id.toString();
       entity.menu_item_id = item.menuItemId;
+      entity.image_url = item.imageUrl;
       entity.name = item.name;
       entity.quantity = item.quantity;
       entity.unit_price = item.unitPrice;
@@ -64,6 +65,7 @@ export class OrderMapper {
     const items: OrderItemProps[] = itemEntities.map((item) => ({
       menuItemId: item.menu_item_id,
       name: item.name,
+      imageUrl: item.image_url,
       quantity: item.quantity,
       unitPrice: item.unit_price,
       subtotal: item.subtotal,

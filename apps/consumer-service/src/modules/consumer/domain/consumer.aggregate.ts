@@ -10,6 +10,7 @@ import { PaymentMethod } from "./payment-method.vo";
 import { ConsumerProfileUpdatedEvent } from "./events/consumer-profile-updated.event";
 
 export type Gender = "MALE" | "FEMALE" | "OTHER";
+export type ConsumerStatus = "ACTIVE" | "SUSPENDED" | "BANNED";
 
 export interface ConsumerProps {
   userId: string;
@@ -17,10 +18,13 @@ export interface ConsumerProps {
   avatar: string | null;
   dateOfBirth: Date | null;
   gender: Gender | null;
+  status?: ConsumerStatus;
   addresses: Address[];
   paymentMethods: PaymentMethod[];
   favoriteMerchantIds: string[];
   favoriteMenuItemIds: string[];
+  isVerified?: boolean;
+  idCardNumber?: string | null;
 }
 
 export class Consumer extends AggregateRoot<ConsumerId> {
@@ -29,10 +33,13 @@ export class Consumer extends AggregateRoot<ConsumerId> {
   private avatar: string | null;
   private dateOfBirth: Date | null;
   private gender: Gender | null;
+  private status: ConsumerStatus;
   private addresses: Address[];
   private paymentMethods: PaymentMethod[];
   private favoriteMerchantIds: string[];
   private favoriteMenuItemIds: string[];
+  private isVerified: boolean;
+  private idCardNumber: string | null;
 
   private constructor(id: ConsumerId, props: ConsumerProps) {
     super(id);
@@ -41,10 +48,13 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     this.avatar = props.avatar;
     this.dateOfBirth = props.dateOfBirth;
     this.gender = props.gender;
+    this.status = props.status ?? "ACTIVE";
     this.addresses = props.addresses;
     this.paymentMethods = props.paymentMethods;
     this.favoriteMerchantIds = props.favoriteMerchantIds ?? [];
     this.favoriteMenuItemIds = props.favoriteMenuItemIds ?? [];
+    this.isVerified = props.isVerified ?? false;
+    this.idCardNumber = props.idCardNumber ?? null;
   }
 
   public static create(props: {
@@ -69,10 +79,13 @@ export class Consumer extends AggregateRoot<ConsumerId> {
       avatar: props.avatar ?? null,
       dateOfBirth: props.dateOfBirth ?? null,
       gender: props.gender ?? null,
+      status: "ACTIVE",
       addresses: [],
       paymentMethods: [],
       favoriteMerchantIds: [],
       favoriteMenuItemIds: [],
+      isVerified: false,
+      idCardNumber: null,
     });
 
     consumer.addDomainEvent(
@@ -91,6 +104,33 @@ export class Consumer extends AggregateRoot<ConsumerId> {
 
   public static rehydrate(id: ConsumerId, props: ConsumerProps): Consumer {
     return new Consumer(id, props);
+  }
+
+  public suspend(): void {
+    if (this.status === "BANNED") {
+      throw new BusinessRuleViolationError("Cannot suspend a banned consumer");
+    }
+    this.status = "SUSPENDED";
+    this.markUpdated();
+  }
+
+  public ban(): void {
+    this.status = "BANNED";
+    this.markUpdated();
+  }
+
+  public reactivate(): void {
+    this.status = "ACTIVE";
+    this.markUpdated();
+  }
+
+  public verify(idCardNumber: string): void {
+    if (!idCardNumber || idCardNumber.trim().length === 0) {
+      throw new BusinessRuleViolationError("ID card number is required");
+    }
+    this.isVerified = true;
+    this.idCardNumber = idCardNumber.trim();
+    this.markUpdated();
   }
 
   public updateProfile(props: {
@@ -310,6 +350,15 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     return Result.ok(added);
   }
 
+  get consumerStatus(): ConsumerStatus {
+    return this.status;
+  }
+  get consumerIsVerified(): boolean {
+    return this.isVerified;
+  }
+  get consumerIdCardNumber(): string | null {
+    return this.idCardNumber;
+  }
   get userIdValue(): string {
     return this.userId;
   }

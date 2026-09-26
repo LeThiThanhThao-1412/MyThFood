@@ -4,6 +4,7 @@ import {
   OnModuleInit,
   OnModuleDestroy,
   ConflictException,
+  BadRequestException,
 } from "@nestjs/common";
 import { BusinessRuleViolationError } from "@mythfood/shared-kernel";
 import { DispatchRepository } from "../infrastructure/dispatch.repository";
@@ -423,6 +424,11 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
    * Case 8: tài xế giao hàng thất bại (khách không nhận hàng).
    */
   async deliveryFailed(id: string, dto: DeliveryFailedDto): Promise<Dispatch> {
+    if (dto.faultParty === "CUSTOMER" && !dto.photoUrl) {
+      throw new BadRequestException(
+        "Ảnh bằng chứng là bắt buộc khi báo giao thất bại do lỗi khách",
+      );
+    }
     const dispatch = await this.dispatchRepo.findByIdOrFail(
       DispatchId.from(id),
     );

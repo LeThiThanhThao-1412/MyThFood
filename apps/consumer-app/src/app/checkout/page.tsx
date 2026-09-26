@@ -690,6 +690,7 @@ function CheckoutContent() {
         items: items.map((i) => ({
           menuItemId: i.menuItem.id,
           name: i.menuItem.name,
+          imageUrl: i.menuItem.imageUrl ?? null,
           quantity: i.quantity,
           unitPrice: i.unitPrice ?? i.menuItem.price,
           specialInstructions: i.specialInstructions || "",

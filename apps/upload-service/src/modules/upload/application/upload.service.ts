@@ -81,6 +81,9 @@ export class UploadService {
       "menu-items",
       "covers",
       "reviews",
+      "chat",
+      "complaints",
+      "delivery-failure",
     ];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(
@@ -133,6 +136,9 @@ export class UploadService {
       "menu-items",
       "covers",
       "reviews",
+      "chat",
+      "complaints",
+      "delivery-failure",
     ];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(

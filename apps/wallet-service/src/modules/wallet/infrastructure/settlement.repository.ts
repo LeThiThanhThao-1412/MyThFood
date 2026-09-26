@@ -38,6 +38,32 @@ export class SettlementRepository {
     return this.entryRepo.find({ where: { orderId } });
   }
 
+  async holdByOrderId(orderId: string): Promise<number> {
+    const res = await this.entryRepo
+      .createQueryBuilder()
+      .update(SettlementEntryEntity)
+      .set({ status: "HELD_BY_DISPUTE" })
+      .where('"orderId" = :orderId AND "status" = :status', {
+        orderId,
+        status: "PENDING",
+      })
+      .execute();
+    return res.affected ?? 0;
+  }
+
+  async releaseByOrderId(orderId: string): Promise<number> {
+    const res = await this.entryRepo
+      .createQueryBuilder()
+      .update(SettlementEntryEntity)
+      .set({ status: "PENDING" })
+      .where('"orderId" = :orderId AND "status" = :status', {
+        orderId,
+        status: "HELD_BY_DISPUTE",
+      })
+      .execute();
+    return res.affected ?? 0;
+  }
+
   async findPendingByPeriod(
     start: Date,
     end: Date,

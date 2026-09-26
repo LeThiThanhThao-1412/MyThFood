@@ -66,6 +66,10 @@ import type {
   ApplyCompensationVoucherRequest,
   CreateNotificationRequest,
   Notification,
+  ChatMessage,
+  ChatConversation,
+  GetOrCreateConversationRequest,
+  SendMessageRequest,
 } from "./types";
 
 // Service port constants
@@ -84,6 +88,7 @@ export const PORTS = {
   PROMOTION: 3012,
   NOTIFICATION: 3013,
   RESOLUTION: 3014,
+  CHAT: 3015,
 } as const;
 
 // ============================================================================
@@ -153,6 +158,14 @@ export const consumerApi = {
         avatar?: string | null;
       }>
     >(PORTS.CONSUMER, `/consumers/${id}/contact`),
+
+  /** Xác minh danh tính (CMND/CCCD) để được đặt COD đơn lớn. */
+  verify: (id: string, idCardNumber: string) =>
+    httpClient.patch<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${id}/verify`,
+      { idCardNumber },
+    ),
 
   addAddress: (consumerId: string, body: AddAddressRequest) =>
     httpClient.post<ApiResponse<ConsumerProfile>>(
@@ -230,6 +243,9 @@ export const merchantApi = {
       params,
     }),
 
+  getByUserId: (userId: string) =>
+    httpClient.get<Merchant>(PORTS.MERCHANT, `/merchants/user/${userId}`),
+
   /**
    * Global dish search across all APPROVED merchants.
    * NOTE: backend route is declared before `/merchants/:id` on purpose.
@@ -252,6 +268,16 @@ export const merchantApi = {
       PORTS.MERCHANT,
       "/merchants/menu-items/by-ids",
       { params: { ids: ids.join(",") } },
+    ),
+
+  /** Global top dishes (one per merchant) — fallback for new customers. */
+  getTopMenuItems: (params?: { take?: number }) =>
+    httpClient.get<{ items: MenuSearchItem[] }>(
+      PORTS.MERCHANT,
+      "/merchants/menu/top",
+      {
+        params,
+      },
     ),
 
   getById: (id: string) =>
@@ -905,6 +931,21 @@ export const walletApi = {
       { params: { ownerId, ownerType } },
     ),
 
+  // Quỹ dự phòng
+  getReserveBalance: () =>
+    httpClient.get<{ balance: number }>(
+      PORTS.WALLET,
+      "/wallets/reserve/balance",
+    ),
+
+  // Nợ COD quá hạn
+  listDebts: (days?: number) =>
+    httpClient.get<{ statusCode: number; data: any[] }>(
+      PORTS.WALLET,
+      "/wallets/debts",
+      { params: { days } },
+    ),
+
   // Top-up via Stripe (returns clientSecret)
   topupStripe: (ownerId: string, ownerType: string, amount: number) =>
     httpClient.post<{ clientSecret: string; paymentIntentId: string }>(
@@ -1335,6 +1376,44 @@ export const notificationApi = {
 };
 
 // ============================================================================
+// Chat Service (Port 3015) — Hội thoại tài xế ↔ khách hàng
+// ============================================================================
+export const chatApi = {
+  getOrCreateConversation: (body: GetOrCreateConversationRequest) =>
+    httpClient.post<ApiResponse<ChatConversation>>(
+      PORTS.CHAT,
+      "/chat/conversations",
+      body,
+    ),
+
+  listConversations: (userId: string) =>
+    httpClient.get<{ statusCode: number; data: ChatConversation[] }>(
+      PORTS.CHAT,
+      `/chat/conversations/user/${userId}`,
+    ),
+
+  getMessages: (conversationId: string) =>
+    httpClient.get<{ statusCode: number; data: ChatMessage[] }>(
+      PORTS.CHAT,
+      `/chat/conversations/${conversationId}/messages`,
+    ),
+
+  sendMessage: (conversationId: string, body: SendMessageRequest) =>
+    httpClient.post<ApiResponse<ChatMessage>>(
+      PORTS.CHAT,
+      `/chat/conversations/${conversationId}/messages`,
+      body,
+    ),
+
+  markDelivered: (orderId: string) =>
+    httpClient.post<{ statusCode: number; data: ChatConversation | null }>(
+      PORTS.CHAT,
+      "/chat/conversations/mark-delivered",
+      { orderId },
+    ),
+};
+
+// ============================================================================
 // Resolution Service (Port 3014) — Khiếu nại · Gian lận · Xử phạt
 // ============================================================================
 export const resolutionApi = {
@@ -1345,6 +1424,7 @@ export const resolutionApi = {
     category?: string;
     severity?: string;
     actorId?: string;
+    orderId?: string;
     skip?: number;
     take?: number;
   }) =>
@@ -1370,6 +1450,8 @@ export const resolutionApi = {
     type: string;
     category: string;
     orderId?: string;
+    reporterId?: string;
+    reporterType?: string;
     respondentId: string;
     respondentType: string;
     subject: string;
@@ -1402,17 +1484,38 @@ export const resolutionApi = {
       `/cases/${id}/request-evidence`,
     ),
 
-  resolve: (id: string, body: { verdict: string; note?: string }) =>
+  resolve: (
+    id: string,
+    body: { verdict: string; note?: string; faultParty?: string },
+  ) =>
     httpClient.post<{ statusCode: number; data: any }>(
       PORTS.RESOLUTION,
       `/cases/${id}/resolve`,
       body,
     ),
 
-  withdraw: (id: string) =>
+  respond: (
+    id: string,
+    body: { text: string; evidence?: string[]; actorId?: string },
+  ) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/respond`,
+      body,
+    ),
+
+  confirm: (id: string, body?: { actorId?: string }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/confirm`,
+      body,
+    ),
+
+  withdraw: (id: string, body?: { actorId?: string }) =>
     httpClient.post<{ statusCode: number; data: any }>(
       PORTS.RESOLUTION,
       `/cases/${id}/withdraw`,
+      body,
     ),
 
   escalate: (id: string) =>

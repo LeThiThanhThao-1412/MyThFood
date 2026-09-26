@@ -67,6 +67,37 @@ export class PenaltyService {
     return this.getEntityOrFail(id);
   }
 
+  /**
+   * Ghi nhận hình phạt cho mục đích hiển thị (không thi hành side-effect),
+   * vì tiền đã được route ở order-service.settleFailureMoney.
+   */
+  async recordPenalty(input: {
+    caseId: string;
+    type: PenaltyType;
+    targetId: string;
+    targetType: string;
+    amount?: number | null;
+    durationDays?: number | null;
+    reason: string;
+  }): Promise<any> {
+    const c = await this.caseRepo.findByIdOrFail(input.caseId);
+    const p = Penalty.create({
+      caseId: input.caseId,
+      type: input.type,
+      targetId: input.targetId,
+      targetType: input.targetType,
+      amount: input.amount ?? null,
+      durationDays: input.durationDays ?? null,
+      reason: input.reason,
+    });
+    p.markExecuted("service");
+    const id = p.id.toString();
+    await this.repo.save(p);
+    c.addPenaltyId(id);
+    await this.caseRepo.save(c);
+    return this.getEntityOrFail(id);
+  }
+
   async list(filters: PenaltyListFilters) {
     return this.repo.findAndCount(filters);
   }
@@ -117,6 +148,8 @@ export class PenaltyService {
             targetId,
             p.penaltyDurationDays ?? 7,
           );
+        } else if (targetType === "CONSUMER") {
+          await this.integration.suspendConsumer(targetId, "SUSPENDED");
         } else {
           await this.integration.suspendMerchant(targetId);
         }
@@ -124,6 +157,8 @@ export class PenaltyService {
       case PenaltyType.BAN:
         if (targetType === "DRIVER") {
           await this.integration.suspendDriver(targetId, 36500);
+        } else if (targetType === "CONSUMER") {
+          await this.integration.suspendConsumer(targetId, "BANNED");
         } else {
           await this.integration.suspendMerchant(targetId);
         }

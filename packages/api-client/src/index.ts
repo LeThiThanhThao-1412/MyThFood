@@ -1,5 +1,5 @@
 export { httpClient, ApiError } from "./http-client";
-export { socketClient } from "./socket-client";
+export { socketClient, chatSocketClient } from "./socket-client";
 export {
   authApi,
   consumerApi,
@@ -16,6 +16,7 @@ export {
   promotionApi,
   notificationApi,
   resolutionApi,
+  chatApi,
   PORTS,
 } from "./api-endpoints";
 export type { ShippingFeeRequest, ShippingFeeResponse } from "./api-endpoints";
@@ -116,4 +117,10 @@ export type {
   ApplyCompensationVoucherRequest,
   Notification,
   CreateNotificationRequest,
+  ChatMessageType,
+  ChatSenderRole,
+  ChatMessage,
+  ChatConversation,
+  GetOrCreateConversationRequest,
+  SendMessageRequest,
 } from "./types";

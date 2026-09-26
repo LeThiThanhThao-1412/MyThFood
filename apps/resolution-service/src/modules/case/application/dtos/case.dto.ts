@@ -27,6 +27,18 @@ export class CreateCaseDto {
   @IsString()
   orderId?: string;
 
+  @IsOptional()
+  @IsString()
+  responseDeadline?: string;
+
+  @IsOptional()
+  @IsString()
+  reporterId?: string;
+
+  @IsOptional()
+  @IsString()
+  reporterType?: string;
+
   @IsString()
   respondentId!: string;
 
@@ -51,6 +63,31 @@ export class AddEvidenceDto {
   @IsArray()
   @IsString({ each: true })
   urls!: string[];
+
+  @IsOptional()
+  @IsString()
+  actorId?: string;
+}
+
+export class RespondCaseDto {
+  @IsString()
+  @MinLength(1)
+  text!: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  evidence?: string[];
+
+  @IsOptional()
+  @IsString()
+  actorId?: string;
+}
+
+export class ActorIdDto {
+  @IsOptional()
+  @IsString()
+  actorId?: string;
 }
 
 export class ResolveCaseDto {
@@ -60,4 +97,8 @@ export class ResolveCaseDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  faultParty?: string;
 }

@@ -50,6 +50,7 @@ export function useDeliveryTrip(orderId?: string | null) {
   const [customerInfo, setCustomerInfo] = useState<{
     fullName: string | null;
     phone: string | null;
+    userId?: string | null;
     avatar?: string | null;
   } | null>(null);
   const [driver, setDriver] = useState<any>(null);

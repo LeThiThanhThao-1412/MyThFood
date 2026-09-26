@@ -10,8 +10,10 @@ import {
   uploadApi,
   driverApi,
   merchantApi,
+  chatApi,
+  resolutionApi,
 } from "@mythfood/api-client";
-import { useAuthStore, fetchRoute } from "@mythfood/frontend-shared";
+import { useAuthStore, fetchRoute, ChatDrawer } from "@mythfood/frontend-shared";
 import type { RouteInfo } from "@mythfood/frontend-shared";
 import { reorderOrder } from "@/lib/reorder";
 
@@ -89,6 +91,19 @@ const DRIVER_POSITIVE_PHRASES = [
   "Rất nhiệt tình 👍",
 ];
 
+const COMPLAINT_CATEGORIES: Record<string, string> = {
+  ORDER_QUALITY: "Chất lượng món",
+  MISSING_ITEM: "Thiếu món",
+  WRONG_ITEM: "Sai món",
+  FOOD_SAFETY: "An toàn thực phẩm",
+  DELIVERY_LATE: "Giao trễ",
+  NOT_RECEIVED: "Chưa nhận hàng",
+  DRIVER_BEHAVIOR: "Thái độ tài xế",
+  MERCHANT_BEHAVIOR: "Thái độ nhà hàng",
+  DAMAGED_ITEM: "Hàng hư hỏng",
+  OTHER: "Khác",
+};
+
 function toNum(v: unknown, fallback = 0): number {
   if (typeof v === "number" && !Number.isNaN(v)) return v;
   if (typeof v === "string") {
@@ -129,6 +144,141 @@ export default function OrderDetailPage() {
   const [cancelling, setCancelling] = useState(false);
   const [cancelStatus, setCancelStatus] = useState("");
 
+  // Chat with driver
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatConversationId, setChatConversationId] = useState<string | null>(
+    null,
+  );
+
+  // Khiếu nại giao thất bại (bị tài xế khiếu nại)
+  const [deliveryCase, setDeliveryCase] = useState<any>(null);
+  const [respondText, setRespondText] = useState("");
+  const [respondImages, setRespondImages] = useState<string[]>([]);
+  const [respondBusy, setRespondBusy] = useState(false);
+  const [respondMsg, setRespondMsg] = useState("");
+
+  async function uploadRespondImage(e: any) {
+    const files = Array.from(e.target.files || []) as File[];
+    if (!files.length) return;
+    try {
+      for (const file of files) {
+        const res: any = await uploadApi.uploadImage(file, "complaints");
+        const url = res?.data?.url || res?.url;
+        if (url) setRespondImages((prev) => [...prev, url]);
+      }
+    } catch {
+      setRespondMsg("❌ Tải ảnh thất bại");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  async function handleConfirmCase() {
+    if (!deliveryCase) return;
+    setRespondBusy(true);
+    setRespondMsg("");
+    try {
+      const res: any = await resolutionApi.confirm(deliveryCase.id, {
+        actorId: order.consumerId,
+      });
+      setDeliveryCase(res?.data ?? res ?? deliveryCase);
+      setRespondMsg("✅ Đã xác nhận, đơn được chốt lỗi khách hàng");
+    } catch (err: any) {
+      setRespondMsg(`❌ ${err?.message || "Không thể xác nhận"}`);
+    } finally {
+      setRespondBusy(false);
+    }
+  }
+
+  async function handleRespondCase() {
+    if (!deliveryCase || !respondText.trim()) {
+      setRespondMsg("Vui lòng nhập nội dung phản hồi");
+      return;
+    }
+    setRespondBusy(true);
+    setRespondMsg("");
+    try {
+      const res: any = await resolutionApi.respond(deliveryCase.id, {
+        text: respondText.trim(),
+        evidence: respondImages.length ? respondImages : undefined,
+        actorId: order.consumerId,
+      });
+      setDeliveryCase(res?.data ?? res ?? deliveryCase);
+      setRespondMsg("✅ Đã gửi phản hồi, chờ admin xử lý");
+    } catch (err: any) {
+      setRespondMsg(`❌ ${err?.message || "Không thể gửi phản hồi"}`);
+    } finally {
+      setRespondBusy(false);
+    }
+  }
+
+  // Khiếu nại đơn hàng (tạo case mới từ chi tiết đơn)
+  const [complaintOpen, setComplaintOpen] = useState(false);
+  const [complaintCategory, setComplaintCategory] = useState("ORDER_QUALITY");
+  const [complaintRespondentType, setComplaintRespondentType] = useState<
+    "MERCHANT" | "DRIVER"
+  >("MERCHANT");
+  const [complaintSubject, setComplaintSubject] = useState("");
+  const [complaintDesc, setComplaintDesc] = useState("");
+  const [complaintEvidence, setComplaintEvidence] = useState<string[]>([]);
+  const [complaintBusy, setComplaintBusy] = useState(false);
+  const [complaintMsg, setComplaintMsg] = useState("");
+
+  async function uploadComplaintImage(e: any) {
+    const files = Array.from(e.target.files || []) as File[];
+    if (!files.length) return;
+    try {
+      for (const file of files) {
+        const res: any = await uploadApi.uploadImage(file, "complaints");
+        const url = res?.data?.url || res?.url;
+        if (url) setComplaintEvidence((prev) => [...prev, url]);
+      }
+    } catch {
+      setComplaintMsg("❌ Tải ảnh thất bại");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  async function submitComplaint() {
+    if (!order) return;
+    const respondentId =
+      complaintRespondentType === "MERCHANT"
+        ? order.merchantId
+        : order.driverId;
+    if (!respondentId) {
+      setComplaintMsg("❌ Không tìm thấy đối tượng khiếu nại");
+      return;
+    }
+    if (!complaintDesc.trim()) {
+      setComplaintMsg("❌ Vui lòng mô tả sự việc");
+      return;
+    }
+    setComplaintBusy(true);
+    setComplaintMsg("");
+    try {
+      await resolutionApi.createCase({
+        type: "COMPLAINT",
+        category: complaintCategory,
+        orderId: order.id,
+        respondentId,
+        respondentType: complaintRespondentType,
+        subject: complaintSubject.trim() || complaintCategory,
+        description: complaintDesc.trim(),
+        evidence: complaintEvidence.length ? complaintEvidence : undefined,
+      });
+      setComplaintMsg("✅ Đã gửi khiếu nại");
+      setComplaintOpen(false);
+      setComplaintDesc("");
+      setComplaintSubject("");
+      setComplaintEvidence([]);
+    } catch (err: any) {
+      setComplaintMsg(`❌ ${err?.message || "Không thể gửi khiếu nại"}`);
+    } finally {
+      setComplaintBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!isAuthenticated) {
       router.push("/login");
@@ -141,6 +291,15 @@ export default function OrderDetailPage() {
         const d = (dRes as any)?.data ?? null;
         setOrder(o);
         setDispatch(d);
+
+        // Khi đơn giao thất bại: lấy case khiếu nại của đơn này
+        if (o?.status === "DELIVERY_FAILED") {
+          const cRes: any = await resolutionApi
+            .listCases({ orderId: o.id, take: 5 })
+            .catch(() => null);
+          const list = cRes?.data ?? [];
+          setDeliveryCase(list[0] ?? null);
+        }
 
         // Lấy thông tin nhà hàng (tên, ảnh, đánh giá)
         if (o?.merchantId) {
@@ -312,6 +471,24 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function openChatWithDriver() {
+    if (!order || !user?.id || !driverProfile?.userId) return;
+    try {
+      const res: any = await chatApi.getOrCreateConversation({
+        orderId: order.id,
+        consumerUserId: user.id,
+        driverUserId: driverProfile.userId,
+      });
+      const conv = res?.data || res;
+      if (conv?.id) {
+        setChatConversationId(conv.id);
+        setChatOpen(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function handleCancel() {
     if (!order) return;
     const reason = window.prompt("Lý do hủy đơn:", "Tôi muốn hủy đơn");
@@ -462,6 +639,90 @@ export default function OrderDetailPage() {
           </p>
         </div>
 
+        {/* Khiếu nại giao thất bại (bị tài xế khiếu nại) */}
+        {order.status === "DELIVERY_FAILED" && deliveryCase && (
+          <div className="bg-white rounded-2xl shadow-sm p-4 border border-amber-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-[#1a1a2e]">⚠️ Bạn bị khiếu nại</h3>
+              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600">
+                {deliveryCase.status}
+              </span>
+            </div>
+            <p className="text-sm font-semibold text-gray-800">
+              {deliveryCase.subject}
+            </p>
+            <p className="text-sm text-gray-500">{deliveryCase.description}</p>
+            {deliveryCase.evidence?.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {deliveryCase.evidence.map((url: string, i: number) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={i}
+                    src={url}
+                    alt="Bằng chứng tài xế"
+                    className="h-20 w-20 object-cover rounded-lg border border-gray-200"
+                  />
+                ))}
+              </div>
+            )}
+
+            {deliveryCase.status === "OPEN" && (
+              <div className="space-y-2 pt-1">
+                <textarea
+                  value={respondText}
+                  onChange={(e) => setRespondText(e.target.value)}
+                  placeholder="Mô tả sự việc của bạn..."
+                  className="w-full border border-gray-200 rounded-xl p-3 text-sm"
+                  rows={3}
+                />
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={uploadRespondImage}
+                  className="text-xs text-gray-500 file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5"
+                />
+                {respondImages.length > 0 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {respondImages.map((url, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={i}
+                        src={url}
+                        alt="Phản hồi"
+                        className="h-16 w-16 object-cover rounded-lg border border-gray-200"
+                      />
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleRespondCase}
+                    disabled={respondBusy}
+                    className="flex-1 bg-blue-500 text-white py-2.5 rounded-xl font-semibold disabled:opacity-50"
+                  >
+                    {respondBusy ? "Đang gửi..." : "Phản hồi"}
+                  </button>
+                  <button
+                    onClick={handleConfirmCase}
+                    disabled={respondBusy}
+                    className="flex-1 bg-green-500 text-white py-2.5 rounded-xl font-semibold disabled:opacity-50"
+                  >
+                    Xác nhận
+                  </button>
+                </div>
+              </div>
+            )}
+            {respondMsg && (
+              <p
+                className={`text-sm font-medium ${respondMsg.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
+              >
+                {respondMsg}
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Nhà hàng của đơn */}
         {merchant && (
           <Link
@@ -545,7 +806,7 @@ export default function OrderDetailPage() {
                   {driverProfile.fullName?.charAt(0)?.toUpperCase() || "🧑"}
                 </div>
               )}
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="font-semibold text-gray-800">
                   {driverProfile.fullName || "Tài xế"}
                 </p>
@@ -559,6 +820,13 @@ export default function OrderDetailPage() {
                     : ""}
                 </p>
               </div>
+              <button
+                onClick={openChatWithDriver}
+                className="ml-auto w-11 h-11 rounded-full bg-[#ff6b35]/10 text-[#ff6b35] flex items-center justify-center text-xl shrink-0 hover:bg-[#ff6b35]/20 transition"
+                title="Nhắn tin với tài xế"
+              >
+                💬
+              </button>
             </div>
           </div>
         )}
@@ -920,6 +1188,16 @@ export default function OrderDetailPage() {
           </p>
         )}
 
+        <button
+          onClick={() => {
+            setComplaintMsg("");
+            setComplaintOpen(true);
+          }}
+          className="w-full bg-white border-2 border-gray-300 text-gray-600 py-3.5 rounded-xl font-semibold hover:bg-gray-50 transition"
+        >
+          🛡️ Khiếu nại
+        </button>
+
         <div className="flex gap-3">
           {(order.status === "PENDING" || order.status === "CONFIRMED") && (
             <button
@@ -945,6 +1223,124 @@ export default function OrderDetailPage() {
           </p>
         )}
       </main>
+
+      <ChatDrawer
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        conversationId={chatConversationId}
+        myUserId={user?.id}
+        counterpartName={driverProfile?.fullName || "Tài xế"}
+        counterpartAvatar={driverProfile?.avatar}
+      />
+
+      {/* Modal khiếu nại đơn hàng */}
+      {complaintOpen && (
+        <div
+          className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50"
+          onClick={() => setComplaintOpen(false)}
+        >
+          <div
+            className="bg-white w-full max-w-lg rounded-t-2xl p-5 space-y-3 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-lg">
+                🛡️ Khiếu nại đơn #{order.id?.slice(0, 8)}
+              </h3>
+              <button
+                onClick={() => setComplaintOpen(false)}
+                className="text-gray-400 text-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500">Loại khiếu nại</label>
+              <select
+                value={complaintCategory}
+                onChange={(e) => setComplaintCategory(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm mt-1"
+              >
+                {Object.keys(COMPLAINT_CATEGORIES).map((k) => (
+                  <option key={k} value={k}>
+                    {COMPLAINT_CATEGORIES[k]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500">Khiếu nại với</label>
+              <div className="flex gap-2 mt-1">
+                <button
+                  onClick={() => setComplaintRespondentType("MERCHANT")}
+                  className={`flex-1 py-2 rounded-xl text-sm font-semibold border ${complaintRespondentType === "MERCHANT" ? "bg-[#ff6b35] text-white border-[#ff6b35]" : "border-gray-200 text-gray-600"}`}
+                >
+                  🏪 Nhà hàng
+                </button>
+                <button
+                  onClick={() => setComplaintRespondentType("DRIVER")}
+                  className={`flex-1 py-2 rounded-xl text-sm font-semibold border ${complaintRespondentType === "DRIVER" ? "bg-[#ff6b35] text-white border-[#ff6b35]" : "border-gray-200 text-gray-600"}`}
+                >
+                  🛵 Tài xế
+                </button>
+              </div>
+            </div>
+
+            <input
+              value={complaintSubject}
+              onChange={(e) => setComplaintSubject(e.target.value)}
+              placeholder="Tiêu đề (tùy chọn)"
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"
+            />
+            <textarea
+              value={complaintDesc}
+              onChange={(e) => setComplaintDesc(e.target.value)}
+              placeholder="Mô tả sự việc..."
+              rows={4}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm"
+            />
+
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={uploadComplaintImage}
+              className="text-xs text-gray-500 file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5"
+            />
+            {complaintEvidence.length > 0 && (
+              <div className="flex gap-2 flex-wrap">
+                {complaintEvidence.map((url, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={i}
+                    src={url}
+                    alt="Bằng chứng"
+                    className="h-16 w-16 object-cover rounded-lg border border-gray-200"
+                  />
+                ))}
+              </div>
+            )}
+
+            {complaintMsg && (
+              <p
+                className={`text-sm font-medium ${complaintMsg.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
+              >
+                {complaintMsg}
+              </p>
+            )}
+
+            <button
+              onClick={submitComplaint}
+              disabled={complaintBusy}
+              className="w-full bg-[#ff6b35] text-white py-3 rounded-xl font-semibold hover:bg-orange-600 transition disabled:opacity-50"
+            >
+              {complaintBusy ? "Đang gửi..." : "Gửi khiếu nại"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bottom nav */}
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full lg:max-w-3xl bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">

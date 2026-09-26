@@ -9,6 +9,7 @@ import {
   CaseCategory,
   CaseStatus,
   CaseType,
+  FaultParty,
   Severity,
   Verdict,
 } from "../domain/case.enums";
@@ -21,6 +22,7 @@ export interface CaseListFilters {
   category?: CaseCategory;
   severity?: Severity;
   actorId?: string;
+  orderId?: string;
   skip: number;
   take: number;
 }
@@ -90,6 +92,9 @@ export class CaseRepository {
       qb.andWhere("(c.reporterId = :actorId OR c.respondentId = :actorId)", {
         actorId: filters.actorId,
       });
+    }
+    if (filters.orderId) {
+      qb.andWhere("c.orderId = :orderId", { orderId: filters.orderId });
     }
 
     qb.orderBy("c.createdAt", "DESC").skip(filters.skip).take(filters.take);
@@ -191,6 +196,18 @@ export class CaseRepository {
     });
   }
 
+  /** Case OPEN quá hạn phản hồi nhưng chưa có phản hồi → để tự chốt lỗi khách. */
+  async findPendingResponseExpired(): Promise<Case[]> {
+    const entities = await this.repo
+      .createQueryBuilder("c")
+      .where("c.status = :status", { status: CaseStatus.OPEN })
+      .andWhere("c.responseDeadline IS NOT NULL")
+      .andWhere("c.responseDeadline < :now", { now: new Date() })
+      .andWhere("(c.respondentResponse IS NULL OR c.respondentResponse = '')")
+      .getMany();
+    return entities.map((e) => this.toDomain(e));
+  }
+
   private toEntity(c: Case): CaseEntity {
     const entity = new CaseEntity();
     entity.id = c.id.toString();
@@ -212,6 +229,11 @@ export class CaseRepository {
     entity.penaltyIds = c.casePenaltyIds;
     entity.resolvedBy = c.caseResolvedBy;
     entity.resolvedAt = c.caseResolvedAt;
+    entity.respondentResponse = c.caseRespondentResponse;
+    entity.respondentEvidence = c.caseRespondentEvidence;
+    entity.respondentRespondedAt = c.caseRespondentRespondedAt;
+    entity.responseDeadline = c.caseResponseDeadline;
+    entity.faultParty = c.caseFaultParty;
     return entity;
   }
 
@@ -235,6 +257,11 @@ export class CaseRepository {
       penaltyIds: e.penaltyIds ?? [],
       resolvedBy: e.resolvedBy ?? null,
       resolvedAt: e.resolvedAt ?? null,
+      respondentResponse: e.respondentResponse ?? null,
+      respondentEvidence: e.respondentEvidence ?? [],
+      respondentRespondedAt: e.respondentRespondedAt ?? null,
+      responseDeadline: e.responseDeadline ?? null,
+      faultParty: (e.faultParty as FaultParty) ?? null,
     });
   }
 }

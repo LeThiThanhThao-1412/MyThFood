@@ -276,6 +276,91 @@ export class WalletController {
   }
 
   // ═══════════════════════════════════════════════════════
+  // Resolution Service — Compliance (hold/release + penalty)
+  // ═══════════════════════════════════════════════════════
+  @Post("settlement/hold")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async holdSettlement(@Body() body: { orderId: string }) {
+    return this.walletService.holdSettlement(body.orderId);
+  }
+
+  @Post("settlement/release")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async releaseSettlement(@Body() body: { orderId: string }) {
+    return this.walletService.releaseSettlement(body.orderId);
+  }
+
+  @Post("penalty/debit")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async penaltyDebit(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType: string;
+      amount: number;
+      description: string;
+    },
+  ) {
+    return this.walletService.penaltyDebit(
+      body.ownerId,
+      body.ownerType as OwnerType,
+      body.amount,
+      body.description,
+    );
+  }
+
+  @Post("penalty/credit")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async penaltyCredit(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType: string;
+      amount: number;
+      description: string;
+    },
+  ) {
+    return this.walletService.penaltyCredit(
+      body.ownerId,
+      body.ownerType as OwnerType,
+      body.amount,
+      body.description,
+    );
+  }
+
+  @Get("reserve/balance")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async reserveBalance() {
+    return this.walletService.getReserveBalance();
+  }
+
+  @Post("reserve/disburse")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async reserveDisburse(
+    @Body()
+    body: {
+      recipientId: string;
+      recipientType: string;
+      amount: number;
+      description: string;
+    },
+  ) {
+    return this.walletService.disburseReserve(
+      body.recipientId,
+      body.recipientType as OwnerType,
+      body.amount,
+      body.description,
+    );
+  }
+
+  @Get("debts")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async overdueDebts(@Query("days") days?: string) {
+    const d = days ? parseInt(days, 10) : 14;
+    return { statusCode: HttpStatus.OK, data: await this.walletService.listOverdueDebts(d) };
+  }
+
+  // ═══════════════════════════════════════════════════════
   // Withdraw
   // ═══════════════════════════════════════════════════════
   @Post("withdraw")

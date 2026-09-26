@@ -354,6 +354,7 @@ export type OrderStatus =
 export interface OrderItem {
   menuItemId: string;
   name: string;
+  imageUrl?: string | null;
   quantity: number;
   unitPrice: number;
   subtotal: number;
@@ -395,6 +396,7 @@ export interface PlaceOrderRequest {
   items: {
     menuItemId: string;
     name: string;
+    imageUrl?: string | null;
     quantity: number;
     unitPrice: number;
     specialInstructions?: string;
@@ -548,6 +550,7 @@ export interface Driver {
 /** Thông tin công khai của tài xế dành cho CONSUMER (không chứa dữ liệu nhạy cảm). */
 export interface DriverPublicProfile {
   id: string;
+  userId?: string;
   fullName: string;
   avatar?: string | null;
   vehicleRegistrationNumber: string;
@@ -848,3 +851,41 @@ export interface CreateNotificationRequest {
   body?: string;
   data?: Record<string, unknown>;
 }
+
+// --- Chat ---
+export type ChatMessageType = "TEXT" | "IMAGE";
+export type ChatSenderRole = "CONSUMER" | "DRIVER";
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderRole: ChatSenderRole;
+  type: ChatMessageType;
+  content: string;
+  createdAt: string;
+}
+
+export interface ChatConversation {
+  id: string;
+  orderId: string;
+  consumerUserId: string;
+  driverUserId: string;
+  lastMessageAt: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  hardDeleteAt: string | null;
+  lastMessage?: ChatMessage | null;
+}
+
+export interface GetOrCreateConversationRequest {
+  orderId: string;
+  consumerUserId: string;
+  driverUserId: string;
+}
+
+export interface SendMessageRequest {
+  type: ChatMessageType;
+  content: string;
+}
+

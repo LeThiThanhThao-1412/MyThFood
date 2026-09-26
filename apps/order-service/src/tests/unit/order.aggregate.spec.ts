@@ -215,6 +215,56 @@ describe("Order Aggregate", () => {
     });
   });
 
+  describe("cancelByCustomer()", () => {
+    it("should allow customer cancel at PENDING", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const order = result.value;
+      order.cancelByCustomer("Đổi ý");
+      expect(order.orderStatus).toBe("CANCELLED");
+    });
+
+    it("should allow customer cancel at CONFIRMED", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const order = result.value;
+      order.confirm();
+      order.cancelByCustomer("Đổi ý");
+      expect(order.orderStatus).toBe("CANCELLED");
+    });
+
+    it("should NOT allow customer cancel once PREPARING", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const order = result.value;
+      order.confirm();
+      order.startPreparing();
+      expect(() => order.cancelByCustomer("Đổi ý")).toThrow(
+        "Nhà hàng đã bắt đầu chuẩn bị món, bạn không thể hủy đơn nữa",
+      );
+    });
+
+    it("should NOT allow customer cancel at READY_FOR_PICKUP", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const order = result.value;
+      order.confirm();
+      order.startPreparing();
+      order.markReadyForPickup();
+      expect(() => order.cancelByCustomer("Đổi ý")).toThrow(
+        "Nhà hàng đã bắt đầu chuẩn bị món, bạn không thể hủy đơn nữa",
+      );
+    });
+
+    it("should NOT allow customer cancel at OUT_FOR_DELIVERY", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const order = result.value;
+      order.confirm();
+      order.startPreparing();
+      order.markReadyForPickup();
+      order.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
+      expect(() => order.cancelByCustomer("Đổi ý")).toThrow(
+        "Nhà hàng đã bắt đầu chuẩn bị món, bạn không thể hủy đơn nữa",
+      );
+    });
+  });
+
   describe("Query methods", () => {
     it("should report active for non-terminal statuses", () => {
       const result = Order.place(validPlaceOrderProps);

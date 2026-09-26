@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { resolutionApi } from "@mythfood/api-client";
+import { resolutionApi, walletApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 
 const CASE_STATUS_BADGE: Record<string, string> = {
@@ -68,6 +68,28 @@ const CATEGORY_LABEL: Record<string, string> = {
   COLLUSION: "Thông đồng",
 };
 
+const ACTOR_LABEL: Record<string, string> = {
+  CONSUMER: "Khách hàng",
+  DRIVER: "Tài xế",
+  MERCHANT: "Nhà hàng",
+  ADMIN: "Admin",
+  SYSTEM: "Hệ thống",
+};
+
+const FAULT_PARTY_LABEL: Record<string, string> = {
+  CUSTOMER: "Khách hàng",
+  DRIVER: "Tài xế",
+  MERCHANT: "Nhà hàng",
+  SYSTEM: "Hệ thống",
+  INCONCLUSIVE: "Không xác định",
+};
+
+const VERDICT_LABEL: Record<string, string> = {
+  VALID: "✅ Khiếu nại hợp lệ",
+  INVALID: "❌ Khiếu nại không hợp lệ",
+  INCONCLUSIVE: "❓ Chưa đủ căn cứ",
+};
+
 function formatVnd(n: unknown): string {
   return (Number(n) || 0).toLocaleString("vi-VN") + "₫";
 }
@@ -97,6 +119,7 @@ export default function AdminCasesPage() {
   const [fSeverity, setFSeverity] = useState("");
   const [selected, setSelected] = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
+  const [casePenalties, setCasePenalties] = useState<any[]>([]);
 
   const [createForm, setCreateForm] = useState({
     type: "COMPLAINT",
@@ -116,6 +139,10 @@ export default function AdminCasesPage() {
     reason: "",
   });
   const [showPenalty, setShowPenalty] = useState(false);
+  const [resolveForm, setResolveForm] = useState({
+    faultParty: "MERCHANT",
+    note: "",
+  });
 
   const [penalties, setPenalties] = useState<any[]>([]);
   const [pLoading, setPLoading] = useState(false);
@@ -130,6 +157,8 @@ export default function AdminCasesPage() {
   });
   const [detectResult, setDetectResult] = useState<any>(null);
   const [detectLoading, setDetectLoading] = useState(false);
+  const [reserveBalance, setReserveBalance] = useState<number | null>(null);
+  const [debts, setDebts] = useState<any[]>([]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -139,6 +168,7 @@ export default function AdminCasesPage() {
     loadCases();
     loadPenalties();
     loadRules();
+    loadReserve();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, fStatus, fType, fSeverity, pStatus]);
 
@@ -163,6 +193,27 @@ export default function AdminCasesPage() {
   async function openCase(c: any) {
     setSelected(c);
     setTimeline([]);
+    setCasePenalties([]);
+    try {
+      const fresh: any = await resolutionApi.getCase(c.id);
+      if (fresh?.data) {
+        setSelected(fresh.data);
+        const ids: string[] = fresh.data.penaltyIds || [];
+        if (ids.length) {
+          const ps = await Promise.all(
+            ids.map((pid: string) =>
+              resolutionApi
+                .getPenalty(pid)
+                .then((r: any) => r?.data)
+                .catch(() => null),
+            ),
+          );
+          setCasePenalties(ps.filter(Boolean));
+        }
+      }
+    } catch {
+      /* ignore */
+    }
     try {
       const t: any = await resolutionApi.getTimeline(c.id);
       setTimeline(t?.data || []);
@@ -204,6 +255,21 @@ export default function AdminCasesPage() {
       setRules(res?.data || []);
     } catch {
       /* ignore */
+    }
+  }
+
+  async function loadReserve() {
+    try {
+      const r: any = await walletApi.getReserveBalance();
+      setReserveBalance(Number(r?.balance) || 0);
+    } catch {
+      setReserveBalance(null);
+    }
+    try {
+      const d: any = await walletApi.listDebts(14);
+      setDebts(d?.data || []);
+    } catch {
+      setDebts([]);
     }
   }
 
@@ -252,6 +318,24 @@ export default function AdminCasesPage() {
       await openCase(selected);
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Ban hành phạt thất bại"}`);
+    }
+  }
+
+  async function resolveWithPenalty(verdict: string) {
+    if (!selected) return;
+    setMsg("");
+    try {
+      await resolutionApi.resolve(selected.id, {
+        verdict,
+        note: resolveForm.note || undefined,
+        faultParty: resolveForm.faultParty,
+      });
+      setMsg(`✅ Đã phán quyết: ${VERDICT_LABEL[verdict] || verdict}`);
+      await loadCases();
+      await loadPenalties();
+      if (selected) await openCase(selected);
+    } catch (e: any) {
+      setMsg(`❌ ${e?.message || "Phán quyết thất bại"}`);
     }
   }
 
@@ -352,6 +436,34 @@ export default function AdminCasesPage() {
       </header>
 
       <div className="max-w-[1400px] mx-auto px-4 py-6 space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase mb-1">
+              💰 Quỹ dự phòng
+            </p>
+            <p className="text-2xl font-bold text-[#1a1a2e]">
+              {reserveBalance === null
+                ? "—"
+                : `${reserveBalance.toLocaleString("vi-VN")}₫`}
+            </p>
+          </div>
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <p className="text-xs font-semibold text-gray-400 uppercase mb-1">
+              🧾 Nợ COD quá hạn (trên 14 ngày)
+            </p>
+            <p className="text-2xl font-bold text-red-600">{debts.length}</p>
+            {debts.length > 0 && (
+              <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                {debts.map((d: any, i: number) => (
+                  <p key={i} className="text-xs text-gray-500">
+                    {d.consumerId?.slice(0, 8)}… · {d.balance}₫ ·{" "}
+                    {d.daysOverdue} ngày
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
         {msg && (
           <div className="bg-white rounded-2xl shadow-sm px-4 py-3 text-sm font-medium">
             {msg}
@@ -602,18 +714,99 @@ export default function AdminCasesPage() {
                   <p className="text-sm text-gray-600">
                     {selected.description}
                   </p>
+
                   <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
                     <p>
-                      Người khiếu nại: {selected.reporterId?.slice(0, 8)}… (
-                      {selected.reporterType})
+                      Người khiếu nại:{" "}
+                      {ACTOR_LABEL[selected.reporterType] || selected.reporterType}
                     </p>
                     <p>
-                      Bên bị: {selected.respondentId?.slice(0, 8)}… (
-                      {selected.respondentType})
+                      Bên bị khiếu nại:{" "}
+                      {ACTOR_LABEL[selected.respondentType] ||
+                        selected.respondentType}
                     </p>
-                    <p>Order: {selected.orderId || "-"}</p>
-                    <p>Verdict: {selected.verdict || "-"}</p>
+                    <p className="col-span-2">Mã đơn: {selected.orderId || "-"}</p>
                   </div>
+
+                  {selected.evidence?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-400 uppercase mb-2">
+                        📷 Bằng chứng của người khiếu nại
+                      </p>
+                      <div className="flex gap-2 flex-wrap">
+                        {selected.evidence.map((url: string, i: number) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={i}
+                            src={url}
+                            alt={`Bằng chứng ${i + 1}`}
+                            className="h-24 w-24 object-cover rounded-lg border border-gray-200"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {(selected.respondentResponse ||
+                    selected.respondentEvidence?.length > 0) && (
+                    <div className="bg-gray-50 rounded-xl p-3 space-y-2">
+                      <p className="text-xs font-semibold text-gray-500 uppercase">
+                        💬 Phản hồi của bên bị khiếu nại
+                        {selected.respondentRespondedAt
+                          ? ` · ${timeAgo(selected.respondentRespondedAt)}`
+                          : ""}
+                      </p>
+                      {selected.respondentResponse && (
+                        <p className="text-sm text-gray-700">
+                          {selected.respondentResponse}
+                        </p>
+                      )}
+                      {selected.respondentEvidence?.length > 0 && (
+                        <div className="flex gap-2 flex-wrap">
+                          {selected.respondentEvidence.map(
+                            (url: string, i: number) => (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                key={i}
+                                src={url}
+                                alt={`Phản hồi ${i + 1}`}
+                                className="h-20 w-20 object-cover rounded-lg border border-gray-200"
+                              />
+                            ),
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {(selected.verdict ||
+                    selected.faultParty ||
+                    selected.resolutionNote) && (
+                    <div className="bg-green-50 rounded-xl p-3 space-y-1 border border-green-100">
+                      <p className="text-xs font-semibold text-green-700 uppercase">
+                        ✅ Kết quả xử lý
+                      </p>
+                      {selected.verdict && (
+                        <p className="text-sm font-semibold text-gray-800">
+                          {VERDICT_LABEL[selected.verdict] || selected.verdict}
+                        </p>
+                      )}
+                      {selected.faultParty && (
+                        <p className="text-sm text-gray-700">
+                          Lỗi thuộc về:{" "}
+                          <span className="font-semibold">
+                            {FAULT_PARTY_LABEL[selected.faultParty] ||
+                              selected.faultParty}
+                          </span>
+                        </p>
+                      )}
+                      {selected.resolutionNote && (
+                        <p className="text-xs text-gray-600">
+                          📝 {selected.resolutionNote}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -657,30 +850,85 @@ export default function AdminCasesPage() {
                     </button>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-2 border-t border-gray-100 pt-3">
                     <p className="text-xs font-semibold text-gray-400 uppercase">
-                      Phán quyết
+                      Xử lý khiếu nại theo lỗi ai
                     </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={resolveForm.faultParty}
+                        onChange={(e) =>
+                          setResolveForm((f) => ({
+                            ...f,
+                            faultParty: e.target.value,
+                          }))
+                        }
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                      >
+                        {Object.keys(FAULT_PARTY_LABEL).map((k) => (
+                          <option key={k} value={k}>
+                            {FAULT_PARTY_LABEL[k]}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={resolveForm.note}
+                        onChange={(e) =>
+                          setResolveForm((f) => ({
+                            ...f,
+                            note: e.target.value,
+                          }))
+                        }
+                        placeholder="Ghi chú phán quyết"
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                      />
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {["VALID", "INVALID", "INCONCLUSIVE"].map((v) => (
                         <button
                           key={v}
-                          onClick={() =>
-                            act(
-                              () =>
-                                resolutionApi.resolve(selected.id, {
-                                  verdict: v,
-                                }),
-                              `Phán quyết ${v}`,
-                            )
-                          }
+                          onClick={() => resolveWithPenalty(v)}
                           className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#ff6b35] text-white hover:bg-[#e85a26]"
                         >
-                          {v}
+                          {VERDICT_LABEL[v] || v}
                         </button>
                       ))}
                     </div>
                   </div>
+
+                  {casePenalties.length > 0 && (
+                    <div className="bg-red-50 rounded-xl p-3 space-y-2 border border-red-100">
+                      <p className="text-xs font-semibold text-red-700 uppercase">
+                        🚨 Xử phạt đã ban hành
+                      </p>
+                      {casePenalties.map((p: any) => {
+                        const party =
+                          p.targetId === selected.reporterId
+                            ? "Người khiếu nại"
+                            : p.targetId === selected.respondentId
+                              ? "Bên bị khiếu nại"
+                              : ACTOR_LABEL[p.targetType] || p.targetType;
+                        return (
+                          <div key={p.id} className="text-sm text-gray-700">
+                            <p className="font-semibold">
+                              {party} ({ACTOR_LABEL[p.targetType] || p.targetType}
+                              ): {PENALTY_TYPE_LABEL[p.type] || p.type}
+                              {p.amount ? ` · ${formatVnd(p.amount)}` : ""}
+                              {p.durationDays
+                                ? ` · ${p.durationDays} ngày`
+                                : ""}
+                            </p>
+                            <p className="text-xs text-gray-500">{p.reason}</p>
+                            <span
+                              className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${PENALTY_STATUS_BADGE[p.status] || "bg-gray-100 text-gray-600"}`}
+                            >
+                              {p.status}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   {showPenalty && (
                     <div className="border border-gray-100 rounded-xl p-3 space-y-2">

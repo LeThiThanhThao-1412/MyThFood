@@ -5,10 +5,19 @@
 // Nhận đơn → Đã đến quán → Đã nhận món → Giao hàng thành công.
 // ============================================================================
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Drawer } from "@mythfood/frontend-shared";
+import { chatApi, resolutionApi } from "@mythfood/api-client";
+import { Drawer, ChatDrawer, useAuthStore } from "@mythfood/frontend-shared";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
 import { STAGE_ORDER, formatKm, toNum } from "@/lib/delivery-flow";
+
+const TERMINAL_STATUS: Record<string, { icon: string; label: string }> = {
+  DELIVERY_FAILED: { icon: "❌", label: "Giao hàng thất bại" },
+  CANCELLED: { icon: "🚫", label: "Đơn đã hủy" },
+  CANCELLED_NO_DRIVER: { icon: "🛑", label: "Không có tài xế" },
+  REJECTED: { icon: "🚫", label: "Đơn bị từ chối" },
+};
 
 export default function DeliveryDrawer({
   orderId,
@@ -33,6 +42,54 @@ export default function DeliveryDrawer({
     driverEarning,
     advance,
   } = trip;
+
+  const { user } = useAuthStore();
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatConversationId, setChatConversationId] = useState<string | null>(
+    null,
+  );
+  const [deliveryCase, setDeliveryCase] = useState<any>(null);
+
+  useEffect(() => {
+    if (order?.status !== "DELIVERY_FAILED") {
+      setDeliveryCase(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res: any = await resolutionApi.listCases({
+          orderId: order.id,
+          take: 5,
+        });
+        const list = res?.data ?? [];
+        if (!cancelled) setDeliveryCase(list[0] ?? null);
+      } catch {
+        if (!cancelled) setDeliveryCase(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [order?.id, order?.status]);
+
+  const openChatWithCustomer = async () => {
+    if (!order || !user?.id || !customerInfo?.userId) return;
+    try {
+      const res: any = await chatApi.getOrCreateConversation({
+        orderId: order.id,
+        consumerUserId: customerInfo.userId,
+        driverUserId: user.id,
+      });
+      const conv = res?.data || res;
+      if (conv?.id) {
+        setChatConversationId(conv.id);
+        setChatOpen(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
 
   const stageIndex = STAGE_ORDER.indexOf(stage);
   const steps = [
@@ -73,9 +130,99 @@ export default function DeliveryDrawer({
             </span>{" "}
             (80% phí ship)
           </p>
+          <Link
+            href={`/complaints?orderId=${order.id}`}
+            onClick={onClose}
+            className="block text-sm text-[#ff6b35] font-semibold hover:underline mb-3"
+          >
+            🛡️ Khiếu nại
+          </Link>
           <button
             onClick={onClose}
             className="bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold hover:bg-orange-600 transition"
+          >
+            Đóng
+          </button>
+        </div>
+      ) : TERMINAL_STATUS[order.status] ? (
+        <div className="px-5 py-4 space-y-4">
+          <div className="text-center py-6">
+            <p className="text-5xl mb-3">
+              {TERMINAL_STATUS[order.status].icon}
+            </p>
+            <p className="font-bold text-lg text-[#1a1a2e] mb-1">
+              {TERMINAL_STATUS[order.status].label}
+            </p>
+            <p className="text-sm text-gray-500">
+              {order.cancelReason ||
+                order.rejectionReason ||
+                "Đơn hàng đã kết thúc"}
+            </p>
+          </div>
+          <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 space-y-1">
+            <p className="font-bold text-[#ff6b35]">
+              💰 {toNum(order.totalAmount).toLocaleString("vi-VN")}₫
+            </p>
+            <p>📍 {order.deliveryAddress}</p>
+          </div>
+
+          {order.status === "DELIVERY_FAILED" && deliveryCase && (
+            <div className="bg-amber-50 rounded-xl p-4 text-sm space-y-2 border border-amber-100">
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold text-gray-800">
+                  ⚠️ Khiếu nại của bạn
+                </h4>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-white text-gray-600 border border-gray-200">
+                  {deliveryCase.status}
+                </span>
+              </div>
+              {deliveryCase.respondentResponse ? (
+                <>
+                  <p className="text-gray-600">
+                    <span className="font-semibold">Phản hồi khách:</span>{" "}
+                    {deliveryCase.respondentResponse}
+                  </p>
+                  {deliveryCase.respondentEvidence?.length > 0 && (
+                    <div className="flex gap-2 flex-wrap">
+                      {deliveryCase.respondentEvidence.map(
+                        (url: string, i: number) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={i}
+                            src={url}
+                            alt="Phản hồi khách"
+                            className="h-16 w-16 object-cover rounded-lg border border-gray-200"
+                          />
+                        ),
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-gray-500">
+                  {deliveryCase.status === "OPEN"
+                    ? "Đang chờ khách phản hồi..."
+                    : "Khách chưa phản hồi"}
+                </p>
+              )}
+              {deliveryCase.resolutionNote && (
+                <p className="text-xs text-gray-400">
+                  📝 {deliveryCase.resolutionNote}
+                </p>
+              )}
+            </div>
+          )}
+
+          <Link
+            href={`/complaints?orderId=${order.id}`}
+            onClick={onClose}
+            className="block text-center text-sm text-[#ff6b35] font-semibold hover:underline"
+          >
+            🛡️ Khiếu nại
+          </Link>
+          <button
+            onClick={onClose}
+            className="w-full bg-[#ff6b35] text-white py-3 rounded-xl font-semibold hover:bg-orange-600 transition"
           >
             Đóng
           </button>
@@ -202,7 +349,7 @@ export default function DeliveryDrawer({
                   👤
                 </span>
               )}
-              <div>
+              <div className="flex-1 min-w-0">
                 {customerInfo?.fullName && (
                   <p className="font-semibold text-gray-800">
                     {customerInfo.fullName}
@@ -217,6 +364,13 @@ export default function DeliveryDrawer({
                   </a>
                 )}
               </div>
+              <button
+                onClick={openChatWithCustomer}
+                className="w-9 h-9 rounded-full bg-[#ff6b35]/10 text-[#ff6b35] flex items-center justify-center text-lg shrink-0 hover:bg-[#ff6b35]/20 transition"
+                title="Nhắn tin với khách hàng"
+              >
+                💬
+              </button>
             </div>
             <p>📍 {order.deliveryAddress}</p>
             {order.notes && (
@@ -261,6 +415,15 @@ export default function DeliveryDrawer({
           </Link>
         </div>
       )}
+
+      <ChatDrawer
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        conversationId={chatConversationId}
+        myUserId={user?.id}
+        counterpartName={customerInfo?.fullName || "Khách hàng"}
+        counterpartAvatar={customerInfo?.avatar}
+      />
     </Drawer>
   );
 }

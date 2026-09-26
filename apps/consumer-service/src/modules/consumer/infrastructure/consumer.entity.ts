@@ -29,6 +29,15 @@ export class ConsumerEntity {
   @Column({ type: "varchar", length: 10, nullable: true })
   gender!: string | null;
 
+  @Column({ type: "varchar", length: 20, default: "ACTIVE" })
+  status!: string;
+
+  @Column({ type: "boolean", default: false })
+  is_verified!: boolean;
+
+  @Column({ type: "varchar", length: 30, nullable: true })
+  id_card_number!: string | null;
+
   @Column({ type: "jsonb", default: "[]" })
   addresses!: string;
 

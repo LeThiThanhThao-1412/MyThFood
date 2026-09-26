@@ -1,5 +1,5 @@
 import { ConsumerId } from "../domain/consumer-id";
-import { Consumer, Gender } from "../domain/consumer.aggregate";
+import { Consumer, ConsumerStatus, Gender } from "../domain/consumer.aggregate";
 import { Address, GpsCoordinates, AddressType } from "../domain/address.vo";
 import { AddressId } from "../domain/address-id";
 import {
@@ -30,10 +30,13 @@ export class ConsumerMapper {
       avatar: entity.avatar,
       dateOfBirth: entity.date_of_birth ? new Date(entity.date_of_birth) : null,
       gender,
+      status: (entity.status as ConsumerStatus) ?? "ACTIVE",
       addresses,
       paymentMethods,
       favoriteMerchantIds,
       favoriteMenuItemIds,
+      isVerified: entity.is_verified ?? false,
+      idCardNumber: entity.id_card_number ?? null,
     });
   }
 
@@ -45,6 +48,9 @@ export class ConsumerMapper {
     entity.avatar = consumer.avatarUrl;
     entity.date_of_birth = consumer.birthDate;
     entity.gender = consumer.consumerGender;
+    entity.status = consumer.consumerStatus;
+    entity.is_verified = consumer.consumerIsVerified;
+    entity.id_card_number = consumer.consumerIdCardNumber;
     entity.addresses = JSON.stringify(
       consumer.addressList.map(ConsumerMapper.serializeAddress),
     );

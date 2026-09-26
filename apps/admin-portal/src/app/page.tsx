@@ -524,6 +524,12 @@ export default function AdminDashboardPage() {
         >
           👥 Người dùng
         </Link>
+        <Link
+          href="/cases"
+          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+        >
+          🛡️ Giải quyết sự cố
+        </Link>
       </div>
 
       <div className="max-w-[1400px] xl:mx-auto px-4 py-6">

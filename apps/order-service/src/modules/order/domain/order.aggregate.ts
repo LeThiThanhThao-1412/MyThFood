@@ -46,6 +46,7 @@ export interface OrderItemOption {
 export interface OrderItemProps {
   menuItemId: string;
   name: string;
+  imageUrl: string | null;
   quantity: number;
   unitPrice: number;
   subtotal: number;
@@ -152,6 +153,7 @@ export class Order extends AggregateRoot<OrderId> {
     items: Array<{
       menuItemId: string;
       name: string;
+      imageUrl?: string | null;
       quantity: number;
       unitPrice: number;
       specialInstructions?: string;
@@ -216,6 +218,7 @@ export class Order extends AggregateRoot<OrderId> {
       orderItems.push({
         menuItemId: item.menuItemId,
         name: item.name,
+        imageUrl: item.imageUrl ?? null,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         subtotal: item.quantity * item.unitPrice,
@@ -377,6 +380,19 @@ export class Order extends AggregateRoot<OrderId> {
       throw new BusinessRuleViolationError("Cancellation reason is required");
     }
     this.transitionTo("CANCELLED", reason);
+  }
+
+  /**
+   * Khách hàng hủy đơn — chỉ được phép khi đơn còn ở PENDING/CONFIRMED.
+   * Khi nhà hàng đã bắt đầu nấu (PREPARING trở đi) thì không cho khách hủy nữa.
+   */
+  public cancelByCustomer(reason: string): void {
+    if (this.status !== "PENDING" && this.status !== "CONFIRMED") {
+      throw new BusinessRuleViolationError(
+        "Nhà hàng đã bắt đầu chuẩn bị món, bạn không thể hủy đơn nữa",
+      );
+    }
+    this.cancel(reason);
   }
 
   /**

@@ -285,6 +285,167 @@ export class WalletService {
     return this.walletRepo.getTransactions(ownerId, ownerType);
   }
 
+  /**
+   * Phạt tiền (FINE) / trừ tiền vi phạm — bỏ qua mọi giới hạn rút tối thiểu
+   * và giới hạn COD/ngày của driver. Nếu số dư không đủ, trừ phần có sẵn và
+   * phần thiếu ghi thành clawback (nợ nội bộ, thu hồi dần từ quyết toán sau).
+   */
+  async penaltyDebit(
+    ownerId: string,
+    ownerType: OwnerType,
+    amount: number,
+    description: string,
+  ): Promise<{ id: string; balance: number; clawback: number }> {
+    const entity = await this.getOrCreateWallet(ownerId, ownerType);
+    const amountNum = Number(amount);
+    const balanceBefore = Number(entity.balance);
+    const payable = Math.min(balanceBefore, amountNum);
+
+    entity.balance = balanceBefore - payable;
+    await this.walletRepo.save(entity);
+
+    await this.walletRepo.recordTransaction({
+      id: randomUUID(),
+      walletId: entity.id,
+      ownerId,
+      ownerType,
+      type: "DEBIT",
+      amount: payable,
+      balanceBefore,
+      balanceAfter: Number(entity.balance),
+      description,
+      referenceType: "PENALTY",
+    });
+
+    const shortfall = amountNum - payable;
+    if (shortfall > 0) {
+      await this.createClawback({
+        ownerId,
+        ownerType,
+        amount: shortfall,
+      });
+    }
+
+    this.logger.log(
+      `Penalty debit ${ownerType}:${ownerId} -${payable} VND (clawback ${shortfall}) - ${description}`,
+    );
+    return {
+      id: entity.id,
+      balance: Number(entity.balance),
+      clawback: shortfall,
+    };
+  }
+
+  /** Bồi thường / hoàn phạt vào ví bên được hưởng (bỏ qua ràng buộc rút). */
+  async penaltyCredit(
+    ownerId: string,
+    ownerType: OwnerType,
+    amount: number,
+    description: string,
+  ): Promise<{ id: string; balance: number }> {
+    return this.credit(ownerId, ownerType, amount, description, "PENALTY");
+  }
+
+  /** Số dư quỹ dự phòng. */
+  async getReserveBalance(): Promise<{ balance: number }> {
+    const balance = await this.getBalance("RESERVE_FUND", OwnerType.PLATFORM);
+    return { balance };
+  }
+
+  /**
+   * Chi từ quỹ dự phòng (COD ứng + bồi thường hệ thống).
+   * Quỹ được phép âm tạm (platform ứng trước) và bù lại từ serviceFee các đơn sau.
+   */
+  async disburseReserve(
+    recipientId: string,
+    recipientType: OwnerType,
+    amount: number,
+    description: string,
+  ): Promise<{ id: string; balance: number }> {
+    const amountNum = Math.round(Number(amount) || 0);
+    const balance = await this.getBalance("RESERVE_FUND", OwnerType.PLATFORM);
+    if (amountNum <= 0) return { id: "RESERVE_FUND", balance };
+    const reserve = await this.getOrCreateWallet(
+      "RESERVE_FUND",
+      OwnerType.PLATFORM,
+    );
+    const balanceBefore = Number(reserve.balance);
+    reserve.balance = balanceBefore - amountNum;
+    await this.walletRepo.save(reserve);
+    await this.walletRepo.recordTransaction({
+      id: randomUUID(),
+      walletId: reserve.id,
+      ownerId: "RESERVE_FUND",
+      ownerType: OwnerType.PLATFORM,
+      type: "DEBIT",
+      amount: amountNum,
+      balanceBefore,
+      balanceAfter: Number(reserve.balance),
+      description: `Chi quỹ dự phòng: ${description}`,
+      referenceType: "RESERVE_DISBURSE",
+    });
+    await this.credit(
+      recipientId,
+      recipientType,
+      amountNum,
+      description,
+      "RESERVE_DISBURSE",
+    );
+    this.logger.log(
+      `Reserve disbursed ${amountNum} to ${recipientType}:${recipientId} — ${description}`,
+    );
+    return { id: reserve.id, balance: Number(reserve.balance) };
+  }
+
+  /** Danh sách nợ COD quá hạn (consumer balance âm > N ngày). */
+  async listOverdueDebts(days = 14): Promise<any[]> {
+    const wallets = await this.walletRepo.findAllWallets();
+    const cutoff = Date.now() - days * 24 * 3600 * 1000;
+    const debts: any[] = [];
+    for (const w of wallets) {
+      if (w.ownerType !== OwnerType.CONSUMER) continue;
+      const balance = Number(w.balance);
+      if (balance >= 0) continue;
+      const txs = await this.walletRepo.getTransactions(w.ownerId, w.ownerType);
+      const oldestDebit = txs
+        .filter((t) => t.type === "DEBIT")
+        .sort(
+          (a, b) =>
+            new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        )[0];
+      if (oldestDebit && new Date(oldestDebit.createdAt).getTime() < cutoff) {
+        debts.push({
+          consumerId: w.ownerId,
+          balance,
+          oldestDebtAt: oldestDebit.createdAt,
+          daysOverdue: Math.floor(
+            (Date.now() - new Date(oldestDebit.createdAt).getTime()) / 86400000,
+          ),
+          description: oldestDebit.description,
+        });
+      }
+    }
+    return debts;
+  }
+
+  /** Giữ doanh thu đơn hàng khi có khiếu nại (PENDING → HELD_BY_DISPUTE). */
+  async holdSettlement(
+    orderId: string,
+  ): Promise<{ orderId: string; held: number }> {
+    const held = await this.settlementRepo.holdByOrderId(orderId);
+    this.logger.log(`Hold settlement cho đơn ${orderId}: ${held} dòng`);
+    return { orderId, held };
+  }
+
+  /** Giải tỏa doanh thu đơn hàng (HELD_BY_DISPUTE → PENDING). */
+  async releaseSettlement(
+    orderId: string,
+  ): Promise<{ orderId: string; released: number }> {
+    const released = await this.settlementRepo.releaseByOrderId(orderId);
+    this.logger.log(`Release settlement cho đơn ${orderId}: ${released} dòng`);
+    return { orderId, released };
+  }
+
   async handleStripeTopup(
     ownerId: string,
     ownerType: OwnerType,
@@ -633,6 +794,9 @@ export class WalletService {
     // Platform hấp thụ phần lẻ do làm tròn + khuyến mãi nền tảng tài trợ.
     const platformShare =
       totalCustomerPaid - merchantShare - driverShippingIncome;
+    // Quỹ dự phòng: trích 30% serviceFee từ phần nền tảng.
+    const reserveContribution = Math.round(serviceFee * 0.3);
+    const platformNetShare = Math.max(0, platformShare - reserveContribution);
 
     const isCod = paymentMethod === "CASH" || paymentMethod === "COD";
     const deliveredAt = input.deliveredAt
@@ -702,7 +866,7 @@ export class WalletService {
       push(
         "PLATFORM_DEFAULT",
         OwnerType.PLATFORM,
-        platformShare,
+        platformNetShare,
         "PLATFORM_COMMISSION",
       );
     } else {
@@ -723,7 +887,7 @@ export class WalletService {
       push(
         "PLATFORM_DEFAULT",
         OwnerType.PLATFORM,
-        platformShare,
+        platformNetShare,
         "PLATFORM_COMMISSION",
       );
     }
@@ -731,6 +895,15 @@ export class WalletService {
     if (platformShare < 0) {
       this.logger.warn(
         `Platform share âm ${platformShare} cho đơn ${orderId}: khuyến mãi nền tảng vượt hoa hồng, cần xem xét`,
+      );
+    }
+
+    if (reserveContribution > 0) {
+      push(
+        "RESERVE_FUND",
+        OwnerType.PLATFORM,
+        reserveContribution,
+        "RESERVE_FUND_CONTRIBUTION",
       );
     }
 

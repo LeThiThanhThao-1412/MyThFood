@@ -15,7 +15,7 @@ import { ConsumerService } from "../application/consumer.service";
 import { Consumer } from "../domain/consumer.aggregate";
 import { Address } from "../domain/address.vo";
 import { PaymentMethod, PaymentMethodType } from "../domain/payment-method.vo";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { Roles, RolesGuard } from "@mythfood/common";
 import { CreateConsumerDto } from "../application/dtos/create-consumer.dto";
 import { UpdateConsumerProfileDto } from "../application/dtos/update-consumer-profile.dto";
@@ -23,7 +23,7 @@ import { CreateAddressDto } from "../application/dtos/address.dto";
 import { CreatePaymentMethodDto } from "../application/dtos/payment-method.dto";
 
 @Controller("consumers")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
 @Roles("CONSUMER", "ADMIN")
 export class ConsumerController {
   constructor(private readonly consumerService: ConsumerService) {}
@@ -72,6 +72,41 @@ export class ConsumerController {
         avatar: consumer.avatarUrl,
       },
     };
+  }
+
+  @Patch(":id/status")
+  @Roles("ADMIN")
+  async updateStatus(
+    @Param("id") id: string,
+    @Body() body: { status: string },
+  ) {
+    const result = await this.consumerService.updateStatus(
+      id,
+      body.status as "ACTIVE" | "SUSPENDED" | "BANNED",
+    );
+    if (result.isFailure) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
+    }
+    return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
+  }
+
+  @Patch(":id/verify")
+  @Roles("CONSUMER", "ADMIN")
+  async verify(
+    @Param("id") id: string,
+    @Body() body: { idCardNumber: string },
+  ) {
+    const result = await this.consumerService.verify(id, body.idCardNumber);
+    if (result.isFailure) {
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: result.error.message,
+      };
+    }
+    return { statusCode: HttpStatus.OK, data: this.toResponse(result.value) };
   }
 
   @Get(":id")
@@ -339,6 +374,9 @@ export class ConsumerController {
       avatar: consumer.avatarUrl,
       dateOfBirth: consumer.birthDate?.toISOString() ?? null,
       gender: consumer.consumerGender,
+      status: consumer.consumerStatus,
+      isVerified: consumer.consumerIsVerified,
+      idCardNumber: consumer.consumerIdCardNumber,
       addresses: consumer.addressList.map((a: Address) => ({
         id: a.id.toString(),
         label: a.label,

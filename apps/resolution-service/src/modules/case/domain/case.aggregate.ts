@@ -8,6 +8,7 @@ import {
   CaseCategory,
   CaseStatus,
   CaseType,
+  FaultParty,
   Severity,
   Verdict,
 } from "./case.enums";
@@ -31,6 +32,11 @@ export interface CaseProps {
   penaltyIds: string[];
   resolvedBy: string | null;
   resolvedAt: Date | null;
+  respondentResponse: string | null;
+  respondentEvidence: string[];
+  respondentRespondedAt: Date | null;
+  responseDeadline: Date | null;
+  faultParty: FaultParty | null;
 }
 
 const ACTIVE_STATUSES: CaseStatus[] = [
@@ -58,6 +64,11 @@ export class Case extends AggregateRoot<CaseId> {
   private penaltyIds: string[];
   private resolvedBy: string | null;
   private resolvedAt: Date | null;
+  private respondentResponse: string | null;
+  private respondentEvidence: string[];
+  private respondentRespondedAt: Date | null;
+  private responseDeadline: Date | null;
+  private faultParty: FaultParty | null;
 
   private constructor(id: CaseId, props: CaseProps) {
     super(id);
@@ -79,6 +90,11 @@ export class Case extends AggregateRoot<CaseId> {
     this.penaltyIds = props.penaltyIds;
     this.resolvedBy = props.resolvedBy;
     this.resolvedAt = props.resolvedAt;
+    this.respondentResponse = props.respondentResponse;
+    this.respondentEvidence = props.respondentEvidence;
+    this.respondentRespondedAt = props.respondentRespondedAt;
+    this.responseDeadline = props.responseDeadline;
+    this.faultParty = props.faultParty;
   }
 
   public static create(
@@ -91,7 +107,12 @@ export class Case extends AggregateRoot<CaseId> {
       | "penaltyIds"
       | "resolvedBy"
       | "resolvedAt"
-    > & { evidence?: string[] },
+      | "respondentResponse"
+      | "respondentEvidence"
+      | "respondentRespondedAt"
+      | "responseDeadline"
+      | "faultParty"
+    > & { evidence?: string[]; responseDeadline?: Date | null },
   ): Case {
     if (!props.reporterId || props.reporterId.trim().length === 0) {
       throw new BusinessRuleViolationError("Reporter is required");
@@ -121,6 +142,11 @@ export class Case extends AggregateRoot<CaseId> {
       penaltyIds: [],
       resolvedBy: null,
       resolvedAt: null,
+      respondentResponse: null,
+      respondentEvidence: [],
+      respondentRespondedAt: null,
+      responseDeadline: props.responseDeadline ?? null,
+      faultParty: null,
     });
   }
 
@@ -144,6 +170,7 @@ export class Case extends AggregateRoot<CaseId> {
     verdict: Verdict,
     note: string | null,
     resolvedBy: string,
+    faultParty?: FaultParty | null,
   ): void {
     this.assertActive("resolve");
     if (verdict === Verdict.VALID) {
@@ -157,7 +184,44 @@ export class Case extends AggregateRoot<CaseId> {
     this.resolutionNote = note ?? null;
     this.resolvedBy = resolvedBy;
     this.resolvedAt = new Date();
+    this.faultParty = faultParty ?? null;
     this.markUpdated();
+  }
+
+  /** Người bị khiếu nại phản hồi kèm text + ảnh. */
+  public respond(text: string, evidence: string[]): void {
+    this.assertActive("respond");
+    if (!text || text.trim().length === 0) {
+      throw new BusinessRuleViolationError("Response text is required");
+    }
+    this.respondentResponse = text;
+    this.respondentEvidence = evidence ?? [];
+    this.respondentRespondedAt = new Date();
+    this.status = CaseStatus.UNDER_REVIEW;
+    this.markUpdated();
+  }
+
+  /** Người bị khiếu nại xác nhận lỗi → tự chốt lỗi về phía mình. */
+  public confirmFault(resolvedBy: string, note?: string): void {
+    this.assertActive("confirm");
+    this.verdict = Verdict.VALID;
+    this.resolutionNote = note ?? "Người bị khiếu nại xác nhận lỗi";
+    this.resolvedBy = resolvedBy;
+    this.resolvedAt = new Date();
+    this.faultParty = this.faultPartyForRespondent();
+    this.status = CaseStatus.RESOLVED;
+    this.markUpdated();
+  }
+
+  private faultPartyForRespondent(): FaultParty {
+    switch (this.respondentType) {
+      case "DRIVER":
+        return FaultParty.DRIVER;
+      case "MERCHANT":
+        return FaultParty.MERCHANT;
+      default:
+        return FaultParty.CUSTOMER;
+    }
   }
 
   public withdraw(): void {
@@ -261,5 +325,20 @@ export class Case extends AggregateRoot<CaseId> {
   }
   get caseResolvedAt(): Date | null {
     return this.resolvedAt;
+  }
+  get caseRespondentResponse(): string | null {
+    return this.respondentResponse;
+  }
+  get caseRespondentEvidence(): string[] {
+    return [...this.respondentEvidence];
+  }
+  get caseRespondentRespondedAt(): Date | null {
+    return this.respondentRespondedAt;
+  }
+  get caseResponseDeadline(): Date | null {
+    return this.responseDeadline;
+  }
+  get caseFaultParty(): FaultParty | null {
+    return this.faultParty;
   }
 }

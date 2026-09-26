@@ -11,6 +11,7 @@
 
 import {
   authApi,
+  chatApi,
   consumerApi,
   dispatchApi,
   driverApi,
@@ -272,10 +273,11 @@ export async function getMerchant(merchantId: string): Promise<any | null> {
 export async function getCustomerInfo(order: any): Promise<{
   fullName: string | null;
   phone: string | null;
+  userId: string | null;
   avatar?: string | null;
 }> {
   const consumerId = order?.consumerId;
-  if (!consumerId) return { fullName: null, phone: null };
+  if (!consumerId) return { fullName: null, phone: null, userId: null };
 
   let fullName: string | null = null;
   let userId: string | null = null;
@@ -296,9 +298,9 @@ export async function getCustomerInfo(order: any): Promise<{
     const uid = userId ?? consumerId;
     const u = unwrap<any>(await authApi.getUserContact(uid)) ?? null;
     if (!fullName && u?.fullName) fullName = u.fullName;
-    return { fullName, phone: u?.phone ?? null, avatar };
+    return { fullName, phone: u?.phone ?? null, userId: uid, avatar };
   } catch {
-    return { fullName, phone: null, avatar };
+    return { fullName, phone: null, userId: userId ?? consumerId, avatar };
   }
 }
 
@@ -552,6 +554,14 @@ export async function completeDelivery(
   }
 
   await notifyConsumer(order, "DELIVERED");
+
+  // Kích hoạt TTL chat: ẩn sau 3 giờ, xóa cứng sau 5 ngày kể từ lúc giao xong.
+  try {
+    await chatApi.markDelivered(order.id);
+  } catch {
+    /* non-fatal */
+  }
+
   return { dispatch: current, order: updatedOrder };
 }
 

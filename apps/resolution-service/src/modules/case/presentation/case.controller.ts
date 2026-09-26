@@ -14,9 +14,11 @@ import { Roles, RolesGuard } from "@mythfood/common";
 import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { CaseService } from "../application/case.service";
 import {
+  ActorIdDto,
   AddEvidenceDto,
   CreateCaseDto,
   ResolveCaseDto,
+  RespondCaseDto,
 } from "../application/dtos/case.dto";
 import {
   CaseCategory,
@@ -47,6 +49,7 @@ export class CaseController {
     @Query("category") category?: string,
     @Query("severity") severity?: string,
     @Query("actorId") actorId?: string,
+    @Query("orderId") orderId?: string,
     @Query("skip") skip?: string,
     @Query("take") take?: string,
   ) {
@@ -56,6 +59,7 @@ export class CaseController {
       category: category as CaseCategory | undefined,
       severity: severity as Severity | undefined,
       actorId,
+      orderId,
       skip: skip ? parseInt(skip, 10) : 0,
       take: take ? parseInt(take, 10) : 20,
     });
@@ -119,12 +123,42 @@ export class CaseController {
     };
   }
 
-  @Post(":id/withdraw")
+  @Post(":id/respond")
   @Roles("CONSUMER", "DRIVER", "MERCHANT_OWNER", "ADMIN")
-  async withdraw(@Param("id") id: string, @Req() req: any) {
+  async respond(
+    @Param("id") id: string,
+    @Body() dto: RespondCaseDto,
+    @Req() req: any,
+  ) {
     return {
       statusCode: HttpStatus.OK,
-      data: await this.caseService.withdraw(id, req.user),
+      data: await this.caseService.respond(id, dto, req.user),
+    };
+  }
+
+  @Post(":id/confirm")
+  @Roles("CONSUMER", "DRIVER", "MERCHANT_OWNER", "ADMIN")
+  async confirm(
+    @Param("id") id: string,
+    @Body() dto: ActorIdDto,
+    @Req() req: any,
+  ) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.caseService.confirm(id, dto, req.user),
+    };
+  }
+
+  @Post(":id/withdraw")
+  @Roles("CONSUMER", "DRIVER", "MERCHANT_OWNER", "ADMIN")
+  async withdraw(
+    @Param("id") id: string,
+    @Body() dto: ActorIdDto,
+    @Req() req: any,
+  ) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.caseService.withdraw(id, dto, req.user),
     };
   }
 

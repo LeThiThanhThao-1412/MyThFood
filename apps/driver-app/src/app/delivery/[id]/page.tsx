@@ -11,8 +11,8 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useAuthStore } from "@mythfood/frontend-shared";
-import { dispatchApi } from "@mythfood/api-client";
+import { useAuthStore, ChatDrawer } from "@mythfood/frontend-shared";
+import { dispatchApi, chatApi, uploadApi } from "@mythfood/api-client";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
 import {
   STAGE_ORDER,
@@ -34,8 +34,32 @@ const TripMap = dynamic(
 export default function DeliveryPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   const trip = useDeliveryTrip(id);
+
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatConversationId, setChatConversationId] = useState<string | null>(
+    null,
+  );
+
+  const openChatWithCustomer = async () => {
+    const o = trip.order;
+    if (!o || !user?.id || !trip.customerInfo?.userId) return;
+    try {
+      const res: any = await chatApi.getOrCreateConversation({
+        orderId: o.id,
+        consumerUserId: trip.customerInfo.userId,
+        driverUserId: user.id,
+      });
+      const conv = res?.data || res;
+      if (conv?.id) {
+        setChatConversationId(conv.id);
+        setChatOpen(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     if (!isAuthenticated) router.push("/login");
@@ -69,9 +93,11 @@ export default function DeliveryPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [failOpen, setFailOpen] = useState(false);
   const [failReason, setFailReason] = useState("");
-  const [faultParty, setFaultParty] = useState<"DRIVER" | "CUSTOMER">(
-    "CUSTOMER",
+  const [faultParty, setFaultParty] = useState<"DRIVER" | "CUSTOMER" | "">(
+    "",
   );
+  const [failPhotoUrl, setFailPhotoUrl] = useState("");
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   async function doCancel(reason: string) {
     if (!dispatch?.id) return;
@@ -83,12 +109,31 @@ export default function DeliveryPage() {
     }
   }
 
+  async function uploadFailPhoto(e: any) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoUploading(true);
+    try {
+      const res: any = await uploadApi.uploadImage(file, "delivery-failure");
+      setFailPhotoUrl(res?.data?.url || res?.url || "");
+    } catch (err: any) {
+      setError(err?.message || "Không thể tải ảnh bằng chứng");
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
   async function doFail() {
-    if (!dispatch?.id || !failReason) return;
+    if (!dispatch?.id || !failReason || !faultParty) return;
+    if (faultParty === "CUSTOMER" && !failPhotoUrl) {
+      setError("Vui lòng tải ảnh bằng chứng khi báo lỗi khách");
+      return;
+    }
     try {
       await dispatchApi.deliveryFailed(dispatch.id, {
         reason: failReason,
-        faultParty,
+        faultParty: faultParty as "DRIVER" | "CUSTOMER",
+        photoUrl: failPhotoUrl || undefined,
       });
       router.push("/dashboard");
     } catch (err: any) {
@@ -371,7 +416,7 @@ export default function DeliveryPage() {
                 👤
               </span>
             )}
-            <div>
+            <div className="flex-1 min-w-0">
               {customerInfo?.fullName && (
                 <p className="font-semibold text-[#1a1a2e]">
                   {customerInfo.fullName}
@@ -386,6 +431,13 @@ export default function DeliveryPage() {
                 </a>
               )}
             </div>
+            <button
+              onClick={openChatWithCustomer}
+              className="w-9 h-9 rounded-full bg-[#ff6b35]/10 text-[#ff6b35] flex items-center justify-center text-lg shrink-0 hover:bg-[#ff6b35]/20 transition"
+              title="Nhắn tin với khách hàng"
+            >
+              💬
+            </button>
           </div>
           <p className="text-sm text-gray-600">{order.deliveryAddress}</p>
           {order.notes && (
@@ -536,9 +588,42 @@ export default function DeliveryPage() {
                   Lỗi tôi
                 </button>
               </div>
+
+              {/* Bằng chứng ảnh — bắt buộc khi chọn "Lỗi khách" */}
+              <div className="pt-1">
+                <label className="text-xs text-gray-500">
+                  Ảnh bằng chứng
+                  {faultParty === "CUSTOMER" && (
+                    <span className="text-red-500"> (bắt buộc)</span>
+                  )}
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={uploadFailPhoto}
+                  className="mt-1 text-xs text-gray-500 file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5"
+                />
+                {photoUploading && (
+                  <p className="text-xs text-gray-400 mt-1">Đang tải ảnh...</p>
+                )}
+                {failPhotoUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={failPhotoUrl}
+                    alt="Bằng chứng"
+                    className="mt-2 h-24 w-24 object-cover rounded-lg border border-gray-200"
+                  />
+                )}
+              </div>
+
               <button
                 onClick={doFail}
-                disabled={busy || !failReason}
+                disabled={
+                  busy ||
+                  !failReason ||
+                  !faultParty ||
+                  (faultParty === "CUSTOMER" && !failPhotoUrl)
+                }
                 className="w-full bg-red-500 text-white py-2.5 rounded-xl font-semibold disabled:opacity-50"
               >
                 Xác nhận giao thất bại
@@ -582,6 +667,15 @@ export default function DeliveryPage() {
           </p>
         </div>
       )}
+
+      <ChatDrawer
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        conversationId={chatConversationId}
+        myUserId={user?.id}
+        counterpartName={customerInfo?.fullName || "Khách hàng"}
+        counterpartAvatar={customerInfo?.avatar}
+      />
     </div>
   );
 }

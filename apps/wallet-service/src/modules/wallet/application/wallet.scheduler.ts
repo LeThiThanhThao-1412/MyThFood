@@ -24,4 +24,27 @@ export class WalletScheduler {
       this.logger.error(`Quyết toán cuối ngày thất bại: ${err.message}`);
     }
   }
+
+  /**
+   * Quét nợ COD quá hạn (01:00) — đánh dấu chuyển bộ phận thu hồi.
+   * Không tự xóa nợ; giữ khoá TK, chờ admin quyết định.
+   */
+  @Cron("0 1 * * *", { timeZone: "Asia/Ho_Chi_Minh" })
+  async debtCollectionCron(): Promise<void> {
+    try {
+      const debts = await this.walletService.listOverdueDebts(14);
+      if (debts.length > 0) {
+        this.logger.log(
+          `Phát hiện ${debts.length} khoản nợ COD quá hạn >14 ngày — chuyển bộ phận thu hồi`,
+        );
+        for (const d of debts) {
+          this.logger.warn(
+            `Nợ quá hạn: consumer ${d.consumerId} — ${d.balance} VND (${d.daysOverdue} ngày)`,
+          );
+        }
+      }
+    } catch (err: any) {
+      this.logger.error(`Quét nợ quá hạn thất bại: ${err.message}`);
+    }
+  }
 }
