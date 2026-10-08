@@ -17,6 +17,8 @@ interface Props {
     quantity: number;
     note: string;
   }) => void;
+  /** Giá gốc áp dụng cho món này (dùng cho flash sale) — nếu có thì lấy giá này thay giá menu. */
+  flashSalePrice?: number | null;
 }
 
 type SelectionState = Record<string, SelectedMenuItemOption[]>;
@@ -54,6 +56,7 @@ export default function MenuItemOptionDrawer({
   menuItem,
   onClose,
   onAdd,
+  flashSalePrice,
 }: Props) {
   const [selection, setSelection] = useState<SelectionState>({});
   const [quantity, setQuantity] = useState(1);
@@ -80,9 +83,13 @@ export default function MenuItemOptionDrawer({
       .filter((g) => g.options.length > 0);
   }, [groups, selection]);
 
-  const basePrice = menuItem?.price ?? 0;
-  const unitPrice = menuItem ? computeUnitPrice(menuItem, selectedGroups) : 0;
-  const optionTotal = unitPrice - basePrice;
+  const originalBase = menuItem?.price ?? 0;
+  const basePrice = flashSalePrice != null ? flashSalePrice : originalBase;
+  const originalUnit = menuItem
+    ? computeUnitPrice(menuItem, selectedGroups)
+    : 0;
+  const optionTotal = originalUnit - originalBase;
+  const unitPrice = basePrice + optionTotal;
   const totalPrice = unitPrice * quantity;
 
   const isGroupSatisfied = (g: MenuItemOptionGroup): boolean => {

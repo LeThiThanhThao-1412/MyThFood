@@ -379,6 +379,8 @@ export class Merchant extends AggregateRoot<MerchantId> {
       isFeatured?: boolean;
       preparationTime?: number;
       optionGroups?: MenuItemOptionGroup[];
+      reason?: string;
+      changedBy?: string;
     },
   ): MenuItem {
     const menuItem = this.findMenuItemOrThrow(menuItemId);
@@ -397,6 +399,8 @@ export class Merchant extends AggregateRoot<MerchantId> {
           action: "PRICE_CHANGED",
           oldPrice,
           newPrice: props.price,
+          changedBy: props.changedBy ?? null,
+          reason: props.reason ?? null,
         }),
       );
     }

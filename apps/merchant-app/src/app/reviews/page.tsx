@@ -106,9 +106,9 @@ export default function MerchantReviewsPage() {
               <div key={r.id} className="bg-white rounded-2xl shadow-sm p-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-yellow-500">
-                    {"⭐".repeat(Math.max(0, Math.min(5, r.rating)))}
+                    {"★".repeat(Math.max(0, Math.min(5, r.rating)))}
                     <span className="text-gray-300">
-                      {"⭐".repeat(Math.max(0, 5 - r.rating))}
+                      {"☆".repeat(Math.max(0, 5 - r.rating))}
                     </span>
                   </span>
                   <span className="text-xs text-gray-400">

@@ -29,6 +29,14 @@ export class OrderItemEntity {
   @Column("decimal", { precision: 12, scale: 2, name: "unit_price" })
   unit_price!: number;
 
+  @Column("decimal", {
+    precision: 12,
+    scale: 2,
+    name: "original_price",
+    nullable: true,
+  })
+  original_price!: number | null;
+
   @Column("decimal", { precision: 12, scale: 2 })
   subtotal!: number;
 

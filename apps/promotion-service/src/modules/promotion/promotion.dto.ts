@@ -11,6 +11,7 @@ import {
   ValidateNested,
   Min,
   IsBoolean,
+  ArrayMinSize,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -238,4 +239,167 @@ export class ApplyPromotionDto {
   @ValidateNested({ each: true })
   @Type(() => PromotionItemDto)
   items?: PromotionItemDto[];
+}
+
+// ============================================================================
+// Flash Sale DTOs
+// ============================================================================
+
+export class FlashSaleItemInputDto {
+  @IsUUID("4")
+  menuItemId!: string;
+
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  quantity!: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  unitPrice?: number;
+}
+
+export class CreateFlashSaleItemDto {
+  @IsUUID("4")
+  menuItemId!: string;
+
+  @IsOptional()
+  @IsString()
+  menuItemName?: string;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  originalPrice!: number;
+
+  @IsIn(["PERCENT", "FIXED_PRICE"])
+  discountType!: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  discountPercent?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  salePrice?: number;
+
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  totalQuantity!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  limitPerUser?: number;
+}
+
+export class CreateFlashSaleDto {
+  @IsUUID("4")
+  merchantId!: string;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => CreateFlashSaleItemDto)
+  items!: CreateFlashSaleItemDto[];
+
+  @IsDateString()
+  startAt!: string;
+
+  @IsDateString()
+  endAt!: string;
+
+  @IsOptional()
+  @IsIn(["MERCHANT", "PLATFORM"])
+  fundedBy?: string;
+}
+
+export class UpdateFlashSaleItemDto {
+  @IsUUID("4")
+  id!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  totalQuantity?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  limitPerUser?: number;
+}
+
+export class UpdateFlashSaleDto {
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsOptional()
+  @IsDateString()
+  startAt?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endAt?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdateFlashSaleItemDto)
+  items?: UpdateFlashSaleItemDto[];
+}
+
+export class ValidateFlashSaleDto {
+  @IsUUID("4")
+  merchantId!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => FlashSaleItemInputDto)
+  items!: FlashSaleItemInputDto[];
+
+  @IsOptional()
+  @IsUUID("4")
+  consumerId?: string;
+}
+
+export class ApplyFlashSaleDto {
+  @IsUUID("4")
+  merchantId!: string;
+
+  @IsUUID("4")
+  consumerId!: string;
+
+  @IsUUID("4")
+  orderId!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => FlashSaleItemInputDto)
+  items!: FlashSaleItemInputDto[];
+}
+
+export class RefundFlashSaleDto {
+  @IsUUID("4")
+  orderId!: string;
 }

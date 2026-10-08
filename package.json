@@ -5,6 +5,7 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
+    "dev:apps": "turbo run dev --parallel --filter=./apps/admin-portal --filter=./apps/consumer-app --filter=./apps/driver-app --filter=./apps/merchant-app",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "test:coverage": "turbo run test:coverage",

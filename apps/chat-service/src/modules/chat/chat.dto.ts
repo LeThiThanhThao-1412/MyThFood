@@ -1,10 +1,4 @@
-import {
-  IsUUID,
-  IsString,
-  IsOptional,
-  IsIn,
-  MaxLength,
-} from "class-validator";
+import { IsUUID, IsString, IsOptional, IsIn, MaxLength } from "class-validator";
 
 export const CHAT_MESSAGE_TYPES = ["TEXT", "IMAGE"] as const;
 export const CHAT_SENDER_ROLES = ["CONSUMER", "DRIVER"] as const;

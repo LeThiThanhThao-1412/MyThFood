@@ -92,11 +92,30 @@ CREATE TABLE IF NOT EXISTS merchant_documents (
 -- Price history table
 CREATE TABLE IF NOT EXISTS price_history (
   id UUID PRIMARY KEY,
+  merchant_id UUID NOT NULL,
   menu_item_id UUID NOT NULL,
   old_price DECIMAL(10, 2) NOT NULL,
   new_price DECIMAL(10, 2) NOT NULL,
   changed_by UUID,
   reason TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'RECORDED',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Migration cho database đã tồn tại trước khi bổ sung module price management
+ALTER TABLE price_history ADD COLUMN IF NOT EXISTS merchant_id UUID;
+ALTER TABLE price_history ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'RECORDED';
+
+-- Price alerts table (cảnh báo biến động giá bất thường)
+CREATE TABLE IF NOT EXISTS price_alerts (
+  id UUID PRIMARY KEY,
+  merchant_id UUID NOT NULL,
+  menu_item_id UUID NOT NULL,
+  old_price DECIMAL(10, 2) NOT NULL,
+  new_price DECIMAL(10, 2) NOT NULL,
+  change_percent DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  message TEXT,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -111,6 +130,8 @@ CREATE INDEX IF NOT EXISTS idx_menu_categories_merchant_id ON menu_categories(me
 CREATE INDEX IF NOT EXISTS idx_operating_hours_merchant_id ON operating_hours(merchant_id);
 CREATE INDEX IF NOT EXISTS idx_merchant_documents_merchant_id ON merchant_documents(merchant_id);
 CREATE INDEX IF NOT EXISTS idx_price_history_menu_item_id ON price_history(menu_item_id);
+CREATE INDEX IF NOT EXISTS idx_price_history_merchant_id ON price_history(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_price_alerts_merchant_id ON price_alerts(merchant_id);
 
 -- Grant privileges
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO mythfood;

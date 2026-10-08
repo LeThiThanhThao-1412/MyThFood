@@ -10,6 +10,9 @@ import { MenuItemEntity } from "./infrastructure/menu-item.entity";
 import { OperatingHoursEntity } from "./infrastructure/operating-hours.entity";
 import { MerchantDocumentEntity } from "./infrastructure/merchant-document.entity";
 import { PriceHistoryEntity } from "./infrastructure/price-history.entity";
+import { PriceAlertEntity } from "./infrastructure/price-alert.entity";
+import { PriceHistoryRepository } from "./infrastructure/price-history.repository";
+import { MenuUpdatedEventHandler } from "./application/menu-updated.handler";
 import { MenuCategoryEntity } from "./infrastructure/menu-category.entity";
 import { MenuCategoryRepository } from "./infrastructure/menu-category.repository";
 import { AuthModule } from "../auth/auth.module";
@@ -22,6 +25,7 @@ import { AuthModule } from "../auth/auth.module";
       OperatingHoursEntity,
       MerchantDocumentEntity,
       PriceHistoryEntity,
+      PriceAlertEntity,
       MenuCategoryEntity,
     ]),
     CqrsModule,
@@ -29,7 +33,13 @@ import { AuthModule } from "../auth/auth.module";
     AuthModule,
   ],
   controllers: [MerchantController],
-  providers: [MerchantService, MerchantRepository, MenuCategoryRepository],
+  providers: [
+    MerchantService,
+    MerchantRepository,
+    MenuCategoryRepository,
+    PriceHistoryRepository,
+    MenuUpdatedEventHandler,
+  ],
   exports: [MerchantService],
 })
 export class MerchantModule {}

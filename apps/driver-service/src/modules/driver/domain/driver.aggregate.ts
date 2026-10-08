@@ -4,6 +4,7 @@ import {
 } from "@mythfood/shared-kernel";
 import { DriverId } from "./driver-id";
 import { DriverOnlineStatusChangedEvent } from "./events/driver-online-status-changed.event";
+import { DriverLocationUpdatedEvent } from "./events/driver-location-updated.event";
 
 export enum DriverStatus {
   ACTIVE = "ACTIVE",
@@ -346,6 +347,10 @@ export class Driver extends AggregateRoot<DriverId> {
     this._currentLongitude = longitude;
     this._lastLocationUpdateAt = new Date();
     this.markUpdated();
+
+    this.addDomainEvent(
+      new DriverLocationUpdatedEvent(this.id, latitude, longitude),
+    );
   }
 
   // ---- Order Assignment ----

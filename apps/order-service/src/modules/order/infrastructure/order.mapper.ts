@@ -48,6 +48,7 @@ export class OrderMapper {
       entity.name = item.name;
       entity.quantity = item.quantity;
       entity.unit_price = item.unitPrice;
+      entity.original_price = item.originalPrice ?? null;
       entity.subtotal = item.subtotal;
       entity.special_instructions = item.specialInstructions;
       entity.options = (item.options as any) ?? null;
@@ -68,6 +69,7 @@ export class OrderMapper {
       imageUrl: item.image_url,
       quantity: item.quantity,
       unitPrice: item.unit_price,
+      originalPrice: item.original_price ?? null,
       subtotal: item.subtotal,
       specialInstructions: item.special_instructions,
       options: (item.options as any) ?? null,
@@ -80,12 +82,12 @@ export class OrderMapper {
       orderType: orderEntity.order_type as "DELIVERY" | "PICKUP",
       status: orderEntity.status as Order["orderStatus"],
       items,
-      subtotal: orderEntity.subtotal,
-      deliveryFee: orderEntity.delivery_fee,
-      serviceFee: orderEntity.service_fee,
-      discount: orderEntity.discount,
+      subtotal: Number(orderEntity.subtotal),
+      deliveryFee: Number(orderEntity.delivery_fee),
+      serviceFee: Number(orderEntity.service_fee),
+      discount: Number(orderEntity.discount),
       discountFundedBy: orderEntity.discount_funded_by || "MERCHANT",
-      totalAmount: orderEntity.total_amount,
+      totalAmount: Number(orderEntity.total_amount),
       deliveryAddress: orderEntity.delivery_address,
       deliveryLatitude: orderEntity.delivery_latitude,
       deliveryLongitude: orderEntity.delivery_longitude,

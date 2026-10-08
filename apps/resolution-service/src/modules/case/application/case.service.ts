@@ -440,35 +440,33 @@ export class CaseService {
       }
 
       // Bồi thường: ghi nhận trên tài khoản của bên khiếu nại (bên được hưởng).
-      const compensation =
-        c.caseReporterType === "CONSUMER" ? total : shippingFee;
-      if (compensation > 0 && c.caseReporterId) {
-        await this.penaltyService.recordPenalty({
-          caseId: c.id.toString(),
-          type: PenaltyType.COMPENSATION,
-          targetId: c.caseReporterId,
-          targetType: c.caseReporterType,
-          amount: compensation,
-          reason: `Bồi thường do ${fault} gây lỗi`,
-        });
+      // Trường hợp bên khiếu nại đồng thời là bên lỗi (vd: tài xế tự nhận lỗi khi
+      // giao thất bại) thì không có ai để bồi thường → bỏ qua mục bồi thường.
+      const selfAdmittedFault = c.caseReporterType === targetType;
+      if (!selfAdmittedFault) {
+        const compensation =
+          c.caseReporterType === "CONSUMER" ? total : shippingFee;
+        if (compensation > 0 && c.caseReporterId) {
+          await this.penaltyService.recordPenalty({
+            caseId: c.id.toString(),
+            type: PenaltyType.COMPENSATION,
+            targetId: c.caseReporterId,
+            targetType: c.caseReporterType,
+            amount: compensation,
+            reason: `Bồi thường do ${fault} gây lỗi`,
+          });
+        }
       }
     } catch (err: any) {
       this.logger.warn(`Record resolution penalties failed: ${err?.message}`);
     }
   }
 
-  private assertRespondent(
-    c: Case,
-    user: AuthUser,
-    actorId?: string,
-  ): void {
+  private assertRespondent(c: Case, user: AuthUser, actorId?: string): void {
     const isAdmin = user.roles.includes("ADMIN") || user.userId === "service";
     if (isAdmin) return;
     const callerId = actorId || user.userId;
-    if (
-      c.caseRespondentId !== callerId &&
-      c.caseRespondentId !== user.userId
-    ) {
+    if (c.caseRespondentId !== callerId && c.caseRespondentId !== user.userId) {
       throw new ForbiddenException(
         "Only the respondent or an admin can do this",
       );
@@ -483,10 +481,7 @@ export class CaseService {
     const isAdmin = user.roles.includes("ADMIN") || user.userId === "service";
     if (isAdmin) return;
     const callerId = actorId || user.userId;
-    if (
-      c.caseReporterId !== callerId &&
-      c.caseReporterId !== user.userId
-    ) {
+    if (c.caseReporterId !== callerId && c.caseReporterId !== user.userId) {
       throw new ForbiddenException("Only the reporter or an admin can do this");
     }
   }

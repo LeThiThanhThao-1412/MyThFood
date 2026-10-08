@@ -21,4 +21,6 @@ export interface MenuUpdatedEventData {
   action: "CREATED" | "UPDATED" | "DELETED" | "TOGGLED" | "PRICE_CHANGED";
   oldPrice?: number;
   newPrice?: number;
+  changedBy?: string | null;
+  reason?: string | null;
 }

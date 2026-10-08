@@ -10,6 +10,8 @@ import {
   PromotionUsageEntity,
   CompensationConfigEntity,
   CompensationVoucherEntity,
+  FlashSaleEntity,
+  FlashSaleItemEntity,
   COMPENSATION_CONFIG_ID,
 } from "./promotion.entity";
 import {
@@ -20,6 +22,12 @@ import {
   UpdateCompensationConfigDto,
   IssueCompensationVoucherDto,
   ApplyCompensationVoucherDto,
+  CreateFlashSaleDto,
+  UpdateFlashSaleDto,
+  ValidateFlashSaleDto,
+  ApplyFlashSaleDto,
+  RefundFlashSaleDto,
+  CreateFlashSaleItemDto,
 } from "./promotion.dto";
 
 @Injectable()
@@ -360,5 +368,466 @@ export class PromotionService {
     voucher.usedAt = new Date();
     await this.promoRepo.saveVoucher(voucher);
     return { discount: Number(voucher.value) };
+  }
+
+  // ---- Flash Sale ----
+
+  async createFlashSale(
+    dto: CreateFlashSaleDto,
+    fundedBy: "MERCHANT" | "PLATFORM",
+  ): Promise<any> {
+    const startAt = new Date(dto.startAt);
+    const endAt = new Date(dto.endAt);
+    if (endAt <= startAt) {
+      throw new BadRequestException(
+        "Thời gian kết thúc phải sau thời gian bắt đầu",
+      );
+    }
+    if (endAt <= new Date()) {
+      throw new BadRequestException("Thời gian kết thúc phải ở tương lai");
+    }
+
+    // Quy tắc: thời lượng tối thiểu 1 giờ, tối đa 24 giờ.
+    const durationMs = endAt.getTime() - startAt.getTime();
+    if (durationMs < 60 * 60 * 1000) {
+      throw new BadRequestException("Flash sale tối thiểu 1 giờ");
+    }
+    if (durationMs > 24 * 60 * 60 * 1000) {
+      throw new BadRequestException("Flash sale tối đa 24 giờ");
+    }
+
+    // Quy tắc: mỗi nhà hàng tối đa 5 flash sale có thời gian giao nhau.
+    const overlapping = await this.promoRepo.countOverlappingFlashSales(
+      dto.merchantId,
+      startAt,
+      endAt,
+    );
+    if (overlapping >= 5) {
+      throw new BadRequestException(
+        "Mỗi nhà hàng tối đa 5 flash sale cùng lúc",
+      );
+    }
+
+    // Validate + tính salePrice cho từng món; chặn trùng món đang có flash sale.
+    const computed: {
+      dto: CreateFlashSaleItemDto;
+      salePrice: number;
+      discountPercent: number | null;
+    }[] = [];
+    const seen = new Set<string>();
+    for (const itemDto of dto.items) {
+      if (seen.has(itemDto.menuItemId)) {
+        throw new BadRequestException(
+          "Có món bị trùng trong danh sách flash sale",
+        );
+      }
+      seen.add(itemDto.menuItemId);
+      const open = await this.promoRepo.findOpenFlashSaleItemByMenuItem(
+        itemDto.menuItemId,
+        dto.merchantId,
+      );
+      if (open) {
+        throw new BadRequestException(
+          `Món "${itemDto.menuItemName ?? itemDto.menuItemId}" đang có flash sale đang diễn ra`,
+        );
+      }
+      const { salePrice, discountPercent } =
+        this.computeFlashSaleItemPrice(itemDto);
+      computed.push({ dto: itemDto, salePrice, discountPercent });
+    }
+
+    const sale = new FlashSaleEntity();
+    sale.id = uuidv4();
+    sale.merchantId = dto.merchantId;
+    sale.title = dto.title?.trim() || "Flash Sale";
+    sale.fundedBy = fundedBy;
+    sale.status = "SCHEDULED";
+    sale.startAt = startAt;
+    sale.endAt = endAt;
+    sale.cancelledAt = null;
+    await this.promoRepo.saveFlashSale(sale);
+
+    const items: FlashSaleItemEntity[] = [];
+    for (const c of computed) {
+      const item = new FlashSaleItemEntity();
+      item.id = uuidv4();
+      item.flashSaleId = sale.id;
+      item.menuItemId = c.dto.menuItemId;
+      item.menuItemName = c.dto.menuItemName ?? null;
+      item.imageUrl = c.dto.imageUrl ?? null;
+      item.originalPrice = Number(c.dto.originalPrice);
+      item.discountType = c.dto.discountType;
+      item.discountPercent = c.discountPercent;
+      item.salePrice = c.salePrice;
+      item.totalQuantity = c.dto.totalQuantity;
+      item.soldQuantity = 0;
+      item.limitPerUser = c.dto.limitPerUser ?? 1;
+      await this.promoRepo.saveFlashSaleItem(item);
+      items.push(item);
+    }
+
+    return { ...sale, items };
+  }
+
+  async getFlashSaleById(id: string): Promise<any> {
+    const sale = await this.promoRepo.findFlashSaleById(id);
+    if (!sale) {
+      throw new NotFoundException("Không tìm thấy flash sale");
+    }
+    const items = await this.promoRepo.findFlashSaleItemsBySaleIds([id]);
+    if (items.length) {
+      await this.syncFlashSaleStatus(sale, items);
+    }
+    return { ...sale, items };
+  }
+
+  async listFlashSales(filter: {
+    merchantId?: string;
+    status?: string;
+    skip?: number;
+    take?: number;
+  }): Promise<{ items: any[]; total: number }> {
+    const { items, total } = await this.promoRepo.listFlashSales(filter);
+    const saleIds = items.map((s) => s.id);
+    const allItems = await this.promoRepo.findFlashSaleItemsBySaleIds(saleIds);
+    const itemsBySale = new Map<string, FlashSaleItemEntity[]>();
+    for (const it of allItems) {
+      const list = itemsBySale.get(it.flashSaleId) ?? [];
+      list.push(it);
+      itemsBySale.set(it.flashSaleId, list);
+    }
+    const views = [];
+    for (const sale of items) {
+      const saleItems = itemsBySale.get(sale.id) ?? [];
+      if (saleItems.length) {
+        await this.syncFlashSaleStatus(sale, saleItems);
+      }
+      views.push({ ...sale, items: saleItems });
+    }
+    return { items: views, total };
+  }
+
+  async listActiveFlashSales(): Promise<any[]> {
+    const { items } = await this.promoRepo.listFlashSales({
+      skip: 0,
+      take: 500,
+    });
+    const saleIds = items.map((s) => s.id);
+    const allItems = await this.promoRepo.findFlashSaleItemsBySaleIds(saleIds);
+    const itemsBySale = new Map<string, FlashSaleItemEntity[]>();
+    for (const it of allItems) {
+      const list = itemsBySale.get(it.flashSaleId) ?? [];
+      list.push(it);
+      itemsBySale.set(it.flashSaleId, list);
+    }
+    const views = [];
+    for (const sale of items) {
+      const saleItems = itemsBySale.get(sale.id) ?? [];
+      if (!saleItems.length) continue;
+      const status = await this.syncFlashSaleStatus(sale, saleItems);
+      if (status === "ACTIVE") {
+        views.push({ ...sale, items: saleItems });
+      }
+    }
+    return views;
+  }
+
+  async updateFlashSale(id: string, dto: UpdateFlashSaleDto): Promise<any> {
+    const sale = await this.promoRepo.findFlashSaleById(id);
+    if (!sale) {
+      throw new NotFoundException("Không tìm thấy flash sale");
+    }
+    const items = await this.promoRepo.findFlashSaleItemsBySaleIds([id]);
+    if (!items.length) {
+      throw new NotFoundException("Không tìm thấy món của flash sale");
+    }
+    const status = await this.syncFlashSaleStatus(sale, items);
+    const isRunning = ["ACTIVE", "ENDED", "SOLD_OUT"].includes(status);
+
+    // Sale-level fields.
+    if (dto.title !== undefined) sale.title = dto.title;
+    if (dto.endAt) sale.endAt = new Date(dto.endAt);
+    if (!isRunning && dto.startAt) sale.startAt = new Date(dto.startAt);
+
+    // Per-item stock/limit (khi đang chạy không cho giảm stock dưới sold).
+    if (dto.items) {
+      const itemById = new Map(items.map((i) => [i.id, i]));
+      for (const upd of dto.items) {
+        const item = itemById.get(upd.id);
+        if (!item) continue;
+        if (upd.totalQuantity !== undefined) {
+          if (isRunning && upd.totalQuantity < item.soldQuantity) {
+            throw new BadRequestException(
+              "Số lượng không được nhỏ hơn số đã bán",
+            );
+          }
+          item.totalQuantity = upd.totalQuantity;
+        }
+        if (upd.limitPerUser !== undefined) {
+          item.limitPerUser = upd.limitPerUser;
+        }
+        await this.promoRepo.saveFlashSaleItem(item);
+      }
+    }
+
+    await this.promoRepo.saveFlashSale(sale);
+    await this.syncFlashSaleStatus(sale, items);
+    return { ...sale, items };
+  }
+
+  async cancelFlashSale(id: string): Promise<any> {
+    const sale = await this.promoRepo.findFlashSaleById(id);
+    if (!sale) {
+      throw new NotFoundException("Không tìm thấy flash sale");
+    }
+    sale.cancelledAt = new Date();
+    sale.status = "CANCELLED";
+    await this.promoRepo.saveFlashSale(sale);
+    const items = await this.promoRepo.findFlashSaleItemsBySaleIds([id]);
+    return { ...sale, items };
+  }
+
+  async pauseFlashSale(id: string): Promise<any> {
+    const sale = await this.promoRepo.findFlashSaleById(id);
+    if (!sale) {
+      throw new NotFoundException("Không tìm thấy flash sale");
+    }
+    if (sale.status !== "ACTIVE") {
+      throw new BadRequestException(
+        "Chỉ có thể tạm dừng flash sale đang diễn ra",
+      );
+    }
+    sale.status = "PAUSED";
+    await this.promoRepo.saveFlashSale(sale);
+    const items = await this.promoRepo.findFlashSaleItemsBySaleIds([id]);
+    return { ...sale, items };
+  }
+
+  async resumeFlashSale(id: string): Promise<any> {
+    const sale = await this.promoRepo.findFlashSaleById(id);
+    if (!sale) {
+      throw new NotFoundException("Không tìm thấy flash sale");
+    }
+    if (sale.status !== "PAUSED") {
+      throw new BadRequestException(
+        "Chỉ có thể tiếp tục flash sale đang tạm dừng",
+      );
+    }
+    const now = new Date();
+    sale.status = now > sale.endAt ? "ENDED" : "ACTIVE";
+    await this.promoRepo.saveFlashSale(sale);
+    const items = await this.promoRepo.findFlashSaleItemsBySaleIds([id]);
+    return { ...sale, items };
+  }
+
+  async getFlashSaleStats(id: string): Promise<any> {
+    await this.getFlashSaleById(id);
+    return this.promoRepo.statsFlashSale(id);
+  }
+
+  /**
+   * Tính trạng thái hiệu quả theo thời gian thực và ghi lại (lazy-eval).
+   * Với nhiều món: SOLD_OUT khi toàn bộ món đều bán hết.
+   */
+  private async syncFlashSaleStatus(
+    sale: FlashSaleEntity,
+    items: FlashSaleItemEntity[],
+  ): Promise<string> {
+    let status: string;
+    const now = new Date();
+    if (sale.cancelledAt) {
+      status = "CANCELLED";
+    } else if (
+      sale.status === "PAUSED" &&
+      now >= sale.startAt &&
+      now <= sale.endAt
+    ) {
+      status = "PAUSED";
+    } else if (now < sale.startAt) {
+      status = "SCHEDULED";
+    } else if (now > sale.endAt) {
+      status = "ENDED";
+    } else if (
+      items.length > 0 &&
+      items.every((i) => i.soldQuantity >= i.totalQuantity)
+    ) {
+      status = "SOLD_OUT";
+    } else {
+      status = "ACTIVE";
+    }
+    if (sale.status !== status) {
+      sale.status = status;
+      await this.promoRepo.saveFlashSale(sale);
+    }
+    return status;
+  }
+
+  /**
+   * Tính giá sale cho một món (PERCENT hoặc FIXED_PRICE).
+   */
+  private computeFlashSaleItemPrice(item: {
+    originalPrice: number;
+    discountType: string;
+    discountPercent?: number | null;
+    salePrice?: number | null;
+  }): { salePrice: number; discountPercent: number | null } {
+    const originalPrice = Number(item.originalPrice);
+    if (originalPrice <= 0) {
+      throw new BadRequestException("Giá gốc phải lớn hơn 0");
+    }
+    let salePrice: number;
+    let discountPercent: number | null = null;
+    if (item.discountType === "PERCENT") {
+      const pct = Number(item.discountPercent ?? 0);
+      if (pct <= 0 || pct >= 100) {
+        throw new BadRequestException(
+          "Phần trăm giảm phải trong khoảng (0, 100)",
+        );
+      }
+      discountPercent = pct;
+      salePrice = Math.round((originalPrice * (100 - pct)) / 100);
+    } else {
+      salePrice = Number(item.salePrice ?? 0);
+      if (salePrice < 0) {
+        throw new BadRequestException("Giá sale không được âm");
+      }
+    }
+    if (salePrice >= originalPrice) {
+      throw new BadRequestException("Giá sale phải thấp hơn giá gốc");
+    }
+    // Quy tắc: mức giảm tối đa 70% (áp dụng cho cả FIXED_PRICE).
+    const effectiveDiscount =
+      ((originalPrice - salePrice) / originalPrice) * 100;
+    if (effectiveDiscount > 70) {
+      throw new BadRequestException("Mức giảm tối đa là 70%");
+    }
+    return { salePrice, discountPercent };
+  }
+
+  /**
+   * Tìm flash sale item đang ACTIVE cho một món (đã check giờ + chưa hủy).
+   */
+  private async findActiveFlashSaleItem(
+    merchantId: string,
+    menuItemId: string,
+  ): Promise<{ sale: FlashSaleEntity; item: FlashSaleItemEntity } | null> {
+    const open = await this.promoRepo.findOpenFlashSaleItemByMenuItem(
+      menuItemId,
+      merchantId,
+    );
+    if (!open) return null;
+    const now = new Date();
+    if (now < open.sale.startAt || now > open.sale.endAt) return null;
+    if (open.sale.status === "PAUSED" || open.sale.status === "CANCELLED") {
+      return null;
+    }
+    if (open.item.soldQuantity >= open.item.totalQuantity) return null;
+    return open;
+  }
+
+  async validateFlashSale(dto: ValidateFlashSaleDto): Promise<any> {
+    const items = [];
+    let discountAmount = 0;
+    for (const input of dto.items) {
+      const active = await this.findActiveFlashSaleItem(
+        dto.merchantId,
+        input.menuItemId,
+      );
+      if (!active) {
+        items.push({
+          menuItemId: input.menuItemId,
+          originalPrice: input.unitPrice ?? 0,
+          salePrice: input.unitPrice ?? 0,
+          hasFlashSale: false,
+          remainingStock: null,
+        });
+        continue;
+      }
+      const originalPrice = Number(active.item.originalPrice);
+      const salePrice = Number(active.item.salePrice);
+      const remaining = active.item.totalQuantity - active.item.soldQuantity;
+      const discount = (originalPrice - salePrice) * (input.quantity ?? 1);
+      discountAmount += discount;
+      items.push({
+        menuItemId: input.menuItemId,
+        originalPrice,
+        salePrice,
+        hasFlashSale: true,
+        remainingStock: remaining,
+        limitPerUser: active.item.limitPerUser,
+      });
+    }
+    return { items, discountAmount };
+  }
+
+  async applyFlashSale(dto: ApplyFlashSaleDto): Promise<any> {
+    // Idempotent fast path: đơn đã áp flash sale trước đó.
+    const existing = await this.promoRepo.findFlashSaleUsageByOrderId(
+      dto.orderId,
+    );
+    if (existing.length) {
+      const items = [];
+      let discountAmount = 0;
+      for (const usage of existing) {
+        const item = await this.promoRepo.findFlashSaleItemById(
+          usage.flashSaleItemId,
+        );
+        const originalPrice = item
+          ? Number(item.originalPrice)
+          : Number(usage.unitPrice);
+        const salePrice = Number(usage.unitPrice);
+        const perItemDiscount = (originalPrice - salePrice) * usage.quantity;
+        discountAmount += perItemDiscount;
+        items.push({
+          menuItemId: item?.menuItemId ?? usage.flashSaleItemId,
+          originalPrice,
+          salePrice,
+          quantity: usage.quantity,
+        });
+      }
+      return { items, discountAmount };
+    }
+
+    const items = [];
+    let discountAmount = 0;
+    for (const input of dto.items) {
+      const active = await this.findActiveFlashSaleItem(
+        dto.merchantId,
+        input.menuItemId,
+      );
+      if (!active) {
+        const price = input.unitPrice ?? 0;
+        items.push({
+          menuItemId: input.menuItemId,
+          originalPrice: price,
+          salePrice: price,
+          quantity: input.quantity,
+        });
+        continue;
+      }
+      const salePrice = await this.promoRepo.applyFlashSaleItemAtomic({
+        flashSaleItemId: active.item.id,
+        salePrice: Number(active.item.salePrice),
+        originalPrice: Number(active.item.originalPrice),
+        quantity: input.quantity,
+        limitPerUser: active.item.limitPerUser,
+        consumerId: dto.consumerId,
+        orderId: dto.orderId,
+      });
+      const originalPrice = Number(active.item.originalPrice);
+      discountAmount += (originalPrice - salePrice) * input.quantity;
+      items.push({
+        menuItemId: input.menuItemId,
+        originalPrice,
+        salePrice,
+        quantity: input.quantity,
+      });
+    }
+    return { items, discountAmount };
+  }
+
+  async refundFlashSale(dto: RefundFlashSaleDto): Promise<any> {
+    const restored = await this.promoRepo.refundFlashSaleByOrderId(dto.orderId);
+    return { orderId: dto.orderId, restored };
   }
 }

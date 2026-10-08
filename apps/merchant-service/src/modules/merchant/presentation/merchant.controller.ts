@@ -11,6 +11,8 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Req,
+  Header,
 } from "@nestjs/common";
 import { Roles, RolesGuard } from "@mythfood/common";
 import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
@@ -225,8 +227,14 @@ export class MerchantController {
     @Param("id") id: string,
     @Param("itemId") itemId: string,
     @Body() dto: UpdateMenuItemDto,
+    @Req() req: any,
   ): Promise<MenuItemResponseDto> {
-    const menuItem = await this.merchantService.updateMenuItem(id, itemId, dto);
+    const menuItem = await this.merchantService.updateMenuItem(
+      id,
+      itemId,
+      dto,
+      req?.user?.userId,
+    );
     return this.toMenuItemResponse(menuItem);
   }
 
@@ -248,6 +256,100 @@ export class MerchantController {
   ): Promise<MenuItemResponseDto> {
     const menuItem = await this.merchantService.toggleMenuItem(id, itemId);
     return this.toMenuItemResponse(menuItem);
+  }
+
+  // ===================== Price History & Auditing =====================
+
+  @Get(":id/price-history")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async getPriceHistory(
+    @Param("id") id: string,
+    @Query("menuItemId") menuItemId?: string,
+    @Query("changedBy") changedBy?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("skip") skip?: string,
+    @Query("take") take?: string,
+  ) {
+    return this.merchantService.getPriceHistory(id, {
+      menuItemId,
+      changedBy,
+      from,
+      to,
+      skip: skip ? parseInt(skip, 10) : 0,
+      take: take ? parseInt(take, 10) : 50,
+    });
+  }
+
+  @Get(":id/price-history/compare")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async comparePrice(
+    @Param("id") id: string,
+    @Query("menuItemId") menuItemId: string,
+    @Query("at") at?: string,
+  ) {
+    return this.merchantService.comparePrice(id, menuItemId, at);
+  }
+
+  @Get(":id/price-history/export")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="price-history.csv"')
+  async exportPriceHistoryCsv(
+    @Param("id") id: string,
+    @Query("menuItemId") menuItemId?: string,
+    @Query("changedBy") changedBy?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+  ) {
+    return this.merchantService.exportPriceHistoryCsv(id, {
+      menuItemId,
+      changedBy,
+      from,
+      to,
+    });
+  }
+
+  @Get(":id/price-history/report")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async getPriceFluctuationReport(
+    @Param("id") id: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+  ) {
+    return this.merchantService.getPriceFluctuationReport(id, from, to);
+  }
+
+  @Get(":id/price-alerts")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async getPriceAlerts(
+    @Param("id") id: string,
+    @Query("skip") skip?: string,
+    @Query("take") take?: string,
+  ) {
+    return this.merchantService.getPriceAlerts(
+      id,
+      skip ? parseInt(skip, 10) : undefined,
+      take ? parseInt(take, 10) : undefined,
+    );
+  }
+
+  @Get(":id/revenue-reconciliation")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async reconcileRevenue(
+    @Param("id") id: string,
+    @Query("period") period?: string,
+  ) {
+    return this.merchantService.reconcileRevenue(id, period);
+  }
+
+  @Patch("price-history/:historyId/status")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async updatePriceHistoryStatus(
+    @Param("historyId") historyId: string,
+    @Body() dto: { status: string },
+  ) {
+    return this.merchantService.updatePriceHistoryStatus(historyId, dto.status);
   }
 
   // ===================== Menu Categories =====================

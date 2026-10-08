@@ -954,10 +954,17 @@ export class WalletService {
     const batchId = batch.id;
 
     try {
-      const entries = await this.settlementRepo.findPendingByPeriod(
-        window.periodStart,
-        window.periodEnd,
-      );
+      // Cron 23:00 (không có period tùy chỉnh) quyết toán TẤT CẢ dòng PENDING,
+      // kể cả dòng vừa được giải tỏa (INVALID/rút đơn) có deliveredAt cũ — tránh
+      // bị kẹt ngoài cửa sổ quyết toán. Chạy thủ công có period tùy chỉnh thì vẫn
+      // chỉ quyết toán đúng cửa sổ đó (phục vụ recover batch ngày X).
+      const entries =
+        opts.periodStart && opts.periodEnd
+          ? await this.settlementRepo.findPendingByPeriod(
+              window.periodStart,
+              window.periodEnd,
+            )
+          : await this.settlementRepo.findAllPending();
 
       const groups = new Map<
         string,

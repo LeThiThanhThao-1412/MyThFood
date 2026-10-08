@@ -46,6 +46,28 @@ export class OrderService {
       );
     }
 
+    // Flash sale: áp giá sale cho các món trong flash sale đang ACTIVE.
+    // Server-authoritative — bỏ qua giá client gửi cho món có flash sale.
+    const orderId = randomUUID();
+    const flashPricing = await this.resolveFlashSalePrices(dto, orderId);
+    const orderItems = dto.items.map((item) => {
+      const priced = flashPricing.get(item.menuItemId);
+      return {
+        menuItemId: item.menuItemId,
+        name: item.name,
+        imageUrl: item.imageUrl ?? null,
+        quantity: item.quantity,
+        unitPrice: priced ? priced.salePrice : item.unitPrice,
+        originalPrice: priced ? priced.originalPrice : null,
+        specialInstructions: item.specialInstructions,
+        options: item.options,
+      };
+    });
+    const foodTotal = orderItems.reduce(
+      (sum, item) => sum + item.quantity * item.unitPrice,
+      0,
+    );
+
     let discount = dto.discount ?? 0;
     let discountFundedBy = "MERCHANT";
 
@@ -54,9 +76,13 @@ export class OrderService {
         dto.promotionCode,
         dto.merchantId,
         dto.consumerId,
-        this.computeFoodTotal(dto),
+        foodTotal,
         dto.deliveryFee ?? 0,
-        this.promotionItems(dto),
+        orderItems.map((i) => ({
+          menuItemId: i.menuItemId,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+        })),
       );
       discount = validated.discount;
       discountFundedBy = validated.fundedBy ?? "MERCHANT";
@@ -66,13 +92,11 @@ export class OrderService {
     const isCod = paymentMethod === "COD" || paymentMethod === "CASH";
     if (isCod) {
       const orderTotal =
-        this.computeFoodTotal(dto) +
-        (dto.deliveryFee ?? 0) +
-        (dto.serviceFee ?? 0) -
-        discount;
+        foodTotal + (dto.deliveryFee ?? 0) + (dto.serviceFee ?? 0) - discount;
       if (orderTotal > 200000) {
         const verified = await this.isConsumerVerified(dto.consumerId);
         if (!verified) {
+          await this.refundFlashSale(orderId);
           throw new ConflictException(
             "Đơn COD trên 200.000đ cần xác minh danh tính (SĐT + CMND) trước khi đặt",
           );
@@ -80,33 +104,37 @@ export class OrderService {
       }
     }
 
-    const result = Order.place({
-      consumerId: dto.consumerId,
-      userId: dto.userId,
-      merchantId: dto.merchantId,
-      orderType: dto.orderType as "DELIVERY" | "PICKUP",
-      items: dto.items.map((item) => ({
-        menuItemId: item.menuItemId,
-        name: item.name,
-        imageUrl: item.imageUrl ?? null,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        specialInstructions: item.specialInstructions,
-        options: item.options,
-      })),
-      deliveryAddress: dto.deliveryAddress ?? null,
-      deliveryLatitude: dto.deliveryLatitude ?? null,
-      deliveryLongitude: dto.deliveryLongitude ?? null,
-      deliveryFee: dto.deliveryFee,
-      serviceFee: dto.serviceFee,
-      discount,
-      discountFundedBy,
-      estimatedDeliveryTime: dto.estimatedDeliveryTime
-        ? new Date(dto.estimatedDeliveryTime)
-        : undefined,
-      notes: dto.notes,
-      paymentMethod: dto.paymentMethod || "CASH",
-    });
+    let result;
+    try {
+      result = Order.place({
+        id: orderId,
+        consumerId: dto.consumerId,
+        userId: dto.userId,
+        merchantId: dto.merchantId,
+        orderType: dto.orderType as "DELIVERY" | "PICKUP",
+        items: orderItems,
+        deliveryAddress: dto.deliveryAddress ?? null,
+        deliveryLatitude: dto.deliveryLatitude ?? null,
+        deliveryLongitude: dto.deliveryLongitude ?? null,
+        deliveryFee: dto.deliveryFee,
+        serviceFee: dto.serviceFee,
+        discount,
+        discountFundedBy,
+        estimatedDeliveryTime: dto.estimatedDeliveryTime
+          ? new Date(dto.estimatedDeliveryTime)
+          : undefined,
+        notes: dto.notes,
+        paymentMethod: dto.paymentMethod || "CASH",
+      });
+    } catch (err) {
+      await this.refundFlashSale(orderId);
+      throw err;
+    }
+
+    if (result.isFailure) {
+      await this.refundFlashSale(orderId);
+      throw result.error;
+    }
 
     if (result.isFailure) {
       throw result.error;
@@ -125,9 +153,13 @@ export class OrderService {
           dto.merchantId,
           dto.consumerId,
           order.id.toString(),
-          this.computeFoodTotal(dto),
+          foodTotal,
           dto.deliveryFee ?? 0,
-          this.promotionItems(dto),
+          orderItems.map((i) => ({
+            menuItemId: i.menuItemId,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice,
+          })),
         );
       } catch (err: any) {
         this.logger.warn(
@@ -537,6 +569,9 @@ export class OrderService {
     }
     await this.orderRepository.save(order);
 
+    // Hoàn stock + lượt flash sale (nếu có) — idempotent.
+    await this.refundFlashSale(id);
+
     // Giải phóng tài xế nếu đơn đã có tài xế (tránh kẹt currentOrderId).
     await this.releaseDriverIfAssigned(order);
 
@@ -613,6 +648,9 @@ export class OrderService {
     }
     order.reject(dto.reason);
     await this.orderRepository.save(order);
+
+    // Hoàn stock + lượt flash sale (nếu có) — idempotent.
+    await this.refundFlashSale(id);
 
     // Refund online-paid orders (WALLET or card) back to the customer's wallet
     // as store credit. COD orders have no captured money, so nothing to refund.
@@ -712,6 +750,9 @@ export class OrderService {
 
     order.cancelNoDriver(reason);
     await this.orderRepository.save(order);
+
+    // Hoàn stock + lượt flash sale (nếu có) — idempotent.
+    await this.refundFlashSale(id);
 
     // Hoàn tiền 100% nếu đã thanh toán online (COD không có tiền đã thu).
     const isOnlinePaid =
@@ -947,9 +988,7 @@ export class OrderService {
     // Pha A: tự mở case để admin điều tra/phán quyết.
     const respondentType = faultParty === "DRIVER" ? "DRIVER" : "CONSUMER";
     const respondentId =
-      faultParty === "DRIVER"
-        ? order.orderDriverId
-        : order.orderConsumerId;
+      faultParty === "DRIVER" ? order.orderDriverId : order.orderConsumerId;
     if (respondentId) {
       await this.openResolutionCase({
         type: "COMPLAINT",
@@ -1057,9 +1096,12 @@ export class OrderService {
     severity: string,
   ): Promise<void> {
     const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
-    const foodTotal = Math.max(order.orderSubtotal - order.orderDiscount, 0);
-    const shippingFee = order.orderDeliveryFee;
-    const total = order.orderTotalAmount;
+    const foodTotal = Math.max(
+      Number(order.orderSubtotal) - Number(order.orderDiscount),
+      0,
+    );
+    const shippingFee = Number(order.orderDeliveryFee);
+    const total = Number(order.orderTotalAmount);
     const isOnline =
       order.orderPaymentMethod === "WALLET" ||
       order.orderPaymentMethod === "CREDIT_CARD";
@@ -1080,18 +1122,27 @@ export class OrderService {
         } else {
           if (driverId && shippingFee > 0)
             await safe(() =>
-              this.reservePay(driverId, "DRIVER", shippingFee,
-                `Ứng trả phí ship do khách lỗi #${short}`),
+              this.reservePay(
+                driverId,
+                "DRIVER",
+                shippingFee,
+                `Ứng trả phí ship do khách lỗi #${short}`,
+              ),
             );
           if (merchantId && foodTotal > 0)
             await safe(() =>
-              this.reservePay(merchantId, "MERCHANT", foodTotal,
-                `Ứng trả món do khách lỗi #${short}`),
+              this.reservePay(
+                merchantId,
+                "MERCHANT",
+                foodTotal,
+                `Ứng trả món do khách lỗi #${short}`,
+              ),
             );
           if (customerId && foodTotal + shippingFee > 0)
             await safe(() =>
               this.walletPost("/api/v1/wallets/penalty/debit", {
-                ownerId: customerId, ownerType: "CONSUMER",
+                ownerId: customerId,
+                ownerType: "CONSUMER",
                 amount: foodTotal + shippingFee,
                 description: `Nợ giao thất bại do khách lỗi #${short}`,
               }),
@@ -1101,7 +1152,9 @@ export class OrderService {
         if (fine > 0 && customerId)
           await safe(() =>
             this.walletPost("/api/v1/wallets/penalty/debit", {
-              ownerId: customerId, ownerType: "CONSUMER", amount: fine,
+              ownerId: customerId,
+              ownerType: "CONSUMER",
+              amount: fine,
               description: `Phạt lỗi khách #${short}`,
             }),
           );
@@ -1111,14 +1164,18 @@ export class OrderService {
         if (isOnline && customerId && total > 0)
           await safe(() =>
             this.walletPost("/api/v1/wallets/refund", {
-              ownerId: customerId, ownerType: "CONSUMER", amount: total,
+              ownerId: customerId,
+              ownerType: "CONSUMER",
+              amount: total,
               orderId: id,
             }),
           );
         if (merchantId && foodTotal > 0)
           await safe(() =>
             this.walletPost("/api/v1/wallets/penalty/credit", {
-              ownerId: merchantId, ownerType: "MERCHANT", amount: foodTotal,
+              ownerId: merchantId,
+              ownerType: "MERCHANT",
+              amount: foodTotal,
               description: `Tài xế bồi thường tiền món #${short}`,
             }),
           );
@@ -1127,7 +1184,9 @@ export class OrderService {
           if (driverCharge > 0)
             await safe(() =>
               this.walletPost("/api/v1/wallets/penalty/debit", {
-                ownerId: driverId, ownerType: "DRIVER", amount: driverCharge,
+                ownerId: driverId,
+                ownerType: "DRIVER",
+                amount: driverCharge,
                 description: `Tài xế bồi thường + mất phí ship + phạt #${short}`,
               }),
             );
@@ -1138,20 +1197,26 @@ export class OrderService {
         if (isOnline && customerId && total > 0)
           await safe(() =>
             this.walletPost("/api/v1/wallets/refund", {
-              ownerId: customerId, ownerType: "CONSUMER", amount: total,
+              ownerId: customerId,
+              ownerType: "CONSUMER",
+              amount: total,
               orderId: id,
             }),
           );
         if (driverId && shippingFee > 0)
           await safe(() =>
             this.walletPost("/api/v1/wallets/compensate-driver", {
-              driverId, orderId: id, shippingFee,
+              driverId,
+              orderId: id,
+              shippingFee,
             }),
           );
         if (merchantId && fine > 0)
           await safe(() =>
             this.walletPost("/api/v1/wallets/penalty/debit", {
-              ownerId: merchantId, ownerType: "MERCHANT", amount: fine,
+              ownerId: merchantId,
+              ownerType: "MERCHANT",
+              amount: fine,
               description: `Phạt lỗi nhà hàng #${short}`,
             }),
           );
@@ -1161,19 +1226,29 @@ export class OrderService {
         if (isOnline && customerId && total > 0)
           await safe(() =>
             this.walletPost("/api/v1/wallets/refund", {
-              ownerId: customerId, ownerType: "CONSUMER", amount: total,
+              ownerId: customerId,
+              ownerType: "CONSUMER",
+              amount: total,
               orderId: id,
             }),
           );
         if (merchantId && foodTotal > 0)
           await safe(() =>
-            this.reservePay(merchantId, "MERCHANT", foodTotal,
-              `Platform bồi thường món #${short}`),
+            this.reservePay(
+              merchantId,
+              "MERCHANT",
+              foodTotal,
+              `Platform bồi thường món #${short}`,
+            ),
           );
         if (driverId && shippingFee > 0)
           await safe(() =>
-            this.reservePay(driverId, "DRIVER", shippingFee,
-              `Platform bồi thường phí ship #${short}`),
+            this.reservePay(
+              driverId,
+              "DRIVER",
+              shippingFee,
+              `Platform bồi thường phí ship #${short}`,
+            ),
           );
         break;
       }
@@ -1402,9 +1477,7 @@ export class OrderService {
 
   // ===================== Top menu items (global) =====================
 
-  async getTopMenuItems(
-    take?: number,
-  ): Promise<
+  async getTopMenuItems(take?: number): Promise<
     Array<{
       menuItemId: string;
       merchantId: string;
@@ -1423,25 +1496,6 @@ export class OrderService {
   }
 
   // ===================== Promotion integration =====================
-
-  private computeFoodTotal(dto: PlaceOrderDto): number {
-    return dto.items.reduce(
-      (sum, item) => sum + item.quantity * item.unitPrice,
-      0,
-    );
-  }
-
-  private promotionItems(dto: PlaceOrderDto): {
-    menuItemId: string;
-    quantity: number;
-    unitPrice: number;
-  }[] {
-    return dto.items.map((item) => ({
-      menuItemId: item.menuItemId,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-    }));
-  }
 
   private async validatePromotion(
     code: string,
@@ -1505,5 +1559,91 @@ export class OrderService {
         },
       ),
     );
+  }
+
+  /**
+   * Áp giá flash sale cho các món trong đơn (server-authoritative) và trừ
+   * stock một cách nguyên tử bên promotion-service. Trả về map theo menuItemId.
+   * Ném lỗi nếu flash sale hết suất / hết lượt / hết giờ → đơn sẽ bị từ chối.
+   */
+  private async resolveFlashSalePrices(
+    dto: PlaceOrderDto,
+    orderId: string,
+  ): Promise<Map<string, { originalPrice: number; salePrice: number }>> {
+    const url =
+      process.env.PROMOTION_SERVICE_URL || "http://promotion-service:3012";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    let res: any;
+    try {
+      res = await firstValueFrom(
+        this.httpService.post(
+          `${url}/api/v1/promotions/flash-sales/apply`,
+          {
+            merchantId: dto.merchantId,
+            consumerId: dto.consumerId,
+            orderId,
+            items: dto.items.map((i) => ({
+              menuItemId: i.menuItemId,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+            })),
+          },
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "x-service-key": serviceKey,
+            },
+          },
+        ),
+      );
+    } catch (err: any) {
+      await this.refundFlashSale(orderId);
+      const status = err?.response?.status;
+      if (status && status >= 400 && status < 500) {
+        const msg =
+          err?.response?.data?.message ??
+          err?.response?.data?.data?.message ??
+          "Flash sale không hợp lệ";
+        throw new ConflictException(msg);
+      }
+      // Promotion-service không khả dụng → graceful degradation (không áp flash sale).
+      this.logger.warn(
+        `Flash sale apply unavailable for order ${orderId}: ${err.message}. Proceeding without flash sale.`,
+      );
+      return new Map();
+    }
+    const data: any = res.data?.data ?? res.data;
+    const map = new Map<string, { originalPrice: number; salePrice: number }>();
+    for (const it of data?.items ?? []) {
+      map.set(it.menuItemId, {
+        originalPrice: Number(it.originalPrice),
+        salePrice: Number(it.salePrice),
+      });
+    }
+    return map;
+  }
+
+  /**
+   * Hoàn stock + lượt flash sale khi đơn bị hủy / đặt thất bại (idempotent).
+   */
+  private async refundFlashSale(orderId: string): Promise<void> {
+    try {
+      const url =
+        process.env.PROMOTION_SERVICE_URL || "http://promotion-service:3012";
+      const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+      await firstValueFrom(
+        this.httpService.post(
+          `${url}/api/v1/promotions/flash-sales/refund`,
+          { orderId },
+          {
+            headers: { "x-service-key": serviceKey },
+          },
+        ),
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Flash sale refund failed for order ${orderId}: ${err.message}`,
+      );
+    }
   }
 }

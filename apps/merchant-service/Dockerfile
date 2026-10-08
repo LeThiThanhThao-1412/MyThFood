@@ -45,7 +45,8 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # Install pnpm and wget for healthcheck
-RUN npm install -g pnpm@9.4.0 && apk add --no-cache wget tzdata
+RUN npm install -g pnpm@9.4.0 \
+    && (for i in 1 2 3 4 5; do apk add --no-cache wget tzdata && exit 0; sleep 5; done; exit 1)
 
 # Copy root configs
 COPY --from=builder /app/pnpm-lock.yaml ./

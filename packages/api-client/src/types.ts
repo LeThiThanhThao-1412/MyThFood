@@ -318,6 +318,7 @@ export interface UpdateMenuItemRequest {
   categoryId?: string | null;
   isFeatured?: boolean;
   preparationTime?: number;
+  reason?: string;
   optionGroups?: MenuItemOptionGroup[];
 }
 
@@ -357,6 +358,7 @@ export interface OrderItem {
   imageUrl?: string | null;
   quantity: number;
   unitPrice: number;
+  originalPrice?: number | null;
   subtotal: number;
   specialInstructions?: string;
   options?: SelectedMenuItemOption[];
@@ -399,6 +401,7 @@ export interface PlaceOrderRequest {
     imageUrl?: string | null;
     quantity: number;
     unitPrice: number;
+    originalPrice?: number;
     specialInstructions?: string;
     options?: SelectedMenuItemOption[];
   }[];
@@ -662,6 +665,16 @@ export interface DriverLocationUpdate {
   timestamp: string;
 }
 
+/** Một điểm trong lịch sử vị trí GPS của tài xế. */
+export interface DriverLocationPoint {
+  id: string;
+  driverId: string;
+  orderId: string | null;
+  latitude: number;
+  longitude: number;
+  recordedAt: string;
+}
+
 // --- Review ---
 export interface Review {
   id: string;
@@ -832,6 +845,165 @@ export interface ApplyCompensationVoucherRequest {
   orderId: string;
 }
 
+// --- Flash Sale ---
+export type FlashSaleStatus =
+  | "SCHEDULED"
+  | "ACTIVE"
+  | "PAUSED"
+  | "ENDED"
+  | "CANCELLED"
+  | "SOLD_OUT";
+
+export type FlashSaleDiscountType = "PERCENT" | "FIXED_PRICE";
+export type FlashSaleFundedBy = "MERCHANT" | "PLATFORM";
+
+export interface FlashSaleItem {
+  id: string;
+  flashSaleId: string;
+  menuItemId: string;
+  menuItemName: string | null;
+  imageUrl: string | null;
+  originalPrice: number;
+  discountType: FlashSaleDiscountType;
+  discountPercent: number | null;
+  salePrice: number;
+  totalQuantity: number;
+  soldQuantity: number;
+  limitPerUser: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FlashSale {
+  id: string;
+  merchantId: string;
+  title: string;
+  fundedBy: FlashSaleFundedBy;
+  status: FlashSaleStatus;
+  startAt: string;
+  endAt: string;
+  cancelledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items?: FlashSaleItem[];
+}
+
+export interface FlashSaleItemInput {
+  menuItemId: string;
+  quantity: number;
+  unitPrice?: number;
+}
+
+export interface CreateFlashSaleItemRequest {
+  menuItemId: string;
+  menuItemName?: string;
+  imageUrl?: string;
+  originalPrice: number;
+  discountType: FlashSaleDiscountType;
+  discountPercent?: number;
+  salePrice?: number;
+  totalQuantity: number;
+  limitPerUser?: number;
+}
+
+export interface CreateFlashSaleRequest {
+  merchantId: string;
+  title?: string;
+  items: CreateFlashSaleItemRequest[];
+  startAt: string;
+  endAt: string;
+  fundedBy?: FlashSaleFundedBy;
+}
+
+export interface UpdateFlashSaleItemRequest {
+  id: string;
+  totalQuantity?: number;
+  limitPerUser?: number;
+}
+
+export interface UpdateFlashSaleRequest {
+  title?: string;
+  startAt?: string;
+  endAt?: string;
+  items?: UpdateFlashSaleItemRequest[];
+}
+
+export interface FlashSalePricedItem {
+  menuItemId: string;
+  originalPrice: number;
+  salePrice: number;
+  quantity: number;
+}
+
+export interface ValidateFlashSaleRequest {
+  merchantId: string;
+  items: FlashSaleItemInput[];
+  consumerId?: string;
+}
+
+export interface ApplyFlashSaleRequest {
+  merchantId: string;
+  consumerId: string;
+  orderId: string;
+  items: FlashSaleItemInput[];
+}
+
+export interface RefundFlashSaleRequest {
+  orderId: string;
+}
+
+export interface FlashSaleStats {
+  totalOrders: number;
+  totalSoldQuantity: number;
+  totalDiscount: number;
+  totalRevenue: number;
+}
+
+// --- Price Management ---
+export type PriceHistoryStatus = "RECORDED" | "AUDITED" | "FLAGGED";
+
+export interface PriceHistory {
+  id: string;
+  merchantId: string;
+  menuItemId: string;
+  oldPrice: number;
+  newPrice: number;
+  changedBy: string | null;
+  reason: string | null;
+  status: PriceHistoryStatus;
+  createdAt: string;
+}
+
+export interface PriceAlert {
+  id: string;
+  merchantId: string;
+  menuItemId: string;
+  oldPrice: number;
+  newPrice: number;
+  changePercent: number;
+  message: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface PriceFluctuationReport {
+  merchantId: string;
+  period: { from: string | null; to: string | null };
+  totalChanges: number;
+  flaggedCount: number;
+  avgChangePercent: number;
+  maxChangePercent: number;
+  totalAlerts: number;
+}
+
+export interface RevenueReconciliation {
+  merchantId: string;
+  period: string;
+  orderStats: unknown;
+  listedMenuTotal: number;
+  note: string;
+}
+
 // --- Notification ---
 export interface Notification {
   id: string;
@@ -888,4 +1060,3 @@ export interface SendMessageRequest {
   type: ChatMessageType;
   content: string;
 }
-

@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { merchantApi, orderApi } from "@mythfood/api-client";
+import { merchantApi, orderApi, promotionApi } from "@mythfood/api-client";
 import {
   useAuthStore,
   useCartStore,
@@ -30,6 +30,7 @@ import OrderDetailDrawer from "@/components/OrderDetailDrawer";
 import SearchHistoryDropdown from "@/components/SearchHistoryDropdown";
 import FloatingOrderCard from "@/components/FloatingOrderCard";
 import RecentOrdersDrawer from "@/components/RecentOrdersDrawer";
+import FlashSaleDrawer from "@/components/FlashSaleDrawer";
 
 const gradientPalette = [
   "from-[#f093fb] to-[#f5576c]",
@@ -82,6 +83,8 @@ export default function DashboardPage() {
   const [mealDishes, setMealDishes] = useState<any[]>([]);
   const [recommendedDishes, setRecommendedDishes] = useState<any[]>([]);
   const [recommendTheme, setRecommendTheme] = useState<string | null>(null);
+  const [flashSaleItems, setFlashSaleItems] = useState<any[]>([]);
+  const [flashSaleOpen, setFlashSaleOpen] = useState(false);
   const [reorderingId, setReorderingId] = useState<string | null>(null);
   const [reorderMsg, setReorderMsg] = useState("");
 
@@ -210,6 +213,25 @@ export default function DashboardPage() {
     })();
   }, [orders, searchKeywords]);
 
+  // Load flash sale đang diễn ra (nhiều món, flatten theo món kèm merchantId)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res: any = await promotionApi.flashSale.listActive();
+        const list = Array.isArray(res?.data) ? res.data : [];
+        const items: any[] = [];
+        for (const s of list) {
+          for (const it of Array.isArray(s.items) ? s.items : []) {
+            items.push({ ...it, merchantId: s.merchantId });
+          }
+        }
+        setFlashSaleItems(items);
+      } catch {
+        setFlashSaleItems([]);
+      }
+    })();
+  }, []);
+
   const favoriteMerchants = merchants.filter((m: any) =>
     favorites.ids.includes(m.id),
   );
@@ -318,6 +340,15 @@ export default function DashboardPage() {
       return calculateShippingFeeSync(km);
     }
     return 15000;
+  };
+
+  const flashSaleBadge = (it: any) => {
+    if (it.discountType === "PERCENT") {
+      return `-${Math.round(Number(it.discountPercent) || 0)}%`;
+    }
+    const d = Number(it.originalPrice) - Number(it.salePrice);
+    if (d >= 1000) return `-${Math.round(d / 1000)}k`;
+    return `-${d.toLocaleString("vi-VN")}đ`;
   };
 
   const goToSearchResults = (keyword?: string) => {
@@ -584,6 +615,86 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* ===== FLASH SALE ===== */}
+          {flashSaleItems.length > 0 && (
+            <div className="mb-6 bg-gradient-to-r from-[#ff6b35] to-[#ff8f65] rounded-2xl p-4 sm:p-5 shadow-lg shadow-orange-200">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-bold text-white">🔥 Flash Sale</h2>
+                {flashSaleItems.length > 4 && (
+                  <button
+                    onClick={() => setFlashSaleOpen(true)}
+                    className="text-sm font-semibold text-white bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-full transition"
+                  >
+                    Xem thêm ({flashSaleItems.length})
+                  </button>
+                )}
+              </div>
+              <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-1">
+                {flashSaleItems.map((it: any) => {
+                  const remaining = Math.max(
+                    0,
+                    (it.totalQuantity ?? 0) - (it.soldQuantity ?? 0),
+                  );
+                  const pct =
+                    it.totalQuantity > 0
+                      ? Math.min(
+                          100,
+                          Math.round(
+                            ((it.soldQuantity ?? 0) / it.totalQuantity) * 100,
+                          ),
+                        )
+                      : 0;
+                  return (
+                    <Link
+                      key={it.id}
+                      href={`/restaurants/${it.merchantId}`}
+                      className="shrink-0 w-40 bg-white rounded-xl overflow-hidden shadow-md hover:shadow-lg transition no-underline"
+                    >
+                      <div className="relative h-28 bg-[#fff7ed] flex items-center justify-center overflow-hidden">
+                        {it.imageUrl ? (
+                          <img
+                            src={it.imageUrl}
+                            alt={it.menuItemName}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-3xl">🍽️</span>
+                        )}
+                        <span className="absolute top-2 right-2 bg-red-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-full shadow">
+                          {flashSaleBadge(it)}
+                        </span>
+                      </div>
+                      <div className="p-3">
+                        <p className="text-sm font-semibold text-gray-800 line-clamp-2 min-h-[2.5rem]">
+                          {it.menuItemName || "Món flash sale"}
+                        </p>
+                        <div className="flex items-baseline gap-2 mt-1">
+                          <span className="text-[#ff6b35] font-bold text-sm">
+                            {Number(it.salePrice).toLocaleString("vi-VN")}đ
+                          </span>
+                          <span className="text-xs text-gray-400 line-through">
+                            {Number(it.originalPrice).toLocaleString("vi-VN")}đ
+                          </span>
+                        </div>
+                        <div className="mt-2">
+                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-[#ff6b35] rounded-full"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            Còn {remaining} suất · Đã bán {it.soldQuantity ?? 0}
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* ===== KHÁM PHÁ (đặt lại / theo bữa / quán mới / gợi ý) ===== */}
           <div className="grid gap-6 mb-6">
             {/* Đặt lại lần nữa */}
@@ -594,7 +705,7 @@ export default function DashboardPage() {
                     🔄 Đặt lại lần nữa
                   </h2>
                   <Link
-                    href="/orders"
+                    href="/ordered-dishes"
                     className="text-sm font-semibold text-[#ff6b35] hover:underline"
                   >
                     Xem tất cả
@@ -652,16 +763,22 @@ export default function DashboardPage() {
                   </h2>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {mealDishes.map((d, idx) => (
+                  {mealDishes.map((d) => (
                     <Link
                       key={`${d.merchantId}-${d.id}`}
                       href={`/restaurants/${d.merchantId}`}
                       className="border border-gray-100 rounded-xl overflow-hidden hover:shadow-md transition no-underline"
                     >
-                      <div
-                        className={`h-24 bg-gradient-to-br ${gradientPalette[idx % gradientPalette.length]} flex items-center justify-center text-3xl`}
-                      >
-                        🍜
+                      <div className="h-24 bg-[#fff7ed] flex items-center justify-center overflow-hidden">
+                        {d.imageUrl ? (
+                          <img
+                            src={d.imageUrl}
+                            alt={d.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-3xl">🍜</span>
+                        )}
                       </div>
                       <div className="p-3">
                         <div className="text-sm font-semibold text-gray-800 line-clamp-1">
@@ -695,16 +812,22 @@ export default function DashboardPage() {
                   </Link>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-                  {newMerchants.map((m, idx) => (
+                  {newMerchants.map((m) => (
                     <Link
                       key={m.id}
                       href={`/restaurants/${m.id}`}
                       className="border border-gray-100 rounded-xl overflow-hidden hover:shadow-md transition no-underline"
                     >
-                      <div
-                        className={`h-20 bg-gradient-to-br ${gradientPalette[idx % gradientPalette.length]} flex items-center justify-center text-2xl`}
-                      >
-                        🏪
+                      <div className="h-20 bg-[#fff7ed] flex items-center justify-center overflow-hidden">
+                        {m.coverImageUrl || m.logoUrl ? (
+                          <img
+                            src={m.coverImageUrl || m.logoUrl}
+                            alt={m.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-2xl">🏪</span>
+                        )}
                       </div>
                       <div className="p-3">
                         <div className="text-sm font-semibold text-gray-800 line-clamp-1">
@@ -732,16 +855,22 @@ export default function DashboardPage() {
                   </h2>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {recommendedDishes.map((d, idx) => (
+                  {recommendedDishes.map((d) => (
                     <Link
                       key={`${d.merchantId}-${d.id}`}
                       href={`/restaurants/${d.merchantId}`}
                       className="border border-gray-100 rounded-xl overflow-hidden hover:shadow-md transition no-underline"
                     >
-                      <div
-                        className={`h-24 bg-gradient-to-br ${gradientPalette[(idx + 2) % gradientPalette.length]} flex items-center justify-center text-3xl`}
-                      >
-                        🍲
+                      <div className="h-24 bg-[#fff7ed] flex items-center justify-center overflow-hidden">
+                        {d.imageUrl ? (
+                          <img
+                            src={d.imageUrl}
+                            alt={d.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-3xl">🍲</span>
+                        )}
                       </div>
                       <div className="p-3">
                         <div className="text-sm font-semibold text-gray-800 line-clamp-1">
@@ -987,6 +1116,11 @@ export default function DashboardPage() {
 
         {/* Drawers */}
         <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
+        <FlashSaleDrawer
+          open={flashSaleOpen}
+          onClose={() => setFlashSaleOpen(false)}
+          items={flashSaleItems}
+        />
         <RecentOrdersDrawer
           open={recentOrdersOpen}
           onClose={() => setRecentOrdersOpen(false)}

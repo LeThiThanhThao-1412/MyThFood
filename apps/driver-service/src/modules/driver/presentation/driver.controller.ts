@@ -162,6 +162,20 @@ export class DriverController {
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
+  @Get(":id/location/history")
+  @Roles("DRIVER", "ADMIN")
+  async getLocationHistory(
+    @Param("id") id: string,
+    @Query("limit") limit?: string,
+  ) {
+    const parsed = limit ? parseInt(limit, 10) : 200;
+    const safeLimit = Number.isNaN(parsed)
+      ? 200
+      : Math.min(1000, Math.max(1, parsed));
+    const history = await this.driverService.getLocationHistory(id, safeLimit);
+    return { statusCode: HttpStatus.OK, data: history };
+  }
+
   // ---- Order Assignment ----
 
   @Patch(":id/assign-order")

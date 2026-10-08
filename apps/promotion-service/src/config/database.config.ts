@@ -5,6 +5,9 @@ import {
   PromotionUsageEntity,
   CompensationConfigEntity,
   CompensationVoucherEntity,
+  FlashSaleEntity,
+  FlashSaleItemEntity,
+  FlashSaleUsageEntity,
 } from "../modules/promotion/promotion.entity";
 
 export const getDatabaseConfig = (
@@ -21,6 +24,9 @@ export const getDatabaseConfig = (
     PromotionUsageEntity,
     CompensationConfigEntity,
     CompensationVoucherEntity,
+    FlashSaleEntity,
+    FlashSaleItemEntity,
+    FlashSaleUsageEntity,
   ],
   synchronize: configService.get<string>("NODE_ENV") === "development",
   logging: configService.get<string>("NODE_ENV") === "development",

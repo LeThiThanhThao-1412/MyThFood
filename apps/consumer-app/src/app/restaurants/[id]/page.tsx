@@ -32,6 +32,7 @@ export default function RestaurantDetailPage() {
   const [reviews, setReviews] = useState<any[]>([]);
   const [avgRating, setAvgRating] = useState(0);
   const [promos, setPromos] = useState<any[]>([]);
+  const [flashSales, setFlashSales] = useState<Map<string, any>>(new Map());
   const [cartOpen, setCartOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"menu" | "reviews">("menu");
 
@@ -48,6 +49,26 @@ export default function RestaurantDetailPage() {
         const p: any = await promotionApi.getByMerchant(id);
         const list = Array.isArray(p?.data) ? p.data : [];
         setPromos(list.filter((x: any) => x.isActive));
+      } catch {
+        /* ignore */
+      }
+      try {
+        const fs: any = await promotionApi.flashSale.listActive();
+        const fsList = Array.isArray(fs?.data) ? fs.data : [];
+        const map = new Map<string, any>();
+        for (const s of fsList) {
+          const items = Array.isArray(s.items)
+            ? s.items
+            : s.item
+              ? [s.item]
+              : [];
+          for (const it of items) {
+            if (it && it.menuItemId) {
+              map.set(it.menuItemId, it);
+            }
+          }
+        }
+        setFlashSales(map);
       } catch {
         /* ignore */
       }
@@ -132,6 +153,8 @@ export default function RestaurantDetailPage() {
   const canOrder =
     !!merchant && merchant.isOpen !== false && merchant.isOpenNow !== false;
 
+  const flashSaleFor = (menuItem: any) => flashSales.get(menuItem.id);
+
   const handleAddToCart = (menuItem: any) => {
     if (!isAuthenticated) {
       router.push("/login");
@@ -143,9 +166,11 @@ export default function RestaurantDetailPage() {
       setOptionItem(menuItem);
       return;
     }
+    const fs = flashSaleFor(menuItem);
     addItem({
       menuItem,
       quantity: 1,
+      unitPrice: fs ? Number(fs.salePrice) : undefined,
       merchantId: id,
       merchantName: merchant?.name || "",
     });
@@ -162,10 +187,19 @@ export default function RestaurantDetailPage() {
     note: string;
   }) => {
     if (!optionItem) return;
+    const fs = flashSaleFor(optionItem);
+    const base = fs ? Number(fs.salePrice) : optionItem.price || 0;
+    const optionDelta = (selectedGroups || [])
+      .flatMap((g) => g.options || [])
+      .reduce(
+        (sum, o) => sum + (Number(o.priceDelta) || 0) * (o.quantity ?? 1),
+        0,
+      );
     addItem({
       menuItem: optionItem,
       quantity,
       selectedGroups,
+      unitPrice: base + optionDelta,
       specialInstructions: note || undefined,
       merchantId: id,
       merchantName: merchant?.name || "",
@@ -498,6 +532,7 @@ export default function RestaurantDetailPage() {
                           <div className="space-y-3">
                             {catItems.map((item: any) => {
                               const isAdded = addedIds.has(item.id);
+                              const fsItem = flashSales.get(item.id);
                               return (
                                 <div
                                   key={item.id}
@@ -552,8 +587,26 @@ export default function RestaurantDetailPage() {
                                         ? "❤️"
                                         : "🤍"}
                                     </button>
-                                    <span className="font-bold text-[#ff6b35] text-base whitespace-nowrap">
-                                      {item.price?.toLocaleString("vi-VN")}₫
+                                    <span className="flex flex-col items-end whitespace-nowrap">
+                                      {fsItem && (
+                                        <span className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full">
+                                          🔥 FLASH SALE
+                                        </span>
+                                      )}
+                                      {fsItem && (
+                                        <span className="text-xs text-gray-400 line-through">
+                                          {item.price?.toLocaleString("vi-VN")}₫
+                                        </span>
+                                      )}
+                                      <span
+                                        className={`font-bold text-base ${fsItem ? "text-red-500" : "text-[#ff6b35]"}`}
+                                      >
+                                        {(fsItem
+                                          ? Number(fsItem.salePrice)
+                                          : item.price
+                                        )?.toLocaleString("vi-VN")}
+                                        ₫
+                                      </span>
                                     </span>
                                     <button
                                       onClick={() => handleAddToCart(item)}
@@ -732,6 +785,11 @@ export default function RestaurantDetailPage() {
         menuItem={optionItem}
         onClose={() => setOptionItem(null)}
         onAdd={handleConfirmAdd}
+        flashSalePrice={
+          optionItem && flashSaleFor(optionItem)
+            ? Number(flashSaleFor(optionItem).salePrice)
+            : null
+        }
       />
     </div>
   );

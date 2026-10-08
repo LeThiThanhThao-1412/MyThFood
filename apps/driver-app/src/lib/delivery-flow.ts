@@ -494,6 +494,21 @@ export async function pickUpFood(
     current = unwrap<any>(await dispatchApi.startDelivering(current.id));
   }
 
+  // Ghi nhận vị trí tại nhà hàng khi nhận món, để lịch sử GPS có đủ chuỗi mốc:
+  // Nhận đơn → Đến quán → Nhận món → Đã giao.
+  try {
+    const m = await getMerchant(order?.merchantId);
+    const restaurant = restaurantLocation(current, m);
+    if (restaurant && driverId) {
+      await driverApi.updateLocation(driverId, {
+        latitude: restaurant.latitude,
+        longitude: restaurant.longitude,
+      });
+    }
+  } catch {
+    /* non-fatal */
+  }
+
   const updatedOrder = await syncOrderOutForDelivery(order, driverId);
   await notifyConsumer(order, "DELIVERING");
   return { dispatch: current, order: updatedOrder };

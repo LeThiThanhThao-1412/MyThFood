@@ -49,6 +49,7 @@ export interface OrderItemProps {
   imageUrl: string | null;
   quantity: number;
   unitPrice: number;
+  originalPrice: number | null;
   subtotal: number;
   specialInstructions: string | null;
   options?: OrderItemOption[] | null;
@@ -146,6 +147,7 @@ export class Order extends AggregateRoot<OrderId> {
    * Place a new order (customer action).
    */
   public static place(props: {
+    id?: string;
     consumerId: string;
     userId?: string | null;
     merchantId: string;
@@ -156,6 +158,7 @@ export class Order extends AggregateRoot<OrderId> {
       imageUrl?: string | null;
       quantity: number;
       unitPrice: number;
+      originalPrice?: number | null;
       specialInstructions?: string;
       options?: OrderItemOption[];
     }>;
@@ -221,6 +224,7 @@ export class Order extends AggregateRoot<OrderId> {
         imageUrl: item.imageUrl ?? null,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
+        originalPrice: item.originalPrice ?? null,
         subtotal: item.quantity * item.unitPrice,
         specialInstructions: item.specialInstructions ?? null,
         options: item.options ?? null,
@@ -239,29 +243,32 @@ export class Order extends AggregateRoot<OrderId> {
       );
     }
 
-    const order = new Order(OrderId.create(), {
-      consumerId: props.consumerId,
-      userId: props.userId ?? null,
-      merchantId: props.merchantId,
-      orderType: props.orderType,
-      status: "PENDING",
-      items: orderItems,
-      subtotal,
-      deliveryFee,
-      serviceFee,
-      discount,
-      discountFundedBy: props.discountFundedBy ?? "MERCHANT",
-      totalAmount,
-      deliveryAddress: props.deliveryAddress,
-      deliveryLatitude: props.deliveryLatitude ?? null,
-      deliveryLongitude: props.deliveryLongitude ?? null,
-      estimatedDeliveryTime: props.estimatedDeliveryTime ?? null,
-      notes: props.notes ?? null,
-      driverId: null,
-      cancelReason: null,
-      rejectionReason: null,
-      paymentMethod: props.paymentMethod || "CASH",
-    });
+    const order = new Order(
+      props.id ? OrderId.from(props.id) : OrderId.create(),
+      {
+        consumerId: props.consumerId,
+        userId: props.userId ?? null,
+        merchantId: props.merchantId,
+        orderType: props.orderType,
+        status: "PENDING",
+        items: orderItems,
+        subtotal,
+        deliveryFee,
+        serviceFee,
+        discount,
+        discountFundedBy: props.discountFundedBy ?? "MERCHANT",
+        totalAmount,
+        deliveryAddress: props.deliveryAddress,
+        deliveryLatitude: props.deliveryLatitude ?? null,
+        deliveryLongitude: props.deliveryLongitude ?? null,
+        estimatedDeliveryTime: props.estimatedDeliveryTime ?? null,
+        notes: props.notes ?? null,
+        driverId: null,
+        cancelReason: null,
+        rejectionReason: null,
+        paymentMethod: props.paymentMethod || "CASH",
+      },
+    );
 
     order.addDomainEvent(
       new OrderPlacedEvent(order.id, {

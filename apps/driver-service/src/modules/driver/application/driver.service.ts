@@ -3,6 +3,10 @@ import { HttpService } from "@nestjs/axios";
 import { firstValueFrom } from "rxjs";
 import { BusinessRuleViolationError } from "@mythfood/shared-kernel";
 import { DriverRepository } from "../infrastructure/driver.repository";
+import {
+  DriverLocationHistoryRepository,
+  DriverLocationPoint,
+} from "../infrastructure/driver-location-history.repository";
 import { Driver } from "../domain/driver.aggregate";
 import { DriverId } from "../domain/driver-id";
 import {
@@ -20,6 +24,7 @@ export class DriverService {
 
   constructor(
     private readonly driverRepo: DriverRepository,
+    private readonly locationHistoryRepo: DriverLocationHistoryRepository,
     private readonly httpService: HttpService,
   ) {}
 
@@ -155,7 +160,33 @@ export class DriverService {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
     driver.updateLocation(dto.latitude, dto.longitude);
     await this.driverRepo.save(driver);
+
+    // Ghi lịch sử GPS (mỗi lần cập nhật = 1 điểm), phục vụ theo dõi quãng đường
+    // và kiểm chứng cơ chế "ghi nhận vị trí định kỳ" (mô phỏng hoặc thật).
+    try {
+      await this.locationHistoryRepo.savePoint({
+        driverId: driver.id.toString(),
+        orderId: driver.driverCurrentOrderId ?? null,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+      });
+    } catch (err: any) {
+      this.logger.warn(`Failed to persist location history: ${err?.message}`);
+    }
+
     return driver;
+  }
+
+  /** Lấy lịch sử vị trí GPS của tài xế (mới nhất trước, giới hạn `limit`). */
+  async getLocationHistory(
+    id: string,
+    limit?: number,
+  ): Promise<DriverLocationPoint[]> {
+    const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
+    return this.locationHistoryRepo.findByDriver(
+      driver.id.toString(),
+      limit ?? 200,
+    );
   }
 
   // ---- Order Assignment ----

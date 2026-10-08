@@ -43,7 +43,8 @@ COPY --from=builder /app/packages/common/dist packages/common/dist/
 COPY --from=builder /app/apps/resolution-service/package.json apps/resolution-service/
 COPY --from=builder /app/apps/resolution-service/dist apps/resolution-service/dist/
 
-RUN npm install -g pnpm@9.4.0 && apk add --no-cache tzdata
+RUN npm install -g pnpm@9.4.0 \
+    && (for i in 1 2 3 4 5; do apk add --no-cache tzdata && exit 0; sleep 5; done; exit 1)
 RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
 RUN pnpm install --frozen-lockfile --filter @mythfood/resolution-service --prod
 

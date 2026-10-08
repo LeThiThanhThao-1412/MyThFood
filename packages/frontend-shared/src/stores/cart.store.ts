@@ -114,6 +114,9 @@ export const useCartStore = create<CartState>()(
                 ? {
                     ...i,
                     quantity: i.quantity + normalized.quantity,
+                    // Luôn lấy giá mới nhất (vd: món đang flash sale) thay cho
+                    // giá cũ đã thêm trước đó.
+                    unitPrice: normalized.unitPrice,
                     specialInstructions:
                       normalized.specialInstructions ?? i.specialInstructions,
                   }

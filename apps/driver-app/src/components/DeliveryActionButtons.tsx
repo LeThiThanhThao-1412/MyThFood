@@ -18,8 +18,18 @@ export default function DeliveryActionButtons({
   variant?: "solid" | "light";
   onChanged?: () => void;
 }) {
-  const { order, busy, error, message, stage, stageMeta, advance } =
-    useDeliveryTrip(orderId);
+  const {
+    order,
+    busy,
+    error,
+    message,
+    stage,
+    stageMeta,
+    advance,
+    simulating,
+    startSimulation,
+    stopSimulation,
+  } = useDeliveryTrip(orderId);
 
   if (!order) return null;
 
@@ -59,6 +69,24 @@ export default function DeliveryActionButtons({
           }`}
         >
           {busy ? "Đang xử lý..." : stageMeta.actionLabel}
+        </button>
+      )}
+
+      {stage === "DELIVERING" && (
+        <button
+          onClick={() => (simulating ? stopSimulation() : startSimulation())}
+          disabled={busy}
+          className={`w-full py-2 rounded-xl text-xs font-bold border transition ${
+            variant === "light"
+              ? simulating
+                ? "bg-white/20 text-white border-white/30 hover:bg-white/30"
+                : "bg-white/20 text-white border-white/30 hover:bg-white/30"
+              : simulating
+                ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                : "bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
+          }`}
+        >
+          {simulating ? "⏹ Dừng mô phỏng GPS" : "▶ Mô phỏng GPS (mỗi 5s)"}
         </button>
       )}
 

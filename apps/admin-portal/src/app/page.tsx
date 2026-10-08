@@ -501,6 +501,12 @@ export default function AdminDashboardPage() {
           🏷️ Khuyến mãi
         </Link>
         <Link
+          href="/price-management"
+          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+        >
+          📉 Biến động giá
+        </Link>
+        <Link
           href="/orders"
           className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
         >

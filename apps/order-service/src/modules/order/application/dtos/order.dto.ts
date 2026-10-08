@@ -66,6 +66,12 @@ export class OrderItemDto {
   @Type(() => Number)
   unitPrice!: number;
 
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  originalPrice?: number;
+
   @IsString()
   @IsOptional()
   specialInstructions?: string;
@@ -251,6 +257,7 @@ export class OrderItemResponseDto {
   imageUrl!: string | null;
   quantity!: number;
   unitPrice!: number;
+  originalPrice!: number | null;
   subtotal!: number;
   specialInstructions!: string | null;
   options!: OrderItemOptionDto[] | null;

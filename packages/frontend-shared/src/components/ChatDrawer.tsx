@@ -64,7 +64,10 @@ export default function ChatDrawer({
     setSending(true);
     setError("");
     try {
-      await chatApi.sendMessage(conversationId, { type: "TEXT", content: text });
+      await chatApi.sendMessage(conversationId, {
+        type: "TEXT",
+        content: text,
+      });
       setInput("");
       await load();
     } catch (err: any) {
@@ -100,7 +103,11 @@ export default function ChatDrawer({
   }
 
   return (
-    <Drawer open={open} onClose={onClose} title={counterpartName || "Trò chuyện"}>
+    <Drawer
+      open={open}
+      onClose={onClose}
+      title={counterpartName || "Trò chuyện"}
+    >
       <div className="flex flex-col h-full">
         {/* Header info */}
         <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-2.5 shrink-0">
@@ -150,7 +157,9 @@ export default function ChatDrawer({
                       />
                     </a>
                   ) : (
-                    <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                    <p className="whitespace-pre-wrap break-words">
+                      {m.content}
+                    </p>
                   )}
                   <p
                     className={`text-[10px] mt-1 ${

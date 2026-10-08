@@ -306,9 +306,7 @@ export class OrderRepository implements IRepository<Order, OrderId> {
    * only the single best-selling dish per merchant, ordered by total quantity.
    * Used by the consumer app to show popular dishes for new customers.
    */
-  async getTopMenuItems(
-    take = 12,
-  ): Promise<
+  async getTopMenuItems(take = 12): Promise<
     Array<{
       menuItemId: string;
       merchantId: string;

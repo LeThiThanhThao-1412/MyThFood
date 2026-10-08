@@ -5,6 +5,9 @@ import {
   PromotionUsageEntity,
   CompensationConfigEntity,
   CompensationVoucherEntity,
+  FlashSaleEntity,
+  FlashSaleItemEntity,
+  FlashSaleUsageEntity,
 } from "./promotion.entity";
 import { PromotionRepository } from "./promotion.repository";
 import { PromotionService } from "./promotion.service";
@@ -17,6 +20,9 @@ import { PromotionController } from "./promotion.controller";
       PromotionUsageEntity,
       CompensationConfigEntity,
       CompensationVoucherEntity,
+      FlashSaleEntity,
+      FlashSaleItemEntity,
+      FlashSaleUsageEntity,
     ]),
   ],
   controllers: [PromotionController],

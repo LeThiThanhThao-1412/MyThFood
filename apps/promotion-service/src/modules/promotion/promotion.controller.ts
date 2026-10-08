@@ -23,6 +23,11 @@ import {
   UpdateCompensationConfigDto,
   IssueCompensationVoucherDto,
   ApplyCompensationVoucherDto,
+  CreateFlashSaleDto,
+  UpdateFlashSaleDto,
+  ValidateFlashSaleDto,
+  ApplyFlashSaleDto,
+  RefundFlashSaleDto,
 } from "./promotion.dto";
 
 @Controller("promotions")
@@ -120,6 +125,131 @@ export class PromotionController {
     return {
       statusCode: HttpStatus.OK,
       data: await this.promotionService.applyCompensationVoucher(dto),
+    };
+  }
+
+  // ---- Flash Sale ----
+
+  @Post("flash-sales")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  @HttpCode(HttpStatus.CREATED)
+  async createFlashSale(@Body() dto: CreateFlashSaleDto, @Req() req: any) {
+    const roles: string[] = req?.user?.roles ?? [];
+    const fundedBy = roles.includes("ADMIN") ? "PLATFORM" : "MERCHANT";
+    return {
+      statusCode: HttpStatus.CREATED,
+      data: await this.promotionService.createFlashSale(dto, fundedBy),
+    };
+  }
+
+  @Get("flash-sales/active")
+  async listActiveFlashSales() {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.listActiveFlashSales(),
+    };
+  }
+
+  @Get("flash-sales/merchant/:merchantId")
+  async listFlashSalesByMerchant(@Param("merchantId") merchantId: string) {
+    const result = await this.promotionService.listFlashSales({ merchantId });
+    return { statusCode: HttpStatus.OK, ...result };
+  }
+
+  @Get("flash-sales")
+  @Roles("ADMIN")
+  async listFlashSales(
+    @Query("merchantId") merchantId?: string,
+    @Query("status") status?: string,
+    @Query("skip") skip?: string,
+    @Query("take") take?: string,
+  ) {
+    const result = await this.promotionService.listFlashSales({
+      merchantId,
+      status,
+      skip: skip ? parseInt(skip, 10) : 0,
+      take: take ? parseInt(take, 10) : 50,
+    });
+    return { statusCode: HttpStatus.OK, ...result };
+  }
+
+  @Get("flash-sales/:id")
+  async getFlashSale(@Param("id") id: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.getFlashSaleById(id),
+    };
+  }
+
+  @Get("flash-sales/:id/stats")
+  async getFlashSaleStats(@Param("id") id: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.getFlashSaleStats(id),
+    };
+  }
+
+  @Patch("flash-sales/:id")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async updateFlashSale(
+    @Param("id") id: string,
+    @Body() dto: UpdateFlashSaleDto,
+  ) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.updateFlashSale(id, dto),
+    };
+  }
+
+  @Post("flash-sales/:id/cancel")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async cancelFlashSale(@Param("id") id: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.cancelFlashSale(id),
+    };
+  }
+
+  @Post("flash-sales/:id/pause")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async pauseFlashSale(@Param("id") id: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.pauseFlashSale(id),
+    };
+  }
+
+  @Post("flash-sales/:id/resume")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async resumeFlashSale(@Param("id") id: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.resumeFlashSale(id),
+    };
+  }
+
+  @Post("flash-sales/validate")
+  async validateFlashSale(@Body() dto: ValidateFlashSaleDto) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.validateFlashSale(dto),
+    };
+  }
+
+  @Post("flash-sales/apply")
+  @Roles("CONSUMER", "ADMIN")
+  async applyFlashSale(@Body() dto: ApplyFlashSaleDto) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.applyFlashSale(dto),
+    };
+  }
+
+  @Post("flash-sales/refund")
+  async refundFlashSale(@Body() dto: RefundFlashSaleDto) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.refundFlashSale(dto),
     };
   }
 

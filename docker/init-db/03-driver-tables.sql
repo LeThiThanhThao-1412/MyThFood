@@ -53,5 +53,20 @@ CREATE INDEX IF NOT EXISTS idx_drivers_current_order_id ON drivers ("currentOrde
 CREATE INDEX IF NOT EXISTS idx_drivers_available ON drivers (status, "onlineStatus", "fatigueLevel") WHERE status = 'ACTIVE' AND "onlineStatus" = 'ONLINE' AND "fatigueLevel" != 'CRITICAL';
 CREATE INDEX IF NOT EXISTS idx_drivers_created_at ON drivers ("createdAt");
 
+-- Driver location history (GPS trace: appends 1 row per location update)
+CREATE TABLE IF NOT EXISTS driver_location_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "driverId" UUID NOT NULL,
+  "orderId" UUID,
+  "latitude" DECIMAL(10, 7) NOT NULL,
+  "longitude" DECIMAL(10, 7) NOT NULL,
+  "recordedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_driver_location_history_driver_id
+  ON driver_location_history ("driverId");
+CREATE INDEX IF NOT EXISTS idx_driver_location_history_driver_recorded
+  ON driver_location_history ("driverId", "recordedAt");
+
 -- Grant privileges
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO mythfood;

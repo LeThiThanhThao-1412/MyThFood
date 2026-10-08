@@ -162,6 +162,10 @@ export class UpdateMenuItemDto {
   preparationTime?: number;
 
   @IsOptional()
+  @IsString()
+  reason?: string;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => MenuItemOptionGroupDto)

@@ -42,7 +42,7 @@ export interface TripMapMarker extends LatLng {
 
 export function useDeliveryTrip(orderId?: string | null) {
   const { user } = useAuthStore();
-  const { location: gps } = useLocationStore();
+  const { location: gps, setLocation } = useLocationStore();
 
   const [order, setOrder] = useState<any>(null);
   const [dispatch, setDispatch] = useState<any>(null);
@@ -63,6 +63,11 @@ export function useDeliveryTrip(orderId?: string | null) {
     null,
   );
   const lastOrderIdRef = useRef<string | null>(null);
+
+  // ---- Mô phỏng GPS (demo/test): di chuyển tài xế quán → khách mỗi 5s ----
+  const [simulating, setSimulating] = useState(false);
+  const simTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const simStepRef = useRef(0);
 
   // ---- Tải dữ liệu chuyến giao ----
   const load = useCallback(
@@ -349,6 +354,65 @@ export function useDeliveryTrip(orderId?: string | null) {
   /** Phí ship tài xế thực nhận (80% — 20% hoa hồng nền tảng). */
   const driverEarning = Math.round(toNum(order?.deliveryFee, 15000) * 0.8);
 
+  // ---- Mô phỏng GPS: điều khiển chạy/dừng ----
+
+  const stopSimulation = useCallback(() => {
+    if (simTimerRef.current) {
+      clearInterval(simTimerRef.current);
+      simTimerRef.current = null;
+    }
+    setSimulating(false);
+  }, []);
+
+  const startSimulation = useCallback(() => {
+    const driverId = driver?.id;
+    if (!driverId || !restaurant || !customer) return;
+    if (simTimerRef.current) clearInterval(simTimerRef.current);
+
+    const steps = 12;
+    simStepRef.current = 0;
+    setSimulating(true);
+
+    const tick = async () => {
+      const step = simStepRef.current;
+      if (step > steps) {
+        stopSimulation();
+        return;
+      }
+      const t = step / steps;
+      const latitude =
+        restaurant.latitude + (customer.latitude - restaurant.latitude) * t;
+      const longitude =
+        restaurant.longitude + (customer.longitude - restaurant.longitude) * t;
+
+      // Gửi vị trí mô phỏng lên backend (backend sẽ ghi lịch sử GPS).
+      try {
+        await driverApi.updateLocation(driverId, { latitude, longitude });
+      } catch {
+        /* non-fatal */
+      }
+      // Di chuyển marker trên bản đồ ngay lập tức.
+      setLocation({
+        latitude,
+        longitude,
+        address: `Mô phỏng ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+        source: "manual",
+      });
+      simStepRef.current = step + 1;
+    };
+
+    // Gửi điểm đầu tiên ngay, các điểm tiếp theo cách nhau 5 giây.
+    tick();
+    simTimerRef.current = setInterval(tick, 5000);
+  }, [driver?.id, restaurant, customer, setLocation, stopSimulation]);
+
+  // Dọn dẹp timer khi unmount.
+  useEffect(() => {
+    return () => {
+      if (simTimerRef.current) clearInterval(simTimerRef.current);
+    };
+  }, []);
+
   return {
     order,
     dispatch,
@@ -373,5 +437,8 @@ export function useDeliveryTrip(orderId?: string | null) {
     reload: load,
     setError,
     setMessage,
+    simulating,
+    startSimulation,
+    stopSimulation,
   };
 }

@@ -13,7 +13,12 @@ import {
   chatApi,
   resolutionApi,
 } from "@mythfood/api-client";
-import { useAuthStore, fetchRoute, ChatDrawer } from "@mythfood/frontend-shared";
+import {
+  useAuthStore,
+  fetchRoute,
+  ChatDrawer,
+  useChatUnread,
+} from "@mythfood/frontend-shared";
 import type { RouteInfo } from "@mythfood/frontend-shared";
 import { reorderOrder } from "@/lib/reorder";
 
@@ -101,7 +106,27 @@ const COMPLAINT_CATEGORIES: Record<string, string> = {
   DRIVER_BEHAVIOR: "Thái độ tài xế",
   MERCHANT_BEHAVIOR: "Thái độ nhà hàng",
   DAMAGED_ITEM: "Hàng hư hỏng",
+  UNAUTHORIZED_CANCEL: "Hủy đơn trái phép",
   OTHER: "Khác",
+};
+
+// Lý do khiếu nại theo từng đối tượng (nhà hàng / tài xế)
+const COMPLAINT_REASONS_BY_PARTY: Record<"MERCHANT" | "DRIVER", string[]> = {
+  MERCHANT: [
+    "ORDER_QUALITY",
+    "MISSING_ITEM",
+    "WRONG_ITEM",
+    "FOOD_SAFETY",
+    "MERCHANT_BEHAVIOR",
+    "DAMAGED_ITEM",
+  ],
+  DRIVER: [
+    "DELIVERY_LATE",
+    "NOT_RECEIVED",
+    "DRIVER_BEHAVIOR",
+    "DAMAGED_ITEM",
+    "UNAUTHORIZED_CANCEL",
+  ],
 };
 
 function toNum(v: unknown, fallback = 0): number {
@@ -149,6 +174,39 @@ export default function OrderDetailPage() {
   const [chatConversationId, setChatConversationId] = useState<string | null>(
     null,
   );
+
+  // Tự xác định (hoặc tạo) hội thoại ngay khi có tài xế, để đếm tin nhắn chưa
+  // đọc ngay cả khi khách chưa mở khung chat. Bỏ qua đơn đã kết thúc.
+  useEffect(() => {
+    if (!order || !user?.id || !driverProfile?.userId) return;
+    const terminal =
+      order.status === "DELIVERED" ||
+      order.status === "CANCELLED" ||
+      order.status === "REJECTED" ||
+      order.status === "CANCELLED_NO_DRIVER" ||
+      order.status === "DELIVERY_FAILED";
+    if (terminal) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res: any = await chatApi.getOrCreateConversation({
+          orderId: order.id,
+          consumerUserId: user.id,
+          driverUserId: driverProfile.userId,
+        });
+        const conv = res?.data || res;
+        if (conv?.id && !cancelled) setChatConversationId(conv.id);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [order?.id, user?.id, driverProfile?.userId]);
+
+  const chatUnread = useChatUnread(chatConversationId, user?.id, chatOpen);
 
   // Khiếu nại giao thất bại (bị tài xế khiếu nại)
   const [deliveryCase, setDeliveryCase] = useState<any>(null);
@@ -223,6 +281,12 @@ export default function OrderDetailPage() {
   const [complaintEvidence, setComplaintEvidence] = useState<string[]>([]);
   const [complaintBusy, setComplaintBusy] = useState(false);
   const [complaintMsg, setComplaintMsg] = useState("");
+
+  function selectComplaintRespondent(type: "MERCHANT" | "DRIVER") {
+    setComplaintRespondentType(type);
+    const reasons = COMPLAINT_REASONS_BY_PARTY[type] ?? [];
+    setComplaintCategory(reasons[0] ?? "ORDER_QUALITY");
+  }
 
   async function uploadComplaintImage(e: any) {
     const files = Array.from(e.target.files || []) as File[];
@@ -822,10 +886,15 @@ export default function OrderDetailPage() {
               </div>
               <button
                 onClick={openChatWithDriver}
-                className="ml-auto w-11 h-11 rounded-full bg-[#ff6b35]/10 text-[#ff6b35] flex items-center justify-center text-xl shrink-0 hover:bg-[#ff6b35]/20 transition"
+                className="relative ml-auto w-11 h-11 rounded-full bg-[#ff6b35]/10 text-[#ff6b35] flex items-center justify-center text-xl shrink-0 hover:bg-[#ff6b35]/20 transition"
                 title="Nhắn tin với tài xế"
               >
                 💬
+                {chatUnread > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center">
+                    {chatUnread > 9 ? "9+" : chatUnread}
+                  </span>
+                )}
               </button>
             </div>
           </div>
@@ -1236,11 +1305,11 @@ export default function OrderDetailPage() {
       {/* Modal khiếu nại đơn hàng */}
       {complaintOpen && (
         <div
-          className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50"
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 px-4"
           onClick={() => setComplaintOpen(false)}
         >
           <div
-            className="bg-white w-full max-w-lg rounded-t-2xl p-5 space-y-3 max-h-[85vh] overflow-y-auto"
+            className="bg-white w-full max-w-lg rounded-2xl p-5 space-y-3 max-h-[85vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
@@ -1262,7 +1331,9 @@ export default function OrderDetailPage() {
                 onChange={(e) => setComplaintCategory(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm mt-1"
               >
-                {Object.keys(COMPLAINT_CATEGORIES).map((k) => (
+                {(
+                  COMPLAINT_REASONS_BY_PARTY[complaintRespondentType] ?? []
+                ).map((k) => (
                   <option key={k} value={k}>
                     {COMPLAINT_CATEGORIES[k]}
                   </option>
@@ -1274,13 +1345,13 @@ export default function OrderDetailPage() {
               <label className="text-xs text-gray-500">Khiếu nại với</label>
               <div className="flex gap-2 mt-1">
                 <button
-                  onClick={() => setComplaintRespondentType("MERCHANT")}
+                  onClick={() => selectComplaintRespondent("MERCHANT")}
                   className={`flex-1 py-2 rounded-xl text-sm font-semibold border ${complaintRespondentType === "MERCHANT" ? "bg-[#ff6b35] text-white border-[#ff6b35]" : "border-gray-200 text-gray-600"}`}
                 >
                   🏪 Nhà hàng
                 </button>
                 <button
-                  onClick={() => setComplaintRespondentType("DRIVER")}
+                  onClick={() => selectComplaintRespondent("DRIVER")}
                   className={`flex-1 py-2 rounded-xl text-sm font-semibold border ${complaintRespondentType === "DRIVER" ? "bg-[#ff6b35] text-white border-[#ff6b35]" : "border-gray-200 text-gray-600"}`}
                 >
                   🛵 Tài xế

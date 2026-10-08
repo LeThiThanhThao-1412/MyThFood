@@ -305,6 +305,7 @@ export class OrderController {
         imageUrl: item.imageUrl ?? null,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
+        originalPrice: item.originalPrice ?? null,
         subtotal: item.subtotal,
         specialInstructions: item.specialInstructions,
         options: item.options ?? null,

@@ -75,4 +75,3 @@ class SocketClient {
 
 export const socketClient = new SocketClient(SOCKET_URL);
 export const chatSocketClient = new SocketClient(CHAT_SOCKET_URL);
-

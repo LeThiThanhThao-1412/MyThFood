@@ -184,8 +184,57 @@ export class Case extends AggregateRoot<CaseId> {
     this.resolutionNote = note ?? null;
     this.resolvedBy = resolvedBy;
     this.resolvedAt = new Date();
-    this.faultParty = faultParty ?? null;
+    this.faultParty = this.resolveFaultParty(verdict, faultParty);
     this.markUpdated();
+  }
+
+  /**
+   * Chốt bên chịu lỗi nhất quán với verdict:
+   * - INCONCLUSIVE ("chưa đủ căn cứ") → không quy lỗi cho bên cụ thể nào.
+   * - VALID / INVALID → bên lỗi phải là một bên tham gia vụ việc
+   *   (người khiếu nại, bên bị khiếu nại) hoặc SYSTEM.
+   */
+  private resolveFaultParty(
+    verdict: Verdict,
+    faultParty?: FaultParty | null,
+  ): FaultParty | null {
+    if (verdict === Verdict.INCONCLUSIVE) {
+      return FaultParty.INCONCLUSIVE;
+    }
+    if (!faultParty) {
+      return null;
+    }
+    this.assertFaultPartyIsParty(faultParty);
+    return faultParty;
+  }
+
+  private assertFaultPartyIsParty(faultParty: FaultParty): void {
+    if (
+      faultParty === FaultParty.SYSTEM ||
+      faultParty === FaultParty.INCONCLUSIVE
+    ) {
+      return;
+    }
+    const reporterFault = this.faultPartyFromActor(this.reporterType);
+    const respondentFault = this.faultPartyFromActor(this.respondentType);
+    if (faultParty !== reporterFault && faultParty !== respondentFault) {
+      throw new BusinessRuleViolationError(
+        `faultParty "${faultParty}" is not a party of this case (reporter=${this.reporterType}, respondent=${this.respondentType})`,
+      );
+    }
+  }
+
+  private faultPartyFromActor(actor: ActorType): FaultParty {
+    switch (actor) {
+      case "DRIVER":
+        return FaultParty.DRIVER;
+      case "MERCHANT":
+        return FaultParty.MERCHANT;
+      case "CONSUMER":
+        return FaultParty.CUSTOMER;
+      default:
+        return FaultParty.SYSTEM;
+    }
   }
 
   /** Người bị khiếu nại phản hồi kèm text + ảnh. */

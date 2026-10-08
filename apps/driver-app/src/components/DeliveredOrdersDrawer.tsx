@@ -10,7 +10,10 @@ import { toNum } from "@/lib/delivery-flow";
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   DELIVERED: { label: "🎉 Đã giao", cls: "bg-green-100 text-green-700" },
-  DELIVERY_FAILED: { label: "❌ Giao thất bại", cls: "bg-red-100 text-red-700" },
+  DELIVERY_FAILED: {
+    label: "❌ Giao thất bại",
+    cls: "bg-red-100 text-red-700",
+  },
   CANCELLED: { label: "🚫 Đã hủy", cls: "bg-gray-100 text-gray-600" },
   CANCELLED_NO_DRIVER: {
     label: "🛑 Không có tài xế",
@@ -18,7 +21,10 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   },
   REJECTED: { label: "🚫 Từ chối", cls: "bg-gray-100 text-gray-600" },
   OUT_FOR_DELIVERY: { label: "🚚 Đang giao", cls: "bg-blue-100 text-blue-700" },
-  READY_FOR_PICKUP: { label: "📦 Sẵn sàng", cls: "bg-orange-100 text-orange-700" },
+  READY_FOR_PICKUP: {
+    label: "📦 Sẵn sàng",
+    cls: "bg-orange-100 text-orange-700",
+  },
   PREPARING: { label: "👨‍🍳 Đang nấu", cls: "bg-purple-100 text-purple-700" },
   CONFIRMED: { label: "✅ Đã xác nhận", cls: "bg-blue-100 text-blue-700" },
   PENDING: { label: "⏳ Chờ xác nhận", cls: "bg-yellow-100 text-yellow-700" },
@@ -49,11 +55,10 @@ export default function DeliveredOrdersDrawer({
           </div>
         ) : (
           orders.map((o: any) => {
-            const b =
-              STATUS_BADGE[o.status] ?? {
-                label: o.status,
-                cls: "bg-gray-100 text-gray-600",
-              };
+            const b = STATUS_BADGE[o.status] ?? {
+              label: o.status,
+              cls: "bg-gray-100 text-gray-600",
+            };
             return (
               <div
                 key={o.id}

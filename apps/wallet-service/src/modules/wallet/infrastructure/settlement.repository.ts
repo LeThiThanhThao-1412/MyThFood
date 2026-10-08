@@ -77,6 +77,19 @@ export class SettlementRepository {
       .getMany();
   }
 
+  /**
+   * Lấy TẤT CẢ các dòng PENDING (không giới hạn theo cửa sổ deliveredAt).
+   * Dùng cho cron quyết toán 23:00 để các dòng vừa được giải tỏa
+   * (HELD_BY_DISPUTE → PENDING sau phán quyết INVALID / rút đơn) không bị
+   * kẹt vì deliveredAt cũ nằm ngoài cửa sổ quyết toán hiện tại.
+   */
+  async findAllPending(): Promise<SettlementEntryEntity[]> {
+    return this.entryRepo.find({
+      where: { status: "PENDING" },
+      order: { createdAt: "ASC" },
+    });
+  }
+
   async markEntriesSettled(ids: string[], batchId: string): Promise<void> {
     if (!ids.length) return;
     await this.entryRepo

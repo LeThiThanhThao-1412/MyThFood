@@ -84,6 +84,12 @@ const FAULT_PARTY_LABEL: Record<string, string> = {
   INCONCLUSIVE: "Không xác định",
 };
 
+const RESPONDENT_TO_FAULT: Record<string, string> = {
+  DRIVER: "DRIVER",
+  MERCHANT: "MERCHANT",
+  CONSUMER: "CUSTOMER",
+};
+
 const VERDICT_LABEL: Record<string, string> = {
   VALID: "✅ Khiếu nại hợp lệ",
   INVALID: "❌ Khiếu nại không hợp lệ",
@@ -140,7 +146,7 @@ export default function AdminCasesPage() {
   });
   const [showPenalty, setShowPenalty] = useState(false);
   const [resolveForm, setResolveForm] = useState({
-    faultParty: "MERCHANT",
+    faultParty: "",
     note: "",
   });
 
@@ -194,6 +200,10 @@ export default function AdminCasesPage() {
     setSelected(c);
     setTimeline([]);
     setCasePenalties([]);
+    setResolveForm({
+      faultParty: RESPONDENT_TO_FAULT[c.respondentType] || "",
+      note: "",
+    });
     try {
       const fresh: any = await resolutionApi.getCase(c.id);
       if (fresh?.data) {
@@ -324,11 +334,17 @@ export default function AdminCasesPage() {
   async function resolveWithPenalty(verdict: string) {
     if (!selected) return;
     setMsg("");
+    const faultParty =
+      verdict === "INCONCLUSIVE" ? "INCONCLUSIVE" : resolveForm.faultParty;
+    if (verdict !== "INCONCLUSIVE" && !faultParty) {
+      setMsg("❌ Chọn bên chịu lỗi trước khi phán quyết");
+      return;
+    }
     try {
       await resolutionApi.resolve(selected.id, {
         verdict,
         note: resolveForm.note || undefined,
-        faultParty: resolveForm.faultParty,
+        faultParty,
       });
       setMsg(`✅ Đã phán quyết: ${VERDICT_LABEL[verdict] || verdict}`);
       await loadCases();
@@ -718,14 +734,17 @@ export default function AdminCasesPage() {
                   <div className="grid grid-cols-2 gap-2 text-xs text-gray-500">
                     <p>
                       Người khiếu nại:{" "}
-                      {ACTOR_LABEL[selected.reporterType] || selected.reporterType}
+                      {ACTOR_LABEL[selected.reporterType] ||
+                        selected.reporterType}
                     </p>
                     <p>
                       Bên bị khiếu nại:{" "}
                       {ACTOR_LABEL[selected.respondentType] ||
                         selected.respondentType}
                     </p>
-                    <p className="col-span-2">Mã đơn: {selected.orderId || "-"}</p>
+                    <p className="col-span-2">
+                      Mã đơn: {selected.orderId || "-"}
+                    </p>
                   </div>
 
                   {selected.evidence?.length > 0 && (
@@ -865,6 +884,9 @@ export default function AdminCasesPage() {
                         }
                         className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
                       >
+                        <option value="" disabled>
+                          — Chọn bên lỗi —
+                        </option>
                         {Object.keys(FAULT_PARTY_LABEL).map((k) => (
                           <option key={k} value={k}>
                             {FAULT_PARTY_LABEL[k]}
@@ -911,7 +933,8 @@ export default function AdminCasesPage() {
                         return (
                           <div key={p.id} className="text-sm text-gray-700">
                             <p className="font-semibold">
-                              {party} ({ACTOR_LABEL[p.targetType] || p.targetType}
+                              {party} (
+                              {ACTOR_LABEL[p.targetType] || p.targetType}
                               ): {PENALTY_TYPE_LABEL[p.type] || p.type}
                               {p.amount ? ` · ${formatVnd(p.amount)}` : ""}
                               {p.durationDays

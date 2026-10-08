@@ -50,6 +50,7 @@ import type {
   Driver,
   DriverPublicProfile,
   UpdateLocationRequest,
+  DriverLocationPoint,
   CreateReviewRequest,
   Review,
   ReplyReviewRequest,
@@ -64,6 +65,19 @@ import type {
   UpdateCompensationConfigRequest,
   IssueCompensationVoucherRequest,
   ApplyCompensationVoucherRequest,
+  FlashSale,
+  CreateFlashSaleRequest,
+  UpdateFlashSaleRequest,
+  ValidateFlashSaleRequest,
+  ApplyFlashSaleRequest,
+  RefundFlashSaleRequest,
+  FlashSalePricedItem,
+  FlashSaleStats,
+  PriceHistory,
+  PriceHistoryStatus,
+  PriceAlert,
+  PriceFluctuationReport,
+  RevenueReconciliation,
   CreateNotificationRequest,
   Notification,
   ChatMessage,
@@ -407,6 +421,70 @@ export const merchantApi = {
       `/merchants/${merchantId}/capacity`,
       body,
     ),
+
+  // ---- Price History & Auditing ----
+  getPriceHistory: (
+    merchantId: string,
+    params?: {
+      menuItemId?: string;
+      changedBy?: string;
+      from?: string;
+      to?: string;
+      skip?: number;
+      take?: number;
+    },
+  ) =>
+    httpClient.get<{ items: PriceHistory[]; total: number }>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/price-history`,
+      { params },
+    ),
+
+  comparePrice: (
+    merchantId: string,
+    params: { menuItemId: string; at?: string },
+  ) =>
+    httpClient.get<{
+      menuItemId: string;
+      currentPrice: number | null;
+      priceAt: { price: number; at: string } | null;
+    }>(PORTS.MERCHANT, `/merchants/${merchantId}/price-history/compare`, {
+      params,
+    }),
+
+  getPriceFluctuationReport: (
+    merchantId: string,
+    params?: { from?: string; to?: string },
+  ) =>
+    httpClient.get<PriceFluctuationReport>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/price-history/report`,
+      { params },
+    ),
+
+  getPriceAlerts: (
+    merchantId: string,
+    params?: { skip?: number; take?: number },
+  ) =>
+    httpClient.get<{ items: PriceAlert[]; total: number }>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/price-alerts`,
+      { params },
+    ),
+
+  reconcileRevenue: (merchantId: string, params?: { period?: string }) =>
+    httpClient.get<RevenueReconciliation>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/revenue-reconciliation`,
+      { params },
+    ),
+
+  updatePriceHistoryStatus: (historyId: string, status: PriceHistoryStatus) =>
+    httpClient.patch<{ id: string; status: string }>(
+      PORTS.MERCHANT,
+      `/merchants/price-history/${historyId}/status`,
+      { status },
+    ),
 };
 
 // ============================================================================
@@ -647,6 +725,12 @@ export const driverApi = {
       PORTS.DRIVER,
       `/drivers/${id}/location`,
       body,
+    ),
+
+  getLocationHistory: (id: string, limit?: number) =>
+    httpClient.get<{ statusCode: number; data: DriverLocationPoint[] }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/location/history${limit != null ? `?limit=${limit}` : ""}`,
     ),
 
   assignOrder: (id: string, orderId: string) =>
@@ -1338,6 +1422,95 @@ export const promotionApi = {
       "/promotions/compensation-vouchers/apply",
       body,
     ),
+
+  // ---- Flash Sale ----
+  flashSale: {
+    create: (body: CreateFlashSaleRequest) =>
+      httpClient.post<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        "/promotions/flash-sales",
+        body,
+      ),
+
+    list: (params?: {
+      merchantId?: string;
+      status?: string;
+      skip?: number;
+      take?: number;
+    }) =>
+      httpClient.get<{ statusCode: number; items: FlashSale[]; total: number }>(
+        PORTS.PROMOTION,
+        "/promotions/flash-sales",
+        { params },
+      ),
+
+    listActive: () =>
+      httpClient.get<ApiResponse<FlashSale[]>>(
+        PORTS.PROMOTION,
+        "/promotions/flash-sales/active",
+      ),
+
+    getByMerchant: (merchantId: string) =>
+      httpClient.get<{
+        statusCode: number;
+        items: FlashSale[];
+        total: number;
+      }>(PORTS.PROMOTION, `/promotions/flash-sales/merchant/${merchantId}`),
+
+    getById: (id: string) =>
+      httpClient.get<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}`,
+      ),
+
+    update: (id: string, body: UpdateFlashSaleRequest) =>
+      httpClient.patch<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}`,
+        body,
+      ),
+
+    cancel: (id: string) =>
+      httpClient.post<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}/cancel`,
+      ),
+
+    pause: (id: string) =>
+      httpClient.post<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}/pause`,
+      ),
+
+    resume: (id: string) =>
+      httpClient.post<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}/resume`,
+      ),
+
+    validate: (body: ValidateFlashSaleRequest) =>
+      httpClient.post<
+        ApiResponse<{ items: FlashSalePricedItem[]; discountAmount: number }>
+      >(PORTS.PROMOTION, "/promotions/flash-sales/validate", body),
+
+    apply: (body: ApplyFlashSaleRequest) =>
+      httpClient.post<
+        ApiResponse<{ items: FlashSalePricedItem[]; discountAmount: number }>
+      >(PORTS.PROMOTION, "/promotions/flash-sales/apply", body),
+
+    refund: (body: RefundFlashSaleRequest) =>
+      httpClient.post<ApiResponse<{ orderId: string; restored: boolean }>>(
+        PORTS.PROMOTION,
+        "/promotions/flash-sales/refund",
+        body,
+      ),
+
+    getStats: (id: string) =>
+      httpClient.get<ApiResponse<FlashSaleStats>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}/stats`,
+      ),
+  },
 };
 
 // ============================================================================

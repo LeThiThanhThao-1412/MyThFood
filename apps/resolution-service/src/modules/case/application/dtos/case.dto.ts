@@ -8,6 +8,7 @@ import {
 import {
   CaseCategory,
   CaseType,
+  FaultParty,
   Severity,
   Verdict,
 } from "../../domain/case.enums";
@@ -99,6 +100,6 @@ export class ResolveCaseDto {
   note?: string;
 
   @IsOptional()
-  @IsString()
-  faultParty?: string;
+  @IsEnum(FaultParty)
+  faultParty?: FaultParty;
 }

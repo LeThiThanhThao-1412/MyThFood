@@ -4,11 +4,7 @@ import {
   DomainError,
   EntityNotFoundError,
 } from "@mythfood/shared-kernel";
-import {
-  Consumer,
-  ConsumerStatus,
-  Gender,
-} from "../domain/consumer.aggregate";
+import { Consumer, ConsumerStatus, Gender } from "../domain/consumer.aggregate";
 import { ConsumerId } from "../domain/consumer-id";
 import { Address, GpsCoordinates } from "../domain/address.vo";
 import { PaymentMethod, PaymentMethodType } from "../domain/payment-method.vo";

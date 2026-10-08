@@ -40,18 +40,16 @@ export default function ChatListDrawer({
     Record<string, { name: string; avatar?: string | null }>
   >({});
   const [loading, setLoading] = useState(false);
-  const cacheRef = useRef<Record<string, { name: string; avatar?: string | null }>>(
-    {},
-  );
+  const cacheRef = useRef<
+    Record<string, { name: string; avatar?: string | null }>
+  >({});
 
   const load = useCallback(async () => {
     if (!myUserId) return;
     setLoading(true);
     try {
       const res: any = await chatApi.listConversations(myUserId);
-      const list: ChatConversation[] = Array.isArray(res?.data)
-        ? res.data
-        : [];
+      const list: ChatConversation[] = Array.isArray(res?.data) ? res.data : [];
       setConversations(list);
 
       for (const conv of list) {
@@ -83,9 +81,7 @@ export default function ChatListDrawer({
     conv: ChatConversation,
   ): Promise<{ name: string; avatar?: string | null }> {
     const iAmConsumer = conv.consumerUserId === myUserId;
-    const counterpartId = iAmConsumer
-      ? conv.driverUserId
-      : conv.consumerUserId;
+    const counterpartId = iAmConsumer ? conv.driverUserId : conv.consumerUserId;
     if (!counterpartId) return { name: "Đối tác" };
 
     try {

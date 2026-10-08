@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { EventBus } from "@nestjs/cqrs";
 import { HttpService } from "@nestjs/axios";
 import { firstValueFrom } from "rxjs";
@@ -10,6 +15,7 @@ import { MenuCategory } from "../domain/menu-category.entity";
 import { OperatingHoursProps } from "../domain/operating-hours.vo";
 import { MerchantRepository } from "../infrastructure/merchant.repository";
 import { MenuCategoryRepository } from "../infrastructure/menu-category.repository";
+import { PriceHistoryRepository } from "../infrastructure/price-history.repository";
 import {
   RegisterMerchantDto,
   UpdateMerchantDto,
@@ -34,6 +40,7 @@ export class MerchantService {
   constructor(
     private readonly merchantRepository: MerchantRepository,
     private readonly menuCategoryRepository: MenuCategoryRepository,
+    private readonly priceHistoryRepository: PriceHistoryRepository,
     private readonly eventBus: EventBus,
     private readonly httpService: HttpService,
   ) {}
@@ -402,9 +409,7 @@ export class MerchantService {
         merchant.reject();
         break;
       default:
-        throw new BadRequestException(
-          `Unsupported merchant status: ${status}`,
-        );
+        throw new BadRequestException(`Unsupported merchant status: ${status}`);
     }
     await this.merchantRepository.save(merchant);
     return merchant;
@@ -471,6 +476,7 @@ export class MerchantService {
     merchantId: string,
     itemId: string,
     dto: UpdateMenuItemDto,
+    changedBy?: string,
   ): Promise<MenuItem> {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(merchantId),
@@ -486,6 +492,8 @@ export class MerchantService {
       isFeatured: dto.isFeatured,
       preparationTime: dto.preparationTime,
       optionGroups: dto.optionGroups as any,
+      reason: dto.reason,
+      changedBy,
     });
 
     await this.merchantRepository.save(merchant);
@@ -708,6 +716,225 @@ export class MerchantService {
       total: data.total ?? 0,
       averageRating: data.averageRating ?? 0,
       ratingDistribution: data.ratingDistribution ?? {},
+    };
+  }
+
+  // ===================== Price History & Auditing =====================
+
+  async getPriceHistory(
+    merchantId: string,
+    filters: {
+      menuItemId?: string;
+      changedBy?: string;
+      from?: string;
+      to?: string;
+      skip?: number;
+      take?: number;
+    },
+  ): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const { items, total } = await this.priceHistoryRepository.findByMerchant(
+      merchantId,
+      {
+        menuItemId: filters.menuItemId,
+        changedBy: filters.changedBy,
+        from: filters.from ? new Date(filters.from) : undefined,
+        to: filters.to ? new Date(filters.to) : undefined,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    );
+    return {
+      items: items.map((e) => ({
+        id: e.id,
+        merchantId: e.merchant_id,
+        menuItemId: e.menu_item_id,
+        oldPrice: Number(e.old_price),
+        newPrice: Number(e.new_price),
+        changedBy: e.changed_by,
+        reason: e.reason,
+        status: e.status,
+        createdAt: e.created_at,
+      })),
+      total,
+    };
+  }
+
+  async comparePrice(
+    merchantId: string,
+    menuItemId: string,
+    at?: string,
+  ): Promise<any> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
+    const targetDate = at ? new Date(at) : new Date();
+    const nearest = await this.priceHistoryRepository.findNearestBefore(
+      merchantId,
+      menuItemId,
+      targetDate,
+    );
+    const current = merchant.menuItemList.find(
+      (mi) => mi.id.toString() === menuItemId,
+    );
+    return {
+      menuItemId,
+      currentPrice: current?.itemPrice ?? null,
+      priceAt: nearest
+        ? { price: Number(nearest.new_price), at: nearest.created_at }
+        : null,
+    };
+  }
+
+  async updatePriceHistoryStatus(
+    historyId: string,
+    status: string,
+  ): Promise<any> {
+    if (!["RECORDED", "AUDITED", "FLAGGED"].includes(status)) {
+      throw new BadRequestException("Trạng thái không hợp lệ");
+    }
+    const entity = await this.priceHistoryRepository.updateStatus(
+      historyId,
+      status as any,
+    );
+    if (!entity) {
+      throw new NotFoundException("Không tìm thấy lịch sử giá");
+    }
+    return { id: entity.id, status: entity.status };
+  }
+
+  async getPriceAlerts(
+    merchantId: string,
+    skip?: number,
+    take?: number,
+  ): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const { items, total } =
+      await this.priceHistoryRepository.findAlertsByMerchant(
+        merchantId,
+        skip ?? 0,
+        take ?? 50,
+      );
+    return {
+      items: items.map((a) => ({
+        id: a.id,
+        merchantId: a.merchant_id,
+        menuItemId: a.menu_item_id,
+        oldPrice: Number(a.old_price),
+        newPrice: Number(a.new_price),
+        changePercent: Number(a.change_percent),
+        message: a.message,
+        isRead: a.is_read,
+        createdAt: a.created_at,
+      })),
+      total,
+    };
+  }
+
+  async getPriceFluctuationReport(
+    merchantId: string,
+    from?: string,
+    to?: string,
+  ): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const stats = await this.priceHistoryRepository.getFluctuationStats(
+      merchantId,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+    );
+    const alerts = await this.priceHistoryRepository.findAlertsByMerchant(
+      merchantId,
+      0,
+      500,
+    );
+    return {
+      merchantId,
+      period: { from: from ?? null, to: to ?? null },
+      ...stats,
+      totalAlerts: alerts.total,
+    };
+  }
+
+  async exportPriceHistoryCsv(
+    merchantId: string,
+    filters: {
+      menuItemId?: string;
+      changedBy?: string;
+      from?: string;
+      to?: string;
+    },
+  ): Promise<string> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const { items } = await this.priceHistoryRepository.findByMerchant(
+      merchantId,
+      {
+        menuItemId: filters.menuItemId,
+        changedBy: filters.changedBy,
+        from: filters.from ? new Date(filters.from) : undefined,
+        to: filters.to ? new Date(filters.to) : undefined,
+        skip: 0,
+        take: 10000,
+      },
+    );
+
+    const header = [
+      "id",
+      "menu_item_id",
+      "old_price",
+      "new_price",
+      "changed_by",
+      "reason",
+      "status",
+      "created_at",
+    ];
+    const escape = (v: unknown): string => {
+      const s = v === null || v === undefined ? "" : String(v);
+      if (/[",\n]/.test(s)) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const lines = [header.join(",")];
+    for (const e of items) {
+      lines.push(
+        [
+          e.id,
+          e.menu_item_id,
+          Number(e.old_price),
+          Number(e.new_price),
+          e.changed_by ?? "",
+          e.reason ?? "",
+          e.status,
+          e.created_at?.toISOString() ?? "",
+        ]
+          .map(escape)
+          .join(","),
+      );
+    }
+    return "\uFEFF" + lines.join("\n");
+  }
+
+  async reconcileRevenue(merchantId: string, period?: string): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const range = this.periodToRange(period || "today");
+    const orderStats = await this.fetchOrderStats(
+      merchantId,
+      range.startDate,
+      range.endDate,
+    );
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
+    const listedMenuTotal = merchant.menuItemList.reduce(
+      (sum, mi) => sum + mi.itemPrice,
+      0,
+    );
+    return {
+      merchantId,
+      period: period || "today",
+      orderStats: orderStats ?? null,
+      listedMenuTotal,
+      note: "orderStats là doanh thu thực tế từ order-service; đối soát với giá niêm yết + flash sale để xác định chênh lệch.",
     };
   }
 

@@ -357,7 +357,10 @@ export class WalletController {
   @UseGuards(ServiceKeyOrJwtGuard)
   async overdueDebts(@Query("days") days?: string) {
     const d = days ? parseInt(days, 10) : 14;
-    return { statusCode: HttpStatus.OK, data: await this.walletService.listOverdueDebts(d) };
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.walletService.listOverdueDebts(d),
+    };
   }
 
   // ═══════════════════════════════════════════════════════

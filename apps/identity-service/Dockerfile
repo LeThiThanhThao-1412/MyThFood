@@ -22,6 +22,9 @@ COPY apps/identity-service/package.json apps/identity-service/tsconfig.json apps
 # Install pnpm globally
 RUN npm install -g pnpm@9.4.0
 
+# Install native build toolchain (bcrypt compiles from source on alpine/musl)
+RUN (for i in 1 2 3 4 5; do apk add --no-cache build-base python3 && exit 0; sleep 5; done; exit 1)
+
 # Install dependencies
 RUN pnpm install --frozen-lockfile --filter @mythfood/identity-service --prod false
 
@@ -45,7 +48,8 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # Install pnpm and wget for healthcheck
-RUN npm install -g pnpm@9.4.0 && apk add --no-cache wget tzdata
+RUN npm install -g pnpm@9.4.0 \
+    && (for i in 1 2 3 4 5; do apk add --no-cache wget tzdata && exit 0; sleep 5; done; exit 1)
 
 # Copy root configs
 COPY --from=builder /app/pnpm-lock.yaml ./
@@ -68,8 +72,10 @@ COPY --from=builder /app/apps/identity-service/dist apps/identity-service/dist/
 # Remove prepare script (husky) to avoid it failing in production
 RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
 
-# Install production dependencies only
-RUN pnpm install --frozen-lockfile --filter @mythfood/identity-service --prod
+# Install production dependencies only (bcrypt needs build toolchain; keep libstdc++ at runtime)
+RUN (for i in 1 2 3 4 5; do apk add --no-cache libstdc++ build-base python3 && exit 0; sleep 5; done; exit 1) \
+    && pnpm install --frozen-lockfile --filter @mythfood/identity-service --prod \
+    && apk del build-base python3
 
 EXPOSE 3001
 

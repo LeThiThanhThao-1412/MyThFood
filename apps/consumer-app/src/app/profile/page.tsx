@@ -465,9 +465,7 @@ export default function ProfilePage() {
                 </button>
               </>
             )}
-            {verifyMsg && (
-              <p className="text-xs text-gray-600">{verifyMsg}</p>
-            )}
+            {verifyMsg && <p className="text-xs text-gray-600">{verifyMsg}</p>}
           </div>
 
           <div className="space-y-3">

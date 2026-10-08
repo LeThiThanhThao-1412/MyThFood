@@ -9,6 +9,8 @@ const NAV_ITEMS = [
   { href: "/dashboard", icon: "📊", label: "Tổng quan" },
   { href: "/orders", icon: "📦", label: "Đơn hàng" },
   { href: "/menu", icon: "📋", label: "Menu" },
+  { href: "/flash-sales", icon: "🔥", label: "Flash Sale" },
+  { href: "/price-history", icon: "📉", label: "Biến động giá" },
   { href: "/promotions", icon: "🏷️", label: "Khuyến mãi" },
   { href: "/reviews", icon: "⭐", label: "Đánh giá" },
   { href: "/complaints", icon: "🛡️", label: "Khiếu nại" },

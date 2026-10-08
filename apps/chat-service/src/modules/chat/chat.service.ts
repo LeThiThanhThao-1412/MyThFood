@@ -47,7 +47,8 @@ export class ChatService {
   }
 
   async listConversations(userId: string) {
-    const conversations = await this.repo.findActiveConversationsForUser(userId);
+    const conversations =
+      await this.repo.findActiveConversationsForUser(userId);
     const enriched = [];
     for (const conversation of conversations) {
       const lastMessage = await this.repo.findLastMessage(conversation.id);
@@ -122,8 +123,7 @@ export class ChatService {
     conversationId: string,
     userId: string,
   ): Promise<ConversationEntity> {
-    const conversation =
-      await this.repo.findConversationById(conversationId);
+    const conversation = await this.repo.findConversationById(conversationId);
     if (!conversation) throw new NotFoundException("Hội thoại không tồn tại");
 
     if (

@@ -115,6 +115,140 @@ export class CompensationConfigEntity {
 /**
  * Voucher bồi thường đã phát cho khách hàng (dùng 1 lần cho đơn tiếp theo).
  */
+// ============================================================================
+// Flash Sale (do nhà hàng tạo, tự áp dụng theo món)
+// ============================================================================
+
+export const FLASH_SALE_STATUSES = [
+  "SCHEDULED",
+  "ACTIVE",
+  "PAUSED",
+  "ENDED",
+  "CANCELLED",
+  "SOLD_OUT",
+] as const;
+export type FlashSaleStatus = (typeof FLASH_SALE_STATUSES)[number];
+
+export type FlashSaleDiscountType = "PERCENT" | "FIXED_PRICE";
+export type FlashSaleFundedBy = "MERCHANT" | "PLATFORM";
+
+@Entity("flash_sales")
+export class FlashSaleEntity {
+  @PrimaryColumn({ type: "uuid" })
+  id!: string;
+
+  @Column({ type: "uuid" })
+  @Index()
+  merchantId!: string;
+
+  @Column({ type: "varchar", length: 255, default: "Flash Sale" })
+  title!: string;
+
+  @Column({ type: "varchar", length: 20, default: "MERCHANT" })
+  fundedBy!: string; // MERCHANT | PLATFORM
+
+  @Column({ type: "varchar", length: 20, default: "SCHEDULED" })
+  status!: string; // SCHEDULED | ACTIVE | PAUSED | ENDED | CANCELLED | SOLD_OUT
+
+  @Column({ type: "timestamptz" })
+  startAt!: Date;
+
+  @Column({ type: "timestamptz" })
+  endAt!: Date;
+
+  @Column({ type: "timestamptz", nullable: true })
+  cancelledAt!: Date | null;
+
+  @CreateDateColumn({ type: "timestamptz" })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ type: "timestamptz" })
+  updatedAt!: Date;
+}
+
+@Entity("flash_sale_items")
+export class FlashSaleItemEntity {
+  @PrimaryColumn({ type: "uuid" })
+  id!: string;
+
+  @Column({ type: "uuid" })
+  @Index()
+  flashSaleId!: string;
+
+  @Column({ type: "uuid" })
+  @Index()
+  menuItemId!: string;
+
+  @Column({ type: "varchar", length: 255, nullable: true })
+  menuItemName!: string | null;
+
+  @Column({ type: "varchar", length: 500, nullable: true })
+  imageUrl!: string | null;
+
+  @Column({ type: "decimal", precision: 12, scale: 2 })
+  originalPrice!: number;
+
+  @Column({ type: "varchar", length: 20 })
+  discountType!: string; // PERCENT | FIXED_PRICE
+
+  @Column({ type: "decimal", precision: 5, scale: 2, nullable: true })
+  discountPercent!: number | null;
+
+  @Column({ type: "decimal", precision: 12, scale: 2 })
+  salePrice!: number;
+
+  @Column({ type: "int", default: 0 })
+  totalQuantity!: number;
+
+  @Column({ type: "int", default: 0 })
+  soldQuantity!: number;
+
+  @Column({ type: "int", default: 1 })
+  limitPerUser!: number;
+
+  @CreateDateColumn({ type: "timestamptz" })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ type: "timestamptz" })
+  updatedAt!: Date;
+}
+
+@Index(["orderId", "flashSaleItemId"], { unique: true })
+@Entity("flash_sale_usages")
+export class FlashSaleUsageEntity {
+  @PrimaryColumn({ type: "uuid" })
+  id!: string;
+
+  @Column({ type: "uuid" })
+  @Index()
+  flashSaleId!: string;
+
+  @Column({ type: "uuid" })
+  @Index()
+  flashSaleItemId!: string;
+
+  @Column({ type: "uuid" })
+  orderId!: string;
+
+  @Column({ type: "uuid" })
+  consumerId!: string;
+
+  @Column({ type: "int" })
+  quantity!: number;
+
+  @Column({ type: "decimal", precision: 12, scale: 2 })
+  unitPrice!: number;
+
+  @Column({ type: "decimal", precision: 12, scale: 2 })
+  discountAmount!: number;
+
+  @Column({ type: "timestamptz", nullable: true })
+  refundedAt!: Date | null;
+
+  @CreateDateColumn({ type: "timestamptz" })
+  createdAt!: Date;
+}
+
 @Index(["sourceOrderId"], { unique: true })
 @Entity("compensation_vouchers")
 export class CompensationVoucherEntity {

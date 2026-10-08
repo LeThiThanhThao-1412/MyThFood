@@ -720,7 +720,9 @@ export default function ComplaintsPage() {
             {selectedCase.respondentResponse && (
               <div className="bg-gray-50 rounded-xl p-3 text-sm">
                 <p className="font-semibold text-gray-700">Phản hồi:</p>
-                <p className="text-gray-600">{selectedCase.respondentResponse}</p>
+                <p className="text-gray-600">
+                  {selectedCase.respondentResponse}
+                </p>
               </div>
             )}
             {selectedCase.verdict && (
@@ -735,7 +737,9 @@ export default function ComplaintsPage() {
                     : ""}
                 </p>
                 {selectedCase.resolutionNote && (
-                  <p className="text-xs text-gray-600">{selectedCase.resolutionNote}</p>
+                  <p className="text-xs text-gray-600">
+                    {selectedCase.resolutionNote}
+                  </p>
                 )}
               </div>
             )}
@@ -763,7 +767,8 @@ export default function ComplaintsPage() {
                   .map((p: any, i: number) => (
                     <div key={`comp-${i}`} className="text-sm text-gray-700">
                       <p className="font-semibold">
-                        🤝 Bồi thường {ACTOR_LABEL[p.targetType] || p.targetType}:
+                        🤝 Bồi thường{" "}
+                        {ACTOR_LABEL[p.targetType] || p.targetType}:
                         {p.amount
                           ? ` ${Number(p.amount).toLocaleString("vi-VN")}₫`
                           : ""}

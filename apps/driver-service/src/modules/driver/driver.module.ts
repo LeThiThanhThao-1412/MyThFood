@@ -6,11 +6,21 @@ import { DriverController } from "./presentation/driver.controller";
 import { DriverRepository } from "./infrastructure/driver.repository";
 import { DriverMapper } from "./infrastructure/driver.mapper";
 import { DriverEntity } from "./infrastructure/driver.entity";
+import { DriverLocationHistoryEntity } from "./infrastructure/driver-location-history.entity";
+import { DriverLocationHistoryRepository } from "./infrastructure/driver-location-history.repository";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DriverEntity]), HttpModule],
+  imports: [
+    TypeOrmModule.forFeature([DriverEntity, DriverLocationHistoryEntity]),
+    HttpModule,
+  ],
   controllers: [DriverController],
-  providers: [DriverService, DriverRepository, DriverMapper],
+  providers: [
+    DriverService,
+    DriverRepository,
+    DriverMapper,
+    DriverLocationHistoryRepository,
+  ],
   exports: [DriverService],
 })
 export class DriverModule {}

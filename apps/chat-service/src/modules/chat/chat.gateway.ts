@@ -31,21 +31,22 @@ export class ChatGateway {
     this.logger.log(`Client ${client.id} joined room ${room}`);
   }
 
-  emitNewMessage(
-    conversation: ConversationEntity,
-    message: ChatMessageEntity,
-  ) {
+  emitNewMessage(conversation: ConversationEntity, message: ChatMessageEntity) {
     const payload = this.serializeMessage(message);
     // Gửi tới cả 2 người tham gia (người gửi để đồng bộ đa thiết bị,
     // người nhận để hiện thông báo + cập nhật realtime).
-    this.server.to(`user:${conversation.consumerUserId}`).emit("chat:new-message", {
-      conversationId: conversation.id,
-      message: payload,
-    });
-    this.server.to(`user:${conversation.driverUserId}`).emit("chat:new-message", {
-      conversationId: conversation.id,
-      message: payload,
-    });
+    this.server
+      .to(`user:${conversation.consumerUserId}`)
+      .emit("chat:new-message", {
+        conversationId: conversation.id,
+        message: payload,
+      });
+    this.server
+      .to(`user:${conversation.driverUserId}`)
+      .emit("chat:new-message", {
+        conversationId: conversation.id,
+        message: payload,
+      });
   }
 
   private serializeMessage(message: ChatMessageEntity) {

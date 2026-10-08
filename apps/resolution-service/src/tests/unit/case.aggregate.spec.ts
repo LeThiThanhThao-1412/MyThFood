@@ -4,6 +4,7 @@ import {
   CaseCategory,
   CaseStatus,
   CaseType,
+  FaultParty,
   Severity,
   Verdict,
 } from "../../modules/case/domain/case.enums";
@@ -82,6 +83,31 @@ describe("Case Aggregate", () => {
       expect(() => c.resolve(Verdict.INVALID, null, "admin-1")).toThrow(
         BusinessRuleViolationError,
       );
+    });
+
+    it("INCONCLUSIVE forces faultParty to INCONCLUSIVE", () => {
+      const c = Case.create(validProps);
+      c.resolve(Verdict.INCONCLUSIVE, null, "admin-1", FaultParty.MERCHANT);
+      expect(c.caseFaultParty).toBe(FaultParty.INCONCLUSIVE);
+    });
+
+    it("accepts faultParty when it is the respondent", () => {
+      const c = Case.create(validProps);
+      c.resolve(Verdict.VALID, null, "admin-1", FaultParty.MERCHANT);
+      expect(c.caseFaultParty).toBe(FaultParty.MERCHANT);
+    });
+
+    it("accepts faultParty when it is the reporter", () => {
+      const c = Case.create(validProps);
+      c.resolve(Verdict.INVALID, null, "admin-1", FaultParty.CUSTOMER);
+      expect(c.caseFaultParty).toBe(FaultParty.CUSTOMER);
+    });
+
+    it("rejects faultParty that is not a party of the case", () => {
+      const c = Case.create(validProps);
+      expect(() =>
+        c.resolve(Verdict.VALID, null, "admin-1", FaultParty.DRIVER),
+      ).toThrow(BusinessRuleViolationError);
     });
   });
 

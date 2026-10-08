@@ -42,6 +42,7 @@ export type { MealPeriod } from "./utils/discovery";
 // Hooks
 export { useAuth } from "./hooks/use-auth";
 export { useNotifications } from "./hooks/use-notifications";
+export { useChatUnread } from "./hooks/use-chat-unread";
 
 // Providers
 export { default as AuthProvider } from "./providers/AuthProvider";

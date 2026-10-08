@@ -11,7 +11,11 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useAuthStore, ChatDrawer } from "@mythfood/frontend-shared";
+import {
+  useAuthStore,
+  ChatDrawer,
+  useChatUnread,
+} from "@mythfood/frontend-shared";
 import { dispatchApi, chatApi, uploadApi } from "@mythfood/api-client";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
 import {
@@ -87,15 +91,53 @@ export default function DeliveryPage() {
     advance,
     reload,
     setError,
+    simulating,
+    startSimulation,
+    stopSimulation,
   } = trip;
+
+  // Tự xác định (hoặc tạo) hội thoại với khách ngay khi có thông tin, để đếm
+  // tin nhắn chưa đọc trên icon 💬 ngay cả khi tài xế chưa mở khung chat.
+  useEffect(() => {
+    if (!order || !user?.id || !customerInfo?.userId) return;
+    const terminal =
+      order.status === "DELIVERED" ||
+      order.status === "CANCELLED" ||
+      order.status === "REJECTED" ||
+      order.status === "CANCELLED_NO_DRIVER" ||
+      order.status === "DELIVERY_FAILED";
+    if (terminal) return;
+
+    const orderId = order.id;
+    const consumerUserId = customerInfo.userId;
+    const driverUserId = user.id;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res: any = await chatApi.getOrCreateConversation({
+          orderId,
+          consumerUserId,
+          driverUserId,
+        });
+        const conv = res?.data || res;
+        if (conv?.id && !cancelled) setChatConversationId(conv.id);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [order?.id, user?.id, customerInfo?.userId]);
+
+  const chatUnread = useChatUnread(chatConversationId, user?.id, chatOpen);
 
   // Case 7 & 8: hủy đơn sau khi nhận / báo giao hàng thất bại.
   const [cancelOpen, setCancelOpen] = useState(false);
   const [failOpen, setFailOpen] = useState(false);
   const [failReason, setFailReason] = useState("");
-  const [faultParty, setFaultParty] = useState<"DRIVER" | "CUSTOMER" | "">(
-    "",
-  );
+  const [faultParty, setFaultParty] = useState<"DRIVER" | "CUSTOMER" | "">("");
   const [failPhotoUrl, setFailPhotoUrl] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
 
@@ -433,10 +475,15 @@ export default function DeliveryPage() {
             </div>
             <button
               onClick={openChatWithCustomer}
-              className="w-9 h-9 rounded-full bg-[#ff6b35]/10 text-[#ff6b35] flex items-center justify-center text-lg shrink-0 hover:bg-[#ff6b35]/20 transition"
+              className="relative w-9 h-9 rounded-full bg-[#ff6b35]/10 text-[#ff6b35] flex items-center justify-center text-lg shrink-0 hover:bg-[#ff6b35]/20 transition"
               title="Nhắn tin với khách hàng"
             >
               💬
+              {chatUnread > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center">
+                  {chatUnread > 9 ? "9+" : chatUnread}
+                </span>
+              )}
             </button>
           </div>
           <p className="text-sm text-gray-600">{order.deliveryAddress}</p>
@@ -642,6 +689,23 @@ export default function DeliveryPage() {
       {/* Nút hành động của bước hiện tại */}
       {stageMeta.actionLabel && (
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-5xl bg-white border-t border-gray-100 px-4 py-3 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] z-[70]">
+          {stage === "DELIVERING" && (
+            <button
+              onClick={() =>
+                simulating ? stopSimulation() : startSimulation()
+              }
+              disabled={busy}
+              className={`w-full mb-2 py-2 rounded-xl text-xs font-bold border transition ${
+                simulating
+                  ? "bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+                  : "bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
+              }`}
+            >
+              {simulating
+                ? "⏹ Dừng mô phỏng GPS"
+                : "▶ Mô phỏng GPS (di chuyển quán → khách, mỗi 5s)"}
+            </button>
+          )}
           <button
             onClick={advance}
             disabled={busy}
