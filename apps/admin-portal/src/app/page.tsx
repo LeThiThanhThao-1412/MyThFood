@@ -10,6 +10,7 @@ import {
   walletApi,
 } from "@mythfood/api-client";
 import { useAuthStore, NotificationBell } from "@mythfood/frontend-shared";
+import { formatDateTime } from "../lib/format";
 
 // ─── Constants ───────────────────────────────────────────────
 const GRADIENT_BARS = [
@@ -495,6 +496,12 @@ export default function AdminDashboardPage() {
           🏪 Nhà hàng
         </Link>
         <Link
+          href="/drivers"
+          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+        >
+          🛵 Tài xế
+        </Link>
+        <Link
           href="/promotions"
           className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
         >
@@ -523,6 +530,12 @@ export default function AdminDashboardPage() {
           className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
         >
           💼 Quyết toán
+        </Link>
+        <Link
+          href="/revenue"
+          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+        >
+          📈 Doanh thu
         </Link>
         <Link
           href="/users"
@@ -671,7 +684,7 @@ export default function AdminDashboardPage() {
                                 {tx.description}
                               </p>
                               <p className="text-xs text-gray-400">
-                                {new Date(tx.createdAt).toLocaleString("vi-VN")}
+                                {formatDateTime(tx.createdAt)}
                               </p>
                             </div>
                             <span

@@ -7,6 +7,10 @@ export interface CartItem {
   quantity: number;
   selectedGroups?: SelectedOptionGroup[]; // cấu hình tùy chọn đã chọn
   unitPrice: number; // giá cuối mỗi phần (base + option deltas)
+  // Giá gốc mỗi phần TRƯỚC flash sale (đã gồm option deltas). Nếu có nghĩa là
+  // món này đang được giảm giá flash sale; dùng để hiển thị giá gốc + giảm giá
+  // flash sale trên hóa đơn.
+  originalUnitPrice?: number;
   variantKey: string; // khóa phân biệt biến thể của cùng một món
   specialInstructions?: string;
   merchantId: string;
@@ -19,6 +23,7 @@ export interface AddCartItemInput {
   quantity: number;
   selectedGroups?: SelectedOptionGroup[];
   unitPrice?: number;
+  originalUnitPrice?: number;
   variantKey?: string;
   specialInstructions?: string;
   merchantId: string;
@@ -117,6 +122,8 @@ export const useCartStore = create<CartState>()(
                     // Luôn lấy giá mới nhất (vd: món đang flash sale) thay cho
                     // giá cũ đã thêm trước đó.
                     unitPrice: normalized.unitPrice,
+                    originalUnitPrice:
+                      normalized.originalUnitPrice ?? i.originalUnitPrice,
                     specialInstructions:
                       normalized.specialInstructions ?? i.specialInstructions,
                   }

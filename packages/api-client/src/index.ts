@@ -55,6 +55,8 @@ export type {
   MenuItem,
   CreateMenuItemRequest,
   UpdateMenuItemRequest,
+  BulkImportMenuRequest,
+  MenuImportResult,
   OperatingHour,
   SetOperatingHoursRequest,
   UpdateCapacityRequest,

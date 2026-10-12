@@ -36,6 +36,15 @@ export class UserEntity {
   @Column({ type: "timestamptz", nullable: true })
   last_login_at!: Date | null;
 
+  @Column({ type: "timestamptz", nullable: true })
+  suspended_until!: Date | null;
+
+  @Column({ type: "timestamptz", nullable: true })
+  suspended_at!: Date | null;
+
+  @Column({ type: "varchar", length: 255, nullable: true })
+  suspend_reason!: string | null;
+
   @CreateDateColumn({ type: "timestamptz" })
   created_at!: Date;
 

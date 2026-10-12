@@ -236,7 +236,11 @@ export default function OrderDetailDrawer({
             )}
             {toNum(order.discount) > 0 && (
               <div className="flex justify-between text-green-600">
-                <span>Giảm giá</span>
+                <span>
+                  {order.discountFundedBy === "PLATFORM"
+                    ? "🏢 Mã giảm của hệ thống"
+                    : "🏪 Mã giảm giá của quán"}
+                </span>
                 <span>-{toNum(order.discount).toLocaleString("vi-VN")}₫</span>
               </div>
             )}

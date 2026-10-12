@@ -20,7 +20,7 @@ COPY packages/common/package.json packages/common/tsconfig.json packages/common/
 COPY apps/identity-service/package.json apps/identity-service/tsconfig.json apps/identity-service/tsconfig.build.json apps/identity-service/nest-cli.json apps/identity-service/
 
 # Install pnpm globally
-RUN npm install -g pnpm@9.4.0
+RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
 
 # Install native build toolchain (bcrypt compiles from source on alpine/musl)
 RUN (for i in 1 2 3 4 5; do apk add --no-cache build-base python3 && exit 0; sleep 5; done; exit 1)
@@ -48,7 +48,7 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # Install pnpm and wget for healthcheck
-RUN npm install -g pnpm@9.4.0 \
+RUN corepack enable && corepack prepare pnpm@9.4.0 --activate \
     && (for i in 1 2 3 4 5; do apk add --no-cache wget tzdata && exit 0; sleep 5; done; exit 1)
 
 # Copy root configs

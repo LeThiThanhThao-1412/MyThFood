@@ -267,6 +267,8 @@ function CheckoutContent() {
   const [promoCode, setPromoCode] = useState("");
   const [discount, setDiscount] = useState(0);
   const [promoApplied, setPromoApplied] = useState(false);
+  // Nguồn tài trợ của mã đang áp dụng: MERCHANT (do quán tạo) | PLATFORM (hệ thống)
+  const [promoFundedBy, setPromoFundedBy] = useState<string>("MERCHANT");
   const [availablePromos, setAvailablePromos] = useState<Promotion[]>([]);
   const [promoOpen, setPromoOpen] = useState(false);
   const [notes, setNotes] = useState("");
@@ -453,17 +455,20 @@ function CheckoutContent() {
         setDiscount(d);
         setPromoCode(code);
         setPromoApplied(true);
+        setPromoFundedBy(res?.data?.fundedBy ?? promo.fundedBy ?? "MERCHANT");
         setError(`✅ Đã áp dụng mã ${code}`);
       } else {
         setDiscount(0);
         setPromoCode("");
         setPromoApplied(false);
+        setPromoFundedBy("MERCHANT");
         setError("Mã khuyến mãi không hợp lệ");
       }
     } catch (err: any) {
       setDiscount(0);
       setPromoCode("");
       setPromoApplied(false);
+      setPromoFundedBy("MERCHANT");
       setError(err?.message || "Mã khuyến mãi không hợp lệ");
     } finally {
       setPromoOpen(false);
@@ -564,6 +569,16 @@ function CheckoutContent() {
   }, [lat, lng, merchantId, merchantLat, merchantLng]);
 
   const subtotal = getSubtotal();
+  // Giá gốc trước flash sale (tổng giá món khi chưa áp dụng giảm giá flash sale)
+  const originalSubtotal = items.reduce(
+    (sum, i) =>
+      sum +
+      (i.originalUnitPrice ?? i.unitPrice ?? i.menuItem.price ?? 0) *
+        i.quantity,
+    0,
+  );
+  // Tổng tiền được giảm nhờ flash sale
+  const flashSaleDiscount = Math.max(0, originalSubtotal - subtotal);
   const deliveryFee = dynamicFee?.totalFee || 15000;
   const serviceFee = Math.round(subtotal * 0.02);
   const voucherValue = Number(compensationVoucher?.value ?? 0);
@@ -1285,6 +1300,7 @@ function CheckoutContent() {
                       setPromoCode("");
                       setDiscount(0);
                       setPromoApplied(false);
+                      setPromoFundedBy("MERCHANT");
                     }}
                     className="text-xs text-red-500 hover:underline font-semibold"
                   >
@@ -1343,17 +1359,44 @@ function CheckoutContent() {
                           </span>
                           {i.menuItem.name}
                         </span>
-                        <span className="text-gray-600 font-medium">
-                          {(
-                            (i.unitPrice ?? i.menuItem.price) * i.quantity
-                          ).toLocaleString("vi-VN")}
-                          ₫
+                        <span className="text-right">
+                          {i.originalUnitPrice != null &&
+                            i.originalUnitPrice > i.unitPrice && (
+                              <span className="block text-xs text-gray-400 line-through">
+                                {(
+                                  i.originalUnitPrice * i.quantity
+                                ).toLocaleString("vi-VN")}
+                                ₫
+                              </span>
+                            )}
+                          <span className="text-gray-600 font-medium">
+                            {(
+                              (i.unitPrice ?? i.menuItem.price) * i.quantity
+                            ).toLocaleString("vi-VN")}
+                            ₫
+                          </span>
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div className="space-y-2.5 text-sm">
+                  {flashSaleDiscount > 0 && (
+                    <>
+                      <div className="flex justify-between text-gray-600">
+                        <span>Giá gốc</span>
+                        <span className="font-medium">
+                          {originalSubtotal.toLocaleString("vi-VN")}₫
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-orange-600 font-semibold">
+                        <span>🔥 Giảm giá Flash Sale</span>
+                        <span>
+                          -{flashSaleDiscount.toLocaleString("vi-VN")}₫
+                        </span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between text-gray-600">
                     <span>Tạm tính</span>
                     <span className="font-medium">
@@ -1374,7 +1417,11 @@ function CheckoutContent() {
                   </div>
                   {discount > 0 && (
                     <div className="flex justify-between text-green-600 font-semibold">
-                      <span>Giảm giá</span>
+                      <span>
+                        {promoFundedBy === "PLATFORM"
+                          ? `🏢 Mã giảm của hệ thống ${promoCode || ""}`
+                          : `🏪 Mã giảm giá của quán ${promoCode || ""}`}
+                      </span>
                       <span>-{discount.toLocaleString("vi-VN")}₫</span>
                     </div>
                   )}

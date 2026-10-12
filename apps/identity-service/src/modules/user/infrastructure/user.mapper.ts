@@ -29,6 +29,9 @@ export class UserMapper {
       status: entity.status as UserStatus,
       deviceId: entity.device_id,
       lastLoginAt: entity.last_login_at,
+      suspendedUntil: entity.suspended_until,
+      suspendedAt: entity.suspended_at,
+      suspendReason: entity.suspend_reason,
     });
   }
 
@@ -46,6 +49,9 @@ export class UserMapper {
     entity.status = user.currentStatus;
     entity.device_id = user.device;
     entity.last_login_at = user.lastLogin;
+    entity.suspended_until = user.suspensionUntil;
+    entity.suspended_at = user.suspensionAt;
+    entity.suspend_reason = user.suspensionReason;
     return entity;
   }
 }

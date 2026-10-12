@@ -248,6 +248,7 @@ export default function MerchantPriceHistoryPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-gray-400 border-b">
+                    <th className="py-2 pr-3">Món</th>
                     <th className="py-2 pr-3">Thời gian</th>
                     <th className="py-2 pr-3">Giá cũ</th>
                     <th className="py-2 pr-3">Giá mới</th>
@@ -259,6 +260,19 @@ export default function MerchantPriceHistoryPage() {
                 <tbody>
                   {history.map((h) => (
                     <tr key={h.id} className="border-b last:border-0">
+                      <td className="py-2 pr-3 min-w-[180px]">
+                        <div className="font-medium text-gray-800">
+                          {h.menuItemName || "—"}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          {h.menuItemId}
+                        </div>
+                        {h.type === "FLASH_SALE" && (
+                          <span className="inline-block text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full mt-1 font-semibold">
+                            🔥 Flash Sale
+                          </span>
+                        )}
+                      </td>
                       <td className="py-2 pr-3 text-gray-600">
                         {fmt(h.createdAt)}
                       </td>
@@ -304,7 +318,7 @@ export default function MerchantPriceHistoryPage() {
                   {history.length === 0 && (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={7}
                         className="py-6 text-center text-gray-400"
                       >
                         Chưa có thay đổi giá nào
@@ -391,9 +405,131 @@ export default function MerchantPriceHistoryPage() {
                 </div>
               </div>
               {reconcile ? (
-                <pre className="text-xs bg-gray-50 rounded-xl p-4 overflow-x-auto whitespace-pre-wrap">
-                  {JSON.stringify(reconcile, null, 2)}
-                </pre>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      <p className="text-xs text-gray-500">Tổng đơn</p>
+                      <p className="text-xl font-extrabold text-[#1a1a2e]">
+                        {toNum(reconcile.totalOrders)}
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      <p className="text-xs text-gray-500">Doanh thu thực tế</p>
+                      <p className="text-xl font-extrabold text-green-600">
+                        {toNum(reconcile.totalRevenue).toLocaleString("vi-VN")}đ
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      <p className="text-xs text-gray-500">Theo giá niêm yết</p>
+                      <p className="text-xl font-extrabold text-[#1a1a2e]">
+                        {toNum(reconcile.expectedRevenue).toLocaleString(
+                          "vi-VN",
+                        )}
+                        đ
+                      </p>
+                    </div>
+                    <div className="bg-gray-50 rounded-xl p-3">
+                      <p className="text-xs text-gray-500">Chênh lệch</p>
+                      <p
+                        className={`text-xl font-extrabold ${toNum(reconcile.difference) > 0 ? "text-red-600" : "text-green-600"}`}
+                      >
+                        {toNum(reconcile.difference) > 0 ? "-" : "+"}
+                        {Math.abs(toNum(reconcile.difference)).toLocaleString(
+                          "vi-VN",
+                        )}
+                        đ
+                      </p>
+                    </div>
+                  </div>
+
+                  {Array.isArray(reconcile.items) &&
+                    reconcile.items.length > 0 && (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-gray-400 border-b">
+                              <th className="py-2 pr-3">Món</th>
+                              <th className="py-2 pr-3">SL</th>
+                              <th className="py-2 pr-3">Giá niêm yết</th>
+                              <th className="py-2 pr-3">Giá bán</th>
+                              <th className="py-2">Chênh lệch</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {reconcile.items.map((it: any, idx: number) => (
+                              <tr
+                                key={`${it.orderId}-${idx}`}
+                                className="border-b last:border-0"
+                              >
+                                <td className="py-2 pr-3">
+                                  <div className="font-medium text-gray-800">
+                                    {it.name || "—"}
+                                  </div>
+                                  <div className="text-xs text-gray-400">
+                                    {fmt(it.createdAt)}
+                                  </div>
+                                </td>
+                                <td className="py-2 pr-3">{it.quantity}</td>
+                                <td className="py-2 pr-3">
+                                  {it.listPrice != null
+                                    ? toNum(it.listPrice).toLocaleString(
+                                        "vi-VN",
+                                      ) + "đ"
+                                    : "—"}
+                                </td>
+                                <td className="py-2 pr-3">
+                                  {toNum(it.unitPrice).toLocaleString("vi-VN")}đ
+                                </td>
+                                <td className="py-2">
+                                  {it.difference == null ? (
+                                    "—"
+                                  ) : (
+                                    <span
+                                      className={`font-semibold ${toNum(it.difference) > 0 ? "text-red-600" : "text-green-600"}`}
+                                    >
+                                      {toNum(it.difference) > 0 ? "-" : "+"}
+                                      {Math.abs(
+                                        toNum(it.difference),
+                                      ).toLocaleString("vi-VN")}
+                                      đ
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                  {Array.isArray(reconcile.revenueByDay) &&
+                    reconcile.revenueByDay.length > 0 && (
+                      <div>
+                        <p className="text-sm font-semibold text-gray-600 mb-2">
+                          Doanh thu theo ngày
+                        </p>
+                        <div className="space-y-1">
+                          {reconcile.revenueByDay.map((d: any) => (
+                            <div
+                              key={d.date}
+                              className="flex justify-between text-sm text-gray-600"
+                            >
+                              <span>{d.date}</span>
+                              <span>
+                                {d.orders} đơn ·{" "}
+                                {toNum(d.revenue).toLocaleString("vi-VN")}đ
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  <p className="text-xs text-gray-400">
+                    * Đối soát từng dòng đơn hàng: so sánh giá bán thực tế với
+                    giá niêm yết (giá gốc tại thời điểm đặt hàng).
+                  </p>
+                </div>
               ) : (
                 <p className="text-sm text-gray-400">
                   Chọn kỳ và nhấn &quot;Chạy đối soát&quot; để so sánh doanh thu

@@ -322,6 +322,35 @@ export interface UpdateMenuItemRequest {
   optionGroups?: MenuItemOptionGroup[];
 }
 
+export interface ImportMenuItemRequest {
+  category?: string;
+  categoryId?: string;
+  name: string;
+  description?: string;
+  price: number;
+  imageUrl?: string;
+  isFeatured?: boolean;
+  preparationTime?: number;
+  optionGroups?: MenuItemOptionGroup[];
+}
+
+export interface BulkImportMenuRequest {
+  categories?: CreateMenuCategoryRequest[];
+  items: ImportMenuItemRequest[];
+}
+
+export interface MenuImportError {
+  index: number;
+  name?: string;
+  message: string;
+}
+
+export interface MenuImportResult {
+  createdCategories: number;
+  createdItems: number;
+  errors: MenuImportError[];
+}
+
 export interface OperatingHour {
   dayOfWeek: number; // 0=Sunday, 1=Monday, ..., 6=Saturday
   openTime: string; // "HH:mm"
@@ -359,6 +388,7 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   originalPrice?: number | null;
+  flashSaleFundedBy?: string | null;
   subtotal: number;
   specialInstructions?: string;
   options?: SelectedMenuItemOption[];
@@ -375,6 +405,7 @@ export interface Order {
   deliveryFee: number;
   serviceFee: number;
   discount: number;
+  discountFundedBy?: string;
   totalAmount: number;
   deliveryAddress: string;
   deliveryLatitude?: number;
@@ -961,16 +992,19 @@ export interface FlashSaleStats {
 
 // --- Price Management ---
 export type PriceHistoryStatus = "RECORDED" | "AUDITED" | "FLAGGED";
+export type PriceHistoryType = "MANUAL" | "FLASH_SALE";
 
 export interface PriceHistory {
   id: string;
   merchantId: string;
   menuItemId: string;
+  menuItemName: string | null;
   oldPrice: number;
   newPrice: number;
   changedBy: string | null;
   reason: string | null;
   status: PriceHistoryStatus;
+  type: PriceHistoryType;
   createdAt: string;
 }
 
@@ -999,9 +1033,25 @@ export interface PriceFluctuationReport {
 export interface RevenueReconciliation {
   merchantId: string;
   period: string;
-  orderStats: unknown;
-  listedMenuTotal: number;
-  note: string;
+  totalOrders: number;
+  totalRevenue: number;
+  pendingOrders: number;
+  expectedRevenue: number;
+  actualRevenue: number;
+  difference: number;
+  revenueByDay: { date: string; orders: number; revenue: number }[];
+  items: {
+    orderId: string;
+    menuItemId: string;
+    name: string | null;
+    quantity: number;
+    unitPrice: number;
+    listPrice: number | null;
+    actualRevenue: number;
+    expectedRevenue: number | null;
+    difference: number | null;
+    createdAt: string;
+  }[];
 }
 
 // --- Notification ---

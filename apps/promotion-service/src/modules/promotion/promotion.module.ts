@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
+import { HttpModule } from "@nestjs/axios";
 import {
   PromotionEntity,
   PromotionUsageEntity,
@@ -15,6 +16,7 @@ import { PromotionController } from "./promotion.controller";
 
 @Module({
   imports: [
+    HttpModule,
     TypeOrmModule.forFeature([
       PromotionEntity,
       PromotionUsageEntity,

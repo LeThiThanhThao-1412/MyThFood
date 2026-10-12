@@ -59,6 +59,7 @@ export class OrderService {
         quantity: item.quantity,
         unitPrice: priced ? priced.salePrice : item.unitPrice,
         originalPrice: priced ? priced.originalPrice : null,
+        flashSaleFundedBy: priced ? priced.fundedBy : null,
         specialInstructions: item.specialInstructions,
         options: item.options,
       };
@@ -1475,6 +1476,17 @@ export class OrderService {
     });
   }
 
+  async getMerchantOrderItems(
+    merchantId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<any> {
+    return this.orderRepository.getMerchantOrderItems(merchantId, {
+      startDate,
+      endDate,
+    });
+  }
+
   // ===================== Top menu items (global) =====================
 
   async getTopMenuItems(take?: number): Promise<
@@ -1569,7 +1581,12 @@ export class OrderService {
   private async resolveFlashSalePrices(
     dto: PlaceOrderDto,
     orderId: string,
-  ): Promise<Map<string, { originalPrice: number; salePrice: number }>> {
+  ): Promise<
+    Map<
+      string,
+      { originalPrice: number; salePrice: number; fundedBy: string | null }
+    >
+  > {
     const url =
       process.env.PROMOTION_SERVICE_URL || "http://promotion-service:3012";
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
@@ -1613,11 +1630,15 @@ export class OrderService {
       return new Map();
     }
     const data: any = res.data?.data ?? res.data;
-    const map = new Map<string, { originalPrice: number; salePrice: number }>();
+    const map = new Map<
+      string,
+      { originalPrice: number; salePrice: number; fundedBy: string | null }
+    >();
     for (const it of data?.items ?? []) {
       map.set(it.menuItemId, {
         originalPrice: Number(it.originalPrice),
         salePrice: Number(it.salePrice),
+        fundedBy: it.fundedBy ?? null,
       });
     }
     return map;

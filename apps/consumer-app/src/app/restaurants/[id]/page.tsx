@@ -171,6 +171,7 @@ export default function RestaurantDetailPage() {
       menuItem,
       quantity: 1,
       unitPrice: fs ? Number(fs.salePrice) : undefined,
+      originalUnitPrice: fs ? Number(fs.originalPrice) : undefined,
       merchantId: id,
       merchantName: merchant?.name || "",
     });
@@ -200,6 +201,9 @@ export default function RestaurantDetailPage() {
       quantity,
       selectedGroups,
       unitPrice: base + optionDelta,
+      originalUnitPrice: fs
+        ? Number(fs.originalPrice) + optionDelta
+        : undefined,
       specialInstructions: note || undefined,
       merchantId: id,
       merchantName: merchant?.name || "",

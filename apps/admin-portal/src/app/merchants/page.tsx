@@ -106,12 +106,20 @@ export default function AdminMerchantsPage() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mb-3">📍 {m.address}</p>
-                  <button
-                    onClick={() => handleApprove(m.id)}
-                    className="w-full bg-[#2ecc71] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-600 transition"
-                  >
-                    ✅ Phê duyệt
-                  </button>
+                  <div className="flex gap-2">
+                    <Link
+                      href={`/merchants/${m.id}`}
+                      className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200 transition text-center"
+                    >
+                      🔍 Xem chi tiết
+                    </Link>
+                    <button
+                      onClick={() => handleApprove(m.id)}
+                      className="flex-1 bg-[#2ecc71] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-600 transition"
+                    >
+                      ✅ Phê duyệt
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -135,9 +143,17 @@ export default function AdminMerchantsPage() {
                   </p>
                   <p className="text-xs text-gray-400">{m.address}</p>
                 </div>
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-semibold">
-                  ✓ Active
-                </span>
+                <div className="flex items-center gap-2">
+                  <Link
+                    href={`/merchants/${m.id}`}
+                    className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-gray-200"
+                  >
+                    Xem
+                  </Link>
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-semibold">
+                    ✓ Active
+                  </span>
+                </div>
               </div>
             ))}
             {active.length === 0 && (

@@ -24,12 +24,14 @@ import {
   MenuSearchQueryDto,
   MatchedMenuItemDto,
   MenuSearchItemDto,
+  RecordFlashSalePriceHistoryDto,
 } from "./dtos/merchant.dto";
 import { CreateMenuItemDto, UpdateMenuItemDto } from "./dtos/menu.dto";
 import {
   CreateMenuCategoryDto,
   UpdateMenuCategoryDto,
 } from "./dtos/menu-category.dto";
+import { BulkImportMenuDto } from "./dtos/menu-import.dto";
 import { SetOperatingHoursDto } from "./dtos/operating-hours.dto";
 import { UpdateCapacityDto } from "./dtos/capacity.dto";
 
@@ -582,6 +584,92 @@ export class MerchantService {
     await this.menuCategoryRepository.delete(merchantId, categoryId);
   }
 
+  // ===================== Bulk Menu Import =====================
+
+  async importMenu(
+    merchantId: string,
+    dto: BulkImportMenuDto,
+  ): Promise<{
+    createdCategories: number;
+    createdItems: number;
+    errors: { index: number; name?: string; message: string }[];
+  }> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
+
+    // 1. Upsert danh mục theo tên (bỏ qua nếu đã tồn tại)
+    const existingCategories =
+      await this.menuCategoryRepository.findByMerchantId(merchantId);
+    const categoryIdByName = new Map<string, string>(
+      existingCategories.map((c) => [c.name.trim().toLowerCase(), c.id]),
+    );
+
+    let createdCategories = 0;
+    let sortOrderCursor = existingCategories.length;
+    for (const cat of dto.categories ?? []) {
+      const key = (cat.name ?? "").trim().toLowerCase();
+      if (!key || categoryIdByName.has(key)) continue;
+      const category = MenuCategory.create({
+        merchantId,
+        name: cat.name,
+        sortOrder: cat.sortOrder ?? sortOrderCursor,
+      });
+      await this.menuCategoryRepository.save(merchantId, category);
+      categoryIdByName.set(key, category.id);
+      createdCategories += 1;
+      sortOrderCursor += 1;
+    }
+
+    // 2. Import món — bắt lỗi từng dòng, không fail cả batch
+    const errors: { index: number; name?: string; message: string }[] = [];
+    let createdItems = 0;
+
+    for (let i = 0; i < (dto.items ?? []).length; i++) {
+      const item = dto.items[i];
+      if (!item) continue;
+      try {
+        const category = item.category ?? "Khác";
+        let categoryId: string | undefined;
+        if (item.categoryId) {
+          categoryId = item.categoryId;
+        } else {
+          categoryId = categoryIdByName.get(category.trim().toLowerCase());
+        }
+
+        merchant.addMenuItem({
+          category,
+          categoryId,
+          name: item.name,
+          description: item.description,
+          price: item.price,
+          imageUrl: item.imageUrl,
+          isFeatured: item.isFeatured,
+          preparationTime: item.preparationTime,
+          optionGroups: item.optionGroups as any,
+        });
+        createdItems += 1;
+      } catch (err: any) {
+        errors.push({
+          index: i,
+          name: item?.name,
+          message: err?.message ?? "Lỗi không xác định",
+        });
+      }
+    }
+
+    if (createdItems > 0 || createdCategories > 0) {
+      await this.merchantRepository.save(merchant);
+
+      const events = merchant.pullDomainEvents();
+      for (const event of events) {
+        this.eventBus.publish(event);
+      }
+    }
+
+    return { createdCategories, createdItems, errors };
+  }
+
   // ===================== Operating Hours =====================
 
   async setOperatingHours(
@@ -749,15 +837,36 @@ export class MerchantService {
         id: e.id,
         merchantId: e.merchant_id,
         menuItemId: e.menu_item_id,
+        menuItemName: e.menu_item_name,
         oldPrice: Number(e.old_price),
         newPrice: Number(e.new_price),
         changedBy: e.changed_by,
         reason: e.reason,
         status: e.status,
+        type: e.type,
         createdAt: e.created_at,
       })),
       total,
     };
+  }
+
+  async recordFlashSalePriceHistory(
+    dto: RecordFlashSalePriceHistoryDto,
+  ): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(dto.merchantId),
+    );
+    const count = await this.priceHistoryRepository.saveFlashSaleEntries({
+      merchantId: dto.merchantId,
+      title: dto.title ?? null,
+      items: dto.items.map((it) => ({
+        menuItemId: it.menuItemId,
+        menuItemName: it.menuItemName ?? null,
+        originalPrice: it.originalPrice,
+        salePrice: it.salePrice,
+      })),
+    });
+    return { merchantId: dto.merchantId, recorded: count };
   }
 
   async comparePrice(
@@ -880,11 +989,13 @@ export class MerchantService {
     const header = [
       "id",
       "menu_item_id",
+      "menu_item_name",
       "old_price",
       "new_price",
       "changed_by",
       "reason",
       "status",
+      "type",
       "created_at",
     ];
     const escape = (v: unknown): string => {
@@ -900,11 +1011,13 @@ export class MerchantService {
         [
           e.id,
           e.menu_item_id,
+          e.menu_item_name ?? "",
           Number(e.old_price),
           Number(e.new_price),
           e.changed_by ?? "",
           e.reason ?? "",
           e.status,
+          e.type,
           e.created_at?.toISOString() ?? "",
         ]
           .map(escape)
@@ -915,26 +1028,70 @@ export class MerchantService {
   }
 
   async reconcileRevenue(merchantId: string, period?: string): Promise<any> {
-    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
     const range = this.periodToRange(period || "today");
     const orderStats = await this.fetchOrderStats(
       merchantId,
       range.startDate,
       range.endDate,
     );
-    const merchant = await this.merchantRepository.findByIdOrFail(
-      MerchantId.from(merchantId),
+    const orderItems: any[] = await this.fetchOrderItems(
+      merchantId,
+      range.startDate,
+      range.endDate,
     );
-    const listedMenuTotal = merchant.menuItemList.reduce(
-      (sum, mi) => sum + mi.itemPrice,
-      0,
-    );
+
+    const items: any[] = [];
+    let expectedRevenue = 0;
+    let actualRevenue = 0;
+
+    for (const it of orderItems) {
+      const menuItem = merchant.menuItemList.find(
+        (mi) => mi.id.toString() === it.menuItemId,
+      );
+      const listPrice =
+        it.originalPrice != null
+          ? Number(it.originalPrice)
+          : menuItem
+            ? menuItem.itemPrice
+            : null;
+      const unitPrice = Number(it.unitPrice ?? 0);
+      const quantity = Number(it.quantity ?? 0);
+      const lineActual = unitPrice * quantity;
+      const lineExpected = listPrice != null ? listPrice * quantity : null;
+      const difference =
+        lineExpected != null ? lineExpected - lineActual : null;
+
+      if (lineExpected != null) expectedRevenue += lineExpected;
+      actualRevenue += lineActual;
+
+      items.push({
+        orderId: it.orderId,
+        menuItemId: it.menuItemId,
+        name: it.name ?? null,
+        quantity,
+        unitPrice,
+        listPrice,
+        actualRevenue: lineActual,
+        expectedRevenue: lineExpected,
+        difference,
+        createdAt: it.createdAt,
+      });
+    }
+
     return {
       merchantId,
       period: period || "today",
-      orderStats: orderStats ?? null,
-      listedMenuTotal,
-      note: "orderStats là doanh thu thực tế từ order-service; đối soát với giá niêm yết + flash sale để xác định chênh lệch.",
+      totalOrders: orderStats?.totalOrders ?? 0,
+      totalRevenue: orderStats?.totalRevenue ?? 0,
+      pendingOrders: orderStats?.pendingOrders ?? 0,
+      expectedRevenue,
+      actualRevenue,
+      difference: expectedRevenue - actualRevenue,
+      revenueByDay: orderStats?.revenueByDay ?? [],
+      items,
     };
   }
 
@@ -984,6 +1141,33 @@ export class MerchantService {
         `Failed to fetch order stats for ${merchantId}: ${err?.message}`,
       );
       return null;
+    }
+  }
+
+  private async fetchOrderItems(
+    merchantId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<any[]> {
+    const url = process.env.ORDER_SERVICE_URL || "http://order-service:3004";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(
+          `${url}/api/v1/orders/reconciliation/merchant/${merchantId}`,
+          {
+            params: { startDate, endDate },
+            headers: { "x-service-key": serviceKey },
+          },
+        ),
+      );
+      const data: any = res.data ?? {};
+      return Array.isArray(data.items) ? data.items : [];
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to fetch order items for ${merchantId}: ${err?.message}`,
+      );
+      return [];
     }
   }
 

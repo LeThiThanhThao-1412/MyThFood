@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { walletApi } from "@mythfood/api-client";
 import { httpClient } from "@mythfood/api-client";
+import { formatDateTime } from "../../lib/format";
 
 export default function AdminTransactionsPage() {
   const router = useRouter();
@@ -205,9 +206,7 @@ export default function AdminTransactionsPage() {
                       {Number(t.balanceAfter).toLocaleString("vi-VN")}₫
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500 hidden lg:table-cell">
-                      {t.createdAt
-                        ? new Date(t.createdAt).toLocaleString("vi-VN")
-                        : "-"}
+                      {t.createdAt ? formatDateTime(t.createdAt) : "-"}
                     </td>
                   </tr>
                 ))}

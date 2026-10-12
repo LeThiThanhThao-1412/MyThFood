@@ -13,7 +13,7 @@ COPY packages/event-contracts/package.json packages/event-contracts/tsconfig.jso
 COPY packages/common/package.json packages/common/tsconfig.json packages/common/
 COPY apps/review-service/package.json apps/review-service/tsconfig.json apps/review-service/tsconfig.build.json apps/review-service/nest-cli.json apps/review-service/
 
-RUN npm install -g pnpm@9.4.0
+RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
 RUN pnpm install --frozen-lockfile --filter @mythfood/review-service --prod false
 
 COPY packages/shared-kernel/src packages/shared-kernel/src/
@@ -43,7 +43,7 @@ COPY --from=builder /app/packages/common/dist packages/common/dist/
 COPY --from=builder /app/apps/review-service/package.json apps/review-service/
 COPY --from=builder /app/apps/review-service/dist apps/review-service/dist/
 
-RUN npm install -g pnpm@9.4.0 \
+RUN corepack enable && corepack prepare pnpm@9.4.0 --activate \
     && (for i in 1 2 3 4 5; do apk add --no-cache tzdata && exit 0; sleep 5; done; exit 1)
 RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
 RUN pnpm install --frozen-lockfile --filter @mythfood/review-service --prod

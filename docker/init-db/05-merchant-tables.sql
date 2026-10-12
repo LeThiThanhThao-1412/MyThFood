@@ -94,17 +94,21 @@ CREATE TABLE IF NOT EXISTS price_history (
   id UUID PRIMARY KEY,
   merchant_id UUID NOT NULL,
   menu_item_id UUID NOT NULL,
+  menu_item_name VARCHAR(255),
   old_price DECIMAL(10, 2) NOT NULL,
   new_price DECIMAL(10, 2) NOT NULL,
   changed_by UUID,
   reason TEXT,
   status VARCHAR(20) NOT NULL DEFAULT 'RECORDED',
+  type VARCHAR(20) NOT NULL DEFAULT 'MANUAL',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Migration cho database đã tồn tại trước khi bổ sung module price management
 ALTER TABLE price_history ADD COLUMN IF NOT EXISTS merchant_id UUID;
+ALTER TABLE price_history ADD COLUMN IF NOT EXISTS menu_item_name VARCHAR(255);
 ALTER TABLE price_history ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'RECORDED';
+ALTER TABLE price_history ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'MANUAL';
 
 -- Price alerts table (cảnh báo biến động giá bất thường)
 CREATE TABLE IF NOT EXISTS price_alerts (

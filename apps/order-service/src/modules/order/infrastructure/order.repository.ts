@@ -301,6 +301,51 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     };
   }
 
+  async getMerchantOrderItems(
+    merchantId: string,
+    options?: { startDate?: string; endDate?: string },
+  ): Promise<any[]> {
+    const qb = this.orderItemRepo
+      .createQueryBuilder("mi")
+      .innerJoin(OrderEntity, "o", "o.id = mi.order_id")
+      .select("o.id", "orderId")
+      .addSelect("mi.menu_item_id", "menuItemId")
+      .addSelect("mi.name", "name")
+      .addSelect("mi.quantity", "quantity")
+      .addSelect("mi.unit_price", "unitPrice")
+      .addSelect("mi.original_price", "originalPrice")
+      .addSelect("mi.subtotal", "subtotal")
+      .addSelect("o.created_at", "createdAt")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status != :cancelled", { cancelled: "CANCELLED" })
+      .andWhere("o.status != :rejected", { rejected: "REJECTED" });
+
+    if (options?.startDate) {
+      qb.andWhere("o.created_at >= :startDate", {
+        startDate: new Date(options.startDate),
+      });
+    }
+    if (options?.endDate) {
+      qb.andWhere("o.created_at <= :endDate", {
+        endDate: new Date(options.endDate),
+      });
+    }
+    qb.orderBy("o.created_at", "ASC");
+
+    const rows = await qb.getRawMany();
+    return rows.map((r) => ({
+      orderId: r.orderId,
+      menuItemId: r.menuItemId,
+      name: r.name,
+      quantity: Number(r.quantity ?? 0),
+      unitPrice: Number(r.unitPrice ?? 0),
+      originalPrice: r.originalPrice != null ? Number(r.originalPrice) : null,
+      subtotal: Number(r.subtotal ?? 0),
+      createdAt: r.createdAt,
+    }));
+  }
+
   /**
    * Global "top dishes" across all merchants: aggregates order items and keeps
    * only the single best-selling dish per merchant, ordered by total quantity.

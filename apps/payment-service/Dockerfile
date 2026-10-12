@@ -13,7 +13,7 @@ COPY packages/event-contracts/package.json packages/event-contracts/tsconfig.jso
 COPY packages/common/package.json packages/common/tsconfig.json packages/common/
 COPY apps/payment-service/package.json apps/payment-service/tsconfig.json apps/payment-service/tsconfig.build.json apps/payment-service/nest-cli.json apps/payment-service/
 
-RUN npm install -g pnpm@9.4.0
+RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
 RUN pnpm install --frozen-lockfile --filter @mythfood/payment-service --prod false
 
 COPY packages/shared-kernel/src packages/shared-kernel/src/
@@ -43,7 +43,7 @@ COPY --from=builder /app/packages/common/dist packages/common/dist/
 COPY --from=builder /app/apps/payment-service/package.json apps/payment-service/
 COPY --from=builder /app/apps/payment-service/dist apps/payment-service/dist/
 
-RUN npm install -g pnpm@9.4.0 \
+RUN corepack enable && corepack prepare pnpm@9.4.0 --activate \
     && (for i in 1 2 3 4 5; do apk add --no-cache tzdata && exit 0; sleep 5; done; exit 1)
 RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
 RUN pnpm install --frozen-lockfile --filter @mythfood/payment-service --prod

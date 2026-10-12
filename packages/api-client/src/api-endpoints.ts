@@ -23,6 +23,8 @@ import type {
   CreateMenuItemRequest,
   MenuItem,
   UpdateMenuItemRequest,
+  BulkImportMenuRequest,
+  MenuImportResult,
   MenuCategory,
   CreateMenuCategoryRequest,
   UpdateMenuCategoryRequest,
@@ -315,6 +317,22 @@ export const merchantApi = {
   approve: (id: string) =>
     httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${id}/approve`),
 
+  reject: (id: string) =>
+    httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${id}/reject`),
+
+  getStats: (id: string, period?: string) =>
+    httpClient.get<any>(PORTS.MERCHANT, `/merchants/${id}/stats`, {
+      params: period ? { period } : undefined,
+    }),
+
+  getReviews: (
+    id: string,
+    params?: { skip?: number; take?: number; rating?: number },
+  ) =>
+    httpClient.get<any>(PORTS.MERCHANT, `/merchants/${id}/reviews`, {
+      params,
+    }),
+
   getMenu: (merchantId: string, includeUnavailable?: boolean) =>
     httpClient.get<MenuItem[]>(
       PORTS.MERCHANT,
@@ -328,6 +346,13 @@ export const merchantApi = {
     httpClient.post<MenuItem>(
       PORTS.MERCHANT,
       `/merchants/${merchantId}/menu/items`,
+      body,
+    ),
+
+  importMenu: (merchantId: string, body: BulkImportMenuRequest) =>
+    httpClient.post<MenuImportResult>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu/import`,
       body,
     ),
 
@@ -552,6 +577,40 @@ export const orderApi = {
     httpClient.put<Order>(PORTS.ORDER, `/orders/${id}`, body),
 
   delete: (id: string) => httpClient.delete<void>(PORTS.ORDER, `/orders/${id}`),
+
+  // ---- Admin stats & timeline ---- //
+  getDailyStats: (startDate?: string, endDate?: string) =>
+    httpClient.get<any>(PORTS.ORDER, "/orders/stats/daily", {
+      params: { startDate, endDate },
+    }),
+
+  getTopMenuItems: (take?: number) =>
+    httpClient.get<any>(PORTS.ORDER, "/orders/stats/top-items", {
+      params: take ? { take: String(take) } : undefined,
+    }),
+
+  getMerchantStats: (
+    merchantId: string,
+    startDate?: string,
+    endDate?: string,
+  ) =>
+    httpClient.get<any>(PORTS.ORDER, `/orders/stats/merchant/${merchantId}`, {
+      params: { startDate, endDate },
+    }),
+
+  getMerchantOrderItems: (
+    merchantId: string,
+    startDate?: string,
+    endDate?: string,
+  ) =>
+    httpClient.get<any>(
+      PORTS.ORDER,
+      `/orders/reconciliation/merchant/${merchantId}`,
+      { params: { startDate, endDate } },
+    ),
+
+  getTimeline: (id: string) =>
+    httpClient.get<any>(PORTS.ORDER, `/orders/${id}/timeline`),
 };
 
 // ============================================================================
@@ -604,6 +663,12 @@ export const paymentApi = {
 
   delete: (id: string) =>
     httpClient.delete<void>(PORTS.PAYMENT, `/payments/${id}`),
+
+  // ---- Admin stats ---- //
+  getDailyStats: (startDate?: string, endDate?: string) =>
+    httpClient.get<any>(PORTS.PAYMENT, "/payments/stats/daily", {
+      params: { startDate, endDate },
+    }),
 };
 
 // ============================================================================
@@ -766,6 +831,35 @@ export const driverApi = {
 
   delete: (id: string) =>
     httpClient.delete<void>(PORTS.DRIVER, `/drivers/${id}`),
+
+  // ---- Admin: training & activation ---- //
+  completeTraining: (id: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/complete-training`,
+    ),
+
+  activate: (id: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/activate`,
+    ),
+
+  deactivate: (id: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/deactivate`,
+    ),
+
+  getDriverStats: () =>
+    httpClient.get<{
+      statusCode: number;
+      data: {
+        totalDrivers: number;
+        activeDrivers: number;
+        onlineDrivers: number;
+      };
+    }>(PORTS.DRIVER, "/drivers/stats"),
 
   rate: (id: string, rating: number) =>
     httpClient.patch<{ statusCode: number; data: Driver }>(
@@ -1244,6 +1338,28 @@ export const walletApi = {
     amount: number;
   }) =>
     httpClient.post<any>(PORTS.WALLET, "/wallets/settlement/clawback", data),
+
+  // Admin: tất cả giao dịch (paginated, filterable)
+  getAdminTransactions: (params?: {
+    skip?: number;
+    take?: number;
+    type?: string;
+    ownerType?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+  }) =>
+    httpClient.get<any>(PORTS.WALLET, "/wallets/transactions/admin", {
+      params,
+    }),
+
+  // Admin: thống kê ví
+  getWalletStats: () =>
+    httpClient.get<{
+      totalWallets: number;
+      totalBalance: number;
+      balanceByType: Record<string, number>;
+    }>(PORTS.WALLET, "/wallets/stats"),
 };
 
 export const shippingApi = {

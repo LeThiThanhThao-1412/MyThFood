@@ -281,6 +281,22 @@ export class OrderController {
     return this.orderService.getMerchantStats(merchantId, startDate, endDate);
   }
 
+  @Get("reconciliation/merchant/:merchantId")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async getMerchantOrderItems(
+    @Param("merchantId") merchantId: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+  ): Promise<any> {
+    const items = await this.orderService.getMerchantOrderItems(
+      merchantId,
+      startDate,
+      endDate,
+    );
+    return { items, total: items.length };
+  }
+
   // ===================== Delete =====================
 
   @Delete(":id")
@@ -306,6 +322,7 @@ export class OrderController {
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         originalPrice: item.originalPrice ?? null,
+        flashSaleFundedBy: item.flashSaleFundedBy ?? null,
         subtotal: item.subtotal,
         specialInstructions: item.specialInstructions,
         options: item.options ?? null,
@@ -314,6 +331,7 @@ export class OrderController {
       deliveryFee: order.orderDeliveryFee,
       serviceFee: order.orderServiceFee,
       discount: order.orderDiscount,
+      discountFundedBy: order.orderDiscountFundedBy,
       totalAmount: order.orderTotalAmount,
       deliveryAddress: order.orderDeliveryAddress,
       deliveryLatitude: order.orderDeliveryLatitude,

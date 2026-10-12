@@ -145,6 +145,15 @@ export default function PromoCodeDrawer({
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-gray-800 text-sm">
                       {p.code}
+                      <span
+                        className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                          p.fundedBy === "PLATFORM"
+                            ? "bg-blue-50 text-blue-600"
+                            : "bg-orange-50 text-orange-600"
+                        }`}
+                      >
+                        {p.fundedBy === "PLATFORM" ? "Hệ thống" : "Quán"}
+                      </span>
                     </span>
                     <span
                       className={`text-sm font-bold ${

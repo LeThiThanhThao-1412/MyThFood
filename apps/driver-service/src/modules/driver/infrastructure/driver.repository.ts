@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository as TypeOrmRepo, IsNull } from "typeorm";
+import { Repository as TypeOrmRepo, IsNull, LessThan } from "typeorm";
 import { IRepository, EntityNotFoundError } from "@mythfood/shared-kernel";
 import {
   Driver,
@@ -95,6 +95,26 @@ export class DriverRepository implements IRepository<Driver, DriverId> {
     return entities
       .map((e) => this.mapper.toDomain(e))
       .filter((d) => d.isAvailable);
+  }
+
+  /**
+   * Tìm tài xế đang ONLINE nhưng không gửi vị trí từ trước `cutoff`
+   * (hoặc chưa bao giờ gửi vị trí) — dùng cho auto-offline khi mất heartbeat.
+   */
+  async findOnlineWithStaleLocation(cutoff: Date): Promise<Driver[]> {
+    const entities = await this.repository.find({
+      where: [
+        {
+          onlineStatus: DriverOnlineStatus.ONLINE,
+          lastLocationUpdateAt: IsNull(),
+        },
+        {
+          onlineStatus: DriverOnlineStatus.ONLINE,
+          lastLocationUpdateAt: LessThan(cutoff),
+        },
+      ],
+    });
+    return entities.map((e) => this.mapper.toDomain(e));
   }
 
   async count(filter?: DriverFilter): Promise<number> {

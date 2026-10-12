@@ -237,6 +237,7 @@ export class OrderResponseDto {
   deliveryFee!: number;
   serviceFee!: number;
   discount!: number;
+  discountFundedBy!: string;
   totalAmount!: number;
   deliveryAddress!: string | null;
   deliveryLatitude!: number | null;
@@ -258,6 +259,7 @@ export class OrderItemResponseDto {
   quantity!: number;
   unitPrice!: number;
   originalPrice!: number | null;
+  flashSaleFundedBy!: string | null;
   subtotal!: number;
   specialInstructions!: string | null;
   options!: OrderItemOptionDto[] | null;

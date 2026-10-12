@@ -1,8 +1,11 @@
 import {
   Injectable,
   BadRequestException,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
+import { HttpService } from "@nestjs/axios";
+import { firstValueFrom } from "rxjs";
 import { v4 as uuidv4 } from "uuid";
 import { PromotionRepository } from "./promotion.repository";
 import {
@@ -32,7 +35,12 @@ import {
 
 @Injectable()
 export class PromotionService {
-  constructor(private readonly promoRepo: PromotionRepository) {}
+  private readonly logger = new Logger(PromotionService.name);
+
+  constructor(
+    private readonly promoRepo: PromotionRepository,
+    private readonly httpService: HttpService,
+  ) {}
 
   async create(
     dto: CreatePromotionDto,
@@ -466,7 +474,40 @@ export class PromotionService {
       items.push(item);
     }
 
+    await this.notifyMerchantPriceHistory(sale, items);
+
     return { ...sale, items };
+  }
+
+  private async notifyMerchantPriceHistory(
+    sale: FlashSaleEntity,
+    items: FlashSaleItemEntity[],
+  ): Promise<void> {
+    try {
+      const url =
+        process.env.MERCHANT_SERVICE_URL || "http://merchant-service:3003";
+      const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+      await firstValueFrom(
+        this.httpService.post(
+          `${url}/api/v1/merchants/price-history/flash-sale`,
+          {
+            merchantId: sale.merchantId,
+            title: sale.title,
+            items: items.map((it) => ({
+              menuItemId: it.menuItemId,
+              menuItemName: it.menuItemName,
+              originalPrice: Number(it.originalPrice),
+              salePrice: Number(it.salePrice),
+            })),
+          },
+          { headers: { "x-service-key": serviceKey } },
+        ),
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to record flash sale price history: ${err?.message}`,
+      );
+    }
   }
 
   async getFlashSaleById(id: string): Promise<any> {
@@ -772,6 +813,7 @@ export class PromotionService {
         const item = await this.promoRepo.findFlashSaleItemById(
           usage.flashSaleItemId,
         );
+        const sale = await this.promoRepo.findFlashSaleById(usage.flashSaleId);
         const originalPrice = item
           ? Number(item.originalPrice)
           : Number(usage.unitPrice);
@@ -783,6 +825,7 @@ export class PromotionService {
           originalPrice,
           salePrice,
           quantity: usage.quantity,
+          fundedBy: sale?.fundedBy ?? "MERCHANT",
         });
       }
       return { items, discountAmount };
@@ -802,6 +845,7 @@ export class PromotionService {
           originalPrice: price,
           salePrice: price,
           quantity: input.quantity,
+          fundedBy: null,
         });
         continue;
       }
@@ -821,6 +865,7 @@ export class PromotionService {
         originalPrice,
         salePrice,
         quantity: input.quantity,
+        fundedBy: active.sale.fundedBy,
       });
     }
     return { items, discountAmount };

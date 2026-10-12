@@ -50,6 +50,8 @@ export interface OrderItemProps {
   quantity: number;
   unitPrice: number;
   originalPrice: number | null;
+  // Nguồn tài trợ của flash sale cho món này: MERCHANT (do quán tạo) | PLATFORM (nền tảng) | null (không flash sale)
+  flashSaleFundedBy?: string | null;
   subtotal: number;
   specialInstructions: string | null;
   options?: OrderItemOption[] | null;
@@ -159,6 +161,7 @@ export class Order extends AggregateRoot<OrderId> {
       quantity: number;
       unitPrice: number;
       originalPrice?: number | null;
+      flashSaleFundedBy?: string | null;
       specialInstructions?: string;
       options?: OrderItemOption[];
     }>;
@@ -225,6 +228,7 @@ export class Order extends AggregateRoot<OrderId> {
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         originalPrice: item.originalPrice ?? null,
+        flashSaleFundedBy: item.flashSaleFundedBy ?? null,
         subtotal: item.quantity * item.unitPrice,
         specialInstructions: item.specialInstructions ?? null,
         options: item.options ?? null,

@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository as TypeOrmRepo, Like } from "typeorm";
+import { Repository as TypeOrmRepo, Like, LessThan } from "typeorm";
 import { IRepository } from "@mythfood/shared-kernel";
 import { User } from "../domain/user.aggregate";
 import { UserId } from "../domain/user-id";
@@ -116,6 +116,17 @@ export class UserRepository implements IRepository<User, UserId> {
   async exists(id: UserId): Promise<boolean> {
     const count = await this.repository.count({ where: { id: id.toString() } });
     return count > 0;
+  }
+
+  /** Lấy các user đang SUSPENDED nhưng đã hết hạn khóa (để tự mở). */
+  async findExpiredSuspended(now: Date): Promise<User[]> {
+    const entities = await this.repository.find({
+      where: {
+        status: "SUSPENDED",
+        suspended_until: LessThan(now),
+      },
+    });
+    return entities.map((entity) => UserMapper.toDomain(entity));
   }
 
   async delete(aggregate: User): Promise<void> {

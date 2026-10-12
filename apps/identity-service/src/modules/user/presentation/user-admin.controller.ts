@@ -54,6 +54,17 @@ export class UserAdminController {
     @Param("id") id: string,
     @Body() dto: UpdateUserStatusDto,
   ): Promise<UserAdminResponseDto> {
-    return this.userAdminService.updateUserStatus(id, dto.status);
+    return this.userAdminService.updateUserStatus(
+      id,
+      dto.status,
+      dto.durationDays,
+      dto.reason,
+    );
+  }
+
+  @Patch(":id/unlock")
+  @HttpCode(HttpStatus.OK)
+  async unlockUser(@Param("id") id: string): Promise<UserAdminResponseDto> {
+    return this.userAdminService.unlockUser(id);
   }
 }

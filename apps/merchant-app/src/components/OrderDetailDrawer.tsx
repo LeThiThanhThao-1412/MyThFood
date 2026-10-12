@@ -453,7 +453,11 @@ export default function OrderDetailDrawer({
                   </div>
                   {toNum(order.discount) > 0 && (
                     <div className="flex justify-between">
-                      <span className="text-gray-500">Giảm giá</span>
+                      <span className="text-gray-500">
+                        {order.discountFundedBy === "PLATFORM"
+                          ? "Giảm giá (hệ thống)"
+                          : "Giảm giá (của quán)"}
+                      </span>
                       <span>
                         -{toNum(order.discount).toLocaleString("vi-VN")}₫
                       </span>

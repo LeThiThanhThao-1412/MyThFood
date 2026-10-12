@@ -26,6 +26,7 @@ import {
   MenuSearchQueryDto,
   MenuSearchItemDto,
   MatchedMenuItemDto,
+  RecordFlashSalePriceHistoryDto,
 } from "../application/dtos/merchant.dto";
 import {
   CreateMenuItemDto,
@@ -37,6 +38,7 @@ import {
   UpdateMenuCategoryDto,
   MenuCategoryResponseDto,
 } from "../application/dtos/menu-category.dto";
+import { BulkImportMenuDto } from "../application/dtos/menu-import.dto";
 import {
   SetOperatingHoursDto,
   OperatingHoursResponseDto,
@@ -200,6 +202,12 @@ export class MerchantController {
     return this.toMenuItemResponse(menuItem);
   }
 
+  @Post(":id/menu/import")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async importMenu(@Param("id") id: string, @Body() dto: BulkImportMenuDto) {
+    return this.merchantService.importMenu(id, dto);
+  }
+
   @Get(":id/menu")
   async getMenuItems(
     @Param("id") id: string,
@@ -350,6 +358,14 @@ export class MerchantController {
     @Body() dto: { status: string },
   ) {
     return this.merchantService.updatePriceHistoryStatus(historyId, dto.status);
+  }
+
+  @Post("price-history/flash-sale")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async recordFlashSalePriceHistory(
+    @Body() dto: RecordFlashSalePriceHistoryDto,
+  ) {
+    return this.merchantService.recordFlashSalePriceHistory(dto);
   }
 
   // ===================== Menu Categories =====================

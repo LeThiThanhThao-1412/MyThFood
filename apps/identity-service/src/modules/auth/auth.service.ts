@@ -99,6 +99,11 @@ export class AuthService {
       throw new UnauthorizedException("Invalid phone number or password");
     }
 
+    // Auto-unlock nếu tài khoản bị khóa có thời hạn và đã hết hạn.
+    if (user.autoUnlockIfExpired()) {
+      await this.userRepository.save(user);
+    }
+
     if (!user.isActive()) {
       throw new UnauthorizedException("Account is not active");
     }
@@ -193,6 +198,11 @@ export class AuthService {
 
       const user = await this.userRepository.findById(UserId.from(payload.sub));
       if (!user) throw new UnauthorizedException("Invalid refresh token");
+
+      // Auto-unlock nếu tài khoản bị khóa có thời hạn và đã hết hạn.
+      if (user.autoUnlockIfExpired()) {
+        await this.userRepository.save(user);
+      }
 
       if (!user.isActive()) {
         throw new UnauthorizedException("Account is no longer active");

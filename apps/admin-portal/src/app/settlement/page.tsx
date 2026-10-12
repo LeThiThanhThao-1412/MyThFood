@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { walletApi } from "@mythfood/api-client";
+import { formatDateTime } from "../../lib/format";
 
 function formatVnd(n: unknown): string {
   return (Number(n) || 0).toLocaleString("vi-VN") + "₫";
@@ -431,15 +432,10 @@ export default function AdminSettlementPage() {
                   <tr key={b.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 text-sm">
                       <p>
-                        {b.periodStart
-                          ? new Date(b.periodStart).toLocaleString("vi-VN")
-                          : "-"}
+                        {b.periodStart ? formatDateTime(b.periodStart) : "-"}
                       </p>
                       <p className="text-xs text-gray-400">
-                        →{" "}
-                        {b.periodEnd
-                          ? new Date(b.periodEnd).toLocaleString("vi-VN")
-                          : "-"}
+                        → {b.periodEnd ? formatDateTime(b.periodEnd) : "-"}
                       </p>
                     </td>
                     <td className="px-4 py-3">

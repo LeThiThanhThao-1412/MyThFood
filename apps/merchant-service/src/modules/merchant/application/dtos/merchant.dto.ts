@@ -9,6 +9,7 @@ import {
   IsBoolean,
   Min,
   Max,
+  ValidateNested,
 } from "class-validator";
 import { Type, Transform } from "class-transformer";
 
@@ -320,4 +321,39 @@ export class MenuSearchItemDto {
   category!: string;
   isAvailable!: boolean;
   merchant!: MenuSearchMerchantDto;
+}
+
+// ===================== Record Flash Sale Price History =====================
+
+export class FlashSalePriceHistoryItemDto {
+  @IsUUID("4")
+  menuItemId!: string;
+
+  @IsOptional()
+  @IsString()
+  menuItemName?: string;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  originalPrice!: number;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  salePrice!: number;
+}
+
+export class RecordFlashSalePriceHistoryDto {
+  @IsUUID("4")
+  merchantId!: string;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FlashSalePriceHistoryItemDto)
+  items!: FlashSalePriceHistoryItemDto[];
 }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { merchantApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import { formatDateTime } from "../../lib/format";
 
 function toNum(v: unknown): number {
   if (typeof v === "number") return v;
@@ -13,10 +14,7 @@ function toNum(v: unknown): number {
 }
 
 function fmt(d: unknown): string {
-  if (!d) return "—";
-  const date = new Date(d as string);
-  if (isNaN(date.getTime())) return String(d);
-  return date.toLocaleString("vi-VN");
+  return formatDateTime(d);
 }
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
@@ -146,6 +144,7 @@ export default function AdminPriceManagementPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-gray-400 border-b">
+                      <th className="py-2 pr-3">Món</th>
                       <th className="py-2 pr-3">Thời gian</th>
                       <th className="py-2 pr-3">Giá cũ</th>
                       <th className="py-2 pr-3">Giá mới</th>
@@ -156,6 +155,14 @@ export default function AdminPriceManagementPage() {
                   <tbody>
                     {history.map((h) => (
                       <tr key={h.id} className="border-b last:border-0">
+                        <td className="py-2 pr-3 min-w-[180px]">
+                          <div className="font-medium text-gray-800">
+                            {h.menuItemName || "—"}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {h.menuItemId}
+                          </div>
+                        </td>
                         <td className="py-2 pr-3 text-gray-600">
                           {fmt(h.createdAt)}
                         </td>
@@ -183,7 +190,7 @@ export default function AdminPriceManagementPage() {
                     {history.length === 0 && (
                       <tr>
                         <td
-                          colSpan={5}
+                          colSpan={6}
                           className="py-6 text-center text-gray-400"
                         >
                           Chưa có thay đổi giá nào

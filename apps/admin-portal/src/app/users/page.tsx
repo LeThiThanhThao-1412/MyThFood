@@ -11,6 +11,9 @@ interface UserItem {
   email?: string;
   roles: string[];
   status: string;
+  suspendedUntil?: string | null;
+  suspendedAt?: string | null;
+  suspendReason?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -27,6 +30,10 @@ export default function AdminUsersPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [skip, setSkip] = useState(0);
   const take = 20;
+
+  const [lockTarget, setLockTarget] = useState<UserItem | null>(null);
+  const [lockDays, setLockDays] = useState(3);
+  const [lockReason, setLockReason] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -70,6 +77,39 @@ export default function AdminUsersPage() {
       );
     } catch {
       setError("Không thể cập nhật trạng thái");
+    }
+  }
+
+  async function handleUnlock(id: string) {
+    try {
+      await httpClient.patch(3001, `/auth/users/${id}/unlock`, {});
+      setUsers(
+        users.map((u) =>
+          u.id === id
+            ? {
+                ...u,
+                status: "ACTIVE",
+                suspendedUntil: null,
+                suspendReason: null,
+              }
+            : u,
+        ),
+      );
+    } catch {
+      setError("Không thể mở khóa tài khoản");
+    }
+  }
+
+  async function handleLock(id: string, durationDays: number, reason: string) {
+    try {
+      await httpClient.patch(3001, `/auth/users/${id}/status`, {
+        status: "SUSPENDED",
+        durationDays: durationDays > 0 ? durationDays : undefined,
+        reason: reason || undefined,
+      });
+      loadUsers();
+    } catch {
+      setError("Không thể khóa tài khoản");
     }
   }
 
@@ -216,19 +256,47 @@ export default function AdminUsersPage() {
                       {u.email || "-"}
                     </td>
                     <td className="px-4 py-3">{roleBadge(u.roles)}</td>
-                    <td className="px-4 py-3">{statusBadge(u.status)}</td>
+                    <td className="px-4 py-3">
+                      {statusBadge(u.status)}
+                      {u.status === "SUSPENDED" && u.suspendedUntil && (
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          Khóa đến:{" "}
+                          {new Date(u.suspendedUntil).toLocaleString("vi-VN")}
+                        </p>
+                      )}
+                      {u.suspendReason && (
+                        <p className="text-[10px] text-gray-400">
+                          Lý do: {u.suspendReason}
+                        </p>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right">
-                      <select
-                        value={u.status}
-                        onChange={(e) =>
-                          handleStatusChange(u.id, e.target.value)
-                        }
-                        className="border rounded px-2 py-1 text-xs"
-                      >
-                        <option value="ACTIVE">ACTIVE</option>
-                        <option value="INACTIVE">INACTIVE</option>
-                        <option value="SUSPENDED">SUSPENDED</option>
-                      </select>
+                      <div className="flex gap-1.5 justify-end">
+                        {u.status === "ACTIVE" && (
+                          <button
+                            onClick={() => setLockTarget(u)}
+                            className="bg-[#e74c3c] text-white text-xs px-3 py-1.5 rounded-lg hover:bg-red-600"
+                          >
+                            Khóa
+                          </button>
+                        )}
+                        {u.status === "INACTIVE" && (
+                          <button
+                            onClick={() => handleStatusChange(u.id, "ACTIVE")}
+                            className="bg-[#2ecc71] text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-600"
+                          >
+                            Kích hoạt
+                          </button>
+                        )}
+                        {u.status === "SUSPENDED" && (
+                          <button
+                            onClick={() => handleUnlock(u.id)}
+                            className="bg-[#2ecc71] text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-600"
+                          >
+                            Mở khóa
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -256,6 +324,64 @@ export default function AdminUsersPage() {
           </div>
         )}
       </div>
+
+      {lockTarget && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50"
+          onClick={() => setLockTarget(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-lg text-gray-800 mb-1">
+              🔒 Khóa tài khoản
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {lockTarget.fullName} · {lockTarget.phone}
+            </p>
+
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Thời hạn khóa (ngày, để 0 = vô thời hạn)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={lockDays}
+              onChange={(e) => setLockDays(Number(e.target.value))}
+              className="w-full border rounded-lg px-3 py-2 text-sm mb-3"
+            />
+
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Lý do
+            </label>
+            <input
+              value={lockReason}
+              onChange={(e) => setLockReason(e.target.value)}
+              placeholder="Vi phạm điều khoản..."
+              className="w-full border rounded-lg px-3 py-2 text-sm mb-4"
+            />
+
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  await handleLock(lockTarget.id, lockDays, lockReason);
+                  setLockTarget(null);
+                }}
+                className="flex-1 bg-[#e74c3c] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-red-600"
+              >
+                Xác nhận khóa
+              </button>
+              <button
+                onClick={() => setLockTarget(null)}
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

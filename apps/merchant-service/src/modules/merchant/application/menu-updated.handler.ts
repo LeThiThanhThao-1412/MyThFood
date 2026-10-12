@@ -34,11 +34,13 @@ export class MenuUpdatedEventHandler implements IEventHandler<MenuUpdatedEvent> 
       history.id = randomUUID();
       history.merchant_id = event.payload.merchantId;
       history.menu_item_id = event.payload.menuItemId;
+      history.menu_item_name = event.payload.name ?? null;
       history.old_price = oldPrice;
       history.new_price = newPrice;
       history.changed_by = event.payload.changedBy ?? null;
       history.reason = event.payload.reason ?? null;
       history.status = isFlagged ? "FLAGGED" : "RECORDED";
+      history.type = "MANUAL";
       await this.priceHistoryRepo.save(history);
 
       if (isFlagged) {

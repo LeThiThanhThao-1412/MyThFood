@@ -13,6 +13,7 @@ import {
 import { useAuthStore } from "@mythfood/frontend-shared";
 import TopNav from "@/components/TopNav";
 import OptionGroupEditor from "@/components/OptionGroupEditor";
+import { parseMenuFile, downloadMenuTemplate } from "@/lib/menu-import";
 
 const GRADIENT_BG = [
   "from-[#f093fb] to-[#f5576c]",
@@ -46,6 +47,9 @@ export default function MenuPage() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -216,6 +220,37 @@ export default function MenuPage() {
     }
   }
 
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !merchant) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const payload = await parseMenuFile(file);
+      if (!payload.items.length) {
+        setImportResult({
+          error:
+            "Không tìm thấy món nào trong file. Kiểm tra cột header (DanhMuc, TenMon, Gia, ...).",
+        });
+        return;
+      }
+      const result: any = await merchantApi.importMenu(
+        merchant.id,
+        payload as any,
+      );
+      setImportResult(result);
+      const items = await merchantApi.getMenu(merchant.id, true);
+      setMenuItems(Array.isArray(items) ? items : []);
+      const cats = await merchantApi.getMenuCategories(merchant.id);
+      setCategories(Array.isArray(cats) ? cats : []);
+    } catch (err: any) {
+      setImportResult({ error: err?.message || "Nhập thất bại" });
+    } finally {
+      setImporting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f0f2f5]">
@@ -256,25 +291,89 @@ export default function MenuPage() {
           <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
             🍽️ Quản lý thực đơn
           </h1>
-          <button
-            onClick={() => {
-              setEditing(null);
-              setForm({
-                name: "",
-                price: "",
-                category: "",
-                categoryId: "",
-                description: "",
-                imageUrl: "",
-              });
-              setOptionGroups([]);
-              setShowForm(true);
-            }}
-            className="bg-[#ff6b35] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
-          >
-            + Thêm món
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => {
+                setEditing(null);
+                setForm({
+                  name: "",
+                  price: "",
+                  category: "",
+                  categoryId: "",
+                  description: "",
+                  imageUrl: "",
+                });
+                setOptionGroups([]);
+                setShowForm(true);
+              }}
+              className="bg-[#ff6b35] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
+            >
+              + Thêm món
+            </button>
+            <button
+              onClick={downloadMenuTemplate}
+              className="bg-white border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition"
+            >
+              ⬇️ Tải file mẫu
+            </button>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-green-700 transition disabled:opacity-50"
+            >
+              {importing ? "Đang nhập..." : "📥 Nhập menu"}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={handleImportFile}
+              className="hidden"
+            />
+          </div>
         </div>
+
+        {importResult && (
+          <div
+            className={`rounded-2xl shadow-sm p-4 ${
+              importResult.error
+                ? "bg-red-50 border border-red-200"
+                : "bg-green-50 border border-green-200"
+            }`}
+          >
+            {importResult.error ? (
+              <p className="text-sm text-red-700">❌ {importResult.error}</p>
+            ) : (
+              <div className="text-sm text-green-800">
+                <p className="font-semibold mb-1">
+                  ✅ Nhập thành công: {importResult.createdCategories} danh mục,{" "}
+                  {importResult.createdItems} món
+                </p>
+                {importResult.errors && importResult.errors.length > 0 && (
+                  <ul className="list-disc pl-5 text-red-700 mt-2 space-y-0.5">
+                    {importResult.errors
+                      .slice(0, 20)
+                      .map((er: any, i: number) => (
+                        <li key={i}>
+                          Dòng {er.index + 1} ({er.name || "không rõ"}):{" "}
+                          {er.message}
+                        </li>
+                      ))}
+                    {importResult.errors.length > 20 && (
+                      <li>... và {importResult.errors.length - 20} lỗi khác</li>
+                    )}
+                  </ul>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => setImportResult(null)}
+              className="text-xs text-gray-500 underline mt-2"
+            >
+              Đóng
+            </button>
+          </div>
+        )}
 
         {/* ===== Danh mục món ===== */}
         <div className="bg-white rounded-2xl shadow-sm p-4">

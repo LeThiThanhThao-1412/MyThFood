@@ -44,6 +44,17 @@ export class QueryUsersDto {
 export class UpdateUserStatusDto {
   @IsEnum(UserStatusFilter)
   status!: UserStatusFilter;
+
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsInt()
+  @Min(0)
+  @Max(3650)
+  durationDays?: number;
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }
 
 export class UserAdminResponseDto {
@@ -53,6 +64,9 @@ export class UserAdminResponseDto {
   email!: string | null;
   roles!: string[];
   status!: string;
+  suspendedUntil!: Date | null;
+  suspendedAt!: Date | null;
+  suspendReason!: string | null;
   createdAt!: Date;
   updatedAt!: Date;
 }

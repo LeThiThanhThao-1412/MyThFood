@@ -82,7 +82,7 @@ export function buildInvoicePdf(
     doc
       .fillColor(DARK)
       .fontSize(15)
-      .text("HÓA ĐƠN THANH TOÁN", left, y, { width, align: "center" });
+      .text("HÓA ĐƠN BÁN HÀNG", left, y, { width, align: "center" });
     y = doc.y + 6;
     doc
       .moveTo(left, y)
@@ -196,13 +196,51 @@ export function buildInvoicePdf(
     y += 12;
 
     // ---------- Totals ----------
-    const totals: [string, string][] = [
-      ["Tạm tính", moneyPdf(order.orderSubtotal)],
-      ["Phí giao hàng", moneyPdf(order.orderDeliveryFee)],
-      ["Phí dịch vụ", moneyPdf(order.orderServiceFee)],
-    ];
-    if (Number(order.orderDiscount) > 0) {
-      totals.push(["Giảm giá", `-${moneyPdf(order.orderDiscount)}`]);
+    // Hóa đơn bán tại quán: chỉ ghi nhận giá món + giảm giá flash sale DO QUÁN TẠO
+    // (MERCHANT) + mã giảm của quán. Không ghi phí giao hàng, phí dịch vụ (nền tảng),
+    // mã giảm do hệ thống tài trợ hay flash sale do nền tảng tài trợ (PLATFORM).
+    let merchantFlashSaleDiscount = 0;
+    let shopSubtotal = 0;
+    let originalSubtotal = 0;
+    for (const item of order.orderItems) {
+      const original = Number(item.originalPrice ?? 0);
+      const sale = Number(item.unitPrice ?? 0);
+      const qty = Number(item.quantity ?? 1);
+      if (original <= sale) {
+        // Món thường (không flash sale hoặc không có chiết khấu).
+        originalSubtotal += sale * qty;
+        shopSubtotal += sale * qty;
+        continue;
+      }
+      // Món đang flash sale: xác định nguồn tài trợ (mặc định MERCHANT cho đơn cũ).
+      const fundedBy = item.flashSaleFundedBy ?? "MERCHANT";
+      originalSubtotal += original * qty;
+      if (fundedBy === "MERCHANT") {
+        merchantFlashSaleDiscount += (original - sale) * qty;
+        shopSubtotal += sale * qty;
+      } else {
+        // PLATFORM tài trợ: quán vẫn bán đúng giá gốc (nền tảng chịu phần giảm).
+        shopSubtotal += original * qty;
+      }
+    }
+
+    const merchantDiscount =
+      order.orderDiscountFundedBy === "MERCHANT"
+        ? Number(order.orderDiscount)
+        : 0;
+    const shopTotal = Math.max(0, shopSubtotal - merchantDiscount);
+
+    const totals: [string, string][] = [];
+    if (merchantFlashSaleDiscount > 0) {
+      totals.push(["Giá gốc", moneyPdf(originalSubtotal)]);
+      totals.push([
+        "Giảm giá Flash Sale (quán)",
+        `-${moneyPdf(merchantFlashSaleDiscount)}`,
+      ]);
+    }
+    totals.push(["Tạm tính", moneyPdf(shopSubtotal)]);
+    if (merchantDiscount > 0) {
+      totals.push(["Mã giảm giá của quán", `-${moneyPdf(merchantDiscount)}`]);
     }
     for (const [key, value] of totals) {
       doc.fillColor(GRAY).fontSize(10).text(key, left, y, { width: 150 });
@@ -225,7 +263,7 @@ export function buildInvoicePdf(
       .fillColor(ORANGE)
       .fontSize(13)
       .text("Tổng cộng", left, y, { width: 150 });
-    doc.text(moneyPdf(order.orderTotalAmount), left + 150, y, {
+    doc.text(moneyPdf(shopTotal), left + 150, y, {
       width: width - 150,
       align: "right",
     });

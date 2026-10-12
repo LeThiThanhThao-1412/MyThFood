@@ -1,4 +1,9 @@
-import { Injectable, Logger } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from "@nestjs/common";
 import { HttpService } from "@nestjs/axios";
 import { firstValueFrom } from "rxjs";
 import { BusinessRuleViolationError } from "@mythfood/shared-kernel";
@@ -19,14 +24,42 @@ import {
 } from "./dtos/driver.dto";
 
 @Injectable()
-export class DriverService {
+export class DriverService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DriverService.name);
+
+  private sweepInterval: ReturnType<typeof setInterval> | null = null;
+
+  /** Chu kỳ quét tài xế online bị "câm lặng" (đóng tab / mất mạng). */
+  private static readonly SWEEP_INTERVAL_MS = 15_000;
+
+  /** Sau bao lâu không gửi vị trí thì coi như mất kết nối → tự chuyển OFFLINE. */
+  private static get OFFLINE_TIMEOUT_MS(): number {
+    const seconds = Number(process.env.DRIVER_OFFLINE_TIMEOUT_SECONDS || 20);
+    return (Number.isFinite(seconds) && seconds > 0 ? seconds : 20) * 1000;
+  }
 
   constructor(
     private readonly driverRepo: DriverRepository,
     private readonly locationHistoryRepo: DriverLocationHistoryRepository,
     private readonly httpService: HttpService,
   ) {}
+
+  onModuleInit(): void {
+    // Heartbeat: app tài xế gửi vị trí mỗi 5 giây (đóng vai trò "nhịp tim").
+    // Nếu quá OFFLINE_TIMEOUT_MS không có vị trí mới (tài xế đóng tab / mất mạng),
+    // tự chuyển tài xế sang OFFLINE để không còn nhận đơn.
+    this.sweepInterval = setInterval(() => {
+      this.sweepStaleOnlineDrivers().catch((err) =>
+        this.logger.warn(
+          `Auto-offline sweep failed: ${err?.message ?? String(err)}`,
+        ),
+      );
+    }, DriverService.SWEEP_INTERVAL_MS);
+  }
+
+  onModuleDestroy(): void {
+    if (this.sweepInterval) clearInterval(this.sweepInterval);
+  }
 
   // ---- Driver Profile CRUD ----
 
@@ -327,5 +360,39 @@ export class DriverService {
       onlineDrivers: all.filter((d) => d.driverOnlineStatus === "ONLINE")
         .length,
     };
+  }
+
+  // ---- Auto-offline (heartbeat timeout) ----
+
+  /**
+   * Quét tài xế đang ONLINE nhưng không gửi vị trí (heartbeat) trong
+   * `OFFLINE_TIMEOUT_MS` → coi như đã đóng tab/mất mạng và chuyển OFFLINE.
+   * Trả về số tài xế đã được chuyển offline.
+   */
+  async sweepStaleOnlineDrivers(): Promise<number> {
+    const cutoff = new Date(Date.now() - DriverService.OFFLINE_TIMEOUT_MS);
+    const staleDrivers =
+      await this.driverRepo.findOnlineWithStaleLocation(cutoff);
+
+    let count = 0;
+    for (const driver of staleDrivers) {
+      try {
+        driver.goOffline();
+        await this.driverRepo.save(driver);
+        count += 1;
+        this.logger.log(
+          `Auto-offline driver ${driver.id.toString()} (heartbeat timeout)`,
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Failed to auto-offline driver ${driver.id.toString()}: ${err?.message}`,
+        );
+      }
+    }
+
+    if (count > 0) {
+      this.logger.log(`Auto-offlined ${count} disconnected driver(s)`);
+    }
+    return count;
   }
 }

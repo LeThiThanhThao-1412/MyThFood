@@ -20,7 +20,7 @@ COPY packages/common/package.json packages/common/tsconfig.json packages/common/
 COPY apps/consumer-service/package.json apps/consumer-service/tsconfig.json apps/consumer-service/tsconfig.build.json apps/consumer-service/nest-cli.json apps/consumer-service/
 
 # Install pnpm globally
-RUN npm install -g pnpm@9.4.0
+RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile --filter @mythfood/consumer-service --prod false
@@ -45,7 +45,7 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # Install pnpm and wget for healthcheck
-RUN npm install -g pnpm@9.4.0 \
+RUN corepack enable && corepack prepare pnpm@9.4.0 --activate \
     && (for i in 1 2 3 4 5; do apk add --no-cache wget tzdata && exit 0; sleep 5; done; exit 1)
 
 # Copy root configs

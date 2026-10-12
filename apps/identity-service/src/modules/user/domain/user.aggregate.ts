@@ -26,6 +26,9 @@ export interface UserProps {
   status: UserStatus;
   deviceId: string | null;
   lastLoginAt: Date | null;
+  suspendedUntil?: Date | null;
+  suspendedAt?: Date | null;
+  suspendReason?: string | null;
 }
 
 export class User extends AggregateRoot<UserId> {
@@ -37,6 +40,9 @@ export class User extends AggregateRoot<UserId> {
   private status: UserStatus;
   private deviceId: string | null;
   private lastLoginAt: Date | null;
+  private suspendedUntil: Date | null;
+  private suspendedAt: Date | null;
+  private suspendReason: string | null;
 
   private constructor(id: UserId, props: UserProps) {
     super(id);
@@ -48,6 +54,9 @@ export class User extends AggregateRoot<UserId> {
     this.status = props.status;
     this.deviceId = props.deviceId;
     this.lastLoginAt = props.lastLoginAt;
+    this.suspendedUntil = props.suspendedUntil ?? null;
+    this.suspendedAt = props.suspendedAt ?? null;
+    this.suspendReason = props.suspendReason ?? null;
   }
 
   /**
@@ -82,6 +91,9 @@ export class User extends AggregateRoot<UserId> {
       status: "ACTIVE",
       deviceId: props.deviceId ?? null,
       lastLoginAt: null,
+      suspendedUntil: null,
+      suspendedAt: null,
+      suspendReason: null,
     });
 
     // Domain event
@@ -132,12 +144,23 @@ export class User extends AggregateRoot<UserId> {
 
   /**
    * Suspend the user account.
+   *
+   * @param durationDays Optional suspension duration in days. When provided, the
+   * account is automatically reactivated once the period elapses (managed by
+   * `autoUnlockIfExpired()`).
+   * @param reason Optional human-readable reason for the suspension.
    */
-  public suspend(): void {
+  public suspend(durationDays?: number, reason?: string): void {
     if (this.status === "BANNED") {
       throw new BusinessRuleViolationError("Cannot suspend a banned user");
     }
     this.status = "SUSPENDED";
+    this.suspendedAt = new Date();
+    this.suspendReason = reason ?? null;
+    this.suspendedUntil =
+      durationDays && durationDays > 0
+        ? new Date(Date.now() + durationDays * 86_400_000)
+        : null;
     this.markUpdated();
   }
 
@@ -161,11 +184,30 @@ export class User extends AggregateRoot<UserId> {
   }
 
   /**
-   * Activate the user account.
+   * Activate the user account (unlock). Clears any pending suspension metadata.
    */
   public activate(): void {
     this.status = "ACTIVE";
+    this.suspendedUntil = null;
+    this.suspendedAt = null;
+    this.suspendReason = null;
     this.markUpdated();
+  }
+
+  /**
+   * Reactivate a SUSPENDED account whose suspension period has elapsed.
+   * Returns true when the account was auto-unlocked.
+   */
+  public autoUnlockIfExpired(): boolean {
+    if (
+      this.status === "SUSPENDED" &&
+      this.suspendedUntil !== null &&
+      this.suspendedUntil.getTime() <= Date.now()
+    ) {
+      this.activate();
+      return true;
+    }
+    return false;
   }
 
   // Getters
@@ -199,6 +241,18 @@ export class User extends AggregateRoot<UserId> {
 
   get lastLogin(): Date | null {
     return this.lastLoginAt;
+  }
+
+  get suspensionUntil(): Date | null {
+    return this.suspendedUntil;
+  }
+
+  get suspensionAt(): Date | null {
+    return this.suspendedAt;
+  }
+
+  get suspensionReason(): string | null {
+    return this.suspendReason;
   }
 
   public hasRole(role: UserRole): boolean {

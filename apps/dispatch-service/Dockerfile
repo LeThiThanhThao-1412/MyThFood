@@ -13,7 +13,7 @@ COPY packages/event-contracts/package.json packages/event-contracts/tsconfig.jso
 COPY packages/common/package.json packages/common/tsconfig.json packages/common/
 COPY apps/dispatch-service/package.json apps/dispatch-service/tsconfig.json apps/dispatch-service/tsconfig.build.json apps/dispatch-service/nest-cli.json apps/dispatch-service/
 
-RUN npm install -g pnpm@9.4.0
+RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
 RUN pnpm install --frozen-lockfile --filter @mythfood/dispatch-service --prod false
 
 COPY packages/shared-kernel/src packages/shared-kernel/src/
@@ -43,7 +43,7 @@ COPY --from=builder /app/packages/common/dist packages/common/dist/
 COPY --from=builder /app/apps/dispatch-service/package.json apps/dispatch-service/
 COPY --from=builder /app/apps/dispatch-service/dist apps/dispatch-service/dist/
 
-RUN npm install -g pnpm@9.4.0
+RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
 RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
 RUN pnpm install --frozen-lockfile --filter @mythfood/dispatch-service --prod
 

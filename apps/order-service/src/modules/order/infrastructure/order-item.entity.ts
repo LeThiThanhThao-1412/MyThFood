@@ -37,6 +37,13 @@ export class OrderItemEntity {
   })
   original_price!: number | null;
 
+  @Column("varchar", {
+    length: 20,
+    name: "flash_sale_funded_by",
+    nullable: true,
+  })
+  flash_sale_funded_by!: string | null;
+
   @Column("decimal", { precision: 12, scale: 2 })
   subtotal!: number;
 

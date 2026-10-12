@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@mythfood/frontend-shared";
+import DriverLocationTracker from "@/components/DriverLocationTracker";
 
 const inter = Inter({ subsets: ["latin", "vietnamese"] });
 export const metadata: Metadata = {
@@ -16,7 +17,10 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className={inter.className}>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <DriverLocationTracker />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

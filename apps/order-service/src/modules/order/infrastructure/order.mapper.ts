@@ -49,6 +49,7 @@ export class OrderMapper {
       entity.quantity = item.quantity;
       entity.unit_price = item.unitPrice;
       entity.original_price = item.originalPrice ?? null;
+      entity.flash_sale_funded_by = item.flashSaleFundedBy ?? null;
       entity.subtotal = item.subtotal;
       entity.special_instructions = item.specialInstructions;
       entity.options = (item.options as any) ?? null;
@@ -70,6 +71,7 @@ export class OrderMapper {
       quantity: item.quantity,
       unitPrice: item.unit_price,
       originalPrice: item.original_price ?? null,
+      flashSaleFundedBy: item.flash_sale_funded_by ?? null,
       subtotal: item.subtotal,
       specialInstructions: item.special_instructions,
       options: (item.options as any) ?? null,

@@ -15,6 +15,9 @@ export const PRICE_HISTORY_STATUSES = [
 ] as const;
 export type PriceHistoryStatus = (typeof PRICE_HISTORY_STATUSES)[number];
 
+export const PRICE_HISTORY_TYPES = ["MANUAL", "FLASH_SALE"] as const;
+export type PriceHistoryType = (typeof PRICE_HISTORY_TYPES)[number];
+
 @Entity("price_history")
 export class PriceHistoryEntity {
   @PrimaryColumn({ type: "uuid" })
@@ -25,6 +28,9 @@ export class PriceHistoryEntity {
 
   @Column({ type: "uuid" })
   menu_item_id!: string;
+
+  @Column({ type: "varchar", length: 255, nullable: true })
+  menu_item_name!: string | null;
 
   @Column({ type: "decimal", precision: 10, scale: 2 })
   old_price!: number;
@@ -40,6 +46,9 @@ export class PriceHistoryEntity {
 
   @Column({ type: "varchar", length: 20, default: "RECORDED" })
   status!: PriceHistoryStatus;
+
+  @Column({ type: "varchar", length: 20, default: "MANUAL" })
+  type!: PriceHistoryType;
 
   @CreateDateColumn({ type: "timestamptz" })
   created_at!: Date;

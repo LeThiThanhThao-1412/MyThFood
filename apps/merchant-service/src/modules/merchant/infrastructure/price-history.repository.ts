@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository as TypeOrmRepo } from "typeorm";
+import { randomUUID } from "node:crypto";
 import { PriceHistoryEntity, PriceHistoryStatus } from "./price-history.entity";
 import { PriceAlertEntity } from "./price-alert.entity";
 
@@ -24,6 +25,34 @@ export class PriceHistoryRepository {
 
   async save(history: PriceHistoryEntity): Promise<PriceHistoryEntity> {
     return this.historyRepo.save(history);
+  }
+
+  async saveFlashSaleEntries(params: {
+    merchantId: string;
+    title: string | null;
+    items: Array<{
+      menuItemId: string;
+      menuItemName: string | null;
+      originalPrice: number;
+      salePrice: number;
+    }>;
+  }): Promise<number> {
+    const entities = params.items.map((it) => {
+      const e = new PriceHistoryEntity();
+      e.id = randomUUID();
+      e.merchant_id = params.merchantId;
+      e.menu_item_id = it.menuItemId;
+      e.menu_item_name = it.menuItemName;
+      e.old_price = it.originalPrice;
+      e.new_price = it.salePrice;
+      e.changed_by = null;
+      e.reason = params.title ? `Flash Sale: ${params.title}` : "Flash Sale";
+      e.status = "RECORDED";
+      e.type = "FLASH_SALE";
+      return e;
+    });
+    await this.historyRepo.save(entities);
+    return entities.length;
   }
 
   async findById(id: string): Promise<PriceHistoryEntity | null> {
