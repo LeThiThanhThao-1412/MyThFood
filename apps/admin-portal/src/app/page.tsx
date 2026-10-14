@@ -11,6 +11,7 @@ import {
 } from "@mythfood/api-client";
 import { useAuthStore, NotificationBell } from "@mythfood/frontend-shared";
 import { formatDateTime } from "../lib/format";
+import AdminShell from "../components/AdminShell";
 
 // ─── Constants ───────────────────────────────────────────────
 const GRADIENT_BARS = [
@@ -25,21 +26,18 @@ const GRADIENT_BARS = [
 
 const DAY_NAMES = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 
+const VEHICLE_TYPE_LABEL: Record<string, string> = {
+  MOTORBIKE: "Xe máy",
+  CAR: "Ô tô",
+  BICYCLE: "Xe đạp",
+  MOTO: "Xe máy",
+};
+
 // ─── Helper: safely parse API amount to number ───────────────
 function toNum(v: unknown): number {
   if (typeof v === "number") return v;
   if (typeof v === "string") return parseFloat(v) || 0;
   return 0;
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-  if (diff < 1) return "Vừa xong";
-  if (diff < 60) return `${diff} phút trước`;
-  const hours = Math.floor(diff / 60);
-  if (hours < 24) return `${hours} giờ trước`;
-  const days = Math.floor(hours / 24);
-  return `${days} ngày trước`;
 }
 
 function today(): string {
@@ -72,9 +70,6 @@ export default function AdminDashboardPage() {
   const router = useRouter();
   const { isAuthenticated, user, clearAuth } = useAuthStore();
 
-  const [tab, setTab] = useState<"overview" | "merchants" | "drivers">(
-    "overview",
-  );
   const [loading, setLoading] = useState(true);
 
   const [merchants, setMerchants] = useState<any[]>([]);
@@ -101,6 +96,8 @@ export default function AdminDashboardPage() {
     balance: number;
     transactions: any[];
   }>({ balance: 0, transactions: [] });
+  const [walletLastUpdated, setWalletLastUpdated] = useState<string>("");
+  const [walletError, setWalletError] = useState("");
   const [totalUsers, setTotalUsers] = useState(0);
   const [weeklyRevenue, setWeeklyRevenue] = useState<number[]>(
     new Array(7).fill(0),
@@ -234,16 +231,7 @@ export default function AdminDashboardPage() {
         setWeeklyRevenue(weekRev);
 
         // Fetch platform wallet (income from commissions)
-        try {
-          const pw = await walletApi.getWallet("PLATFORM_DEFAULT", "PLATFORM");
-          setPlatformWallet({
-            balance: Number(pw.balance) || 0,
-            transactions: pw.transactions || [],
-          });
-          setPlatformRevenue(Number(pw.balance) || 0);
-        } catch {
-          /* wallet service may be down */
-        }
+        await loadPlatformWallet();
 
         // Top merchants
         const top = Object.entries(merchantRevenue)
@@ -316,7 +304,7 @@ export default function AdminDashboardPage() {
                 <span className="font-semibold">{amountStr}₫</span>
               </>
             ),
-            time: timeAgo(o.createdAt),
+            time: formatDateTime(o.createdAt),
           };
         });
 
@@ -341,6 +329,35 @@ export default function AdminDashboardPage() {
     }
     load();
   }, [isAuthenticated, router]);
+
+  // ─── Platform wallet (ví nền tảng) ────────────────────────
+  async function loadPlatformWallet() {
+    try {
+      const pw = await walletApi.getWallet("PLATFORM_DEFAULT", "PLATFORM");
+      const balance = Number(pw.balance) || 0;
+      const transactions = Array.isArray(pw.transactions)
+        ? pw.transactions
+        : [];
+      setPlatformWallet({ balance, transactions });
+      setPlatformRevenue(balance);
+      setWalletLastUpdated(new Date().toLocaleTimeString("vi-VN"));
+      setWalletError("");
+    } catch {
+      setWalletError(
+        "Không thể tải ví nền tảng (wallet service có thể đang tắt)",
+      );
+    }
+  }
+
+  // Tự động làm mới số dư ví nền tảng mỗi 30 giây.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const timer = setInterval(() => {
+      loadPlatformWallet();
+    }, 30000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   // ─── Merchant actions ─────────────────────────────────────
   async function handleApproveMerchant(id: string) {
@@ -449,132 +466,8 @@ export default function AdminDashboardPage() {
   const maxWeekly = Math.max(...weeklyRevenue, 1);
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
-      {/* TOP BAR */}
-      <header className="bg-white rounded-2xl shadow-sm mx-4 mt-5 px-5 sm:px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-[1400px] xl:mx-auto">
-        <div className="text-2xl font-extrabold">
-          MyTh<span className="text-[#ff6b35]">Food</span>{" "}
-          <span className="text-[#1a1a2e]">Admin</span>
-        </div>
-        <div className="flex items-center gap-5 sm:gap-6 flex-wrap">
-          <span className="text-sm text-gray-400 whitespace-nowrap">
-            📅 {today()}
-          </span>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600">
-              👋 {user?.fullName || "Admin"}
-            </span>
-            <div className="w-9 h-9 bg-[#ff6b35] rounded-full flex items-center justify-center text-white font-bold text-sm">
-              {user?.fullName?.charAt(0)?.toUpperCase() || "A"}
-            </div>
-          </div>
-          <NotificationBell userId={user?.id} />
-          <button
-            onClick={() => {
-              clearAuth();
-              router.push("/login");
-            }}
-            className="text-xs text-gray-400 hover:text-red-500 transition bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-lg"
-          >
-            Đăng xuất
-          </button>
-        </div>
-      </header>
-
-      {/* Sub-page navigation */}
-      <div className="max-w-[1400px] xl:mx-auto px-4 pt-4 flex gap-2 overflow-x-auto">
-        <Link
-          href="/"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-[#ff6b35] text-white shadow-sm"
-        >
-          📊 Tổng quan
-        </Link>
-        <Link
-          href="/merchants"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-        >
-          🏪 Nhà hàng
-        </Link>
-        <Link
-          href="/drivers"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-        >
-          🛵 Tài xế
-        </Link>
-        <Link
-          href="/promotions"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-        >
-          🏷️ Khuyến mãi
-        </Link>
-        <Link
-          href="/price-management"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-        >
-          📉 Biến động giá
-        </Link>
-        <Link
-          href="/orders"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-        >
-          📋 Đơn hàng
-        </Link>
-        <Link
-          href="/transactions"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-        >
-          💰 Giao dịch
-        </Link>
-        <Link
-          href="/settlement"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-        >
-          💼 Quyết toán
-        </Link>
-        <Link
-          href="/revenue"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-        >
-          📈 Doanh thu
-        </Link>
-        <Link
-          href="/users"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-        >
-          👥 Người dùng
-        </Link>
-        <Link
-          href="/cases"
-          className="shrink-0 px-4 py-2 rounded-xl text-sm font-semibold bg-white text-gray-600 shadow-sm hover:bg-gray-50"
-        >
-          🛡️ Giải quyết sự cố
-        </Link>
-      </div>
-
-      <div className="max-w-[1400px] xl:mx-auto px-4 py-6">
-        {/* Tab Nav */}
-        <div className="flex gap-2 mb-6 bg-white rounded-2xl p-1.5 shadow-sm w-fit">
-          {(
-            [
-              { key: "overview", icon: "📊", label: "Tổng quan" },
-              {
-                key: "merchants",
-                icon: "🏪",
-                label: `Nhà hàng (${mStats.total})`,
-              },
-              { key: "drivers", icon: "🛵", label: `Tài xế (${dStats.total})` },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${tab === t.key ? "bg-[#ff6b35] text-white shadow-md shadow-orange-200" : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"}`}
-            >
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
-
+    <AdminShell>
+      <div className="space-y-6">
         {loading ? (
           <div className="space-y-6">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -594,7 +487,7 @@ export default function AdminDashboardPage() {
         ) : (
           <>
             {/* OVERVIEW TAB */}
-            {tab === "overview" && (
+            {true && (
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                   {[
@@ -651,12 +544,28 @@ export default function AdminDashboardPage() {
 
                 {/* Platform Wallet */}
                 <div className="bg-white rounded-2xl shadow-sm p-5 sm:p-6 mb-6">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
                     <h3 className="text-base font-bold">💰 Ví nền tảng</h3>
-                    <span className="text-xs text-gray-400">
-                      Thu nhập từ phí chiết khấu
-                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs text-gray-400">
+                        Thu nhập từ phí chiết khấu
+                        {walletLastUpdated
+                          ? ` · Cập nhật lúc ${walletLastUpdated}`
+                          : ""}
+                      </span>
+                      <button
+                        onClick={loadPlatformWallet}
+                        className="text-xs bg-violet-50 text-violet-700 px-3 py-1.5 rounded-lg font-semibold hover:bg-violet-100 transition"
+                      >
+                        🔄 Làm mới
+                      </button>
+                    </div>
                   </div>
+                  {walletError && (
+                    <div className="bg-red-50 text-red-600 text-sm p-3 rounded-xl mb-3">
+                      {walletError}
+                    </div>
+                  )}
                   <div className="bg-gradient-to-r from-[#8b5cf6] to-[#6d28d9] rounded-2xl p-5 text-white mb-4">
                     <p className="text-sm text-white/80">Số dư ví nền tảng</p>
                     <p className="text-3xl font-extrabold mt-1">
@@ -796,7 +705,7 @@ export default function AdminDashboardPage() {
             )}
 
             {/* MERCHANTS TAB */}
-            {tab === "merchants" && (
+            {false && (
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                   {[
@@ -918,7 +827,7 @@ export default function AdminDashboardPage() {
             )}
 
             {/* DRIVERS TAB */}
-            {tab === "drivers" && (
+            {false && (
               <>
                 {actionError && (
                   <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-xl text-sm mb-4 flex items-start gap-2">
@@ -1006,7 +915,10 @@ export default function AdminDashboardPage() {
                               {d.phoneNumber}
                             </td>
                             <td className="px-4 sm:px-6 py-4 text-sm text-gray-500 hidden lg:table-cell">
-                              {d.vehicleType}
+                              {d.vehicleType
+                                ? (VEHICLE_TYPE_LABEL[d.vehicleType] ??
+                                  d.vehicleType)
+                                : "—"}
                             </td>
                             <td className="px-4 sm:px-6 py-4 text-sm text-gray-500 hidden lg:table-cell">
                               {d.vehicleRegistrationNumber}
@@ -1054,6 +966,6 @@ export default function AdminDashboardPage() {
           </>
         )}
       </div>
-    </div>
+    </AdminShell>
   );
 }

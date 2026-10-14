@@ -320,6 +320,16 @@ export const merchantApi = {
   reject: (id: string) =>
     httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${id}/reject`),
 
+  suspend: (id: string) =>
+    httpClient.patch<Merchant>(PORTS.MERCHANT, `/merchants/${id}/status`, {
+      status: "SUSPENDED",
+    }),
+
+  reactivate: (id: string) =>
+    httpClient.patch<Merchant>(PORTS.MERCHANT, `/merchants/${id}/status`, {
+      status: "APPROVED",
+    }),
+
   getStats: (id: string, period?: string) =>
     httpClient.get<any>(PORTS.MERCHANT, `/merchants/${id}/stats`, {
       params: period ? { period } : undefined,
@@ -849,6 +859,19 @@ export const driverApi = {
     httpClient.patch<{ statusCode: number; data: Driver }>(
       PORTS.DRIVER,
       `/drivers/${id}/deactivate`,
+    ),
+
+  suspend: (id: string, body?: { durationDays?: number }) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/suspend`,
+      body || {},
+    ),
+
+  unlock: (id: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/unlock`,
     ),
 
   getDriverStats: () =>

@@ -73,6 +73,22 @@ export class DriverController {
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
+  @Patch("user/:userId/status")
+  @Roles("ADMIN")
+  async updateStatusByUserId(
+    @Param("userId") userId: string,
+    @Body() body: { status: string },
+  ) {
+    const driver = await this.driverService.setStatusByUserId(
+      userId,
+      body.status,
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      data: driver ? this.toResponse(driver) : null,
+    };
+  }
+
   @Get(":id")
   @Roles("DRIVER", "ADMIN")
   async getById(@Param("id") id: string) {
@@ -122,8 +138,21 @@ export class DriverController {
 
   @Patch(":id/suspend")
   @Roles("ADMIN")
-  async suspend(@Param("id") id: string) {
-    const driver = await this.driverService.suspendDriver(id);
+  async suspend(
+    @Param("id") id: string,
+    @Body() body: { durationDays?: number },
+  ) {
+    const driver = await this.driverService.suspendDriver(
+      id,
+      body.durationDays,
+    );
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  @Patch(":id/unlock")
+  @Roles("ADMIN")
+  async unlock(@Param("id") id: string) {
+    const driver = await this.driverService.unlockDriver(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
@@ -312,6 +341,7 @@ export class DriverController {
       vehicleRegistrationNumber:
         driver.driverVehicleRegistrationNumber ??
         driver._vehicleRegistrationNumber,
+      vehicleType: driver.driverVehicleType ?? driver._vehicleType ?? null,
       insuranceNumber: driver.driverInsuranceNumber ?? driver._insuranceNumber,
       status: driver.driverStatus ?? driver._status,
       onlineStatus: driver.driverOnlineStatus ?? driver._onlineStatus,

@@ -49,6 +49,26 @@ describe("Driver Aggregate", () => {
     });
   });
 
+  describe("unlock", () => {
+    it("should unlock a suspended driver immediately and clear the accept block", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.activate();
+      driver.suspendFor(3);
+      expect(driver.driverStatus).toBe(DriverStatus.SUSPENDED);
+      expect(driver.driverAcceptBlockedUntil).not.toBeNull();
+
+      driver.unlock();
+      expect(driver.driverStatus).toBe(DriverStatus.ACTIVE);
+      expect(driver.driverAcceptBlockedUntil).toBeNull();
+      expect(driver.isBlocked).toBe(false);
+      expect(driver.driverOnlineStatus).toBe(DriverOnlineStatus.OFFLINE);
+
+      // Sau khi mở khóa, tài xế có thể online lại bình thường.
+      expect(() => driver.goOnline()).not.toThrow();
+    });
+  });
+
   describe("online/offline", () => {
     it("should only allow active drivers to go online", () => {
       const driver = Driver.create(createProps);

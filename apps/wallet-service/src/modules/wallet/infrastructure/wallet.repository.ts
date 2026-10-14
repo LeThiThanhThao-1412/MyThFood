@@ -162,26 +162,51 @@ export class WalletRepository {
     endDate?: string,
   ): Promise<{
     totalTopupVolume: number;
+    totalWithdrawVolume: number;
     totalSettlementVolume: number;
+    totalCodVolume: number;
   }> {
     const statsQb = this.txRepo.createQueryBuilder("tx");
     if (startDate)
       statsQb.andWhere("tx.createdAt >= :startDate", { startDate });
     if (endDate) statsQb.andWhere("tx.createdAt <= :endDate", { endDate });
     const stats = await statsQb
-      .select("tx.referenceType", "type")
+      .select("tx.type", "txType")
+      .addSelect("tx.referenceType", "refType")
       .addSelect("SUM(tx.amount)", "total")
-      .where("tx.type = 'CREDIT'")
-      .groupBy("tx.referenceType")
+      .groupBy("tx.type")
+      .addGroupBy("tx.referenceType")
       .getRawMany();
     let totalTopupVolume = 0;
+    let totalWithdrawVolume = 0;
     let totalSettlementVolume = 0;
+    let totalCodVolume = 0;
     for (const row of stats) {
-      if (row.type === "TOPUP") totalTopupVolume = Number(row.total) || 0;
-      if (row.type === "SETTLEMENT")
-        totalSettlementVolume = Number(row.total) || 0;
+      const amount = Math.abs(Number(row.total) || 0);
+      const txType = row.txType;
+      const refType = row.refType;
+      if (refType === "TOPUP" && txType === "CREDIT") {
+        totalTopupVolume += amount;
+      }
+      if (refType === "WITHDRAW") {
+        totalWithdrawVolume += amount;
+      }
+      if (refType === "COD_SETTLEMENT" && txType === "CREDIT") {
+        totalCodVolume += amount;
+      }
+      if (
+        (refType === "SETTLEMENT" || refType === "COD_SETTLEMENT") &&
+        txType === "CREDIT"
+      ) {
+        totalSettlementVolume += amount;
+      }
     }
-    return { totalTopupVolume, totalSettlementVolume };
+    return {
+      totalTopupVolume,
+      totalWithdrawVolume,
+      totalSettlementVolume,
+      totalCodVolume,
+    };
   }
 
   async getEarningsByOwner(

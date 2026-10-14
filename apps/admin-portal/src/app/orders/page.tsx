@@ -3,6 +3,26 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { orderApi } from "@mythfood/api-client";
+import AdminShell from "../../components/AdminShell";
+
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  PENDING: { label: "Chờ xác nhận", cls: "bg-yellow-100 text-yellow-700" },
+  CONFIRMED: { label: "Đã xác nhận", cls: "bg-blue-100 text-blue-700" },
+  PREPARING: { label: "Đang chuẩn bị", cls: "bg-purple-100 text-purple-700" },
+  READY_FOR_PICKUP: {
+    label: "Sẵn sàng lấy",
+    cls: "bg-orange-100 text-orange-700",
+  },
+  OUT_FOR_DELIVERY: { label: "Đang giao", cls: "bg-cyan-100 text-cyan-700" },
+  DELIVERED: { label: "Đã giao", cls: "bg-green-100 text-green-700" },
+  CANCELLED: { label: "Đã hủy", cls: "bg-red-100 text-red-700" },
+  REJECTED: { label: "Bị từ chối", cls: "bg-gray-100 text-gray-600" },
+  CANCELLED_NO_DRIVER: {
+    label: "Hủy (không có tài xế)",
+    cls: "bg-red-100 text-red-700",
+  },
+  DELIVERY_FAILED: { label: "Giao thất bại", cls: "bg-red-100 text-red-700" },
+};
 
 export default function AdminOrdersPage() {
   const router = useRouter();
@@ -43,21 +63,12 @@ export default function AdminOrdersPage() {
   }
 
   const statusBadge = (s: string) => {
-    const m: Record<string, string> = {
-      PENDING: "bg-yellow-100 text-yellow-700",
-      CONFIRMED: "bg-blue-100 text-blue-700",
-      PREPARING: "bg-purple-100 text-purple-700",
-      READY_FOR_PICKUP: "bg-orange-100 text-orange-700",
-      OUT_FOR_DELIVERY: "bg-cyan-100 text-cyan-700",
-      DELIVERED: "bg-green-100 text-green-700",
-      CANCELLED: "bg-red-100 text-red-700",
-      REJECTED: "bg-gray-100 text-gray-600",
-    };
+    const meta = STATUS_META[s] || { label: s, cls: "bg-gray-100" };
     return (
       <span
-        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${m[s] || "bg-gray-100"}`}
+        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${meta.cls}`}
       >
-        {s}
+        {meta.label}
       </span>
     );
   };
@@ -67,20 +78,8 @@ export default function AdminOrdersPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
-      <header className="bg-white shadow-sm px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push("/")}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            ← Quay lại
-          </button>
-          <h1 className="text-xl font-bold">📦 Quản lý Đơn hàng</h1>
-        </div>
-      </header>
-
-      <div className="max-w-[1400px] mx-auto px-4 py-6">
+    <AdminShell title="📦 Quản lý Đơn hàng">
+      <div className="space-y-4">
         {/* Stats */}
         {stats && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -134,7 +133,7 @@ export default function AdminOrdersPage() {
               onClick={() => setStatusFilter(s)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition ${statusFilter === s ? "bg-[#ff6b35] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
             >
-              {s || "Tất cả"}
+              {s ? STATUS_META[s]?.label || s : "Tất cả"}
             </button>
           ))}
         </div>
@@ -212,6 +211,6 @@ export default function AdminOrdersPage() {
           </div>
         )}
       </div>
-    </div>
+    </AdminShell>
   );
 }

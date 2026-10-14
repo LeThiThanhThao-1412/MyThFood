@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { httpClient } from "@mythfood/api-client";
+import AdminShell from "../../components/AdminShell";
 
 interface UserItem {
   id: string;
@@ -141,20 +142,8 @@ export default function AdminUsersPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
-      <header className="bg-white shadow-sm px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push("/")}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            ← Quay lại
-          </button>
-          <h1 className="text-xl font-bold">👥 Quản lý Users</h1>
-        </div>
-      </header>
-
-      <div className="max-w-[1400px] mx-auto px-4 py-6">
+    <AdminShell title="👥 Quản lý Người dùng">
+      <div className="space-y-4">
         {/* Filters */}
         <div className="bg-white rounded-xl shadow-sm p-4 mb-4 flex flex-wrap gap-3">
           <input
@@ -382,6 +371,6 @@ export default function AdminUsersPage() {
           </div>
         </div>
       )}
-    </div>
+    </AdminShell>
   );
 }

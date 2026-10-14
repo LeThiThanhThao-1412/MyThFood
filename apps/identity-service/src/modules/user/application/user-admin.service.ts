@@ -6,6 +6,8 @@ import {
   OnModuleInit,
   OnModuleDestroy,
 } from "@nestjs/common";
+import { HttpService } from "@nestjs/axios";
+import { firstValueFrom } from "rxjs";
 import { UserRepository } from "../infrastructure/user.repository";
 import { User } from "../domain/user.aggregate";
 import { UserId } from "../domain/user-id";
@@ -23,7 +25,10 @@ export class UserAdminService implements OnModuleInit, OnModuleDestroy {
   /** Chu kỳ quét tự mở khóa các tài khoản SUSPENDED hết hạn (ms). */
   private static readonly SWEEP_INTERVAL_MS = 60_000;
 
-  constructor(private readonly userRepository: UserRepository) {}
+  constructor(
+    private readonly userRepository: UserRepository,
+    private readonly httpService: HttpService,
+  ) {}
 
   onModuleInit(): void {
     this.sweepInterval = setInterval(() => {
@@ -101,6 +106,11 @@ export class UserAdminService implements OnModuleInit, OnModuleDestroy {
 
     await this.userRepository.save(user);
 
+    // Đồng bộ khóa/mở khóa sang merchant/driver (nếu user là chủ nhà hàng/tài xế).
+    if (status === "SUSPENDED" || status === "ACTIVE") {
+      await this.syncMerchantDriverStatus(user, status);
+    }
+
     return this.toAdminResponse(user);
   }
 
@@ -118,6 +128,8 @@ export class UserAdminService implements OnModuleInit, OnModuleDestroy {
 
     user.activate();
     await this.userRepository.save(user);
+
+    await this.syncMerchantDriverStatus(user, "ACTIVE");
 
     return this.toAdminResponse(user);
   }
@@ -142,6 +154,56 @@ export class UserAdminService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`Auto-unlocked ${count} expired suspended account(s)`);
     }
     return count;
+  }
+
+  /**
+   * Đồng bộ trạng thái khóa/mở khóa sang merchant-service/driver-service khi user
+   * là MERCHANT_OWNER hoặc DRIVER. Best-effort (fire-and-forget).
+   */
+  private async syncMerchantDriverStatus(
+    user: User,
+    status: string,
+  ): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    const userId = user.id.toString();
+    const merchantStatus = status === "SUSPENDED" ? "SUSPENDED" : "APPROVED";
+    const driverStatus = status === "SUSPENDED" ? "SUSPENDED" : "ACTIVE";
+
+    if (user.userRoles.includes("MERCHANT_OWNER")) {
+      const url =
+        process.env.MERCHANT_SERVICE_URL || "http://merchant-service:3003";
+      try {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${url}/api/v1/merchants/user/${userId}/status`,
+            { status: merchantStatus },
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Sync merchant failed for user ${userId}: ${err?.message}`,
+        );
+      }
+    }
+
+    if (user.userRoles.includes("DRIVER")) {
+      const url =
+        process.env.DRIVER_SERVICE_URL || "http://driver-service:3007";
+      try {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${url}/api/v1/drivers/user/${userId}/status`,
+            { status: driverStatus },
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Sync driver failed for user ${userId}: ${err?.message}`,
+        );
+      }
+    }
   }
 
   private toAdminResponse(user: User): UserAdminResponseDto {

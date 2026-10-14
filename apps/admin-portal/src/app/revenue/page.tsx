@@ -5,6 +5,7 @@ import Link from "next/link";
 import { orderApi, paymentApi, walletApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { formatVnd, toNum } from "../../lib/format";
+import AdminShell from "../../components/AdminShell";
 
 export default function AdminRevenuePage() {
   const router = useRouter();
@@ -55,17 +56,8 @@ export default function AdminRevenuePage() {
   const balanceByType = walletStats?.balanceByType || {};
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
-      <header className="bg-white shadow-sm px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-gray-400 hover:text-gray-600">
-            ← Quay lại
-          </Link>
-          <h1 className="text-xl font-bold">📈 Quản lý Doanh thu</h1>
-        </div>
-      </header>
-
-      <div className="max-w-[1400px] mx-auto px-4 py-6 space-y-6">
+    <AdminShell title="📈 Quản lý Doanh thu">
+      <div className="space-y-4">
         {error && (
           <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm">
             {error}
@@ -187,7 +179,7 @@ export default function AdminRevenuePage() {
           </>
         )}
       </div>
-    </div>
+    </AdminShell>
   );
 }
 

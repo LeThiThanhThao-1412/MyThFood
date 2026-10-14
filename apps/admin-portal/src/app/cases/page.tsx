@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { resolutionApi, walletApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import AdminShell from "../../components/AdminShell";
 
 const CASE_STATUS_BADGE: Record<string, string> = {
   OPEN: "bg-gray-100 text-gray-600",
@@ -15,6 +16,17 @@ const CASE_STATUS_BADGE: Record<string, string> = {
   WITHDRAWN: "bg-gray-100 text-gray-500",
   ESCALATED: "bg-purple-100 text-purple-700",
   CLOSED: "bg-gray-200 text-gray-500",
+};
+
+const CASE_STATUS_LABEL: Record<string, string> = {
+  OPEN: "Mở mới",
+  UNDER_REVIEW: "Đang xem xét",
+  WAITING_EVIDENCE: "Chờ bằng chứng",
+  RESOLVED: "Đã giải quyết",
+  REJECTED: "Đã bác bỏ",
+  WITHDRAWN: "Đã rút lại",
+  ESCALATED: "Đã chuyển cấp",
+  CLOSED: "Đã đóng",
 };
 
 const SEVERITY_BADGE: Record<string, string> = {
@@ -415,20 +427,9 @@ export default function AdminCasesPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
-      <header className="bg-white shadow-sm px-6 py-4 flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push("/")}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            ← Quay lại
-          </button>
-          <h1 className="text-xl font-bold">
-            🛡️ Khiếu nại · Gian lận · Xử phạt
-          </h1>
-        </div>
-        <div className="flex gap-2">
+    <AdminShell title="🛡️ Khiếu nại · Gian lận · Xử phạt">
+      <div className="space-y-4">
+        <div className="flex gap-2 flex-wrap">
           {(
             [
               ["cases", "📋 Vụ việc"],
@@ -449,9 +450,6 @@ export default function AdminCasesPage() {
             </button>
           ))}
         </div>
-      </header>
-
-      <div className="max-w-[1400px] mx-auto px-4 py-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-white rounded-2xl shadow-sm p-4">
             <p className="text-xs font-semibold text-gray-400 uppercase mb-1">
@@ -496,12 +494,12 @@ export default function AdminCasesPage() {
                   className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
                 >
                   <option value="">Tất cả trạng thái</option>
-                  <option value="OPEN">OPEN</option>
-                  <option value="UNDER_REVIEW">UNDER_REVIEW</option>
-                  <option value="WAITING_EVIDENCE">WAITING_EVIDENCE</option>
-                  <option value="RESOLVED">RESOLVED</option>
-                  <option value="REJECTED">REJECTED</option>
-                  <option value="ESCALATED">ESCALATED</option>
+                  <option value="OPEN">Mở mới</option>
+                  <option value="UNDER_REVIEW">Đang xem xét</option>
+                  <option value="WAITING_EVIDENCE">Chờ bằng chứng</option>
+                  <option value="RESOLVED">Đã giải quyết</option>
+                  <option value="REJECTED">Đã bác bỏ</option>
+                  <option value="ESCALATED">Đã chuyển cấp</option>
                 </select>
                 <select
                   value={fType}
@@ -683,7 +681,7 @@ export default function AdminCasesPage() {
                             <span
                               className={`px-2 py-0.5 rounded-full text-xs font-semibold ${CASE_STATUS_BADGE[c.status] || "bg-gray-100 text-gray-600"}`}
                             >
-                              {c.status}
+                              {CASE_STATUS_LABEL[c.status] || c.status}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-xs text-gray-400 hidden md:table-cell">
@@ -723,7 +721,7 @@ export default function AdminCasesPage() {
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-semibold ${CASE_STATUS_BADGE[selected.status] || "bg-gray-100 text-gray-600"}`}
                     >
-                      {selected.status}
+                      {CASE_STATUS_LABEL[selected.status] || selected.status}
                     </span>
                   </div>
 
@@ -1315,37 +1313,6 @@ export default function AdminCasesPage() {
           </div>
         )}
       </div>
-
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">
-        <Link
-          href="/"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">📊</span>
-          <span>Dashboard</span>
-        </Link>
-        <Link
-          href="/cases"
-          className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline"
-        >
-          <span className="text-[22px]">🛡️</span>
-          <span>Khiếu nại</span>
-        </Link>
-        <Link
-          href="/orders"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">📋</span>
-          <span>Orders</span>
-        </Link>
-        <Link
-          href="/users"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">👥</span>
-          <span>Users</span>
-        </Link>
-      </nav>
-    </div>
+    </AdminShell>
   );
 }

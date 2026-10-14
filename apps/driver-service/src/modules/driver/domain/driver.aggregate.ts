@@ -36,6 +36,7 @@ export class Driver extends AggregateRoot<DriverId> {
   private _idCardNumber: string;
   private _driverLicenseNumber: string;
   private _vehicleRegistrationNumber: string;
+  private _vehicleType: string | null;
   private _insuranceNumber: string;
   private _criminalRecordUrl: string | null;
   private _status: DriverStatus;
@@ -71,6 +72,7 @@ export class Driver extends AggregateRoot<DriverId> {
       idCardNumber: string;
       driverLicenseNumber: string;
       vehicleRegistrationNumber: string;
+      vehicleType: string | null;
       insuranceNumber: string;
       criminalRecordUrl: string | null;
       status: DriverStatus;
@@ -105,6 +107,7 @@ export class Driver extends AggregateRoot<DriverId> {
     this._idCardNumber = props.idCardNumber;
     this._driverLicenseNumber = props.driverLicenseNumber;
     this._vehicleRegistrationNumber = props.vehicleRegistrationNumber;
+    this._vehicleType = props.vehicleType ?? null;
     this._insuranceNumber = props.insuranceNumber;
     this._criminalRecordUrl = props.criminalRecordUrl;
     this._status = props.status;
@@ -140,6 +143,7 @@ export class Driver extends AggregateRoot<DriverId> {
     idCardNumber: string;
     driverLicenseNumber: string;
     vehicleRegistrationNumber: string;
+    vehicleType?: string;
     insuranceNumber: string;
     criminalRecordUrl?: string;
   }): Driver {
@@ -154,6 +158,7 @@ export class Driver extends AggregateRoot<DriverId> {
       idCardNumber: props.idCardNumber,
       driverLicenseNumber: props.driverLicenseNumber,
       vehicleRegistrationNumber: props.vehicleRegistrationNumber,
+      vehicleType: props.vehicleType ?? null,
       insuranceNumber: props.insuranceNumber,
       criminalRecordUrl: props.criminalRecordUrl ?? null,
       status: DriverStatus.INACTIVE,
@@ -191,6 +196,7 @@ export class Driver extends AggregateRoot<DriverId> {
       idCardNumber: string;
       driverLicenseNumber: string;
       vehicleRegistrationNumber: string;
+      vehicleType: string | null;
       insuranceNumber: string;
       criminalRecordUrl: string | null;
       status: DriverStatus;
@@ -250,6 +256,7 @@ export class Driver extends AggregateRoot<DriverId> {
       );
     }
     this._status = DriverStatus.ACTIVE;
+    this._acceptBlockedUntil = null;
     this.markUpdated();
   }
 
@@ -275,6 +282,17 @@ export class Driver extends AggregateRoot<DriverId> {
       Date.now() + durationDays * 24 * 60 * 60 * 1000,
     );
     this._releaseCurrentSession();
+    this.markUpdated();
+  }
+
+  /**
+   * Mở khóa ngay một tài xế đang bị SUSPENDED (hỗ trợ khi khóa nhầm),
+   * không cần chờ hết hạn `acceptBlockedUntil`.
+   */
+  public unlock(): void {
+    this._status = DriverStatus.ACTIVE;
+    this._onlineStatus = DriverOnlineStatus.OFFLINE;
+    this._acceptBlockedUntil = null;
     this.markUpdated();
   }
 
@@ -551,6 +569,9 @@ export class Driver extends AggregateRoot<DriverId> {
   }
   get driverVehicleRegistrationNumber(): string {
     return this._vehicleRegistrationNumber;
+  }
+  get driverVehicleType(): string | null {
+    return this._vehicleType;
   }
   get driverInsuranceNumber(): string {
     return this._insuranceNumber;

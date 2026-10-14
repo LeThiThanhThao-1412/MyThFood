@@ -5,6 +5,7 @@ import Link from "next/link";
 import { merchantApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { formatDateTime, formatVnd, toNum } from "../../../lib/format";
+import AdminShell from "../../../components/AdminShell";
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   PENDING: { label: "Chờ duyệt", cls: "bg-yellow-100 text-yellow-700" },
@@ -88,18 +89,8 @@ export default function AdminMerchantDetailPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
-      <header className="bg-[#1a1a2e] px-6 py-4 text-white">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <Link href="/merchants" className="text-white/60 text-lg">
-            ←
-          </Link>
-          <h1 className="text-lg font-bold">🏪 Chi tiết nhà hàng</h1>
-          <div className="w-6" />
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+    <AdminShell title="🏪 Chi tiết nhà hàng">
+      <div className="space-y-4">
         {msg && <div className="bg-white rounded-xl p-3 text-sm">{msg}</div>}
 
         <div className="bg-white rounded-2xl shadow-sm p-6">
@@ -236,8 +227,8 @@ export default function AdminMerchantDetailPage() {
             </div>
           )}
         </div>
-      </main>
-    </div>
+      </div>
+    </AdminShell>
   );
 }
 

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { walletApi } from "@mythfood/api-client";
 import { formatDateTime } from "../../lib/format";
+import AdminShell from "../../components/AdminShell";
 
 function formatVnd(n: unknown): string {
   return (Number(n) || 0).toLocaleString("vi-VN") + "₫";
@@ -126,20 +127,8 @@ export default function AdminSettlementPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
-      <header className="bg-white shadow-sm px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push("/")}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            ← Quay lại
-          </button>
-          <h1 className="text-xl font-bold">💼 Quyết toán cuối ngày (23:00)</h1>
-        </div>
-      </header>
-
-      <div className="max-w-[1400px] mx-auto px-4 py-6 space-y-6">
+    <AdminShell title="💼 Quản lý Quyết toán">
+      <div className="space-y-4">
         {/* ───────── Manual trigger ───────── */}
         <div className="bg-white rounded-2xl shadow-sm p-6">
           <h2 className="font-bold text-[#1a1a2e] mb-1">
@@ -474,6 +463,6 @@ export default function AdminSettlementPage() {
           )}
         </div>
       </div>
-    </div>
+    </AdminShell>
   );
 }

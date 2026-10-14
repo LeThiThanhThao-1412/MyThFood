@@ -173,11 +173,20 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     const qb = this.repository
       .createQueryBuilder("o")
       .select("TO_CHAR(o.created_at, 'YYYY-MM-DD')", "date")
-      .addSelect("COUNT(*)", "orders")
-      .addSelect("COALESCE(SUM(o.total_amount), 0)", "revenue")
-      .where("o.deleted_at IS NULL")
-      .andWhere("o.status != :cancelled", { cancelled: "CANCELLED" })
-      .andWhere("o.status != :rejected", { rejected: "REJECTED" });
+      .addSelect("COUNT(*)", "totalOrders")
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN o.status NOT IN ('CANCELLED','REJECTED') THEN o.total_amount ELSE 0 END), 0)",
+        "totalRevenue",
+      )
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN o.status = 'CANCELLED' THEN 1 ELSE 0 END), 0)",
+        "cancelledOrders",
+      )
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN o.status = 'DELIVERED' THEN 1 ELSE 0 END), 0)",
+        "completedOrders",
+      )
+      .where("o.deleted_at IS NULL");
 
     if (options?.startDate) {
       qb.andWhere("o.created_at >= :startDate", {
@@ -195,18 +204,32 @@ export class OrderRepository implements IRepository<Order, OrderId> {
 
     const dailyStats = rows.map((r) => ({
       date: r.date,
-      orders: Number(r.orders ?? 0),
-      revenue: Number(r.revenue ?? 0),
+      totalOrders: Number(r.totalOrders ?? 0),
+      totalRevenue: Number(r.totalRevenue ?? 0),
+      cancelledOrders: Number(r.cancelledOrders ?? 0),
+      completedOrders: Number(r.completedOrders ?? 0),
     }));
 
     const summary = dailyStats.reduce(
       (acc, d) => {
-        acc.totalOrders += d.orders;
-        acc.totalRevenue += d.revenue;
+        acc.totalOrders += d.totalOrders;
+        acc.totalRevenue += d.totalRevenue;
+        acc.cancelledOrders += d.cancelledOrders;
+        acc.completedOrders += d.completedOrders;
         return acc;
       },
-      { totalOrders: 0, totalRevenue: 0 },
-    );
+      {
+        totalOrders: 0,
+        totalRevenue: 0,
+        cancelledOrders: 0,
+        completedOrders: 0,
+      },
+    ) as any;
+
+    summary.averageOrderValue =
+      summary.totalOrders > 0
+        ? Math.round(summary.totalRevenue / summary.totalOrders)
+        : 0;
 
     return { dailyStats, summary };
   }

@@ -131,6 +131,19 @@ export class MerchantController {
     return merchant ? this.toMerchantResponse(merchant) : null;
   }
 
+  @Patch("user/:userId/status")
+  @Roles("ADMIN")
+  async updateStatusByUserId(
+    @Param("userId") userId: string,
+    @Body() dto: { status: string },
+  ): Promise<MerchantResponseDto | null> {
+    const merchant = await this.merchantService.updateStatusByUserId(
+      userId,
+      dto.status,
+    );
+    return merchant ? this.toMerchantResponse(merchant) : null;
+  }
+
   @Get(":id")
   async findById(@Param("id") id: string): Promise<MerchantResponseDto> {
     const merchant = await this.merchantService.findById(id);

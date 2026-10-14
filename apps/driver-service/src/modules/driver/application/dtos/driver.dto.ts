@@ -30,6 +30,10 @@ export class CreateDriverDto {
   @IsString()
   vehicleRegistrationNumber!: string;
 
+  @IsOptional()
+  @IsString()
+  vehicleType?: string;
+
   @IsString()
   insuranceNumber!: string;
 

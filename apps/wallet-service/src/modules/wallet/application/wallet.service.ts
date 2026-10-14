@@ -1308,12 +1308,14 @@ export class WalletService {
   }) {
     const { items, total } =
       await this.walletRepo.findTransactionsPaginated(params);
-    const { totalTopupVolume, totalSettlementVolume } =
-      await this.walletRepo.getStatsSummary(params.startDate, params.endDate);
+    const summary = await this.walletRepo.getStatsSummary(
+      params.startDate,
+      params.endDate,
+    );
     return {
       items,
       total,
-      summary: { totalTopupVolume, totalSettlementVolume },
+      summary,
     };
   }
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { merchantApi, promotionApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import AdminShell from "../../components/AdminShell";
 
 function toNum(v: unknown): number {
   if (typeof v === "number") return v;
@@ -171,18 +172,8 @@ export default function AdminPromotionsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0 w-full">
-      <header className="bg-[#1a1a2e] px-4 sm:px-6 py-4 text-white">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <Link href="/" className="text-white/60 text-lg">
-            ←
-          </Link>
-          <h1 className="text-lg font-bold">🏷️ Quản lý khuyến mãi</h1>
-          <div className="w-6" />
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+    <AdminShell title="🏷️ Quản lý khuyến mãi">
+      <div className="space-y-4">
         <div className="bg-white rounded-2xl shadow-sm p-5">
           <h2 className="font-bold text-lg mb-4">
             🎁 Voucher bồi thường (đơn hủy do không có tài xế)
@@ -391,45 +382,7 @@ export default function AdminPromotionsPage() {
             </div>
           )}
         </div>
-      </main>
-
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">
-        <Link
-          href="/"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">📊</span>
-          <span>Dashboard</span>
-        </Link>
-        <Link
-          href="/merchants"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">🏪</span>
-          <span>Merchants</span>
-        </Link>
-        <Link
-          href="/promotions"
-          className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline"
-        >
-          <span className="text-[22px]">🏷️</span>
-          <span>Promo</span>
-        </Link>
-        <Link
-          href="/orders"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">📋</span>
-          <span>Orders</span>
-        </Link>
-        <Link
-          href="/users"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">👥</span>
-          <span>Users</span>
-        </Link>
-      </nav>
-    </div>
+      </div>
+    </AdminShell>
   );
 }

@@ -45,6 +45,9 @@ export class DriverEntity {
   @Column({ type: "varchar", length: 30 })
   vehicleRegistrationNumber!: string;
 
+  @Column({ type: "varchar", length: 20, nullable: true, default: "MOTORBIKE" })
+  vehicleType!: string | null;
+
   @Column({ type: "varchar", length: 30 })
   insuranceNumber!: string;
 

@@ -54,6 +54,11 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
           `Auto-offline sweep failed: ${err?.message ?? String(err)}`,
         ),
       );
+      this.sweepExpiredSuspensions().catch((err) =>
+        this.logger.warn(
+          `Auto-unlock sweep failed: ${err?.message ?? String(err)}`,
+        ),
+      );
     }, DriverService.SWEEP_INTERVAL_MS);
   }
 
@@ -134,10 +139,42 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
     return driver;
   }
 
-  async suspendDriver(id: string): Promise<Driver> {
+  async suspendDriver(id: string, durationDays?: number): Promise<Driver> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
-    driver.suspend();
+    if (durationDays && durationDays > 0) {
+      driver.suspendFor(durationDays);
+    } else {
+      driver.suspend();
+    }
     await this.driverRepo.save(driver);
+    return driver;
+  }
+
+  /** Mở khóa ngay tài xế đang bị khóa (không cần chờ hết hạn khóa). */
+  async unlockDriver(id: string): Promise<Driver> {
+    const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
+    driver.unlock();
+    await this.driverRepo.save(driver);
+    return driver;
+  }
+
+  /** Đồng bộ trạng thái tài xế theo user (gọi từ identity-service khi khóa/mở user). */
+  async setStatusByUserId(
+    userId: string,
+    status: string,
+  ): Promise<Driver | null> {
+    const driver = await this.driverRepo.findByUserId(userId);
+    if (!driver) return null;
+    if (status === "SUSPENDED") {
+      return this.suspendDriver(driver.id.toString());
+    }
+    if (status === "ACTIVE") {
+      try {
+        return await this.activateDriver(driver.id.toString());
+      } catch {
+        return driver;
+      }
+    }
     return driver;
   }
 
@@ -392,6 +429,36 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
 
     if (count > 0) {
       this.logger.log(`Auto-offlined ${count} disconnected driver(s)`);
+    }
+    return count;
+  }
+
+  /**
+   * Quét tài xế đang SUSPENDED do khóa có thời hạn đã hết hạn → tự kích hoạt lại.
+   */
+  async sweepExpiredSuspensions(): Promise<number> {
+    const drivers = await this.driverRepo.findAll({ status: "SUSPENDED" });
+    let count = 0;
+    for (const driver of drivers) {
+      const blockedUntil = driver.driverAcceptBlockedUntil;
+      if (!blockedUntil || blockedUntil.getTime() > Date.now()) {
+        continue;
+      }
+      try {
+        driver.activate();
+        await this.driverRepo.save(driver);
+        count += 1;
+        this.logger.log(
+          `Auto-unlocked driver ${driver.id.toString()} (suspension expired)`,
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Failed to auto-unlock driver ${driver.id.toString()}: ${err?.message}`,
+        );
+      }
+    }
+    if (count > 0) {
+      this.logger.log(`Auto-unlocked ${count} driver(s)`);
     }
     return count;
   }

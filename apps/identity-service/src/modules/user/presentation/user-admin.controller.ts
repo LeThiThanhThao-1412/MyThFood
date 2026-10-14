@@ -9,7 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { ServiceKeyOrJwtGuard } from "../../auth/guards/service-key-or-jwt.guard";
 import { RolesGuard, Roles } from "../../auth/guards/roles.guard";
 import { UserAdminService } from "../application/user-admin.service";
 import {
@@ -20,7 +20,7 @@ import {
 } from "../application/dtos/user-admin.dto";
 
 @Controller("auth/users")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
 @Roles("ADMIN")
 export class UserAdminController {
   constructor(private readonly userAdminService: UserAdminService) {}

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS drivers (
   "idCardNumber" VARCHAR(20) NOT NULL,
   "driverLicenseNumber" VARCHAR(30) NOT NULL,
   "vehicleRegistrationNumber" VARCHAR(30) NOT NULL,
+  "vehicleType" VARCHAR(20) DEFAULT 'MOTORBIKE',
   "insuranceNumber" VARCHAR(30) NOT NULL,
   "criminalRecordUrl" VARCHAR(500),
   status VARCHAR(20) NOT NULL DEFAULT 'INACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'SUSPENDED')),

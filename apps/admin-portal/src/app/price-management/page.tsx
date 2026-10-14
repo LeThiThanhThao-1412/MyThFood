@@ -6,6 +6,7 @@ import Link from "next/link";
 import { merchantApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { formatDateTime } from "../../lib/format";
+import AdminShell from "../../components/AdminShell";
 
 function toNum(v: unknown): number {
   if (typeof v === "number") return v;
@@ -79,18 +80,8 @@ export default function AdminPriceManagementPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0 w-full">
-      <header className="bg-[#1a1a2e] px-4 sm:px-6 py-4 text-white">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <Link href="/" className="text-white/60 text-lg">
-            ←
-          </Link>
-          <h1 className="text-lg font-bold">📉 Biến động giá</h1>
-          <div className="w-6" />
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+    <AdminShell title="📉 Biến động giá">
+      <div className="space-y-4">
         <div className="bg-white rounded-2xl shadow-sm p-5">
           <label className="block text-sm font-semibold text-gray-600 mb-2">
             Chọn nhà hàng
@@ -255,7 +246,7 @@ export default function AdminPriceManagementPage() {
             )}
           </>
         )}
-      </main>
-    </div>
+      </div>
+    </AdminShell>
   );
 }

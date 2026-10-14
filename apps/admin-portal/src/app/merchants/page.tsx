@@ -1,208 +1,210 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { merchantApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import AdminShell from "../../components/AdminShell";
 
-function toNum(v: unknown): number {
-  if (typeof v === "number") return v;
-  if (typeof v === "string") return parseFloat(v) || 0;
-  return 0;
-}
+const BADGE: Record<string, string> = {
+  PENDING: "bg-yellow-100 text-yellow-700",
+  APPROVED: "bg-green-100 text-green-700",
+  REJECTED: "bg-red-100 text-red-700",
+  SUSPENDED: "bg-gray-200 text-gray-600",
+};
+const LABEL: Record<string, string> = {
+  PENDING: "Chờ duyệt",
+  APPROVED: "Đã duyệt",
+  REJECTED: "Từ chối",
+  SUSPENDED: "Bị khóa",
+};
+const FILTERS = ["", "PENDING", "APPROVED", "SUSPENDED", "REJECTED"];
 
 export default function AdminMerchantsPage() {
   const router = useRouter();
-  const { isAuthenticated, user, clearAuth } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const [merchants, setMerchants] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("");
+  const [msg, setMsg] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated) {
       router.push("/login");
       return;
     }
-
-    async function load() {
-      try {
-        const res = await merchantApi.list({ take: 200 });
-        setMerchants(res.items || []);
-      } catch {
-      } finally {
-        setLoading(false);
-      }
-    }
     load();
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, filter]);
 
-  async function handleApprove(id: string) {
+  async function load() {
+    setLoading(true);
     try {
-      await merchantApi.approve(id);
-      setMerchants((prev) =>
-        prev.map((m) => (m.id === id ? { ...m, status: "ACTIVE" } : m)),
-      );
-    } catch {}
+      const res: any = await merchantApi.list({
+        take: 500,
+        status: filter || undefined,
+      } as any);
+      setMerchants(res.items || []);
+    } catch {
+    } finally {
+      setLoading(false);
+    }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f0f2f5]">
-        <div className="animate-spin w-10 h-10 border-4 border-[#ff6b35] border-t-transparent rounded-full" />
-      </div>
-    );
+  async function act(fn: () => Promise<any>, ok: string) {
+    setMsg("");
+    try {
+      await fn();
+      setMsg("✅ " + ok);
+      load();
+    } catch (e: any) {
+      setMsg("❌ " + (e?.message || "Thao tác thất bại"));
+    }
   }
-
-  const pending = merchants.filter(
-    (m) => m.status === "INACTIVE" || m.status === "PENDING",
-  );
-  const active = merchants.filter((m) => m.status === "ACTIVE");
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0 w-full">
-      <header className="bg-[#1a1a2e] px-4 sm:px-6 py-4 text-white">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <Link href="/" className="text-white/60 text-lg">
-            ←
-          </Link>
-          <h1 className="text-lg font-bold">🏪 Quản lý nhà hàng</h1>
-          <div className="w-6" />
-        </div>
-      </header>
-
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          <div className="bg-white rounded-2xl shadow-sm p-4">
-            <p className="text-xs text-gray-400">Chờ duyệt</p>
-            <p className="text-2xl font-bold text-[#e67e22]">
-              {pending.length}
-            </p>
-          </div>
-          <div className="bg-white rounded-2xl shadow-sm p-4">
-            <p className="text-xs text-gray-400">Đã kích hoạt</p>
-            <p className="text-2xl font-bold text-[#2ecc71]">{active.length}</p>
-          </div>
+    <AdminShell title="🏪 Quản lý nhà hàng">
+      <div className="space-y-4">
+        {msg && <div className="bg-white rounded-xl p-3 text-sm">{msg}</div>}
+        <div className="flex gap-2 flex-wrap">
+          {FILTERS.map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                filter === f
+                  ? "bg-[#ff6b35] text-white"
+                  : "bg-white text-gray-600 shadow-sm hover:bg-gray-50"
+              }`}
+            >
+              {f === "" ? "Tất cả" : LABEL[f]}
+            </button>
+          ))}
         </div>
 
-        {/* Pending approval */}
-        {pending.length > 0 && (
-          <div className="mb-6">
-            <h2 className="text-lg font-bold text-[#1a1a2e] mb-3">
-              ⏳ Chờ duyệt ({pending.length})
-            </h2>
-            <div className="space-y-3">
-              {pending.map((m: any) => (
-                <div key={m.id} className="bg-white rounded-2xl shadow-sm p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
+        {loading ? (
+          <div className="bg-white rounded-xl shadow-sm p-8 space-y-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="h-10 bg-gray-100 rounded animate-pulse" />
+            ))}
+          </div>
+        ) : merchants.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
+            Không có nhà hàng nào
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                    Tên
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase hidden md:table-cell">
+                    Liên hệ
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase hidden lg:table-cell">
+                    Địa chỉ
+                  </th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                    Trạng thái
+                  </th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-400 uppercase">
+                    Hành động
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {merchants.map((m: any) => (
+                  <tr key={m.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
                       <p className="font-semibold text-gray-800">{m.name}</p>
                       <p className="text-xs text-gray-400">
-                        {m.email} · {m.phone}
+                        {m.primaryCategory || ""}
                       </p>
-                    </div>
-                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2.5 py-1 rounded-full font-semibold">
-                      ⏳ Chờ duyệt
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-500 mb-3">📍 {m.address}</p>
-                  <div className="flex gap-2">
-                    <Link
-                      href={`/merchants/${m.id}`}
-                      className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200 transition text-center"
-                    >
-                      🔍 Xem chi tiết
-                    </Link>
-                    <button
-                      onClick={() => handleApprove(m.id)}
-                      className="flex-1 bg-[#2ecc71] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-600 transition"
-                    >
-                      ✅ Phê duyệt
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">
+                      <p>{m.email || "-"}</p>
+                      <p className="text-xs">{m.phone || "-"}</p>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500 hidden lg:table-cell">
+                      {m.address}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold ${BADGE[m.status] || "bg-gray-100 text-gray-600"}`}
+                      >
+                        {LABEL[m.status] || m.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex gap-1.5 justify-end flex-wrap">
+                        <Link
+                          href={`/merchants/${m.id}`}
+                          className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-blue-100"
+                        >
+                          Xem
+                        </Link>
+                        {m.status === "PENDING" && (
+                          <>
+                            <button
+                              onClick={() =>
+                                act(
+                                  () => merchantApi.approve(m.id),
+                                  "Đã phê duyệt",
+                                )
+                              }
+                              className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700"
+                            >
+                              Duyệt
+                            </button>
+                            <button
+                              onClick={() =>
+                                act(
+                                  () => merchantApi.reject(m.id),
+                                  "Đã từ chối",
+                                )
+                              }
+                              className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-red-700"
+                            >
+                              Từ chối
+                            </button>
+                          </>
+                        )}
+                        {m.status === "REJECTED" && (
+                          <button
+                            onClick={() =>
+                              act(
+                                () => merchantApi.approve(m.id),
+                                "Đã phê duyệt lại",
+                              )
+                            }
+                            className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700"
+                          >
+                            Duyệt lại
+                          </button>
+                        )}
+                        {m.status === "SUSPENDED" && (
+                          <button
+                            onClick={() =>
+                              act(
+                                () => merchantApi.reactivate(m.id),
+                                "Đã mở khóa",
+                              )
+                            }
+                            className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700"
+                          >
+                            Mở khóa
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-
-        {/* Active merchants */}
-        <div>
-          <h2 className="text-lg font-bold text-[#1a1a2e] mb-3">
-            ✅ Đã kích hoạt ({active.length})
-          </h2>
-          <div className="space-y-2">
-            {active.map((m: any) => (
-              <div
-                key={m.id}
-                className="bg-white rounded-2xl shadow-sm p-3 flex items-center justify-between"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">
-                    {m.name}
-                  </p>
-                  <p className="text-xs text-gray-400">{m.address}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Link
-                    href={`/merchants/${m.id}`}
-                    className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-gray-200"
-                  >
-                    Xem
-                  </Link>
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-semibold">
-                    ✓ Active
-                  </span>
-                </div>
-              </div>
-            ))}
-            {active.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-4">
-                Chưa có nhà hàng nào được kích hoạt
-              </p>
-            )}
-          </div>
-        </div>
-      </main>
-
-      {/* Mobile Nav */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">
-        <Link
-          href="/"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">📊</span>
-          <span>Dashboard</span>
-        </Link>
-        <Link
-          href="/merchants"
-          className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline"
-        >
-          <span className="text-[22px]">🏪</span>
-          <span>Merchants</span>
-        </Link>
-        <Link
-          href="/orders"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">📋</span>
-          <span>Orders</span>
-        </Link>
-        <Link
-          href="/transactions"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">💰</span>
-          <span>Tx</span>
-        </Link>
-        <Link
-          href="/users"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">👥</span>
-          <span>Users</span>
-        </Link>
-      </nav>
-    </div>
+      </div>
+    </AdminShell>
   );
 }

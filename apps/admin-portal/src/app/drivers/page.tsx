@@ -2,9 +2,17 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { driverApi } from "@mythfood/api-client";
+import { driverApi, walletApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { formatDateTime, formatVnd } from "../../lib/format";
+import AdminShell from "../../components/AdminShell";
+
+const VEHICLE_TYPE_LABEL: Record<string, string> = {
+  MOTORBIKE: "Xe máy",
+  CAR: "Ô tô",
+  BICYCLE: "Xe đạp",
+  MOTO: "Xe máy",
+};
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   ACTIVE: { label: "Hoạt động", cls: "bg-green-100 text-green-700" },
@@ -28,6 +36,7 @@ export default function AdminDriversPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [selected, setSelected] = useState<any>(null);
   const [actionMsg, setActionMsg] = useState("");
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -36,6 +45,26 @@ export default function AdminDriversPage() {
     }
     load();
   }, [isAuthenticated, statusFilter]);
+
+  // Lấy số dư ví thật từ wallet-service khi mở chi tiết tài xế.
+  useEffect(() => {
+    if (!selected?.id) {
+      setWalletBalance(null);
+      return;
+    }
+    let active = true;
+    walletApi
+      .getBalance(selected.id, "DRIVER")
+      .then((r: any) => {
+        if (active) setWalletBalance(Number(r?.balance ?? 0));
+      })
+      .catch(() => {
+        if (active) setWalletBalance(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selected?.id]);
 
   async function load() {
     setLoading(true);
@@ -72,17 +101,8 @@ export default function AdminDriversPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
-      <header className="bg-white shadow-sm px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/" className="text-gray-400 hover:text-gray-600">
-            ← Quay lại
-          </Link>
-          <h1 className="text-xl font-bold">🛵 Quản lý Tài xế</h1>
-        </div>
-      </header>
-
-      <div className="max-w-[1400px] mx-auto px-4 py-6">
+    <AdminShell title="🛵 Quản lý Tài xế">
+      <div className="space-y-4">
         {stats && (
           <div className="grid grid-cols-3 gap-4 mb-6">
             {[
@@ -241,7 +261,15 @@ export default function AdminDriversPage() {
                   value={selected.vehicleRegistrationNumber}
                 />
                 <Info label="Bảo hiểm" value={selected.insuranceNumber} />
-                <Info label="Loại xe" value={selected.vehicleType} />
+                <Info
+                  label="Loại xe"
+                  value={
+                    selected.vehicleType
+                      ? (VEHICLE_TYPE_LABEL[selected.vehicleType] ??
+                        selected.vehicleType)
+                      : "—"
+                  }
+                />
                 <Info label="Điểm uy tín" value={selected.reputationScore} />
                 <Info
                   label="Đánh giá"
@@ -253,12 +281,24 @@ export default function AdminDriversPage() {
                   value={selected.isTrainingCompleted ? "✅ Có" : "❌ Chưa"}
                 />
                 <Info
+                  label="Số dư ví"
+                  value={walletBalance != null ? formatVnd(walletBalance) : "—"}
+                />
+                <Info
                   label="Ví credit"
                   value={formatVnd(selected.creditWalletBalance)}
                 />
                 <Info
                   label="Ngày đăng ký"
                   value={formatDateTime(selected.createdAt)}
+                />
+                <Info
+                  label="Khóa đến"
+                  value={
+                    selected.acceptBlockedUntil
+                      ? formatDateTime(selected.acceptBlockedUntil)
+                      : "-"
+                  }
                 />
               </div>
 
@@ -291,30 +331,17 @@ export default function AdminDriversPage() {
                       🟢 Kích hoạt
                     </button>
                   )}
-                {selected.status === "ACTIVE" && (
-                  <button
-                    onClick={() =>
-                      runAction(
-                        () => driverApi.deactivate(selected.id),
-                        "Đã khóa tài xế",
-                      )
-                    }
-                    className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-red-700"
-                  >
-                    🔴 Khóa
-                  </button>
-                )}
                 {selected.status === "SUSPENDED" && (
                   <button
                     onClick={() =>
                       runAction(
-                        () => driverApi.activate(selected.id),
+                        () => driverApi.unlock(selected.id),
                         "Đã mở khóa tài xế",
                       )
                     }
                     className="flex-1 bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-700"
                   >
-                    🟢 Mở khóa
+                    🔓 Mở khóa ngay
                   </button>
                 )}
                 <button
@@ -328,7 +355,7 @@ export default function AdminDriversPage() {
           </div>
         </div>
       )}
-    </div>
+    </AdminShell>
   );
 }
 

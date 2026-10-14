@@ -417,6 +417,27 @@ export class MerchantService {
     return merchant;
   }
 
+  /** Đồng bộ trạng thái nhà hàng theo user (gọi từ identity-service khi khóa/mở user). */
+  async updateStatusByUserId(
+    userId: string,
+    status: string,
+  ): Promise<Merchant | null> {
+    const merchant = await this.merchantRepository.findByUserId(userId);
+    if (!merchant) return null;
+    // Chỉ đồng bộ khóa (APPROVED→SUSPENDED) và mở khóa (SUSPENDED→APPROVED),
+    // không tự approve nhà hàng đang PENDING/REJECTED.
+    if (status === "SUSPENDED" && merchant.merchantStatus === "APPROVED") {
+      return this.updateStatus(merchant.id.toString(), "SUSPENDED");
+    }
+    if (
+      (status === "APPROVED" || status === "ACTIVE") &&
+      merchant.merchantStatus === "SUSPENDED"
+    ) {
+      return this.updateStatus(merchant.id.toString(), "APPROVED");
+    }
+    return merchant;
+  }
+
   // ===================== Menu Management =====================
 
   async addMenuItem(

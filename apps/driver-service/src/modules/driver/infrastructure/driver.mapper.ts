@@ -20,6 +20,7 @@ export class DriverMapper {
       idCardNumber: entity.idCardNumber,
       driverLicenseNumber: entity.driverLicenseNumber,
       vehicleRegistrationNumber: entity.vehicleRegistrationNumber,
+      vehicleType: entity.vehicleType ?? null,
       insuranceNumber: entity.insuranceNumber,
       criminalRecordUrl: entity.criminalRecordUrl,
       status: entity.status as DriverStatus,
@@ -57,6 +58,7 @@ export class DriverMapper {
     entity.idCardNumber = domain.driverIdCardNumber;
     entity.driverLicenseNumber = domain.driverLicenseNumber;
     entity.vehicleRegistrationNumber = domain.driverVehicleRegistrationNumber;
+    entity.vehicleType = domain.driverVehicleType ?? null;
     entity.insuranceNumber = domain.driverInsuranceNumber;
     entity.criminalRecordUrl = domain.driverCriminalRecordUrl;
     entity.status = domain.driverStatus;
