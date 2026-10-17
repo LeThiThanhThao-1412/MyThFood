@@ -9,6 +9,7 @@ import {
 } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { useMerchantSocket } from "./SocketProvider";
+import OrderEditDrawer from "./OrderEditDrawer";
 
 function toNum(v: unknown): number {
   if (typeof v === "number") return v;
@@ -94,6 +95,21 @@ export default function OrderDetailDrawer({
   const [actionLoading, setActionLoading] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [changeRequests, setChangeRequests] = useState<any[]>([]);
+
+  async function refreshFromServer(id: string) {
+    try {
+      const [freshOrder, changes] = await Promise.all([
+        orderApi.getById(id),
+        orderApi.listChangeRequests(id).catch(() => []),
+      ]);
+      setOrder(freshOrder);
+      setChangeRequests(Array.isArray(changes) ? changes : []);
+    } catch {
+      /* non-fatal */
+    }
+  }
 
   // Load order + driver when opened
   useEffect(() => {
@@ -103,6 +119,8 @@ export default function OrderDetailDrawer({
       setCustomer(null);
       setRejecting(false);
       setRejectReason("");
+      setEditing(false);
+      setChangeRequests([]);
       return;
     }
     setLoading(true);
@@ -147,6 +165,13 @@ export default function OrderDetailDrawer({
         } else {
           setDriver(null);
         }
+
+        try {
+          const changes = await orderApi.listChangeRequests(id);
+          setChangeRequests(Array.isArray(changes) ? changes : []);
+        } catch {
+          setChangeRequests([]);
+        }
       } catch {
         setOrder(null);
       } finally {
@@ -169,12 +194,26 @@ export default function OrderDetailDrawer({
     socket.on("order:ready", update);
     socket.on("order:rejected", update);
     socket.on("order:delivered", update);
+
+    const onChange = (data: any) => {
+      if (data?.id === orderId) {
+        refreshFromServer(orderId);
+      }
+    };
+    socket.on("order:change-applied", onChange);
+    socket.on("order:change-rejected", onChange);
+    socket.on("order:change-cancelled", onChange);
+    socket.on("order:change-expired", onChange);
     return () => {
       socket.off("order:confirmed", update);
       socket.off("order:preparing", update);
       socket.off("order:ready", update);
       socket.off("order:rejected", update);
       socket.off("order:delivered", update);
+      socket.off("order:change-applied", onChange);
+      socket.off("order:change-rejected", onChange);
+      socket.off("order:change-cancelled", onChange);
+      socket.off("order:change-expired", onChange);
     };
   }, [socket, orderId]);
 
@@ -245,7 +284,30 @@ export default function OrderDetailDrawer({
     }
   }
 
+  async function handleCancelChangeRequest(requestId: string) {
+    if (!order) return;
+    setActionLoading(true);
+    try {
+      await orderApi.cancelChangeRequest(requestId, {
+        reason: "Nhà hàng hủy đề xuất chỉnh sửa",
+      });
+      await refreshFromServer(order.id);
+    } catch (e: any) {
+      alert("Lỗi: " + (e?.message || "Không thể hủy yêu cầu"));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   if (!orderId) return null;
+
+  const pendingChange =
+    changeRequests.find(
+      (request) =>
+        request.status === "PENDING" || request.status === "AWAITING_PAYMENT",
+    ) || null;
+  const canEditItems =
+    !!order && ["CONFIRMED", "PREPARING"].includes(order.status);
 
   const badge = STATUS_BADGE[order?.status] || STATUS_BADGE.PENDING;
   const activeIdx = STATUS_STEPS.indexOf(order?.status);
@@ -427,6 +489,73 @@ export default function OrderDetailDrawer({
                 ))}
               </div>
 
+              {/* Yêu cầu chỉnh sửa đang chờ khách xác nhận */}
+              {pendingChange && (
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-orange-700">
+                      📨 Đang chờ khách xác nhận chỉnh sửa
+                    </p>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">
+                      {pendingChange.status === "AWAITING_PAYMENT"
+                        ? "Chờ thanh toán"
+                        : "Chờ xác nhận"}
+                    </span>
+                  </div>
+                  <div className="mt-2 space-y-0.5 text-xs text-gray-600">
+                    <div className="flex justify-between">
+                      <span>Tổng hiện tại</span>
+                      <span>
+                        {toNum(pendingChange.before?.total).toLocaleString(
+                          "vi-VN",
+                        )}
+                        ₫
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Tổng sau chỉnh sửa</span>
+                      <span className="font-semibold">
+                        {toNum(pendingChange.after?.total).toLocaleString(
+                          "vi-VN",
+                        )}
+                        ₫
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Chênh lệch</span>
+                      <span
+                        className={
+                          toNum(pendingChange.deltaAmount) > 0
+                            ? "text-orange-600 font-semibold"
+                            : "text-green-600 font-semibold"
+                        }
+                      >
+                        {toNum(pendingChange.deltaAmount) > 0 ? "+" : ""}
+                        {toNum(pendingChange.deltaAmount).toLocaleString(
+                          "vi-VN",
+                        )}
+                        ₫
+                      </span>
+                    </div>
+                    {pendingChange.expiresAt && (
+                      <p className="text-gray-400 pt-1">
+                        Hết hạn:{" "}
+                        {new Date(pendingChange.expiresAt).toLocaleTimeString(
+                          "vi-VN",
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleCancelChangeRequest(pendingChange.id)}
+                    disabled={actionLoading}
+                    className="mt-2 w-full bg-white border border-orange-300 text-orange-600 py-2 rounded-lg text-xs font-semibold disabled:opacity-50"
+                  >
+                    Hủy yêu cầu chỉnh sửa
+                  </button>
+                </div>
+              )}
+
               {/* Payment */}
               <div className="bg-white rounded-xl border border-gray-100 p-3">
                 <p className="font-bold text-sm text-[#1a1a2e] mb-2">
@@ -528,6 +657,19 @@ export default function OrderDetailDrawer({
               >
                 🖨️ In hóa đơn
               </button>
+              {canEditItems && !pendingChange && (
+                <button
+                  onClick={() => setEditing(true)}
+                  className="w-full bg-[#1a1a2e] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#2a2a44] transition"
+                >
+                  ✏️ Chỉnh sửa món
+                </button>
+              )}
+              {canEditItems && pendingChange && (
+                <p className="text-xs text-center text-orange-600">
+                  Đang chờ khách xác nhận, chưa thể tạo yêu cầu mới.
+                </p>
+              )}
               {order.status === "PENDING" &&
                 (rejecting ? (
                   <div className="space-y-2">
@@ -613,6 +755,17 @@ export default function OrderDetailDrawer({
           </>
         )}
       </div>
+
+      {editing && order && (
+        <OrderEditDrawer
+          order={order}
+          onClose={() => setEditing(false)}
+          onSubmitted={() => {
+            setEditing(false);
+            refreshFromServer(order.id);
+          }}
+        />
+      )}
     </div>
   );
 }

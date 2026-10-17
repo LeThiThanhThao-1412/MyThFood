@@ -428,9 +428,13 @@ export interface Order {
   estimatedDeliveryTime?: string | null;
   notes?: string;
   driverId?: string | null;
+  /** Ảnh tài xế chụp món ăn lúc giao cho khách (bằng chứng chống khiếu nại). */
+  deliveryProofPhotoUrl?: string | null;
   cancelReason?: string | null;
   rejectionReason?: string | null;
   paymentMethod?: string;
+  /** Số phiên bản danh sách món (tăng sau mỗi lần khách xác nhận chỉnh sửa). */
+  itemsVersion?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -478,6 +482,108 @@ export interface UpdateOrderRequest {
   notes?: string;
   estimatedDeliveryTime?: string;
   driverId?: string;
+}
+
+// --- Order change request (đổi món, khách xác nhận) ---
+export type OrderChangeRequestStatus =
+  | "PENDING"
+  | "AWAITING_PAYMENT"
+  | "APPLIED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "EXPIRED";
+
+export type OrderChangeMoneyStatus =
+  | "NONE"
+  | "AWAITING_PAYMENT"
+  | "CHARGED"
+  | "REFUNDED"
+  | "FAILED"
+  | "NOT_REQUIRED";
+
+export interface OrderChangeItemSnapshot {
+  menuItemId: string;
+  name: string;
+  imageUrl?: string | null;
+  quantity: number;
+  unitPrice: number;
+  originalPrice?: number | null;
+  flashSaleFundedBy?: string | null;
+  subtotal: number;
+  specialInstructions?: string | null;
+  options?: SelectedMenuItemOption[] | null;
+}
+
+export interface OrderChangeTotals {
+  subtotal: number;
+  discount: number;
+  total: number;
+}
+
+export interface OrderChangeRequest {
+  id: string;
+  orderId: string;
+  merchantId: string;
+  consumerId: string;
+  status: OrderChangeRequestStatus;
+  reason?: string | null;
+  rejectReason?: string | null;
+  beforeItems: OrderChangeItemSnapshot[];
+  afterItems: OrderChangeItemSnapshot[];
+  before: OrderChangeTotals;
+  after: OrderChangeTotals;
+  deltaAmount: number;
+  paymentMethod: string;
+  moneyStatus: OrderChangeMoneyStatus;
+  adjustmentPaymentId?: string | null;
+  beforeItemsVersion: number;
+  expiresAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  confirmedAt?: string | null;
+}
+
+export interface OrderChangeItemInput {
+  /** Vị trí món trong order.items hiện tại; bỏ trống = món mới. */
+  sourceIndex?: number;
+  menuItemId: string;
+  quantity: number;
+  options?: {
+    optionId: string;
+    groupId: string;
+    quantity?: number;
+  }[];
+  specialInstructions?: string;
+}
+
+export interface CreateOrderChangeRequest {
+  reason: string;
+  items: OrderChangeItemInput[];
+}
+
+export interface AcceptOrderChangeRequest {
+  paymentId?: string;
+  transactionId?: string;
+}
+
+export interface AcceptOrderChangeResult {
+  changeRequest: OrderChangeRequest;
+  order?: Order;
+  requiresPayment: boolean;
+  payment?: { paymentId: string; clientSecret: string; amount: number };
+}
+
+export interface OrderAdjustment {
+  id: string;
+  orderId: string;
+  changeRequestId: string;
+  before: OrderChangeTotals;
+  after: OrderChangeTotals;
+  deltaAmount: number;
+  paymentMethod: string;
+  moneyStatus: string;
+  settlementStatus: string;
+  createdAt: string;
 }
 
 // --- Payment ---
@@ -695,6 +801,14 @@ export interface DeliveryFailedRequest {
   reason: string;
   photoUrl?: string;
   faultParty?: "DRIVER" | "CUSTOMER";
+}
+
+/**
+ * Xác nhận giao hàng thành công. Với đơn DELIVERY, `photoUrl` là ảnh món ăn
+ * tài xế chụp lúc giao cho khách và **bắt buộc**.
+ */
+export interface MarkDeliveredRequest {
+  photoUrl?: string;
 }
 
 // --- Socket Events ---
@@ -978,7 +1092,19 @@ export interface FlashSalePricedItem {
   menuItemId: string;
   originalPrice: number;
   salePrice: number;
+  /** Tổng số lượng khách đặt cho món này. */
   quantity: number;
+  /**
+   * Số phần được hưởng giá flash sale (tối đa theo `limitPerUser` và số suất
+   * còn lại). Phần chênh lệch (`quantity - saleQuantity`) tính giá thường.
+   */
+  saleQuantity?: number;
+  hasFlashSale?: boolean;
+  remainingStock?: number | null;
+  limitPerUser?: number | null;
+  /** Số suất còn lại của riêng khách (chỉ có khi truyền consumerId). */
+  remainingUserQuota?: number;
+  fundedBy?: FlashSaleFundedBy | null;
 }
 
 export interface ValidateFlashSaleRequest {
@@ -1147,6 +1273,13 @@ export type AiActionType =
   | "RESTRICT_ACTIVITY";
 export type AiTargetType = "CONSUMER" | "DRIVER" | "MERCHANT";
 
+/** Ảnh bằng chứng có khớp với mô tả khiếu nại hay không. */
+export type AiImageSupport =
+  | "SUPPORTS"
+  | "CONTRADICTS"
+  | "NEUTRAL"
+  | "NO_IMAGE";
+
 export interface AiSuggestedAction {
   type: AiActionType;
   targetType: AiTargetType;
@@ -1155,12 +1288,51 @@ export interface AiSuggestedAction {
   reason: string;
 }
 
+/**
+ * Trọng số bằng chứng (%) của một lần phân tích: ảnh giao hàng hệ thống 35 +
+ * ảnh bên khiếu nại 25 + ảnh bên bị khiếu nại 15 + dữ liệu hệ thống 20 + lời
+ * khai 5 (tổng tối đa 100).
+ */
+export interface AiEvidenceWeight {
+  images: number;
+  system: number;
+  testimony: number;
+  /** images + system — ≥ 50 nghĩa là đủ căn cứ kết luận. */
+  objective: number;
+  basis: "IMAGES" | "SYSTEM" | "TESTIMONY";
+  /** Ảnh của chính bên khiếu nại mâu thuẫn với lời khai. */
+  reporterSelfContradiction: boolean;
+}
+
+/** Ảnh bằng chứng của **một bên**, đã phân tích riêng. */
+export interface AiSideImageAnalysis {
+  attached: number;
+  analyzed: number;
+  support: AiImageSupport;
+  analysis: string;
+}
+
 export interface CaseAiSuggestion {
   caseId: string;
   caseNumber: string;
   generatedAt: string;
   model: string;
   summary: string;
+  /** Tổng số ảnh bằng chứng đã gửi cho model (0 = không có ảnh). */
+  imagesAnalyzed: number;
+  /** Phân tích ảnh của bên khiếu nại. */
+  reporterImages: AiSideImageAnalysis;
+  /** Phân tích ảnh của bên bị khiếu nại. */
+  respondentImages: AiSideImageAnalysis;
+  /** Ảnh giao hàng (tài xế chụp lúc bấm giao thành công) — bằng chứng hệ thống. */
+  deliveryProof: {
+    photoUrl: string | null;
+    analyzed: boolean;
+  };
+  /** Trọng số bằng chứng (%) đã dùng để kết luận — ảnh & hệ thống > lời khai. */
+  evidenceWeight: AiEvidenceWeight;
+  /** ≤ 3 câu so sánh lời khai/ảnh của hai bên trước khi kết luận. */
+  sideComparison: string;
   suggestedVerdict: AiVerdict;
   suggestedFaultParty: AiFaultParty;
   suggestedSeverity: AiSeverity;
@@ -1171,7 +1343,7 @@ export interface CaseAiSuggestion {
   suggestedActions: AiSuggestedAction[];
   suggestedResolutionNote: string;
   followUpQuestions: string[];
-  /** Yêu cầu bổ sung gửi tài xế/nhà hàng (tối đa 3). */
+  /** Yêu cầu bổ sung gửi bên bị khiếu nại (tối đa 2, rỗng nếu đã kết luận được). */
   respondentQuestions: string[];
   sourcesUsed: string[];
   sourcesMissing: string[];
@@ -1219,6 +1391,10 @@ export interface CaseAiContext {
   criticalMissingSourceIds: string[];
   imagesAttached: number;
   imagesSkipped: string[];
+  /** Ảnh món ăn tài xế chụp lúc giao cho khách (bằng chứng hệ thống của đơn). */
+  deliveryProofPhotoUrl?: string | null;
+  /** Ảnh giao hàng của tài xế có được gửi cho AI phân tích hay không. */
+  deliveryProofImageAttached?: boolean;
 }
 
 export interface AssistantHealth {
@@ -1241,6 +1417,22 @@ export interface AssistantHealth {
 export type AiAnalysisSource = "AUTO" | "MANUAL";
 export type AiReviewDecision = "ACCEPTED" | "REJECTED";
 
+/** Kết quả sau khi admin duyệt gợi ý (áp dụng phán quyết/hình phạt/thông báo). */
+export interface AiDecisionOutcome {
+  applied: boolean;
+  verdict: string | null;
+  caseStatus: string | null;
+  penalties: number;
+  notified: string[];
+  evidenceRequestedFrom: string[];
+  summary: string;
+}
+
+export interface CaseAiReviewResult {
+  analysis: CaseAiAnalysisRecord | null;
+  outcome: AiDecisionOutcome;
+}
+
 /** Vết admin duyệt / bỏ qua gợi ý AI. */
 export interface CaseAiAnalysisReview {
   decision: AiReviewDecision;
@@ -1257,4 +1449,6 @@ export interface CaseAiAnalysisRecord {
   createdAt: string;
   suggestion: CaseAiSuggestion;
   review: CaseAiAnalysisReview | null;
+  /** Bản phân tích đã cũ (vụ việc có phản hồi mới sau thời điểm phân tích). */
+  stale: boolean;
 }

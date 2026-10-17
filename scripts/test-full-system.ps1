@@ -165,7 +165,8 @@ if ($order -and $ddata) {
     } catch { Log "Assign driver: $($_.Exception.Message)" "FAIL" }
 
     try {
-        Invoke-RestMethod -Uri "$orderUrl/orders/$($order.id)/delivered" -Method Patch -Headers $dh2 | Out-Null
+        $proofBody = @{ photoUrl = "http://localhost:3010/api/v1/upload/delivery-proof/test-proof.jpg" } | ConvertTo-Json
+        Invoke-RestMethod -Uri "$orderUrl/orders/$($order.id)/delivered" -Method Patch -Body $proofBody -Headers $dh2 | Out-Null
         Log "DELIVERED!" "PASS"
     } catch { Log "Mark delivered: $($_.Exception.Message)" "FAIL" }
 

@@ -30,6 +30,8 @@ import {
   ValidateFlashSaleDto,
   ApplyFlashSaleDto,
   RefundFlashSaleDto,
+  RefundFlashSaleItemsDto,
+  RecalculateUsageDto,
   CreateFlashSaleItemDto,
 } from "./promotion.dto";
 
@@ -779,23 +781,47 @@ export class PromotionService {
           menuItemId: input.menuItemId,
           originalPrice: input.unitPrice ?? 0,
           salePrice: input.unitPrice ?? 0,
+          quantity: input.quantity ?? 1,
+          saleQuantity: 0,
           hasFlashSale: false,
           remainingStock: null,
+          limitPerUser: null,
         });
         continue;
       }
       const originalPrice = Number(active.item.originalPrice);
       const salePrice = Number(active.item.salePrice);
-      const remaining = active.item.totalQuantity - active.item.soldQuantity;
-      const discount = (originalPrice - salePrice) * (input.quantity ?? 1);
-      discountAmount += discount;
+      const remainingStock = Math.max(
+        0,
+        active.item.totalQuantity - active.item.soldQuantity,
+      );
+      // Số suất còn lại của riêng khách này (nếu đã xác định được khách).
+      const usedByUser = dto.consumerId
+        ? await this.promoRepo.countFlashSaleUsageQuantity(
+            active.item.id,
+            dto.consumerId,
+          )
+        : 0;
+      const remainingUserQuota = Math.max(
+        0,
+        Number(active.item.limitPerUser) - usedByUser,
+      );
+      // Số phần được hưởng giá sale; phần còn lại khách trả giá thường.
+      const saleQuantity = Math.max(
+        0,
+        Math.min(input.quantity ?? 1, remainingStock, remainingUserQuota),
+      );
+      discountAmount += (originalPrice - salePrice) * saleQuantity;
       items.push({
         menuItemId: input.menuItemId,
         originalPrice,
         salePrice,
-        hasFlashSale: true,
-        remainingStock: remaining,
+        quantity: input.quantity ?? 1,
+        saleQuantity,
+        hasFlashSale: saleQuantity > 0,
+        remainingStock,
         limitPerUser: active.item.limitPerUser,
+        remainingUserQuota,
       });
     }
     return { items, discountAmount };
@@ -825,6 +851,7 @@ export class PromotionService {
           originalPrice,
           salePrice,
           quantity: usage.quantity,
+          saleQuantity: usage.quantity,
           fundedBy: sale?.fundedBy ?? "MERCHANT",
         });
       }
@@ -839,17 +866,33 @@ export class PromotionService {
         input.menuItemId,
       );
       if (!active) {
-        const price = input.unitPrice ?? 0;
+        // Không áp được suất sale. Nếu món vẫn đang trong khung giờ của một
+        // flash sale (hết suất / tạm dừng) thì tính theo giá gốc của flash sale
+        // thay vì tin giá sale client gửi lên.
+        const open = await this.promoRepo.findOpenFlashSaleItemByMenuItem(
+          input.menuItemId,
+          dto.merchantId,
+        );
+        const now = new Date();
+        const openInWindow =
+          open && now >= open.sale.startAt && now <= open.sale.endAt
+            ? open
+            : null;
+        const price = openInWindow
+          ? Number(openInWindow.item.originalPrice)
+          : (input.unitPrice ?? 0);
         items.push({
           menuItemId: input.menuItemId,
           originalPrice: price,
           salePrice: price,
           quantity: input.quantity,
+          saleQuantity: 0,
+          hasFlashSale: false,
           fundedBy: null,
         });
         continue;
       }
-      const salePrice = await this.promoRepo.applyFlashSaleItemAtomic({
+      const applied = await this.promoRepo.applyFlashSaleItemAtomic({
         flashSaleItemId: active.item.id,
         salePrice: Number(active.item.salePrice),
         originalPrice: Number(active.item.originalPrice),
@@ -859,13 +902,18 @@ export class PromotionService {
         orderId: dto.orderId,
       });
       const originalPrice = Number(active.item.originalPrice);
-      discountAmount += (originalPrice - salePrice) * input.quantity;
+      const salePrice = Number(active.item.salePrice);
+      // Chỉ phần được hưởng suất flash sale mới được giảm giá.
+      discountAmount += (originalPrice - salePrice) * applied.saleQuantity;
       items.push({
         menuItemId: input.menuItemId,
         originalPrice,
         salePrice,
         quantity: input.quantity,
-        fundedBy: active.sale.fundedBy,
+        saleQuantity: applied.saleQuantity,
+        // Phần vượt giới hạn / hết suất khách trả giá thường.
+        hasFlashSale: applied.saleQuantity > 0,
+        fundedBy: applied.saleQuantity > 0 ? active.sale.fundedBy : null,
       });
     }
     return { items, discountAmount };
@@ -874,5 +922,94 @@ export class PromotionService {
   async refundFlashSale(dto: RefundFlashSaleDto): Promise<any> {
     const restored = await this.promoRepo.refundFlashSaleByOrderId(dto.orderId);
     return { orderId: dto.orderId, restored };
+  }
+
+  /**
+   * Tính lại discount của promotion usage sau khi đơn được chỉnh sửa món.
+   *
+   * - Không có usage → trả về hasUsage=false để order-service dùng giảm giá
+   *   thủ công hiện tại (nếu có).
+   * - Không đạt minOrderValue → discount = 0 (mã không còn hợp lệ).
+   * - `dryRun=true`: chỉ xem trước (dùng lúc tạo yêu cầu chỉnh sửa để khách
+   *   thấy đúng số tiền trước khi xác nhận).
+   */
+  async recalculateUsage(dto: RecalculateUsageDto): Promise<{
+    orderId: string;
+    hasUsage: boolean;
+    promotionId?: string;
+    fundedBy?: string;
+    target?: string;
+    discount: number;
+    minOrderValue?: number | null;
+    dryRun: boolean;
+  }> {
+    const dryRun = !!dto.dryRun;
+    const usage = await this.promoRepo.findUsageByOrderId(dto.orderId);
+    if (!usage) {
+      return { orderId: dto.orderId, hasUsage: false, discount: 0, dryRun };
+    }
+
+    const promo = await this.promoRepo.findById(usage.promotionId);
+    if (!promo) {
+      return {
+        orderId: dto.orderId,
+        hasUsage: true,
+        promotionId: usage.promotionId,
+        discount: 0,
+        dryRun,
+      };
+    }
+
+    const foodTotal = Math.max(0, Number(dto.foodTotal) || 0);
+    const shippingFee = Math.max(0, Number(dto.shippingFee) || 0);
+    const minOrderValue =
+      promo.minOrderValue != null ? Number(promo.minOrderValue) : null;
+
+    let discount = 0;
+    if (minOrderValue == null || foodTotal >= minOrderValue) {
+      const itemTotal =
+        promo.target === "ITEM"
+          ? this.computeItemTotal(dto.items, promo.menuItemId)
+          : 0;
+      discount = this.computeDiscount(
+        promo,
+        foodTotal,
+        shippingFee,
+        itemTotal,
+      ).discount;
+    }
+
+    discount = Math.max(0, Math.min(discount, foodTotal));
+
+    if (!dryRun) {
+      usage.discountAmount = discount;
+      await this.promoRepo.saveUsage(usage);
+      this.logger.log(
+        `Recalculated promotion usage for order ${dto.orderId}: ${discount} VND`,
+      );
+    }
+
+    return {
+      orderId: dto.orderId,
+      hasUsage: true,
+      promotionId: promo.id,
+      fundedBy: promo.fundedBy,
+      target: promo.target,
+      discount,
+      minOrderValue,
+      dryRun,
+    };
+  }
+
+  /** Hoàn suất flash sale cho phần số lượng món bị giảm/xóa. */
+  async refundFlashSaleItems(dto: RefundFlashSaleItemsDto): Promise<{
+    orderId: string;
+    refundedQuantity: number;
+  }> {
+    const result = await this.promoRepo.refundFlashSaleItemsByOrderId(
+      dto.orderId,
+      dto.items,
+    );
+    return { orderId: dto.orderId, ...result };
   }
 }

@@ -41,6 +41,8 @@ export interface PaymentProps {
   failureReason: string | null;
   refundReason: string | null;
   refundedAmount: number | null;
+  /** Yêu cầu chỉnh sửa đơn tương ứng nếu đây là khoản thu bổ sung. */
+  adjustmentRequestId?: string | null;
 }
 
 export class Payment extends AggregateRoot<PaymentId> {
@@ -58,6 +60,7 @@ export class Payment extends AggregateRoot<PaymentId> {
   private failureReason: string | null;
   private refundReason: string | null;
   private refundedAmount: number | null;
+  private adjustmentRequestId: string | null;
 
   private constructor(id: PaymentId, props: PaymentProps) {
     super(id);
@@ -75,6 +78,7 @@ export class Payment extends AggregateRoot<PaymentId> {
     this.failureReason = props.failureReason;
     this.refundReason = props.refundReason;
     this.refundedAmount = props.refundedAmount;
+    this.adjustmentRequestId = props.adjustmentRequestId ?? null;
   }
 
   // ===================== Factory Methods =====================
@@ -85,6 +89,7 @@ export class Payment extends AggregateRoot<PaymentId> {
     merchantId: string;
     amount: number;
     paymentMethod: PaymentMethod;
+    adjustmentRequestId?: string | null;
   }): Result<Payment, DomainError> {
     if (!props.orderId?.trim()) {
       return Result.fail(
@@ -122,6 +127,7 @@ export class Payment extends AggregateRoot<PaymentId> {
       failureReason: null,
       refundReason: null,
       refundedAmount: null,
+      adjustmentRequestId: props.adjustmentRequestId ?? null,
     });
 
     payment.addDomainEvent(
@@ -210,6 +216,37 @@ export class Payment extends AggregateRoot<PaymentId> {
     if (this.status !== PaymentStatus.PENDING) {
       throw new BusinessRuleViolationError(
         `Cannot complete payment in status ${this.status}. Only PENDING payments can be completed.`,
+      );
+    }
+    if (!transactionId?.trim()) {
+      throw new BusinessRuleViolationError(
+        "Transaction ID is required to complete payment",
+      );
+    }
+
+    this.status = PaymentStatus.COMPLETED;
+    this.transactionId = transactionId;
+    this.markUpdated();
+
+    this.addDomainEvent(
+      new PaymentCompletedEvent(this.id, {
+        orderId: this.orderId,
+        transactionId,
+      }),
+    );
+  }
+
+  /**
+   * Complete a HELD/PENDING adjustment payment (khoản thu bổ sung cho đơn đã
+   * chỉnh sửa món). Stripe đã capture tự động nên chỉ cần chuyển trạng thái.
+   */
+  public completeAdjustment(transactionId: string): void {
+    if (
+      this.status !== PaymentStatus.PENDING &&
+      this.status !== PaymentStatus.HELD
+    ) {
+      throw new BusinessRuleViolationError(
+        `Cannot complete adjustment payment in status ${this.status}`,
       );
     }
     if (!transactionId?.trim()) {
@@ -362,5 +399,9 @@ export class Payment extends AggregateRoot<PaymentId> {
   }
   get paymentRefundedAmount(): number | null {
     return this.refundedAmount;
+  }
+
+  get paymentAdjustmentRequestId(): string | null {
+    return this.adjustmentRequestId;
   }
 }

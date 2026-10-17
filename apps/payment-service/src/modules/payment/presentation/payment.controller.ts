@@ -17,7 +17,9 @@ import { Roles, RolesGuard } from "@mythfood/common";
 import { Request } from "express";
 import { PaymentService } from "../application/payment.service";
 import { StripeWebhookService } from "../../stripe/stripe.webhook";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import {
+  CreateAdjustmentPaymentDto,
   CreatePaymentDto,
   CreateStripePaymentDto,
   AssignDriverDto,
@@ -63,6 +65,19 @@ export class PaymentController {
     return this.paymentService.createStripePayment(dto);
   }
 
+  /**
+   * Khoản thu bổ sung khi nhà hàng chỉnh sửa đơn (delta > 0, CREDIT_CARD).
+   * Order-service gọi bằng x-service-key; consumer-app cũng có thể gọi trực
+   * tiếp bằng JWT.
+   */
+  @Post("order-adjustment/stripe")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async createAdjustmentStripe(
+    @Body() dto: CreateAdjustmentPaymentDto,
+  ): Promise<PaymentResponseDto & { clientSecret: string }> {
+    return this.paymentService.createAdjustmentStripePayment(dto);
+  }
+
   // ===================== Payment Lifecycle Commands =====================
 
   @Patch(":id/assign-driver")
@@ -96,6 +111,18 @@ export class PaymentController {
     return this.paymentService.complete(id, body.transactionId ?? "manual");
   }
 
+  @Patch(":id/complete-adjustment")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async completeAdjustment(
+    @Param("id") id: string,
+    @Body() body: { transactionId: string },
+  ): Promise<PaymentResponseDto> {
+    return this.paymentService.completeAdjustmentPayment(
+      id,
+      body.transactionId ?? "stripe-adjustment",
+    );
+  }
+
   @Patch(":id/confirm")
   @UseGuards(AuthGuard("jwt"))
   async confirm(@Param("id") id: string): Promise<PaymentResponseDto> {
@@ -109,7 +136,7 @@ export class PaymentController {
   }
 
   @Patch(":id/fail")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(ServiceKeyOrJwtGuard)
   async fail(
     @Param("id") id: string,
     @Body() body: { reason: string },
@@ -180,6 +207,20 @@ export class PaymentController {
     return this.paymentService.findByOrderId(orderId);
   }
 
+  @Get("order-adjustment/:requestId")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async findByAdjustmentRequestId(
+    @Param("requestId") requestId: string,
+  ): Promise<PaymentResponseDto | null> {
+    return this.paymentService.findByAdjustmentRequestId(requestId);
+  }
+
+  @Get("order-adjustment/:requestId/secret")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async getAdjustmentPaymentSecret(@Param("requestId") requestId: string) {
+    return this.paymentService.getAdjustmentPaymentSecret(requestId);
+  }
+
   @Get("consumer/:consumerId")
   @UseGuards(AuthGuard("jwt"))
   async findByConsumerId(
@@ -197,7 +238,7 @@ export class PaymentController {
   }
 
   @Get(":id")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(ServiceKeyOrJwtGuard)
   async findById(@Param("id") id: string): Promise<PaymentResponseDto> {
     return this.paymentService.findById(id);
   }

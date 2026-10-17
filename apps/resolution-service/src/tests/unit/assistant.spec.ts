@@ -1,5 +1,6 @@
 import { AssistantService } from "../../modules/assistant/application/assistant.service";
 import {
+  AI_SYSTEM_INSTRUCTION,
   buildUserPrompt,
   compactForPrompt,
 } from "../../modules/assistant/domain/assistant.prompt";
@@ -58,6 +59,10 @@ function makeSnapshot(
     missingSourceIds: ["D4"],
     criticalMissingSourceIds: ["D4"],
     imagesAttached: 1,
+    reporterImagesAttached: 1,
+    respondentImagesAttached: 0,
+    deliveryProofPhotoUrl: null,
+    deliveryProofImageAttached: false,
     imagesSkipped: [],
     ...overrides,
   };
@@ -114,16 +119,54 @@ function makeService(
       ),
   } as any;
 
+  const caseRepo = {
+    findByIdOrFail: jest
+      .fn()
+      .mockResolvedValue({ caseRespondentRespondedAt: null }),
+  } as any;
+
+  const caseService = {
+    applyAiDecision: jest.fn().mockResolvedValue({
+      applied: true,
+      verdict: "VALID",
+      caseStatus: "RESOLVED",
+      penalties: 1,
+      notified: ["REPORTER", "RESPONDENT"],
+      evidenceRequestedFrom: [],
+      summary:
+        "Đã áp dụng phán quyết VALID và ghi 1 hình phạt; đã thông báo cho cả hai bên.",
+    }),
+  } as any;
+
   return {
-    service: new AssistantService(contextService, gemini, analysisRepo),
+    service: new AssistantService(
+      contextService,
+      gemini,
+      analysisRepo,
+      caseRepo,
+      caseService,
+    ),
     gemini,
     contextService,
     analysisRepo,
+    caseRepo,
+    caseService,
   };
 }
 
 const VALID_RAW = {
   summary: "Đơn được đánh dấu đã giao nhưng không có bằng chứng bàn giao.",
+  reporterImages: {
+    support: "SUPPORTS",
+    analysis:
+      "Ảnh chụp hộp hàng bị móp méo và nước lèo tràn ra ngoài. Khớp với mô tả khiếu nại của khách.",
+  },
+  respondentImages: {
+    support: "NO_IMAGE",
+    analysis: "Không có ảnh bằng chứng",
+  },
+  sideComparison:
+    "Khách nói hàng bị đổ và ảnh của khách cho thấy hộp móp; tài xế chưa có ảnh đối chiếu.",
   suggestedVerdict: "VALID",
   suggestedFaultParty: "DRIVER",
   suggestedSeverity: "HIGH",
@@ -268,6 +311,7 @@ describe("AssistantService", () => {
     it("cắt ngắn output dài để admin đọc trong ~30 giây", async () => {
       const { service } = makeService({
         ...VALID_RAW,
+        suggestedVerdict: "INCONCLUSIVE",
         summary: "Câu một. Câu hai. Câu ba. Câu bốn.",
         keyFindings: ["a", "b", "c", "d", "e"],
         evidenceGaps: ["x", "y", "z", "w"],
@@ -282,9 +326,273 @@ describe("AssistantService", () => {
       expect(result.keyFindings).toHaveLength(3);
       expect(result.evidenceGaps).toHaveLength(3);
       expect(result.riskFlags).toHaveLength(2);
-      expect(result.followUpQuestions).toHaveLength(3);
-      expect(result.respondentQuestions).toHaveLength(3);
+      expect(result.followUpQuestions).toHaveLength(2);
+      expect(result.respondentQuestions).toHaveLength(2);
       expect(result.warnings.join(" ")).toContain("chỉ giữ");
+    });
+
+    it("đã kết luận được ⇒ KHÔNG hỏi thêm bên nào", async () => {
+      const { service } = makeService({
+        ...VALID_RAW,
+        suggestedVerdict: "VALID",
+        suggestedFaultParty: "MERCHANT",
+        followUpQuestions: ["Bạn có muốn đặt lại món không?"],
+        respondentQuestions: ["Lý do từ chối đơn là gì?"],
+      });
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.followUpQuestions).toEqual([]);
+      expect(result.respondentQuestions).toEqual([]);
+      expect(result.warnings.join(" ")).toContain("đã đủ căn cứ kết luận");
+    });
+
+    it("bỏ câu hỏi không phải bằng chứng (ý muốn / cảm nhận)", async () => {
+      const { service } = makeService({
+        ...VALID_RAW,
+        suggestedVerdict: "INCONCLUSIVE",
+        followUpQuestions: [
+          "Bạn có muốn đặt lại món từ nhà hàng này không?",
+          "Bạn có ảnh mở gói lúc nhận hàng không?",
+        ],
+        respondentQuestions: [
+          "Bạn sẽ giải quyết tình huống này như thế nào?",
+          "Bạn có phiếu chuẩn bị món không?",
+        ],
+      });
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.followUpQuestions).toEqual([
+        "Bạn có ảnh mở gói lúc nhận hàng không?",
+      ]);
+      expect(result.respondentQuestions).toEqual([
+        "Bạn có phiếu chuẩn bị món không?",
+      ]);
+      expect(result.warnings.join(" ")).toContain("không phù hợp");
+    });
+
+    it("không coi nhà hàng ít đơn là dấu hiệu rủi ro", async () => {
+      const { service } = makeService({
+        ...VALID_RAW,
+        riskFlags: [
+          "Nhà hàng chưa có kinh nghiệm xử lý đơn",
+          "Thiếu minh chứng thông báo từ chối",
+        ],
+      });
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.riskFlags).toEqual(["Thiếu minh chứng thông báo từ chối"]);
+    });
+
+    it("phân tích ảnh TÁCH theo từng bên (không gộp chung)", async () => {
+      const { service } = makeService(
+        {
+          ...VALID_RAW,
+          reporterImages: {
+            support: "CONTRADICTS",
+            analysis:
+              "Ảnh là tô bún ăn tại quán, không có bao bì giao hàng. Không khớp mô tả khiếu nại.",
+          },
+          respondentImages: {
+            support: "SUPPORTS",
+            analysis:
+              "Ảnh tài xế gửi cho thấy hộp hàng nguyên vẹn lúc bàn giao, có tem niêm phong.",
+          },
+          sideComparison:
+            "Ảnh khách không phải hàng mang đi; ảnh tài xế cho thấy hộp nguyên vẹn.",
+        },
+        makeSnapshot({
+          imagesAttached: 3,
+          reporterImagesAttached: 2,
+          respondentImagesAttached: 1,
+        }),
+      );
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.imagesAnalyzed).toBe(3);
+      expect(result.reporterImages).toMatchObject({
+        attached: 2,
+        analyzed: 2,
+        support: "CONTRADICTS",
+      });
+      expect(result.reporterImages.analysis).toMatch(/không khớp/i);
+      expect(result.respondentImages).toMatchObject({
+        attached: 1,
+        analyzed: 1,
+        support: "SUPPORTS",
+      });
+      expect(result.sideComparison).toMatch(/nguyên vẹn/i);
+    });
+
+    it("dùng ảnh giao hàng (tài xế chụp) làm bằng chứng hệ thống", async () => {
+      const proofUrl = "http://localhost:3010/api/v1/upload/delivery/proof.jpg";
+      const { service } = makeService(
+        VALID_RAW,
+        makeSnapshot({
+          imagesAttached: 3,
+          reporterImagesAttached: 2,
+          respondentImagesAttached: 0,
+          deliveryProofPhotoUrl: proofUrl,
+          deliveryProofImageAttached: true,
+        }),
+      );
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.deliveryProof).toEqual({
+        photoUrl: proofUrl,
+        analyzed: true,
+      });
+      // Ảnh hệ thống chiếm 1 suất: 2 ảnh còn lại thuộc bên khiếu nại
+      expect(result.reporterImages.analyzed).toBe(2);
+    });
+
+    it("không có ảnh giao hàng ⇒ deliveryProof rỗng, không bịa", async () => {
+      const { service } = makeService(VALID_RAW);
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.deliveryProof).toEqual({ photoUrl: null, analyzed: false });
+    });
+
+    it("ảnh của khách mâu thuẫn với khiếu nại ⇒ INVALID, không hỏi thêm", async () => {
+      const { service } = makeService(
+        {
+          ...VALID_RAW,
+          suggestedVerdict: "INCONCLUSIVE",
+          confidence: 0.4,
+          reporterImages: {
+            support: "CONTRADICTS",
+            analysis: "Đồ ăn còn nguyên vẹn, không có dấu hiệu đổ vỡ.",
+          },
+          respondentImages: {
+            support: "NEUTRAL",
+            analysis: "Túi đóng gói nguyên vẹn lúc bàn giao.",
+          },
+          followUpQuestions: ["Bạn nhận đồ ăn lúc mấy giờ?"],
+          respondentQuestions: ["Bạn đã giao đơn thế nào?"],
+        },
+        makeSnapshot({
+          imagesAttached: 2,
+          reporterImagesAttached: 1,
+          respondentImagesAttached: 1,
+        }),
+      );
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.suggestedVerdict).toBe("INVALID");
+      expect(result.suggestedFaultParty).toBe("CUSTOMER");
+      expect(result.confidence).toBeGreaterThanOrEqual(0.7);
+      expect(result.followUpQuestions).toEqual([]);
+      expect(result.respondentQuestions).toEqual([]);
+      expect(result.suggestedActions).toEqual([]);
+      expect(result.suggestedResolutionNote).toContain("không có căn cứ");
+      expect(result.warnings.join(" ")).toContain("Trọng số bằng chứng");
+    });
+
+    it("model đã kết luận ⇒ giữ nguyên verdict, chỉ ghi nhận trọng số", async () => {
+      const { service } = makeService({
+        ...VALID_RAW,
+        suggestedVerdict: "VALID",
+        suggestedFaultParty: "MERCHANT",
+        reporterImages: {
+          support: "CONTRADICTS",
+          analysis: "Ảnh không thấy hư hỏng.",
+        },
+      });
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.suggestedVerdict).toBe("VALID");
+      expect(result.suggestedFaultParty).toBe("MERCHANT");
+      expect(result.evidenceWeight.reporterSelfContradiction).toBe(true);
+    });
+
+    it("tính trọng số bằng chứng: ảnh + hệ thống so với lời khai", async () => {
+      const { service } = makeService(
+        VALID_RAW,
+        makeSnapshot({
+          imagesAttached: 3,
+          reporterImagesAttached: 2,
+          respondentImagesAttached: 0,
+          deliveryProofPhotoUrl:
+            "http://localhost:3010/api/v1/upload/delivery/proof.jpg",
+          deliveryProofImageAttached: true,
+        }),
+      );
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      // ảnh: hệ thống 35 + khách 25 = 60; dữ liệu hệ thống: 1 nguồn có dữ liệu = 2%
+      expect(result.evidenceWeight).toMatchObject({
+        images: 60,
+        system: 2,
+        testimony: 5,
+        objective: 62,
+        basis: "IMAGES",
+      });
+    });
+
+    it("bên không có ảnh ⇒ NO_IMAGE dù model nói khác", async () => {
+      const { service } = makeService(
+        {
+          ...VALID_RAW,
+          reporterImages: { support: "SUPPORTS", analysis: "" },
+          respondentImages: { support: "SUPPORTS", analysis: "" },
+        },
+        makeSnapshot({
+          imagesAttached: 0,
+          reporterImagesAttached: 0,
+          respondentImagesAttached: 0,
+          imagesSkipped: [],
+        }),
+      );
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.imagesAnalyzed).toBe(0);
+      expect(result.reporterImages.support).toBe("NO_IMAGE");
+      expect(result.respondentImages.support).toBe("NO_IMAGE");
+      expect(result.reporterImages.analysis).toBe("Không có ảnh bằng chứng");
+      expect(result.warnings.join(" ")).toContain("đã đặt NO_IMAGE");
+    });
+
+    it("support lạ ⇒ NEUTRAL + cảnh báo (theo từng bên)", async () => {
+      const { service } = makeService({
+        ...VALID_RAW,
+        reporterImages: { support: "MAYBE", analysis: "abc" },
+      });
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.reporterImages.support).toBe("NEUTRAL");
+      expect(result.warnings.join(" ")).toContain("reporterImages.support");
+    });
+
+    it("ảnh bị bỏ (model không nhận ảnh) ⇒ cả hai bên NO_IMAGE", async () => {
+      const { service, gemini } = makeService(VALID_RAW);
+      gemini.generateJson.mockResolvedValueOnce({
+        data: VALID_RAW,
+        rawText: JSON.stringify(VALID_RAW),
+        model: "glm-4.5-flash",
+        endpoint: "https://example.invalid/chat/completions",
+        usage: { promptTokens: 1, outputTokens: 1, totalTokens: 2 },
+        imagesUsed: 0,
+        notes: [
+          "Không phân tích 1 ảnh bằng chứng (model vision lỗi) — gợi ý dưới đây chỉ dựa trên dữ liệu chữ.",
+        ],
+      });
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.imagesAnalyzed).toBe(0);
+      expect(result.reporterImages.support).toBe("NO_IMAGE");
+      expect(result.respondentImages.support).toBe("NO_IMAGE");
+      expect(result.warnings.join(" ")).toContain("Không phân tích 1 ảnh");
     });
   });
 
@@ -331,27 +639,141 @@ describe("AssistantService", () => {
       expect(result.suggestedVerdict).toBe(Verdict.VALID);
     });
 
-    it("lưu vết admin duyệt gợi ý (ai duyệt, ghi chú gì)", async () => {
-      const { service, analysisRepo } = makeService(VALID_RAW);
+    it("duyệt ⇒ áp dụng phán quyết/hình phạt và lưu vết duyệt", async () => {
+      const { service, analysisRepo, caseService } = makeService(VALID_RAW);
+      analysisRepo.findByCaseId.mockResolvedValueOnce({
+        caseId: "case-1",
+        caseNumber: "CASE-2026-000001",
+        source: "AUTO",
+        createdAt: "2026-10-17T10:00:00.000Z",
+        suggestion: VALID_RAW as any,
+        review: null,
+        stale: false,
+      });
 
-      await service.reviewAnalysis(
+      const result = await service.reviewAnalysis(
         "case-1",
         "ACCEPTED",
         ADMIN_USER as any,
         " ok ",
       );
 
+      expect(caseService.applyAiDecision).toHaveBeenCalledWith(
+        "case-1",
+        expect.objectContaining({
+          verdict: "VALID",
+          faultParty: "DRIVER",
+          actions: expect.arrayContaining([
+            expect.objectContaining({ type: "FINE", targetType: "DRIVER" }),
+          ]),
+        }),
+        ADMIN_USER,
+      );
       expect(analysisRepo.saveReview).toHaveBeenCalledWith(
         "case-1",
         "ACCEPTED",
         "admin-1",
         "ok",
       );
+      expect(result?.outcome.applied).toBe(true);
+      expect(result?.outcome.penalties).toBe(1);
+    });
+
+    it("bỏ qua ⇒ KHÔNG áp dụng gì vào vụ việc", async () => {
+      const { service, analysisRepo, caseService } = makeService(VALID_RAW);
+      analysisRepo.findByCaseId.mockResolvedValueOnce({
+        caseId: "case-1",
+        caseNumber: "CASE-2026-000001",
+        source: "AUTO",
+        createdAt: "2026-10-17T10:00:00.000Z",
+        suggestion: VALID_RAW as any,
+        review: null,
+        stale: false,
+      });
+
+      const result = await service.reviewAnalysis(
+        "case-1",
+        "REJECTED",
+        ADMIN_USER as any,
+      );
+
+      expect(caseService.applyAiDecision).not.toHaveBeenCalled();
+      expect(result?.outcome.applied).toBe(false);
+    });
+
+    it("vụ việc chưa có bản phân tích ⇒ review trả null", async () => {
+      const { service, caseService } = makeService(VALID_RAW);
+
+      const result = await service.reviewAnalysis(
+        "case-1",
+        "ACCEPTED",
+        ADMIN_USER as any,
+      );
+
+      expect(result).toBeNull();
+      expect(caseService.applyAiDecision).not.toHaveBeenCalled();
     });
 
     it("health cho biết có tự phân tích hay không", () => {
       const { service } = makeService(VALID_RAW);
       expect(service.getHealth().autoAnalyze).toBe(true);
+    });
+  });
+
+  describe("bản phân tích cũ (stale)", () => {
+    const record = {
+      caseId: "case-1",
+      caseNumber: "CASE-2026-000001",
+      source: "AUTO" as const,
+      createdAt: "2026-10-17T10:00:00.000Z",
+      suggestion: VALID_RAW as any,
+      review: null,
+    };
+
+    it("phản hồi của bên bị khiếu nại có SAU bản phân tích ⇒ stale=true", async () => {
+      const { service, analysisRepo, caseRepo } = makeService(VALID_RAW);
+      analysisRepo.findByCaseId.mockResolvedValueOnce(record);
+      caseRepo.findByIdOrFail.mockResolvedValueOnce({
+        caseRespondentRespondedAt: new Date("2026-10-17T11:00:00.000Z"),
+      });
+
+      const result = await service.getAnalysis("case-1");
+
+      expect(result?.stale).toBe(true);
+    });
+
+    it("bản phân tích mới hơn phản hồi ⇒ stale=false", async () => {
+      const { service, analysisRepo, caseRepo } = makeService(VALID_RAW);
+      analysisRepo.findByCaseId.mockResolvedValueOnce(record);
+      caseRepo.findByIdOrFail.mockResolvedValueOnce({
+        caseRespondentRespondedAt: new Date("2026-10-17T09:00:00.000Z"),
+      });
+
+      const result = await service.getAnalysis("case-1");
+
+      expect(result?.stale).toBe(false);
+    });
+
+    it("chưa có phản hồi ⇒ stale=false", async () => {
+      const { service, analysisRepo } = makeService(VALID_RAW);
+      analysisRepo.findByCaseId.mockResolvedValueOnce(record);
+
+      const result = await service.getAnalysis("case-1");
+
+      expect(result?.stale).toBe(false);
+    });
+
+    it("có bổ sung bằng chứng/cập nhật sau bản phân tích ⇒ stale=true", async () => {
+      const { service, analysisRepo, caseRepo } = makeService(VALID_RAW);
+      analysisRepo.findByCaseId.mockResolvedValueOnce(record);
+      caseRepo.findByIdOrFail.mockResolvedValueOnce({
+        caseRespondentRespondedAt: null,
+        updatedAt: new Date("2026-10-17T12:00:00.000Z"),
+      });
+
+      const result = await service.getAnalysis("case-1");
+
+      expect(result?.stale).toBe(true);
     });
   });
 });
@@ -362,7 +784,8 @@ describe("assistant prompt helpers", () => {
     expect(prompt).toContain("D1 · Chi tiết đơn hàng: CÓ");
     expect(prompt).toContain("D4 · Vết GPS của tài xế: KHÔNG CÓ");
     expect(prompt).toContain("CẢNH BÁO DỮ LIỆU");
-    expect(prompt).toContain("Đã đính kèm 1 ảnh bằng chứng");
+    expect(prompt).toContain("ẢNH BẰNG CHỨNG ĐÍNH KÈM — 1 ảnh");
+    expect(prompt).toContain("[BÊN KHIẾU NẠI]");
   });
 
   it("lược gọn chuỗi và mảng quá dài", () => {
@@ -378,5 +801,15 @@ describe("assistant prompt helpers", () => {
     expect(compacted.text.endsWith("…")).toBe(true);
     expect(compacted.items).toHaveLength(26);
     expect(String(compacted.items[25])).toContain("và 5 phần tử nữa");
+  });
+});
+
+describe("assistant prompt — chỉ hỏi khi thật sự cần", () => {
+  it("có luật bắt buộc + playbook từ chối đơn của nhà hàng", () => {
+    expect(AI_SYSTEM_INSTRUCTION).toContain("CHỈ HỎI KHI THẬT SỰ CẦN");
+    expect(AI_SYSTEM_INSTRUCTION).toContain("followUpQuestions = []");
+    expect(AI_SYSTEM_INSTRUCTION).toContain("không hỏi tài xế");
+    expect(AI_SYSTEM_INSTRUCTION).toContain("UNAUTHORIZED_CANCEL");
+    expect(AI_SYSTEM_INSTRUCTION).toContain("ĐƠN ĐẦU TIÊN");
   });
 });

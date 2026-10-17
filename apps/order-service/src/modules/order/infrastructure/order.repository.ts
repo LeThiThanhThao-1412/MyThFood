@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository as TypeOrmRepo } from "typeorm";
+import { DataSource, Repository as TypeOrmRepo } from "typeorm";
 import { IRepository } from "@mythfood/shared-kernel";
 import { Order, ACTIVE_ORDER_STATUSES } from "../domain/order.aggregate";
 import { OrderId } from "../domain/order-id";
@@ -15,6 +15,7 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     private readonly repository: TypeOrmRepo<OrderEntity>,
     @InjectRepository(OrderItemEntity)
     private readonly orderItemRepo: TypeOrmRepo<OrderItemEntity>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async save(aggregate: Order): Promise<void> {
@@ -27,6 +28,26 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     // Save order items
     const itemEntities = OrderMapper.itemsToPersistence(aggregate);
     await this.orderItemRepo.save(itemEntities);
+  }
+
+  /**
+   * Lưu order + toàn bộ items trong MỘT transaction.
+   *
+   * Dùng khi áp dụng yêu cầu chỉnh sửa món đã được khách xác nhận để tránh
+   * trạng thái nửa vời (order đã đổi tổng tiền nhưng items chưa đổi hoặc
+   * ngược lại) do `save()` chạy nhiều câu lệnh rời nhau.
+   */
+  async saveWithItemsTx(aggregate: Order): Promise<void> {
+    const entity = OrderMapper.toPersistence(aggregate);
+    const itemEntities = OrderMapper.itemsToPersistence(aggregate);
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.save(OrderEntity, entity);
+      await manager.delete(OrderItemEntity, { order_id: entity.id });
+      if (itemEntities.length > 0) {
+        await manager.save(OrderItemEntity, itemEntities);
+      }
+    });
   }
 
   async findById(id: OrderId): Promise<Order | null> {

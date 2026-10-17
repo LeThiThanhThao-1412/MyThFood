@@ -10,6 +10,7 @@ import Link from "next/link";
 import { chatApi, resolutionApi } from "@mythfood/api-client";
 import { Drawer, ChatDrawer, useAuthStore } from "@mythfood/frontend-shared";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
+import DeliveryProofDialog from "@/components/DeliveryProofDialog";
 import { STAGE_ORDER, formatKm, toNum } from "@/lib/delivery-flow";
 
 const TERMINAL_STATUS: Record<string, { icon: string; label: string }> = {
@@ -49,6 +50,7 @@ export default function DeliveryDrawer({
     null,
   );
   const [deliveryCase, setDeliveryCase] = useState<any>(null);
+  const [proofOpen, setProofOpen] = useState(false);
 
   useEffect(() => {
     if (order?.status !== "DELIVERY_FAILED") {
@@ -100,6 +102,11 @@ export default function DeliveryDrawer({
   ];
 
   const handleAdvance = async () => {
+    // Bước giao thành công: bắt buộc chụp ảnh món ăn trước khi xác nhận.
+    if (stage === "DELIVERING" && order?.orderType !== "PICKUP") {
+      setProofOpen(true);
+      return;
+    }
     await advance();
   };
 
@@ -415,6 +422,14 @@ export default function DeliveryDrawer({
           </Link>
         </div>
       )}
+
+      <DeliveryProofDialog
+        open={proofOpen}
+        busy={busy}
+        serverError={error}
+        onClose={() => setProofOpen(false)}
+        onConfirm={async (url) => advance(url)}
+      />
 
       <ChatDrawer
         open={chatOpen}

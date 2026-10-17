@@ -36,6 +36,7 @@ import {
   useAuthStore,
   searchAddress,
   reverseGeocodeAddress,
+  computeCartLinePricing,
 } from "@mythfood/frontend-shared";
 import PromoCodeDrawer from "@/components/PromoCodeDrawer";
 import { calculateShippingFee, type ShippingFeeInfo } from "./shipping-utils";
@@ -248,8 +249,7 @@ function CheckoutContent() {
   const stripe = useStripe();
   const elementsHook = useElements();
   const { user, isAuthenticated, token } = useAuthStore();
-  const { items, merchantId, merchantName, clearCart, getSubtotal } =
-    useCartStore();
+  const { items, merchantId, merchantName, clearCart } = useCartStore();
 
   const [consumerId, setConsumerId] = useState<string | null>(null);
   const [addresses, setAddresses] = useState<Address[]>([]);
@@ -277,6 +277,12 @@ function CheckoutContent() {
   const [successOrder, setSuccessOrder] = useState<Order | null>(null);
   // Voucher bồi thường (đơn bị hủy do không có tài xế) — tự áp dụng cho đơn sau.
   const [compensationVoucher, setCompensationVoucher] = useState<any>(null);
+  // Số suất flash sale còn lại của khách cho từng món (server-authoritative).
+  // `null` = chưa có kết quả → tạm dùng `flashSaleLimitPerUser` trong giỏ.
+  const [flashSaleQuota, setFlashSaleQuota] = useState<Record<
+    string,
+    number
+  > | null>(null);
 
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -568,13 +574,49 @@ function CheckoutContent() {
     };
   }, [lat, lng, merchantId, merchantLat, merchantLng]);
 
-  const subtotal = getSubtotal();
+  // Hỏi promotion-service số suất flash sale còn lại của khách cho từng món.
+  // Nhờ vậy phần vượt giới hạn được hiển thị đúng giá thường (không bị tính
+  // nhầm toàn bộ số lượng theo giá sale).
+  useEffect(() => {
+    if (!merchantId || !consumerId || items.length === 0) {
+      setFlashSaleQuota(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res: any = await promotionApi.flashSale.validate({
+          merchantId,
+          consumerId,
+          items: items.map((i) => ({
+            menuItemId: i.menuItem.id,
+            quantity: i.quantity,
+            unitPrice: i.unitPrice ?? i.menuItem.price ?? 0,
+          })),
+        });
+        if (cancelled) return;
+        const list: any[] = Array.isArray(res?.items) ? res.items : [];
+        const quota: Record<string, number> = {};
+        for (const it of list) {
+          quota[it.menuItemId] = Math.max(0, Number(it.saleQuantity ?? 0));
+        }
+        setFlashSaleQuota(quota);
+      } catch {
+        if (!cancelled) setFlashSaleQuota(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [merchantId, consumerId, items]);
+
+  // Tách giá từng dòng: tối đa `limitPerUser`/số suất còn lại được hưởng giá
+  // flash sale, phần còn lại tính giá thường.
+  const pricedItems = computeCartLinePricing(items, flashSaleQuota);
+  const subtotal = pricedItems.reduce((sum, p) => sum + p.pricing.amount, 0);
   // Giá gốc trước flash sale (tổng giá món khi chưa áp dụng giảm giá flash sale)
-  const originalSubtotal = items.reduce(
-    (sum, i) =>
-      sum +
-      (i.originalUnitPrice ?? i.unitPrice ?? i.menuItem.price ?? 0) *
-        i.quantity,
+  const originalSubtotal = pricedItems.reduce(
+    (sum, p) => sum + p.pricing.originalAmount,
     0,
   );
   // Tổng tiền được giảm nhờ flash sale
@@ -1348,7 +1390,7 @@ function CheckoutContent() {
                     🏪 {merchantName}
                   </p>
                   <div className="space-y-2">
-                    {items.map((i) => (
+                    {pricedItems.map(({ item: i, pricing }) => (
                       <div
                         key={i.variantKey}
                         className="flex items-center justify-between text-sm"
@@ -1360,20 +1402,26 @@ function CheckoutContent() {
                           {i.menuItem.name}
                         </span>
                         <span className="text-right">
-                          {i.originalUnitPrice != null &&
-                            i.originalUnitPrice > i.unitPrice && (
-                              <span className="block text-xs text-gray-400 line-through">
-                                {(
-                                  i.originalUnitPrice * i.quantity
-                                ).toLocaleString("vi-VN")}
+                          {pricing.isFlashSale &&
+                            pricing.regularQuantity > 0 && (
+                              <span className="block text-[11px] text-orange-600">
+                                🔥 {pricing.saleQuantity} ×{" "}
+                                {pricing.saleUnitPrice.toLocaleString("vi-VN")}₫
+                                {" + "}
+                                {pricing.regularQuantity} ×{" "}
+                                {pricing.regularUnitPrice.toLocaleString(
+                                  "vi-VN",
+                                )}
                                 ₫
                               </span>
                             )}
+                          {pricing.originalAmount > pricing.amount && (
+                            <span className="block text-xs text-gray-400 line-through">
+                              {pricing.originalAmount.toLocaleString("vi-VN")}₫
+                            </span>
+                          )}
                           <span className="text-gray-600 font-medium">
-                            {(
-                              (i.unitPrice ?? i.menuItem.price) * i.quantity
-                            ).toLocaleString("vi-VN")}
-                            ₫
+                            {pricing.amount.toLocaleString("vi-VN")}₫
                           </span>
                         </span>
                       </div>

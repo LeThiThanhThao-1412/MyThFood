@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { resolutionApi, walletApi } from "@mythfood/api-client";
+import { resolutionApi, walletApi, orderApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import AdminShell from "../../components/AdminShell";
 import CaseAiAssistant from "../../components/CaseAiAssistant";
@@ -139,6 +139,8 @@ export default function AdminCasesPage() {
   const [selected, setSelected] = useState<any>(null);
   const [timeline, setTimeline] = useState<any[]>([]);
   const [casePenalties, setCasePenalties] = useState<any[]>([]);
+  /** Ảnh tài xế chụp món ăn lúc giao (bằng chứng hệ thống của đơn). */
+  const [deliveryProofUrl, setDeliveryProofUrl] = useState("");
 
   const [createForm, setCreateForm] = useState({
     type: "COMPLAINT",
@@ -213,6 +215,7 @@ export default function AdminCasesPage() {
     setSelected(c);
     setTimeline([]);
     setCasePenalties([]);
+    setDeliveryProofUrl("");
     setResolveForm({
       faultParty: RESPONDENT_TO_FAULT[c.respondentType] || "",
       note: "",
@@ -232,6 +235,14 @@ export default function AdminCasesPage() {
             ),
           );
           setCasePenalties(ps.filter(Boolean));
+        }
+        if (fresh.data.orderId) {
+          try {
+            const order: any = await orderApi.getById(fresh.data.orderId);
+            setDeliveryProofUrl(order?.deliveryProofPhotoUrl || "");
+          } catch {
+            /* không lấy được đơn — bỏ qua phần ảnh bằng chứng */
+          }
         }
       }
     } catch {
@@ -745,6 +756,24 @@ export default function AdminCasesPage() {
                       Mã đơn: {selected.orderId || "-"}
                     </p>
                   </div>
+
+                  {deliveryProofUrl && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-400 uppercase mb-2">
+                        📷 Ảnh tài xế chụp lúc giao hàng (bằng chứng hệ thống)
+                      </p>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={deliveryProofUrl}
+                        alt="Ảnh xác nhận giao hàng"
+                        className="h-28 w-28 object-cover rounded-lg border border-gray-200"
+                      />
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        Đối chiếu với ảnh/lời khai của hai bên trước khi kết
+                        luận.
+                      </p>
+                    </div>
+                  )}
 
                   {selected.evidence?.length > 0 && (
                     <div>

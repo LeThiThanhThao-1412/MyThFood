@@ -111,13 +111,24 @@ describe("GlmClient", () => {
         systemInstruction: "sys",
         prompt: "prompt",
         schema: { type: "object" },
-        images: [{ mimeType: "image/png", base64: "AAAA" }],
+        images: [
+          {
+            mimeType: "image/png",
+            base64: "AAAA",
+            label: "BÊN KHIẾU NẠI — ảnh 1: a.jpg",
+          },
+        ],
       });
 
       expect(result.model).toBe("glm-4.6v-flash");
       const [, body] = httpService.post.mock.calls[0] as any[];
       expect(body.model).toBe("glm-4.6v-flash");
+      // Nhãn bên đứng ngay trước ảnh tương ứng
       expect(body.messages[1].content[1]).toEqual({
+        type: "text",
+        text: "ẢNH 1 — BÊN KHIẾU NẠI — ảnh 1: a.jpg",
+      });
+      expect(body.messages[1].content[2]).toEqual({
         type: "image_url",
         image_url: { url: "data:image/png;base64,AAAA" },
       });

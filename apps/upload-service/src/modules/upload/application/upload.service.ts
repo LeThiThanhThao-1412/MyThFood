@@ -84,6 +84,7 @@ export class UploadService {
       "chat",
       "complaints",
       "delivery-failure",
+      "delivery-proof",
     ];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(
@@ -139,6 +140,7 @@ export class UploadService {
       "chat",
       "complaints",
       "delivery-failure",
+      "delivery-proof",
     ];
     if (!allowedFolders.includes(folder)) {
       throw new BadRequestException(

@@ -37,6 +37,15 @@ CREATE INDEX IF NOT EXISTS "IDX_tx_walletId" ON wallet_transactions ("walletId")
 CREATE INDEX IF NOT EXISTS "IDX_tx_ownerId" ON wallet_transactions ("ownerId");
 CREATE INDEX IF NOT EXISTS "IDX_tx_ownerType" ON wallet_transactions ("ownerType");
 
+-- Idempotency cho điều chỉnh đơn: 1 CHARGE + 1 REFUND / yêu cầu chỉnh sửa
+CREATE UNIQUE INDEX IF NOT EXISTS "UQ_tx_order_adjustment"
+  ON wallet_transactions ("referenceType", "referenceId")
+  WHERE "referenceType" IN (
+    'ORDER_ADJUSTMENT_CHARGE',
+    'ORDER_ADJUSTMENT_REFUND'
+  );
+
+
 \c mythfood_payment
 CREATE TABLE IF NOT EXISTS payments (
   id UUID PRIMARY KEY,
@@ -54,9 +63,14 @@ CREATE TABLE IF NOT EXISTS payments (
   failure_reason TEXT,
   refund_reason TEXT,
   refunded_amount NUMERIC(14,2),
+  adjustment_request_id UUID,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_adjustment_request
+  ON payments (adjustment_request_id)
+  WHERE adjustment_request_id IS NOT NULL;
 
 \c mythfood_dispatch
 CREATE TABLE IF NOT EXISTS dispatches (

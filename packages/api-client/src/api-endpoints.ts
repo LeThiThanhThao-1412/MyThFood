@@ -38,6 +38,11 @@ import type {
   RejectOrderRequest,
   OutForDeliveryRequest,
   UpdateOrderRequest,
+  OrderChangeRequest,
+  CreateOrderChangeRequest,
+  AcceptOrderChangeRequest,
+  AcceptOrderChangeResult,
+  OrderAdjustment,
   CreatePaymentRequest,
   Payment,
   CompletePaymentRequest,
@@ -91,6 +96,7 @@ import type {
   CaseAiAnalysisRecord,
   CaseAiContext,
   CaseAiSuggestion,
+  CaseAiReviewResult,
 } from "./types";
 
 // Service port constants
@@ -580,8 +586,8 @@ export const orderApi = {
       body,
     ),
 
-  delivered: (id: string) =>
-    httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/delivered`),
+  delivered: (id: string, body?: import("./types").MarkDeliveredRequest) =>
+    httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/delivered`, body ?? {}),
 
   assignDriver: (id: string, driverId: string) =>
     httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/assign-driver`, {
@@ -632,6 +638,69 @@ export const orderApi = {
 
   getTimeline: (id: string) =>
     httpClient.get<any>(PORTS.ORDER, `/orders/${id}/timeline`),
+
+  // ---- Order change requests (nhà hàng đổi món, khách xác nhận) ---- //
+  createChangeRequest: (orderId: string, body: CreateOrderChangeRequest) =>
+    httpClient.post<OrderChangeRequest>(
+      PORTS.ORDER,
+      `/orders/${orderId}/change-requests`,
+      body,
+    ),
+
+  listChangeRequests: (orderId: string) =>
+    httpClient.get<OrderChangeRequest[]>(
+      PORTS.ORDER,
+      `/orders/${orderId}/change-requests`,
+    ),
+
+  getChangeRequest: (requestId: string) =>
+    httpClient.get<OrderChangeRequest>(
+      PORTS.ORDER,
+      `/order-change-requests/${requestId}`,
+    ),
+
+  acceptChangeRequest: (requestId: string, body?: AcceptOrderChangeRequest) =>
+    httpClient.post<AcceptOrderChangeResult>(
+      PORTS.ORDER,
+      `/order-change-requests/${requestId}/accept`,
+      body ?? {},
+    ),
+
+  rejectChangeRequest: (requestId: string, body?: { reason?: string }) =>
+    httpClient.post<OrderChangeRequest>(
+      PORTS.ORDER,
+      `/order-change-requests/${requestId}/reject`,
+      body ?? {},
+    ),
+
+  cancelChangeRequest: (requestId: string, body?: { reason?: string }) =>
+    httpClient.post<OrderChangeRequest>(
+      PORTS.ORDER,
+      `/order-change-requests/${requestId}/cancel`,
+      body ?? {},
+    ),
+
+  getAdjustments: (orderId: string) =>
+    httpClient.get<OrderAdjustment[]>(
+      PORTS.ORDER,
+      `/orders/${orderId}/adjustments`,
+    ),
+
+  getMerchantAdjustments: (
+    merchantId: string,
+    params?: { startDate?: string; endDate?: string },
+  ) =>
+    httpClient.get<{
+      items: OrderAdjustment[];
+      total: number;
+      totalDelta: number;
+    }>(
+      PORTS.ORDER,
+      `/orders/reconciliation/merchant/${merchantId}/adjustments`,
+      {
+        params,
+      },
+    ),
 };
 
 // ============================================================================
@@ -661,6 +730,17 @@ export const paymentApi = {
   getByOrder: (orderId: string) =>
     httpClient.get<Payment>(PORTS.PAYMENT, `/payments/order/${orderId}`),
 
+  getAdjustmentPaymentSecret: (adjustmentRequestId: string) =>
+    httpClient.get<{
+      paymentId: string | null;
+      clientSecret: string;
+      amount: number;
+      status: string | null;
+    }>(
+      PORTS.PAYMENT,
+      `/payments/order-adjustment/${adjustmentRequestId}/secret`,
+    ),
+
   listByConsumer: (consumerId: string) =>
     httpClient.get<Payment[]>(
       PORTS.PAYMENT,
@@ -675,6 +755,13 @@ export const paymentApi = {
 
   complete: (id: string, body: CompletePaymentRequest) =>
     httpClient.patch<Payment>(PORTS.PAYMENT, `/payments/${id}/complete`, body),
+
+  completeAdjustment: (id: string, body: CompletePaymentRequest) =>
+    httpClient.patch<Payment>(
+      PORTS.PAYMENT,
+      `/payments/${id}/complete-adjustment`,
+      body,
+    ),
 
   fail: (id: string, body: FailPaymentRequest) =>
     httpClient.patch<Payment>(PORTS.PAYMENT, `/payments/${id}/fail`, body),
@@ -1984,12 +2071,12 @@ export const resolutionApi = {
       body ?? {},
     ),
 
-  /** Admin duyệt / bỏ qua gợi ý AI của vụ việc. */
+  /** Admin duyệt / bỏ qua gợi ý AI của vụ việc (duyệt = áp dụng phán quyết + hình phạt). */
   reviewCaseAiAnalysis: (
     caseId: string,
     body: { decision: "ACCEPTED" | "REJECTED"; note?: string },
   ) =>
-    httpClient.post<{ statusCode: number; data: CaseAiAnalysisRecord | null }>(
+    httpClient.post<{ statusCode: number; data: CaseAiReviewResult | null }>(
       PORTS.RESOLUTION,
       `/assistant/cases/${caseId}/analysis/review`,
       body,

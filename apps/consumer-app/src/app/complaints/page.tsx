@@ -149,6 +149,8 @@ export default function ComplaintsPage() {
   const [respondText, setRespondText] = useState("");
   const [respondEvidence, setRespondEvidence] = useState<string[]>([]);
   const [respondBusy, setRespondBusy] = useState(false);
+  const [supplementEvidence, setSupplementEvidence] = useState<string[]>([]);
+  const [supplementBusy, setSupplementBusy] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -372,6 +374,43 @@ export default function ComplaintsPage() {
       setMsg("❌ Tải ảnh thất bại");
     } finally {
       e.target.value = "";
+    }
+  }
+
+  async function uploadSupplementEvidence(e: any) {
+    const files = Array.from(e.target.files || []) as File[];
+    if (!files.length) return;
+    try {
+      for (const file of files) {
+        const res: any = await uploadApi.uploadImage(file, "complaints");
+        const url = res?.data?.url || res?.url;
+        if (url) setSupplementEvidence((prev) => [...prev, url]);
+      }
+    } catch {
+      setMsg("❌ Tải ảnh thất bại");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  /** Người khiếu nại bổ sung bằng chứng cho vụ việc đang mở/chờ bổ sung. */
+  async function submitSupplement(id: string) {
+    if (supplementEvidence.length === 0) {
+      setMsg("❌ Vui lòng chọn ít nhất 1 ảnh bổ sung");
+      return;
+    }
+    setSupplementBusy(true);
+    setMsg("");
+    try {
+      await resolutionApi.addEvidence(id, { urls: supplementEvidence });
+      setMsg("✅ Đã gửi bằng chứng bổ sung — AI sẽ phân tích lại");
+      setSupplementEvidence([]);
+      setSelectedCase(null);
+      await load();
+    } catch (err: any) {
+      setMsg(`❌ ${err?.message || "Không gửi được bằng chứng bổ sung"}`);
+    } finally {
+      setSupplementBusy(false);
     }
   }
 
@@ -817,8 +856,53 @@ export default function ComplaintsPage() {
                   ))}
               </div>
             )}
+            {selectedCase.reporterType === "CONSUMER" &&
+              ["OPEN", "UNDER_REVIEW", "WAITING_EVIDENCE"].includes(
+                selectedCase.status,
+              ) && (
+                <div className="space-y-2 border-t border-gray-100 pt-3">
+                  <p className="text-sm font-semibold text-gray-700">
+                    Bổ sung bằng chứng
+                  </p>
+                  {selectedCase.status === "WAITING_EVIDENCE" && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+                      Admin đang yêu cầu bổ sung bằng chứng cho vụ việc này —
+                      hãy gửi thêm ảnh/video để AI phân tích lại.
+                    </p>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={uploadSupplementEvidence}
+                    className="text-xs text-gray-500 file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5"
+                  />
+                  {supplementEvidence.length > 0 && (
+                    <div className="flex gap-2 flex-wrap">
+                      {supplementEvidence.map((url, i) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          key={i}
+                          src={url}
+                          alt="Bổ sung"
+                          className="h-16 w-16 object-cover rounded-lg border border-gray-200"
+                        />
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => submitSupplement(selectedCase.id)}
+                    disabled={supplementBusy || supplementEvidence.length === 0}
+                    className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {supplementBusy ? "Đang gửi..." : "Gửi bổ sung bằng chứng"}
+                  </button>
+                </div>
+              )}
             {selectedCase.respondentType === "CONSUMER" &&
-              selectedCase.status === "OPEN" && (
+              ["OPEN", "UNDER_REVIEW", "WAITING_EVIDENCE"].includes(
+                selectedCase.status,
+              ) && (
                 <div className="space-y-2 border-t border-gray-100 pt-3">
                   {respondingCaseId === selectedCase.id ? (
                     <div className="space-y-2">

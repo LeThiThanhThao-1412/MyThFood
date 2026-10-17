@@ -169,20 +169,31 @@ export class GlmClient implements AssistantLlmClient {
 
     // Không có ảnh ⇒ đường chữ thuần.
     if (images.length === 0) {
-      return this.callWithJsonRetry<T>(request, [], false);
+      return {
+        ...(await this.callWithJsonRetry<T>(request, [], false)),
+        imagesUsed: 0,
+      };
     }
 
     // Tắt hẳn phần ảnh (GLM_VISION_MODEL=none) ⇒ không gọi mạng vô ích.
     if (!visionModel) {
       return this.withImageNote(
-        await this.callWithJsonRetry<T>({ ...request, images: [] }, [], false),
+        {
+          ...(await this.callWithJsonRetry<T>(
+            { ...request, images: [] },
+            [],
+            false,
+          )),
+          imagesUsed: 0,
+        },
         images.length,
         "chưa bật model vision (GLM_VISION_MODEL=none)",
       );
     }
 
     try {
-      return await this.callWithJsonRetry<T>(request, images, true);
+      const response = await this.callWithJsonRetry<T>(request, images, true);
+      return { ...response, imagesUsed: images.length };
     } catch (err: any) {
       // Ảnh bằng chứng là phần *bổ trợ*: model vision hỏng (hết quota, bị gỡ,
       // trả JSON lỗi...) không nên làm mất luôn cả kết quả phân tích.
@@ -193,7 +204,14 @@ export class GlmClient implements AssistantLlmClient {
       );
 
       return this.withImageNote(
-        await this.callWithJsonRetry<T>({ ...request, images: [] }, [], false),
+        {
+          ...(await this.callWithJsonRetry<T>(
+            { ...request, images: [] },
+            [],
+            false,
+          )),
+          imagesUsed: 0,
+        },
         images.length,
         `model vision "${visionModel}" lỗi`,
       );
@@ -329,12 +347,19 @@ export class GlmClient implements AssistantLlmClient {
     const userContent = images.length
       ? [
           { type: "text", text: request.prompt },
-          ...images.map((image) => ({
-            type: "image_url",
-            image_url: {
-              url: `data:${image.mimeType};base64,${image.base64}`,
+          // Nhãn TRƯỚC mỗi ảnh để model biết ảnh đó của bên nào.
+          ...images.flatMap((image, index) => [
+            {
+              type: "text",
+              text: `ẢNH ${index + 1}${image.label ? ` — ${image.label}` : ""}`,
             },
-          })),
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${image.mimeType};base64,${image.base64}`,
+              },
+            },
+          ]),
         ]
       : request.prompt;
 

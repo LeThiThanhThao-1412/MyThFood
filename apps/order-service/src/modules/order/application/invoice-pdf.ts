@@ -15,10 +15,63 @@ function moneyPdf(value: unknown): string {
   return `${Number(value || 0).toLocaleString("vi-VN")} đ`;
 }
 
+export interface InvoiceAdjustment {
+  created_at: Date | string;
+  before_total: number | string;
+  after_total: number | string;
+  delta_amount: number | string;
+  money_status: string;
+  before_items?: unknown;
+  after_items?: unknown;
+}
+
+const MONEY_STATUS_LABELS: Record<string, string> = {
+  NONE: "Không phát sinh",
+  NOT_REQUIRED: "Không cần thu/hoàn",
+  CHARGED: "Đã thu khoản chênh lệch",
+  REFUNDED: "Đã hoàn vào ví khách",
+  FAILED: "Hoàn tiền lỗi - cần đối soát",
+  AWAITING_PAYMENT: "Chờ khách thanh toán",
+};
+
+function summarizeInvoiceItems(
+  beforeItems: unknown,
+  afterItems: unknown,
+): { removed: string; added: string } {
+  const toCount = (value: unknown): Map<string, number> => {
+    const map = new Map<string, number>();
+    if (!Array.isArray(value)) return map;
+    for (const raw of value as Array<Record<string, unknown>>) {
+      const name = String(raw?.name ?? "");
+      if (!name) continue;
+      const qty = Number(raw?.quantity ?? 0);
+      map.set(name, (map.get(name) ?? 0) + qty);
+    }
+    return map;
+  };
+
+  const before = toCount(beforeItems);
+  const after = toCount(afterItems);
+  const removed: string[] = [];
+  const added: string[] = [];
+
+  for (const [name, qty] of before) {
+    const diff = qty - (after.get(name) ?? 0);
+    if (diff > 0) removed.push(`${name} ×${diff}`);
+  }
+  for (const [name, qty] of after) {
+    const diff = qty - (before.get(name) ?? 0);
+    if (diff > 0) added.push(`${name} ×${diff}`);
+  }
+
+  return { removed: removed.join(", "), added: added.join(", ") };
+}
+
 export function buildInvoicePdf(
   order: Order,
   merchant: any | null,
   createdAt: Date | null,
+  adjustments: InvoiceAdjustment[] = [],
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -94,7 +147,7 @@ export function buildInvoicePdf(
 
     // ---------- Order info ----------
     const info: [string, string][] = [
-      ["Mã đơn hàng", `#${order.id.toString()}`],
+      ["Mã đơn hàng", `#${order.id.toString()} (v${order.orderItemsVersion})`],
       ["Ngày tạo", createdAtLabel],
       ["Loại đơn", orderTypeLabel],
       ["Thanh toán", paymentLabel],
@@ -194,6 +247,79 @@ export function buildInvoicePdf(
       .strokeColor("#e5e5e5")
       .stroke();
     y += 12;
+
+    // ---------- Adjustments (điều chỉnh món đã được khách xác nhận) ----------
+    if (adjustments.length > 0) {
+      doc.fillColor(DARK).fontSize(11).text("ĐIỀU CHỈNH ĐƠN HÀNG", left, y, {
+        width,
+      });
+      y = doc.y + 4;
+
+      adjustments.forEach((adjustment, index) => {
+        if (y > doc.page.height - 170) {
+          doc.addPage();
+          y = doc.page.margins.top;
+        }
+        const when = new Date(adjustment.created_at).toLocaleString("vi-VN");
+        const beforeTotal = Number(adjustment.before_total || 0);
+        const afterTotal = Number(adjustment.after_total || 0);
+        const delta = Number(adjustment.delta_amount || 0);
+        const deltaLabel = `${delta >= 0 ? "+" : "-"}${moneyPdf(Math.abs(delta))}`;
+
+        doc
+          .fillColor(GRAY)
+          .fontSize(9)
+          .text(`#${index + 1} ${when}`, left, y, { width: width * 0.42 });
+        doc
+          .fillColor(DARK)
+          .fontSize(9)
+          .text(
+            `${moneyPdf(beforeTotal)} → ${moneyPdf(afterTotal)} (${deltaLabel})`,
+            left + width * 0.42,
+            y,
+            { width: width * 0.58, align: "right" },
+          );
+        y = doc.y + 2;
+
+        const { removed, added } = summarizeInvoiceItems(
+          adjustment.before_items,
+          adjustment.after_items,
+        );
+        if (removed) {
+          doc
+            .fillColor(LIGHT)
+            .fontSize(8)
+            .text(`  Bỏ: ${removed}`, left, y, { width });
+          y = doc.y + 1;
+        }
+        if (added) {
+          doc
+            .fillColor(LIGHT)
+            .fontSize(8)
+            .text(`  Thêm: ${added}`, left, y, { width });
+          y = doc.y + 1;
+        }
+        doc
+          .fillColor(LIGHT)
+          .fontSize(8)
+          .text(
+            `  Thanh toán: ${MONEY_STATUS_LABELS[adjustment.money_status] ?? adjustment.money_status}`,
+            left,
+            y,
+            { width },
+          );
+        y = doc.y + 4;
+      });
+
+      y += 4;
+      doc
+        .moveTo(left, y)
+        .lineTo(right, y)
+        .lineWidth(1)
+        .strokeColor("#e5e5e5")
+        .stroke();
+      y += 12;
+    }
 
     // ---------- Totals ----------
     // Hóa đơn bán tại quán: chỉ ghi nhận giá món + giảm giá flash sale DO QUÁN TẠO

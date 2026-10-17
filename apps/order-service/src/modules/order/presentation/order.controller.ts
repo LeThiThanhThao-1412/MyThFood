@@ -29,6 +29,7 @@ import {
   OrderResponseDto,
   RecordDriverCancelDto,
   DeliveryFailedDto,
+  MarkDeliveredDto,
 } from "../application/dtos/order.dto";
 import { Order } from "../domain/order.aggregate";
 
@@ -138,8 +139,11 @@ export class OrderController {
 
   @Patch(":id/delivered")
   @Roles("DRIVER", "ADMIN")
-  async markDelivered(@Param("id") id: string): Promise<OrderResponseDto> {
-    const order = await this.orderService.markDelivered(id);
+  async markDelivered(
+    @Param("id") id: string,
+    @Body() dto: MarkDeliveredDto,
+  ): Promise<OrderResponseDto> {
+    const order = await this.orderService.markDelivered(id, dto?.photoUrl);
     return this.toOrderResponse(order);
   }
 
@@ -353,10 +357,12 @@ export class OrderController {
         order.orderEstimatedDeliveryTime?.toISOString() ?? null,
       notes: order.orderNotes,
       driverId: order.orderDriverId,
+      deliveryProofPhotoUrl: order.orderDeliveryProofPhotoUrl,
       cancelReason: order.orderCancelReason,
       rejectionReason: order.orderRejectionReason,
       rejectionSource: order.orderRejectionSource,
       paymentMethod: order.orderPaymentMethod,
+      itemsVersion: order.orderItemsVersion,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
     };

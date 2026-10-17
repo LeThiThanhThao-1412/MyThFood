@@ -18,6 +18,7 @@ import {
 } from "@mythfood/frontend-shared";
 import { dispatchApi, chatApi, uploadApi } from "@mythfood/api-client";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
+import DeliveryProofDialog from "@/components/DeliveryProofDialog";
 import {
   STAGE_ORDER,
   formatKm,
@@ -141,6 +142,10 @@ export default function DeliveryPage() {
   const [failPhotoUrl, setFailPhotoUrl] = useState("");
   const [photoUploading, setPhotoUploading] = useState(false);
 
+  // Bằng chứng giao hàng: hộp thoại bắt buộc chụp ảnh món ăn lúc giao cho khách
+  // trước khi xác nhận giao thành công (để đối chiếu khi khách khiếu nại).
+  const [proofOpen, setProofOpen] = useState(false);
+
   async function doCancel(reason: string) {
     if (!dispatch?.id) return;
     try {
@@ -181,6 +186,12 @@ export default function DeliveryPage() {
     } catch (err: any) {
       setError(err?.message || "Không thể báo giao thất bại");
     }
+  }
+
+  /** Mở hộp thoại chụp ảnh xác nhận giao hàng. */
+  function openProofDialog() {
+    setError("");
+    setProofOpen(true);
   }
 
   if (loading) {
@@ -249,6 +260,23 @@ export default function DeliveryPage() {
                 ? "💵 COD: Phần tiền món đã được tự động trừ khỏi ví để chuyển cho nhà hàng & nền tảng."
                 : "Tiền đã được cộng vào ví thu nhập của bạn."}
             </p>
+
+            {order.deliveryProofPhotoUrl && (
+              <div className="bg-white border border-gray-100 rounded-2xl p-4 mb-4 text-left">
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                  📷 Ảnh xác nhận giao hàng
+                </p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={order.deliveryProofPhotoUrl}
+                  alt="Ảnh xác nhận giao hàng"
+                  className="w-full max-h-52 object-cover rounded-xl border border-gray-200"
+                />
+                <p className="text-[11px] text-gray-400 mt-2">
+                  Ảnh món ăn lúc giao cho khách đã được lưu làm bằng chứng.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-3">
               <Link
@@ -707,7 +735,11 @@ export default function DeliveryPage() {
             </button>
           )}
           <button
-            onClick={advance}
+            onClick={() =>
+              stage === "DELIVERING" && order.orderType !== "PICKUP"
+                ? openProofDialog()
+                : advance()
+            }
             disabled={busy}
             className="w-full bg-[#ff6b35] text-white py-4 rounded-2xl font-bold text-base hover:bg-orange-600 disabled:opacity-50 transition flex items-center justify-center gap-2"
           >
@@ -727,10 +759,18 @@ export default function DeliveryPage() {
                 ? "Khách sẽ nhận thông báo “Tài xế đã đến nhà hàng”"
                 : stage === "AT_RESTAURANT"
                   ? "Khách sẽ nhận thông báo “Tài xế đã nhận món, đang giao”"
-                  : "Khách sẽ nhận thông báo “Đơn hàng đã được giao”"}
+                  : "Khách sẽ nhận thông báo “Đơn hàng đã được giao” · nhớ chụp ảnh món ăn"}
           </p>
         </div>
       )}
+
+      <DeliveryProofDialog
+        open={proofOpen}
+        busy={busy}
+        serverError={error}
+        onClose={() => setProofOpen(false)}
+        onConfirm={async (url) => advance(url)}
+      />
 
       <ChatDrawer
         open={chatOpen}

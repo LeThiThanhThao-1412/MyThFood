@@ -1,6 +1,7 @@
 import {
   Injectable,
   Logger,
+  BadRequestException,
   ForbiddenException,
   ConflictException,
 } from "@nestjs/common";
@@ -19,8 +20,12 @@ import {
   UpdateOrderDto,
   StatusTransitionDto,
   OrderQueryDto,
+  OrderItemOptionDto,
 } from "./dtos/order.dto";
 import { buildInvoicePdf } from "./invoice-pdf";
+import { OrderChangeService } from "./order-change.service";
+import { OrderAdjustmentRepository } from "../infrastructure/order-adjustment.repository";
+import { splitFlashSaleLines } from "../domain/flash-sale-pricing";
 
 @Injectable()
 export class OrderService {
@@ -32,6 +37,8 @@ export class OrderService {
     private readonly httpService: HttpService,
     private readonly orderGateway: OrderGateway,
     private readonly orderTimelineRepository: OrderTimelineRepository,
+    private readonly orderChangeService: OrderChangeService,
+    private readonly orderAdjustmentRepository: OrderAdjustmentRepository,
   ) {}
 
   // ===================== Order Placement =====================
@@ -50,19 +57,31 @@ export class OrderService {
     // Server-authoritative — bỏ qua giá client gửi cho món có flash sale.
     const orderId = randomUUID();
     const flashPricing = await this.resolveFlashSalePrices(dto, orderId);
-    const orderItems = dto.items.map((item) => {
-      const priced = flashPricing.get(item.menuItemId);
-      return {
+    // Mỗi khách chỉ được hưởng tối đa `saleQuantity` suất giá sale cho một món.
+    // Phần vượt giới hạn (hoặc khi flash sale hết suất) được tách thành dòng
+    // riêng với giá thường để tổng tiền / hóa đơn luôn chính xác.
+    type PricedLine = {
+      menuItemId: string;
+      name: string;
+      imageUrl: string | null;
+      quantity: number;
+      unitPrice: number;
+      originalPrice: number | null;
+      flashSaleFundedBy: string | null;
+      specialInstructions?: string;
+      options?: OrderItemOptionDto[];
+    };
+    const orderItems: PricedLine[] = dto.items.flatMap<PricedLine>((item) => {
+      const base = {
         menuItemId: item.menuItemId,
         name: item.name,
         imageUrl: item.imageUrl ?? null,
-        quantity: item.quantity,
-        unitPrice: priced ? priced.salePrice : item.unitPrice,
-        originalPrice: priced ? priced.originalPrice : null,
-        flashSaleFundedBy: priced ? priced.fundedBy : null,
         specialInstructions: item.specialInstructions,
         options: item.options,
       };
+      return splitFlashSaleLines(item, flashPricing.get(item.menuItemId)).map(
+        (line) => ({ ...base, ...line }),
+      );
     });
     const foodTotal = orderItems.reduce(
       (sum, item) => sum + item.quantity * item.unitPrice,
@@ -311,6 +330,12 @@ export class OrderService {
     order.markReadyForPickup();
     await this.orderRepository.save(order);
 
+    // Món đã đóng gói xong → hủy mọi đề xuất chỉnh sửa đang chờ.
+    await this.orderChangeService.cancelActiveForOrder(
+      id,
+      "Đơn đã sẵn sàng giao, không thể chỉnh sửa món",
+    );
+
     const events = order.pullDomainEvents();
     for (const event of events) {
       this.eventBus.publish(event);
@@ -464,9 +489,22 @@ export class OrderService {
     return order;
   }
 
-  async markDelivered(id: string): Promise<Order> {
+  async markDelivered(id: string, photoUrl?: string): Promise<Order> {
     const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
-    order.markDelivered();
+
+    // Bằng chứng giao hàng: đơn DELIVERY bắt buộc có ảnh món ăn tài xế chụp
+    // lúc giao cho khách (chống khiếu nại "chưa nhận hàng").
+    if (
+      order.orderTypeValue === "DELIVERY" &&
+      order.orderStatus === "OUT_FOR_DELIVERY" &&
+      !photoUrl?.trim()
+    ) {
+      throw new BadRequestException(
+        "Phải chụp ảnh món ăn khi giao cho khách trước khi xác nhận giao hàng thành công",
+      );
+    }
+
+    order.markDelivered(photoUrl);
     await this.orderRepository.save(order);
 
     // Ghi nhận doanh thu (accrue) — chưa cộng vào ví; quyết toán cuối ngày 23:00.
@@ -503,6 +541,16 @@ export class OrderService {
       this.logger.log(
         `Accrue doanh thu đơn ${id}: method=${order.orderPaymentMethod} food=${foodTotal} ship=${shippingFee}`,
       );
+      try {
+        await this.orderAdjustmentRepository.markSettlementStatusByOrderId(
+          id,
+          "ACCRUED",
+        );
+      } catch (err: any) {
+        this.logger.warn(
+          `Mark adjustments accrued failed for order ${id}: ${err?.message ?? err}`,
+        );
+      }
     } catch (err: any) {
       this.logger.warn(`Accrue failed for order ${id}: ${err.message}`);
     }
@@ -569,6 +617,12 @@ export class OrderService {
       order.cancel(dto.reason);
     }
     await this.orderRepository.save(order);
+
+    // Đơn đã hủy → hủy yêu cầu chỉnh sửa đang chờ (nếu có).
+    await this.orderChangeService.cancelActiveForOrder(
+      id,
+      "Đơn đã bị hủy, yêu cầu chỉnh sửa không còn hiệu lực",
+    );
 
     // Hoàn stock + lượt flash sale (nếu có) — idempotent.
     await this.refundFlashSale(id);
@@ -653,6 +707,12 @@ export class OrderService {
       order.reject(dto.reason);
     }
     await this.orderRepository.save(order);
+
+    // Đơn bị từ chối → hủy yêu cầu chỉnh sửa đang chờ (nếu có).
+    await this.orderChangeService.cancelActiveForOrder(
+      id,
+      "Đơn đã bị từ chối, yêu cầu chỉnh sửa không còn hiệu lực",
+    );
 
     // Hoàn stock + lượt flash sale (nếu có) — idempotent.
     await this.refundFlashSale(id);
@@ -755,6 +815,12 @@ export class OrderService {
 
     order.cancelNoDriver(reason);
     await this.orderRepository.save(order);
+
+    // Đơn đã hủy → hủy yêu cầu chỉnh sửa đang chờ (nếu có).
+    await this.orderChangeService.cancelActiveForOrder(
+      id,
+      "Đơn đã hủy do không có tài xế, yêu cầu chỉnh sửa không còn hiệu lực",
+    );
 
     // Hoàn stock + lượt flash sale (nếu có) — idempotent.
     await this.refundFlashSale(id);
@@ -1401,7 +1467,10 @@ export class OrderService {
     const createdAt = await this.orderRepository.getCreatedAt(
       order.id.toString(),
     );
-    return buildInvoicePdf(order, merchant, createdAt);
+    const adjustments = await this.orderAdjustmentRepository.findByOrderId(
+      order.id.toString(),
+    );
+    return buildInvoicePdf(order, merchant, createdAt, adjustments);
   }
 
   private merchantServiceCandidates(): string[] {
@@ -1579,8 +1648,8 @@ export class OrderService {
 
   /**
    * Áp giá flash sale cho các món trong đơn (server-authoritative) và trừ
-   * stock một cách nguyên tử bên promotion-service. Trả về map theo menuItemId.
-   * Ném lỗi nếu flash sale hết suất / hết lượt / hết giờ → đơn sẽ bị từ chối.
+   * stock một cách nguyên tử bên promotion-service. Trả về map theo menuItemId
+   * kèm `saleQuantity` — số phần được hưởng giá sale (phần còn lại giá thường).
    */
   private async resolveFlashSalePrices(
     dto: PlaceOrderDto,
@@ -1588,7 +1657,12 @@ export class OrderService {
   ): Promise<
     Map<
       string,
-      { originalPrice: number; salePrice: number; fundedBy: string | null }
+      {
+        originalPrice: number;
+        salePrice: number;
+        fundedBy: string | null;
+        saleQuantity: number;
+      }
     >
   > {
     const url =
@@ -1636,13 +1710,20 @@ export class OrderService {
     const data: any = res.data?.data ?? res.data;
     const map = new Map<
       string,
-      { originalPrice: number; salePrice: number; fundedBy: string | null }
+      {
+        originalPrice: number;
+        salePrice: number;
+        fundedBy: string | null;
+        saleQuantity: number;
+      }
     >();
     for (const it of data?.items ?? []) {
       map.set(it.menuItemId, {
         originalPrice: Number(it.originalPrice),
         salePrice: Number(it.salePrice),
         fundedBy: it.fundedBy ?? null,
+        // Fallback cho promotion-service phiên bản cũ: coi toàn bộ là giá sale.
+        saleQuantity: Number(it.saleQuantity ?? it.quantity ?? 0),
       });
     }
     return map;

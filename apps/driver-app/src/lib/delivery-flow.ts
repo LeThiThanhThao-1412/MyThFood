@@ -78,7 +78,7 @@ export const STAGE_META: Record<DeliveryStage, StageMeta> = {
     stage: "DELIVERING",
     icon: "🚚",
     label: "Đang giao cho khách",
-    hint: "Giao tới địa chỉ khách, hoàn tất thì bấm “Đã giao món thành công”.",
+    hint: "Giao tới địa chỉ khách, chụp ảnh món ăn lúc giao rồi bấm “Đã giao món thành công”.",
     actionLabel: "✅ Đã giao món thành công",
     target: "CUSTOMER",
   },
@@ -517,13 +517,28 @@ export async function pickUpFood(
 /**
  * Bước 4 — “Giao hàng thành công”: DELIVERED (dispatch + order → kích hoạt
  * settlement ví), định vị tài xế tại nhà khách, thông báo hoàn tất.
+ *
+ * Với đơn DELIVERY, `deliveryProofPhotoUrl` là ảnh tài xế chụp món ăn lúc giao
+ * cho khách — **bắt buộc** để làm bằng chứng khi khách khiếu nại.
  */
 export async function completeDelivery(
   order: any,
   dispatch: any,
   driverId: string,
   customer: LatLng | null,
+  deliveryProofPhotoUrl?: string,
 ): Promise<{ dispatch: any; order: any }> {
+  const proofUrl = deliveryProofPhotoUrl?.trim() ?? "";
+  if (
+    order?.orderType !== "PICKUP" &&
+    order?.status !== "DELIVERED" &&
+    !proofUrl
+  ) {
+    throw new Error(
+      "Vui lòng chụp ảnh món ăn khi giao cho khách trước khi xác nhận giao hàng thành công",
+    );
+  }
+
   let current = dispatch;
   if (current?.status === "DRIVER_ARRIVED") {
     current = unwrap<any>(await dispatchApi.markPickedUp(current.id));
@@ -541,12 +556,25 @@ export async function completeDelivery(
     if (order.status !== "DELIVERED") {
       updatedOrder = await syncOrderOutForDelivery(order, driverId);
       if (updatedOrder?.status !== "DELIVERED") {
-        updatedOrder = await orderApi.delivered(order.id);
+        updatedOrder = await orderApi.delivered(order.id, {
+          photoUrl: proofUrl || undefined,
+        });
       }
     }
-  } catch {
+  } catch (err) {
     // Đơn có thể đã bị hủy trước đó (VD: CANCELLED_NO_DRIVER) → bỏ qua,
     // vẫn phải giải phóng tài xế bên dưới để không bị kẹt currentOrderId.
+    // Các lỗi khác (VD: order-service từ chối vì thiếu ảnh bằng chứng) phải
+    // nổi lên để tài xế thấy và xử lý, tránh báo "giao thành công" sai.
+    const fresh = await orderApi.getById(order.id).catch(() => null);
+    const terminal =
+      fresh?.status === "CANCELLED" ||
+      fresh?.status === "REJECTED" ||
+      fresh?.status === "CANCELLED_NO_DRIVER" ||
+      fresh?.status === "DELIVERY_FAILED" ||
+      fresh?.status === "DELIVERED";
+    if (!terminal) throw err;
+    if (fresh) updatedOrder = fresh;
   }
 
   // Xác nhận vị trí tài xế tại nhà khách

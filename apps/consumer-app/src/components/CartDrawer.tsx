@@ -1,7 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Drawer, useCartStore } from "@mythfood/frontend-shared";
+import {
+  Drawer,
+  useCartStore,
+  computeCartLinePricing,
+} from "@mythfood/frontend-shared";
 
 export default function CartDrawer({
   open,
@@ -36,69 +40,80 @@ export default function CartDrawer({
             </div>
           ) : (
             <div className="space-y-3">
-              {items.map((item) => (
-                <div key={item.variantKey} className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-xl bg-[#fff7ed] overflow-hidden flex items-center justify-center shrink-0">
-                    {item.menuItem.imageUrl ? (
-                      <img
-                        src={item.menuItem.imageUrl}
-                        alt={item.menuItem.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-2xl">🍽️</span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-800 text-sm truncate">
-                      {item.menuItem.name}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {(
-                        item.unitPrice ??
-                        item.menuItem.price ??
-                        0
-                      ).toLocaleString("vi-VN")}
-                      ₫
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() =>
-                        updateQuantity(item.variantKey, item.quantity - 1)
-                      }
-                      className="w-7 h-7 rounded-full border border-gray-200 text-gray-600 flex items-center justify-center"
-                    >
-                      −
-                    </button>
-                    <span className="w-6 text-center text-sm font-semibold">
-                      {item.quantity}
-                    </span>
-                    <button
-                      onClick={() =>
-                        updateQuantity(item.variantKey, item.quantity + 1)
-                      }
-                      className="w-7 h-7 rounded-full bg-[#ff6b35] text-white flex items-center justify-center"
-                    >
-                      +
-                    </button>
-                  </div>
-                  <div className="w-20 text-right shrink-0">
-                    <p className="font-bold text-[#ff6b35] text-sm">
-                      {((item.unitPrice ?? 0) * item.quantity).toLocaleString(
-                        "vi-VN",
+              {computeCartLinePricing(items).map(({ item, pricing }) => {
+                return (
+                  <div
+                    key={item.variantKey}
+                    className="flex items-center gap-3"
+                  >
+                    <div className="w-14 h-14 rounded-xl bg-[#fff7ed] overflow-hidden flex items-center justify-center shrink-0">
+                      {item.menuItem.imageUrl ? (
+                        <img
+                          src={item.menuItem.imageUrl}
+                          alt={item.menuItem.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-2xl">🍽️</span>
                       )}
-                      ₫
-                    </p>
-                    <button
-                      onClick={() => removeItem(item.variantKey)}
-                      className="text-[10px] text-gray-400 hover:text-red-500"
-                    >
-                      Xóa
-                    </button>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-800 text-sm truncate">
+                        {item.menuItem.name}
+                      </p>
+                      {pricing.isFlashSale && pricing.regularQuantity > 0 ? (
+                        <p className="text-xs text-orange-600">
+                          🔥 {pricing.saleQuantity} ×{" "}
+                          {pricing.saleUnitPrice.toLocaleString("vi-VN")}₫ +{" "}
+                          {pricing.regularQuantity} ×{" "}
+                          {pricing.regularUnitPrice.toLocaleString("vi-VN")}₫
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-400">
+                          {(
+                            item.unitPrice ??
+                            item.menuItem.price ??
+                            0
+                          ).toLocaleString("vi-VN")}
+                          ₫
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() =>
+                          updateQuantity(item.variantKey, item.quantity - 1)
+                        }
+                        className="w-7 h-7 rounded-full border border-gray-200 text-gray-600 flex items-center justify-center"
+                      >
+                        −
+                      </button>
+                      <span className="w-6 text-center text-sm font-semibold">
+                        {item.quantity}
+                      </span>
+                      <button
+                        onClick={() =>
+                          updateQuantity(item.variantKey, item.quantity + 1)
+                        }
+                        className="w-7 h-7 rounded-full bg-[#ff6b35] text-white flex items-center justify-center"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <div className="w-20 text-right shrink-0">
+                      <p className="font-bold text-[#ff6b35] text-sm">
+                        {pricing.amount.toLocaleString("vi-VN")}₫
+                      </p>
+                      <button
+                        onClick={() => removeItem(item.variantKey)}
+                        className="text-[10px] text-gray-400 hover:text-red-500"
+                      >
+                        Xóa
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

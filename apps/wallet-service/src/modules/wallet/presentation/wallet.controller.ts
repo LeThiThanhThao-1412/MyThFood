@@ -258,6 +258,34 @@ export class WalletController {
   }
 
   // ═══════════════════════════════════════════════════════
+  // Thu/hoàn chênh lệch khi nhà hàng chỉnh sửa đơn (idempotent)
+  // ═══════════════════════════════════════════════════════
+  @Post("order-adjustment")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async adjustOrderAmount(
+    @Body()
+    body: {
+      adjustmentId: string;
+      ownerId: string;
+      ownerType?: OwnerType;
+      direction: "CHARGE" | "REFUND";
+      amount: number;
+      orderId: string;
+      description?: string;
+    },
+  ) {
+    return this.walletService.adjustOrderAmount({
+      adjustmentId: body.adjustmentId,
+      ownerId: body.ownerId,
+      ownerType: body.ownerType || OwnerType.CONSUMER,
+      direction: body.direction,
+      amount: body.amount,
+      orderId: body.orderId,
+      description: body.description,
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════
   // Bồi thường phí ship cho tài xế khi giao thất bại do lỗi khách (Case 8)
   // ═══════════════════════════════════════════════════════
   @Post("compensate-driver")

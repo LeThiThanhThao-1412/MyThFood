@@ -1,4 +1,12 @@
-import { computeUnitPrice, buildVariantKey, useCartStore } from "./cart.store";
+import {
+  computeUnitPrice,
+  buildVariantKey,
+  computeCartItemPricing,
+  computeCartLinePricing,
+  computeCartSubtotal,
+  useCartStore,
+} from "./cart.store";
+import type { CartItem } from "./cart.store";
 import type { MenuItem, SelectedOptionGroup } from "@mythfood/api-client";
 
 const menuItem = { id: "m1", price: 50000 } as MenuItem;
@@ -175,5 +183,107 @@ describe("useCartStore addItem (variant merging)", () => {
     const items = useCartStore.getState().items;
     expect(items).toHaveLength(1);
     expect(items[0]!.merchantId).toBe("mer2");
+  });
+});
+
+describe("computeCartItemPricing (flash sale limit per user)", () => {
+  const flashItem = (overrides: Partial<CartItem> = {}): CartItem => ({
+    menuItem,
+    quantity: 1,
+    unitPrice: 25000,
+    originalUnitPrice: 50000,
+    flashSaleLimitPerUser: 1,
+    variantKey: "m1::",
+    merchantId: "mer1",
+    merchantName: "Mer 1",
+    ...overrides,
+  });
+
+  it("applies sale price only to the quota, the rest at normal price", () => {
+    const pricing = computeCartItemPricing(flashItem({ quantity: 3 }));
+    expect(pricing.saleQuantity).toBe(1);
+    expect(pricing.regularQuantity).toBe(2);
+    expect(pricing.saleUnitPrice).toBe(25000);
+    expect(pricing.regularUnitPrice).toBe(50000);
+    // 1 * 25000 + 2 * 50000
+    expect(pricing.amount).toBe(125000);
+    expect(pricing.originalAmount).toBe(150000);
+  });
+
+  it("applies sale price to the whole quantity when under the limit", () => {
+    const pricing = computeCartItemPricing(flashItem({ quantity: 1 }));
+    expect(pricing.saleQuantity).toBe(1);
+    expect(pricing.regularQuantity).toBe(0);
+    expect(pricing.amount).toBe(25000);
+  });
+
+  it("uses the server quota when provided", () => {
+    // Khách đã dùng hết suất trước đó → toàn bộ tính giá thường.
+    const pricing = computeCartItemPricing(flashItem({ quantity: 2 }), 0);
+    expect(pricing.saleQuantity).toBe(0);
+    expect(pricing.regularQuantity).toBe(2);
+    expect(pricing.amount).toBe(100000);
+  });
+
+  it("keeps regular items untouched", () => {
+    const pricing = computeCartItemPricing({
+      menuItem,
+      quantity: 2,
+      unitPrice: 50000,
+      variantKey: "m1::",
+      merchantId: "mer1",
+      merchantName: "Mer 1",
+    });
+    expect(pricing.isFlashSale).toBe(false);
+    expect(pricing.amount).toBe(100000);
+  });
+});
+
+describe("computeCartSubtotal (flash sale quota per menu item)", () => {
+  const flashItem = (overrides: Partial<CartItem> = {}): CartItem => ({
+    menuItem,
+    quantity: 1,
+    unitPrice: 25000,
+    originalUnitPrice: 50000,
+    flashSaleLimitPerUser: 1,
+    variantKey: "m1::",
+    merchantId: "mer1",
+    merchantName: "Mer 1",
+    ...overrides,
+  });
+
+  it("splits quota across lines of the same menu item", () => {
+    const items = [
+      flashItem({ variantKey: "m1::a" }),
+      flashItem({ variantKey: "m1::b" }),
+    ];
+    // 1 suất sale cho dòng đầu, dòng sau giá thường.
+    expect(computeCartSubtotal(items)).toBe(25000 + 50000);
+  });
+
+  it("returns per-line pricing consistent with the subtotal", () => {
+    const items = [
+      flashItem({ variantKey: "m1::a" }),
+      flashItem({ variantKey: "m1::b" }),
+    ];
+    const lines = computeCartLinePricing(items);
+    expect(lines.map((l) => l.pricing.saleQuantity)).toEqual([1, 0]);
+    expect(lines.map((l) => l.pricing.amount)).toEqual([25000, 50000]);
+    expect(lines.reduce((s, l) => s + l.pricing.amount, 0)).toBe(
+      computeCartSubtotal(items),
+    );
+  });
+
+  it("prefers the server quota when given", () => {
+    const items = [flashItem({ quantity: 3 })];
+    expect(computeCartSubtotal(items, { m1: 2 })).toBe(2 * 25000 + 1 * 50000);
+    expect(computeCartSubtotal(items, { m1: 0 })).toBe(3 * 50000);
+  });
+
+  it("falls back to the legacy behaviour for carts without the limit", () => {
+    const items = [
+      flashItem({ quantity: 3, flashSaleLimitPerUser: undefined }),
+    ];
+    expect(computeCartSubtotal(items)).toBe(3 * 25000);
   });
 });

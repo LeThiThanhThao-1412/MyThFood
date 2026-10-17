@@ -151,6 +151,15 @@ PENDING ──→ CONFIRMED ──→ PREPARING ──→ READY_FOR_PICKUP ─�
 | `PATCH` | `/orders/:id/cancel`           | JWT  | CONSUMER / MERCHANT |
 | `PATCH` | `/orders/:id/reject`           | JWT  | MERCHANT            |
 
+**Delivered Request Body (bắt buộc với đơn `DELIVERY`):**
+
+```json
+{ "photoUrl": "http://localhost:3010/api/v1/upload/delivery-proof/proof.jpg" }
+```
+
+Tài xế phải chụp ảnh món ăn lúc giao cho khách. Thiếu ảnh ⇒ `400 Bad Request`;
+ảnh được lưu vào `deliveryProofPhotoUrl` để đối chiếu khi khách khiếu nại.
+
 **Status Transition Request Body (cancel/reject):**
 
 ```json

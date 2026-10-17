@@ -110,6 +110,17 @@ export class WalletRepository {
     });
   }
 
+  /** Tìm giao dịch theo reference để đảm bảo idempotency (vd điều chỉnh đơn). */
+  async findTransactionByReference(
+    referenceType: string,
+    referenceId: string,
+  ): Promise<WalletTransactionEntity | null> {
+    return this.txRepo.findOne({
+      where: { referenceType, referenceId },
+      order: { createdAt: "DESC" },
+    });
+  }
+
   async countDailyWithdraws(ownerId: string): Promise<number> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);

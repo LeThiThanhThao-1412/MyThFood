@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resolutionApi } from "@mythfood/api-client";
 import type {
+  AiDecisionOutcome,
+  AiSideImageAnalysis,
   AssistantHealth,
   CaseAiAnalysisRecord,
   CaseAiContext,
@@ -53,6 +55,20 @@ const SEVERITY_BADGE: Record<string, string> = {
   CRITICAL: "bg-red-100 text-red-700",
 };
 
+const IMAGE_SUPPORT_LABEL: Record<string, string> = {
+  SUPPORTS: "✅ Ủng hộ khiếu nại",
+  CONTRADICTS: "⚠️ Mâu thuẫn với khiếu nại",
+  NEUTRAL: "➖ Chưa kết luận được",
+  NO_IMAGE: "— Không có ảnh",
+};
+
+const IMAGE_SUPPORT_TONE: Record<string, string> = {
+  SUPPORTS: "bg-green-50 text-green-700",
+  CONTRADICTS: "bg-red-50 text-red-700",
+  NEUTRAL: "bg-gray-50 text-gray-600",
+  NO_IMAGE: "bg-gray-50 text-gray-500",
+};
+
 /** AI chạy nền khi khiếu nại được tạo — chờ bao lâu thì ngừng hỏi lại. */
 const POLL_INTERVAL_MS = 8000;
 const POLL_MAX_ATTEMPTS = 25;
@@ -81,6 +97,8 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
   const [manualLoading, setManualLoading] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [reviewNote, setReviewNote] = useState("");
+  /** Kết quả sau khi duyệt: đã áp dụng phán quyết/hình phạt/thông báo gì. */
+  const [outcome, setOutcome] = useState<AiDecisionOutcome | null>(null);
   const [error, setError] = useState("");
   const pollRef = useRef<number | null>(null);
 
@@ -128,6 +146,7 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
     stopPolling();
     setRecord(null);
     setError("");
+    setOutcome(null);
     setAutoRunning(false);
     setAnalysisState("loading");
 
@@ -192,12 +211,15 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
     async (decision: "ACCEPTED" | "REJECTED") => {
       setReviewing(true);
       setError("");
+      setOutcome(null);
       try {
         const res = await resolutionApi.reviewCaseAiAnalysis(caseId, {
           decision,
           note: reviewNote.trim() || undefined,
         });
-        if (res?.data) setRecord(res.data);
+        const result = res?.data ?? null;
+        if (result?.analysis) setRecord(result.analysis);
+        if (result?.outcome) setOutcome(result.outcome);
         setReviewNote("");
       } catch (e: any) {
         setError(e?.message || "Không lưu được quyết định duyệt");
@@ -298,6 +320,29 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
         </p>
       )}
 
+      {outcome && (
+        <div
+          className={`text-[11px] rounded-lg border px-2 py-1 ${
+            outcome.applied
+              ? "text-green-700 bg-green-50 border-green-100"
+              : "text-gray-600 bg-gray-50 border-gray-100"
+          }`}
+        >
+          {outcome.applied ? "✅ " : "ℹ️ "}
+          {outcome.summary}
+          {outcome.caseStatus
+            ? ` · Trạng thái vụ việc: ${outcome.caseStatus}`
+            : ""}
+          {outcome.evidenceRequestedFrom.length > 0
+            ? ` · Đã yêu cầu bổ sung: ${outcome.evidenceRequestedFrom
+                .map((p) =>
+                  p === "REPORTER" ? "khách hàng" : "tài xế/nhà hàng",
+                )
+                .join(", ")}`
+            : ""}
+        </div>
+      )}
+
       {context && <ContextViewer context={context} />}
 
       {analysisState === "loading" && !record && (
@@ -327,14 +372,23 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
       )}
 
       {record && (
-        <AnalysisCard
-          record={record}
-          reviewing={reviewing}
-          reviewNote={reviewNote}
-          onReviewNoteChange={setReviewNote}
-          onApprove={() => submitReview("ACCEPTED")}
-          onReject={() => submitReview("REJECTED")}
-        />
+        <>
+          {record.stale && (
+            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+              ⏳ Vụ việc có <b>cập nhật mới sau bản phân tích này</b> (phản
+              hồi/bằng chứng bổ sung của một bên) — bấm <b>“↻ Phân tích lại”</b>{" "}
+              để AI đọc phần mới.
+            </p>
+          )}
+          <AnalysisCard
+            record={record}
+            reviewing={reviewing}
+            reviewNote={reviewNote}
+            onReviewNoteChange={setReviewNote}
+            onApprove={() => submitReview("ACCEPTED")}
+            onReject={() => submitReview("REJECTED")}
+          />
+        </>
       )}
     </div>
   );
@@ -366,6 +420,14 @@ function AnalysisCard({
   const confidence = Math.round((Number(suggestion.confidence) || 0) * 100);
   const lowConfidence =
     suggestion.suggestedVerdict === "INCONCLUSIVE" || confidence < 50;
+  /**
+   * Bản phân tích cũ (tạo trước khi có mục ảnh) không có dữ liệu ảnh ⇒ phải nói
+   * rõ là "không có dữ liệu", không được hiển thị nhầm thành "không có ảnh".
+   */
+  const hasImageData =
+    !!suggestion.reporterImages && !!suggestion.respondentImages;
+  /** Bản cũ gộp chung ảnh hai bên (trước khi tách theo bên). */
+  const legacyImageAnalysis: string = (suggestion as any).imageAnalysis ?? "";
 
   const copyNote = useCallback(async () => {
     const text = suggestion.suggestedResolutionNote ?? "";
@@ -428,9 +490,49 @@ function AnalysisCard({
 
       {lowConfidence && (
         <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
-          AI chưa đủ căn cứ để kết luận — nên bổ sung bằng chứng bên dưới trước
-          khi phán quyết.
+          {suggestion.suggestedVerdict === "INCONCLUSIVE"
+            ? "AI chưa đủ căn cứ để kết luận — nên bổ sung bằng chứng bên dưới trước khi phán quyết."
+            : "AI đã kết luận nhưng độ tự tin thấp — nên đối chiếu ảnh và dữ liệu hệ thống trước khi duyệt."}
         </p>
+      )}
+
+      {suggestion.evidenceWeight && (
+        <div>
+          <div className="flex items-center justify-between text-[11px] text-gray-500">
+            <span className="font-semibold uppercase text-gray-400">
+              Độ mạnh bằng chứng
+            </span>
+            <span>
+              khách quan {suggestion.evidenceWeight.objective}% · lời khai{" "}
+              {suggestion.evidenceWeight.testimony}%
+            </span>
+          </div>
+          <div className="flex h-1.5 overflow-hidden rounded-full bg-gray-100">
+            <div
+              className="bg-emerald-500"
+              style={{ width: `${suggestion.evidenceWeight.images}%` }}
+              title={`Ảnh ${suggestion.evidenceWeight.images}%`}
+            />
+            <div
+              className="bg-sky-500"
+              style={{ width: `${suggestion.evidenceWeight.system}%` }}
+              title={`Dữ liệu hệ thống ${suggestion.evidenceWeight.system}%`}
+            />
+            <div
+              className="bg-gray-300"
+              style={{ width: `${suggestion.evidenceWeight.testimony}%` }}
+              title={`Lời khai ${suggestion.evidenceWeight.testimony}%`}
+            />
+          </div>
+          <p className="mt-0.5 text-[10px] text-gray-400">
+            Ảnh {suggestion.evidenceWeight.images}% · Dữ liệu hệ thống{" "}
+            {suggestion.evidenceWeight.system}% · Lời khai{" "}
+            {suggestion.evidenceWeight.testimony}% —{" "}
+            {suggestion.evidenceWeight.objective >= 50
+              ? "đủ căn cứ kết luận (ảnh + hệ thống > 50%)"
+              : "còn thiếu bằng chứng khách quan"}
+          </p>
+        </div>
       )}
 
       {suggestion.summary && (
@@ -439,6 +541,81 @@ function AnalysisCard({
             Tóm tắt nhanh
           </p>
           <p className="text-[12px] text-gray-700">{suggestion.summary}</p>
+        </div>
+      )}
+
+      {/* Ảnh giao hàng do tài xế chụp lúc bấm giao thành công (bằng chứng hệ thống) */}
+      {suggestion.deliveryProof?.photoUrl && (
+        <div>
+          <p className="text-[11px] font-semibold uppercase text-gray-400">
+            📦 Ảnh giao hàng (hệ thống ghi nhận)
+          </p>
+          <div className="flex items-start gap-2 bg-blue-50/60 border border-blue-100 rounded-lg px-2 py-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={suggestion.deliveryProof.photoUrl}
+              alt="Ảnh giao hàng"
+              className="h-16 w-16 rounded-lg object-cover border border-blue-100"
+            />
+            <div className="text-[11px] text-gray-600 space-y-0.5">
+              <p>
+                Tài xế chụp ngay trước khi bấm <b>giao hàng thành công</b> —
+                dùng làm căn cứ đối chiếu lời khai/ảnh của hai bên.
+              </p>
+              <p
+                className={
+                  suggestion.deliveryProof.analyzed
+                    ? "text-green-700"
+                    : "text-amber-700"
+                }
+              >
+                {suggestion.deliveryProof.analyzed
+                  ? "✅ Đã gửi cho AI phân tích"
+                  : "⚠️ Ảnh có nhưng chưa gửi được cho AI"}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ảnh bằng chứng: phân tích TÁCH theo từng bên rồi mới kết luận */}
+      <div>
+        <p className="text-[11px] font-semibold uppercase text-gray-400">
+          📷 Phân tích ảnh bằng chứng (tách theo bên)
+        </p>
+        {hasImageData ? (
+          <div className="space-y-2">
+            <SideImageBlock
+              label="Bên khiếu nại"
+              data={suggestion.reporterImages}
+            />
+            <SideImageBlock
+              label="Bên bị khiếu nại"
+              data={suggestion.respondentImages}
+            />
+          </div>
+        ) : legacyImageAnalysis ? (
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+            Bản phân tích này <b>gộp chung ảnh hai bên</b> (bản cũ):{" "}
+            {legacyImageAnalysis} — bấm <b>“↻ Phân tích lại”</b> để tách riêng
+            từng bên.
+          </p>
+        ) : (
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+            Bản phân tích này được tạo <b>trước khi có mục phân tích ảnh</b> nên
+            không có dữ liệu ảnh — bấm <b>“↻ Phân tích lại”</b>.
+          </p>
+        )}
+      </div>
+
+      {suggestion.sideComparison && (
+        <div>
+          <p className="text-[11px] font-semibold uppercase text-gray-400">
+            ⚖️ So sánh hai bên (căn cứ kết luận)
+          </p>
+          <p className="text-[12px] text-gray-700">
+            {suggestion.sideComparison}
+          </p>
         </div>
       )}
 
@@ -485,20 +662,23 @@ function AnalysisCard({
         tone="text-red-600"
       />
 
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Bullets
-          title="Yêu cầu bổ sung · Khách hàng"
-          items={suggestion.followUpQuestions}
-          tone="text-gray-400"
-          numbered
-        />
-        <Bullets
-          title="Yêu cầu bổ sung · Tài xế / Nhà hàng"
-          items={suggestion.respondentQuestions}
-          tone="text-gray-400"
-          numbered
-        />
-      </div>
+      {(suggestion.followUpQuestions.length > 0 ||
+        suggestion.respondentQuestions.length > 0) && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Bullets
+            title="Yêu cầu bổ sung · Khách hàng"
+            items={suggestion.followUpQuestions}
+            tone="text-gray-400"
+            numbered
+          />
+          <Bullets
+            title="Yêu cầu bổ sung · Bên bị khiếu nại"
+            items={suggestion.respondentQuestions}
+            tone="text-gray-400"
+            numbered
+          />
+        </div>
+      )}
 
       {suggestion.suggestedResolutionNote && (
         <div>
@@ -541,7 +721,7 @@ function AnalysisCard({
                 disabled={reviewing}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
               >
-                {reviewing ? "Đang lưu..." : "✅ Duyệt gợi ý này"}
+                {reviewing ? "Đang lưu..." : "✅ Duyệt & áp dụng"}
               </button>
               <button
                 onClick={onReject}
@@ -551,8 +731,9 @@ function AnalysisCard({
                 ✖️ Bỏ qua
               </button>
               <span className="text-[11px] text-gray-400">
-                Duyệt ở đây chỉ ghi nhận “đã xem gợi ý” — phán quyết vẫn nằm ở
-                các khối bên dưới.
+                Duyệt = áp dụng <b>phán quyết + hình phạt</b> của AI vào vụ việc
+                và thông báo cho các bên (bên thiếu bằng chứng sẽ được yêu cầu
+                bổ sung).
               </span>
             </div>
           </>
@@ -585,6 +766,37 @@ function AnalysisCard({
           </p>
         </div>
       </details>
+    </div>
+  );
+}
+
+/** Khối ảnh bằng chứng của MỘT bên (badge + số ảnh + nhận xét). */
+function SideImageBlock({
+  label,
+  data,
+}: {
+  label: string;
+  data: AiSideImageAnalysis;
+}) {
+  const tone = IMAGE_SUPPORT_TONE[data.support] ?? "bg-gray-50 text-gray-600";
+  return (
+    <div className="bg-white border border-gray-100 rounded-lg px-2 py-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-semibold text-gray-600">{label}</span>
+        <span
+          className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${tone}`}
+        >
+          {IMAGE_SUPPORT_LABEL[data.support] ?? data.support}
+        </span>
+        <span className="text-[10px] text-gray-400">
+          {data.analyzed > 0
+            ? `${data.analyzed}/${data.attached} ảnh đã gửi AI`
+            : data.attached > 0
+              ? "0 ảnh gửi AI (bị bỏ)"
+              : "không có ảnh"}
+        </span>
+      </div>
+      <p className="text-[12px] text-gray-700">{data.analysis}</p>
     </div>
   );
 }

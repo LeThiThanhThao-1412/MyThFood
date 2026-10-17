@@ -172,6 +172,7 @@ export default function RestaurantDetailPage() {
       quantity: 1,
       unitPrice: fs ? Number(fs.salePrice) : undefined,
       originalUnitPrice: fs ? Number(fs.originalPrice) : undefined,
+      flashSaleLimitPerUser: fs ? Number(fs.limitPerUser) || 1 : undefined,
       merchantId: id,
       merchantName: merchant?.name || "",
     });
@@ -204,6 +205,7 @@ export default function RestaurantDetailPage() {
       originalUnitPrice: fs
         ? Number(fs.originalPrice) + optionDelta
         : undefined,
+      flashSaleLimitPerUser: fs ? Number(fs.limitPerUser) || 1 : undefined,
       specialInstructions: note || undefined,
       merchantId: id,
       merchantName: merchant?.name || "",
@@ -613,6 +615,13 @@ export default function RestaurantDetailPage() {
                                         )?.toLocaleString("vi-VN")}
                                         ₫
                                       </span>
+                                      {fsItem && (
+                                        <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                                          Tối đa{" "}
+                                          {Number(fsItem.limitPerUser) || 1}{" "}
+                                          suất/khách
+                                        </span>
+                                      )}
                                     </span>
                                     <button
                                       onClick={() => handleAddToCart(item)}
@@ -801,6 +810,16 @@ export default function RestaurantDetailPage() {
         flashSalePrice={
           optionItem && flashSaleFor(optionItem)
             ? Number(flashSaleFor(optionItem).salePrice)
+            : null
+        }
+        flashSaleOriginalPrice={
+          optionItem && flashSaleFor(optionItem)
+            ? Number(flashSaleFor(optionItem).originalPrice)
+            : null
+        }
+        flashSaleLimitPerUser={
+          optionItem && flashSaleFor(optionItem)
+            ? Number(flashSaleFor(optionItem).limitPerUser) || 1
             : null
         }
       />

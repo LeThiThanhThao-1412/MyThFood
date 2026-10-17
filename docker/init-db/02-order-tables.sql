@@ -26,10 +26,12 @@ CREATE TABLE IF NOT EXISTS orders (
   estimated_delivery_time TIMESTAMPTZ,
   notes TEXT,
   driver_id UUID,
+  delivery_proof_photo_url TEXT,
   cancel_reason TEXT,
   rejection_reason TEXT,
   rejection_source VARCHAR(30),
   payment_method VARCHAR(20) DEFAULT 'CASH',
+  items_version INT NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ
@@ -86,3 +88,72 @@ CREATE TABLE IF NOT EXISTS merchant_compliance_penalties (
 
 CREATE INDEX IF NOT EXISTS idx_merchant_compliance_penalties_merchant
   ON merchant_compliance_penalties (merchant_id, created_at DESC);
+
+-- ============================================================================
+-- Chỉnh sửa chi tiết đơn: yêu cầu của nhà hàng + khách xác nhận
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS order_change_requests (
+  id UUID PRIMARY KEY,
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  merchant_id UUID NOT NULL,
+  consumer_id UUID NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+  reason TEXT,
+  reject_reason TEXT,
+  before_items JSONB NOT NULL,
+  after_items JSONB NOT NULL,
+  before_subtotal NUMERIC(12, 2) NOT NULL,
+  before_discount NUMERIC(12, 2) NOT NULL,
+  before_total NUMERIC(12, 2) NOT NULL,
+  after_subtotal NUMERIC(12, 2) NOT NULL,
+  after_discount NUMERIC(12, 2) NOT NULL,
+  after_total NUMERIC(12, 2) NOT NULL,
+  delta_amount NUMERIC(12, 2) NOT NULL,
+  payment_method VARCHAR(20) NOT NULL,
+  money_status VARCHAR(20) NOT NULL DEFAULT 'NONE',
+  adjustment_payment_id UUID,
+  adjustment_txn_id VARCHAR(255),
+  before_items_version INT NOT NULL,
+  created_by UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  confirmed_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_order_change_requests_active
+  ON order_change_requests (order_id)
+  WHERE status IN ('PENDING', 'AWAITING_PAYMENT');
+
+CREATE INDEX IF NOT EXISTS idx_order_change_requests_order
+  ON order_change_requests (order_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_order_change_requests_status_expires
+  ON order_change_requests (status, expires_at);
+
+CREATE TABLE IF NOT EXISTS order_adjustments (
+  id UUID PRIMARY KEY,
+  order_id UUID NOT NULL,
+  change_request_id UUID NOT NULL UNIQUE,
+  merchant_id UUID NOT NULL,
+  consumer_id UUID NOT NULL,
+  before_items JSONB NOT NULL,
+  after_items JSONB NOT NULL,
+  before_subtotal NUMERIC(12, 2) NOT NULL,
+  before_discount NUMERIC(12, 2) NOT NULL,
+  before_total NUMERIC(12, 2) NOT NULL,
+  after_subtotal NUMERIC(12, 2) NOT NULL,
+  after_discount NUMERIC(12, 2) NOT NULL,
+  after_total NUMERIC(12, 2) NOT NULL,
+  delta_amount NUMERIC(12, 2) NOT NULL,
+  payment_method VARCHAR(20) NOT NULL,
+  money_status VARCHAR(20) NOT NULL,
+  settlement_status VARCHAR(20) NOT NULL DEFAULT 'PENDING_ACCRUAL',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_adjustments_order
+  ON order_adjustments (order_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_order_adjustments_merchant
+  ON order_adjustments (merchant_id, created_at DESC);

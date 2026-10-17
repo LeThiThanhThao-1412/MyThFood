@@ -39,6 +39,16 @@ export class PaymentRepository implements IRepository<Payment, PaymentId> {
     return PaymentMapper.toDomain(entity);
   }
 
+  async findByAdjustmentRequestId(
+    adjustmentRequestId: string,
+  ): Promise<Payment | null> {
+    const entity = await this.repository.findOne({
+      where: { adjustment_request_id: adjustmentRequestId },
+    });
+    if (!entity) return null;
+    return PaymentMapper.toDomain(entity);
+  }
+
   async findByConsumerId(consumerId: string): Promise<Payment[]> {
     const entities = await this.repository.find({ where: { consumerId } });
     return entities.map((e) => PaymentMapper.toDomain(e));

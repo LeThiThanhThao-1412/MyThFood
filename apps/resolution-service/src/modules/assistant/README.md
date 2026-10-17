@@ -48,16 +48,52 @@ Tạo khiếu nại (POST /cases)
 
 Admin mở vụ việc (admin-portal)
   → GET  /cases/:id/analysis          đọc bản đã lưu (chưa có ⇒ panel tự chờ & poll)
-  → POST /cases/:id/analysis/review   duyệt / bỏ qua gợi ý (lưu ai, lúc nào, ghi chú)
+  → POST /cases/:id/analysis/review   duyệt = ÁP DỤNG phán quyết + hình phạt + thông báo
   → POST /cases/:id/analyze           chỉ dùng khi muốn chạy lại
 ```
 
 **Output ngắn theo mẫu** (admin đọc ~30 giây): kết quả + độ tự tin → tóm tắt ≤ 2 câu
+→ **📷 phân tích ảnh TÁCH THEO BÊN** — `reporterImages` / `respondentImages`, mỗi bên
+`{ support: SUPPORTS/CONTRADICTS/NEUTRAL/NO_IMAGE, analysis ≤ 3 câu, attached, analyzed }`
+→ **⚖️ `sideComparison`** ≤ 3 câu so sánh lời khai + ảnh hai bên **rồi mới** chọn verdict
 → tối đa 3 phát hiện chính → tối đa 3 bằng chứng thiếu → tối đa 2 rủi ro → yêu cầu
-bổ sung tách riêng **khách hàng** (`followUpQuestions`) và **tài xế/nhà hàng**
+bổ sung tách riêng **khách hàng** (`followUpQuestions`) và **bên bị khiếu nại**
 (`respondentQuestions`) → ghi chú phán quyết ≤ 3 câu. Prompt dặn model giới hạn độ
 dài, và `normalize()` **chốt lại lần cuối** (ghi `warnings` khi phải cắt) để UI luôn
 nhận được output ngắn bất kể model trả gì.
+
+**Chỉ hỏi khi thật sự cần (2 tầng chặn):**
+
+- **Prompt (luật 18–23):** đã đủ căn cứ kết luận (`VALID`/`INVALID`) ⇒ **cả hai danh sách câu hỏi = `[]`**;
+  không hỏi lại thông tin đã có (trạng thái đơn, lý do từ chối…); không hỏi ý muốn/cảm nhận
+  (“có muốn đặt lại món không”, “bạn sẽ giải quyết thế nào”); không hỏi bên không liên quan
+  (chưa có điều phối D3 ⇒ không hỏi tài xế); tối đa **2 câu/bên**; **không** coi nhà hàng ít đơn
+  là rủi ro. Kèm **playbook theo danh mục** (dữ liệu nào đủ thì kết luận luôn), ví dụ
+  `UNAUTHORIZED_CANCEL`/`MERCHANT_BEHAVIOR`: nhà hàng từ chối đơn (kể cả “hết hàng”) ⇒
+  `VALID` + `MERCHANT`, lý do đã có trong D1/D2 thì không hỏi lại.
+- **`normalize()` (guard, vì model hay quên):** verdict khác `INCONCLUSIVE` ⇒ xoá sạch câu hỏi;
+  bỏ câu hỏi khớp mẫu “nhiễu” (`có muốn`/`đặt lại món`/`cảm thấy`/`hài lòng`/`sẽ giải quyết`…);
+  bỏ `riskFlags` kiểu “ít đơn / chưa có kinh nghiệm / đơn đầu tiên”. Mọi lần bỏ đều ghi `warnings`.
+
+**Trọng số bằng chứng — ảnh & dữ liệu hệ thống quyết định, lời khai chỉ định hướng:**
+
+| Nguồn                                            | Trọng số | Ghi chú                                        |
+| ------------------------------------------------ | -------- | ---------------------------------------------- |
+| Ảnh giao hàng hệ thống (`deliveryProofPhotoUrl`) | **35%**  | Tài xế chụp ngay trước khi bấm giao thành công |
+| Ảnh bên khiếu nại                                | **25%**  | Ảnh do chính khách gửi                         |
+| Ảnh bên bị khiếu nại                             | **15%**  | Ảnh tài xế/nhà hàng phản hồi                   |
+| Dữ liệu hệ thống (D1–D14)                        | **20%**  | Mỗi nguồn có dữ liệu ≈ 2%, tối đa 20%          |
+| Lời khai hai bên                                 | **5%**   | Chỉ để định hướng, không lấn át ảnh            |
+
+- Prompt luật 25–28 dạy model thang này và cấm trả `INCONCLUSIVE` khi đã có ảnh/dữ liệu để đối chiếu.
+- **Guard trong code:** nếu **ảnh của chính bên khiếu nại mâu thuẫn với lời khai** (`support = CONTRADICTS`)
+  mà bên kia không có ảnh phản bác ngược ⇒ ép `INVALID` + `faultParty = CUSTOMER`,
+  `confidence ≥ 0.7`, **bỏ hết hình phạt đề xuất**, thay ghi chú phán quyết bằng câu chuẩn
+  (“Khiếu nại không có căn cứ…”) và ghi `warnings` — tránh cảnh AI vừa kết luận INVALID vừa
+  đề xuất phạt / vừa đòi hỏi thêm bằng chứng.
+- Kết quả trả thêm `evidenceWeight: { images, system, testimony, objective, basis, reporterSelfContradiction }`;
+  panel admin vẽ thanh **Độ mạnh bằng chứng** (xanh = ảnh, xanh dương = hệ thống, xám = lời khai)
+  và ghi rõ “đủ căn cứ kết luận” khi `objective ≥ 50`.
 
 **Nhà cung cấp model** (`AI_PROVIDER`, mặc định `glm`): cả hai client đều thoả
 `AssistantLlmClient`, `AssistantService` không biết đang dùng vendor nào.
@@ -81,6 +117,42 @@ và ghi chú. Lỗi cuối cùng (nếu có) nêu rõ `finish_reason` + đoạn 
 biết ngay là bị cắt token hay model trả văn bản. Đường chữ mặc định
 `GLM_FALLBACK_MODELS=none` — **không** lấy model vision làm dự phòng.
 
+**Ảnh giao hàng từ hệ thống (bằng chứng khách quan):** `order.deliveryProofPhotoUrl`
+— tài xế chụp ngay trước khi bấm **giao hàng thành công** (`DeliveryProofDialog` trong
+app tài xế) — được gửi cho model **đầu tiên**, chiếm 1 suất trong
+`AI_ASSISTANT_MAX_IMAGES`, nhãn `ẢNH HỆ THỐNG — tài xế chụp món ăn lúc giao hàng`.
+Ảnh này **không** tính vào `reporterImages`/`respondentImages` (không thuộc bên nào) mà
+dùng để đối chiếu lời khai/ảnh hai bên. Kết quả AI trả thêm
+`deliveryProof: { photoUrl, analyzed }` ⇒ panel hiện ảnh thật + nhãn “✅ Đã gửi cho AI”.
+
+**Phản hồi của bên bị khiếu nại:** `CaseContextService` đưa `respondentResponse`,
+`respondentEvidence`, `respondentRespondedAt` vào prompt **và gửi cả ảnh của hai bên**
+(`caseEvidence + caseRespondentEvidence`) cho model vision. Mỗi ảnh được **gắn nhãn
+`BÊN KHIẾU NẠI — ảnh N` / `BÊN BỊ KHIẾU NẠI — ảnh N` ngay trước ảnh** trong request,
+prompt cũng liệt kê đúng thứ tự đó ⇒ model phân tích **tách biệt từng bên**, rồi mới
+viết `sideComparison` và chọn verdict. Khi bên bị khiếu nại bấm
+phản hồi, `CaseService.respond()` **chạy lại AI nền**; `GET .../analysis` trả
+`stale=true` nếu bản lưu cũ hơn thời điểm phản hồi ⇒ panel hiện cảnh báo + gợi ý bấm
+“Phân tích lại”.
+
+**Duyệt gợi ý (✅) là thực thi thật, không chỉ ghi chú:**
+
+- `VALID` ⇒ vụ việc `RESOLVED`, settle tiền (`settleFailureMoney`) và **ghi đúng hình phạt AI đề xuất** (`FINE`/`COMPENSATION`/`SUSPEND`/`BAN`/… kèm `amount`/`durationDays`). Nếu AI không đề xuất hình phạt hợp lệ nào ⇒ fallback chính sách mặc định. **Mức tiền bị chặn trần ≤ 2× giá trị đơn.**
+- `INVALID` ⇒ `REJECTED` + release tiền đang giữ.
+- `INCONCLUSIVE` ⇒ `WAITING_EVIDENCE`: gửi thông báo kèm **đúng câu hỏi** cho bên còn thiếu bằng chứng (`respondentQuestions` → bên bị khiếu nại, `followUpQuestions` → khách hàng). Vì `normalize()` xoá câu hỏi khi đã kết luận được, nhánh này chỉ còn câu hỏi **thật sự cần**.
+- `VALID`/`INVALID` ⇒ thông báo kết quả cho **cả hai bên** (bên bị phạt thấy hình phạt của mình).
+- Endpoint trả `{ analysis, outcome }` (verdict, `caseStatus`, số hình phạt, bên đã thông báo) để UI hiện “đã áp dụng gì”.
+
+**Vòng bổ sung bằng chứng (khi AI trả `INCONCLUSIVE`):**
+
+- Vụ việc → `WAITING_EVIDENCE`; hai bên nhận thông báo kèm **đúng câu hỏi của AI**.
+- **Người khiếu nại** bổ sung ảnh trong app khách (_“Bổ sung bằng chứng”_) ⇒ `POST /cases/:id/evidence`.
+  **Bên bị khiếu nại** phản hồi trong app tài xế (nút “Phản hồi” nay mở cả khi `WAITING_EVIDENCE`) ⇒ `POST /cases/:id/respond`.
+- Cả hai đường đều: đưa vụ việc về `UNDER_REVIEW`, ghi timeline, **tự chạy lại AI**
+  (`triggerAutoAnalysis`) để phân tích luôn phần bổ sung, và thông báo cho bên còn lại.
+- Panel admin: `GET .../analysis` trả `stale=true` khi vụ việc có cập nhật **sau** bản phân
+  tích ⇒ hiện cảnh báo _“có cập nhật mới — bấm Phân tích lại”_.
+
 ## 2. API
 
 | Method | Path                                          | Role  | Mô tả                                                                                     |
@@ -89,7 +161,7 @@ biết ngay là bị cắt token hay model trả văn bản. Đường chữ m�
 | `GET`  | `/api/v1/assistant/cases/:id/context`         | ADMIN | **Không tốn token**: trả đúng ngữ cảnh sẽ gửi cho model                                   |
 | `GET`  | `/api/v1/assistant/cases/:id/analysis`        | ADMIN | Bản phân tích AI đã lưu (AI tự chạy nền khi khiếu nại được tạo); `data: null` nếu chưa có |
 | `POST` | `/api/v1/assistant/cases/:id/analyze`         | ADMIN | Gọi LLM (GLM/Gemini theo `AI_PROVIDER`), trả gợi ý xử lý                                  |
-| `POST` | `/api/v1/assistant/cases/:id/analysis/review` | ADMIN | Admin duyệt / bỏ qua gợi ý: `{ "decision": "ACCEPTED" \| "REJECTED", "note"?: string }`   |
+| `POST` | `/api/v1/assistant/cases/:id/analysis/review` | ADMIN | Admin duyệt / bỏ qua. **Duyệt = áp dụng phán quyết + hình phạt + thông báo cho các bên**  |
 
 Body của `analyze` (tuỳ chọn): `{ "skipImages": true, "maxImages": 2 }`.
 

@@ -242,17 +242,71 @@ export class CaseContextService {
     }
 
     // ---- Ảnh bằng chứng cho vision model ----
-    const imageUrls = [...c.caseEvidence, ...c.caseRespondentEvidence]
-      .filter((u) => typeof u === "string" && IMAGE_EXT.test(u))
-      .slice(0, Math.max(0, maxImages));
+    // Thứ tự gửi: ẢNH HỆ THỐNG (tài xế chụp món ăn lúc giao) → ảnh bên khiếu
+    // nại → ảnh bên bị khiếu nại. Ảnh hệ thống là bằng chứng khách quan nên
+    // KHÔNG tính vào phần phân tích ảnh của hai bên.
+    const limit = Math.max(0, maxImages);
     const images: LlmInlineImage[] = [];
     const imagesSkipped: string[] = [];
-    for (const url of imageUrls) {
-      const img = await this.integration.downloadImage(url);
-      if (img) {
-        images.push({ mimeType: img.mimeType, base64: img.base64, label: url });
+    let reporterImagesAttached = 0;
+    let respondentImagesAttached = 0;
+
+    const rawProofUrl = (order as any)?.deliveryProofPhotoUrl;
+    const deliveryProofPhotoUrl =
+      typeof rawProofUrl === "string" && IMAGE_EXT.test(rawProofUrl)
+        ? rawProofUrl
+        : null;
+
+    let deliveryProofImageAttached = false;
+    if (deliveryProofPhotoUrl && limit > 0) {
+      const proofImage = await this.integration.downloadImage(
+        deliveryProofPhotoUrl,
+      );
+      if (proofImage) {
+        images.push({
+          mimeType: proofImage.mimeType,
+          base64: proofImage.base64,
+          label: `ẢNH HỆ THỐNG — tài xế chụp món ăn lúc giao hàng: ${deliveryProofPhotoUrl}`,
+        });
+        deliveryProofImageAttached = true;
       } else {
-        imagesSkipped.push(url);
+        imagesSkipped.push(deliveryProofPhotoUrl);
+      }
+    }
+
+    // Ảnh hệ thống (nếu gửi được) chiếm 1 suất trong giới hạn ảnh.
+    const sideImageBudget = Math.max(
+      0,
+      limit - (deliveryProofImageAttached ? 1 : 0),
+    );
+    const reporterUrls = (c.caseEvidence ?? [])
+      .filter((u) => typeof u === "string" && IMAGE_EXT.test(u))
+      .slice(0, sideImageBudget);
+    const respondentUrls = (c.caseRespondentEvidence ?? [])
+      .filter((u) => typeof u === "string" && IMAGE_EXT.test(u))
+      .slice(0, Math.max(0, sideImageBudget - reporterUrls.length));
+
+    // Thứ tự gửi: ảnh bên khiếu nại trước, rồi tới bên bị khiếu nại — prompt
+    // cũng liệt kê đúng thứ tự này để model biết ảnh nào của ai.
+    for (const [side, urls] of [
+      ["BÊN KHIẾU NẠI", reporterUrls],
+      ["BÊN BỊ KHIẾU NẠI", respondentUrls],
+    ] as const) {
+      let index = 0;
+      for (const url of urls) {
+        index += 1;
+        const img = await this.integration.downloadImage(url);
+        if (!img) {
+          imagesSkipped.push(url);
+          continue;
+        }
+        images.push({
+          mimeType: img.mimeType,
+          base64: img.base64,
+          label: `${side} — ảnh ${index}: ${url}`,
+        });
+        if (side === "BÊN KHIẾU NẠI") reporterImagesAttached += 1;
+        else respondentImagesAttached += 1;
       }
     }
 
@@ -295,6 +349,11 @@ export class CaseContextService {
       missingSourceIds,
       criticalMissingSourceIds,
       imagesAttached: images.length,
+      /** Ảnh món ăn tài xế chụp lúc giao (bằng chứng hệ thống của đơn). */
+      deliveryProofPhotoUrl,
+      deliveryProofImageAttached,
+      reporterImagesAttached,
+      respondentImagesAttached,
       imagesSkipped,
     };
 

@@ -1,6 +1,9 @@
 import { Order } from "../../modules/order/domain/order.aggregate";
 
 describe("Order Aggregate", () => {
+  const deliveryProofPhotoUrl =
+    "http://localhost:3010/api/v1/upload/delivery-proof/proof.jpg";
+
   const validPlaceOrderProps = {
     consumerId: "550e8400-e29b-41d4-a716-446655440001",
     merchantId: "550e8400-e29b-41d4-a716-446655440002",
@@ -163,8 +166,38 @@ describe("Order Aggregate", () => {
       order.startPreparing();
       order.markReadyForPickup();
       order.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
-      order.markDelivered();
+      order.markDelivered(deliveryProofPhotoUrl);
       expect(order.orderStatus).toBe("DELIVERED");
+      expect(order.orderDeliveryProofPhotoUrl).toBe(deliveryProofPhotoUrl);
+    });
+
+    it("should require a delivery proof photo before marking DELIVERY order as delivered", () => {
+      order.confirm();
+      order.startPreparing();
+      order.markReadyForPickup();
+      order.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
+
+      expect(() => order.markDelivered()).toThrow(
+        "Phải chụp ảnh món ăn khi giao cho khách",
+      );
+      expect(order.orderStatus).toBe("OUT_FOR_DELIVERY");
+      expect(order.orderDeliveryProofPhotoUrl).toBeNull();
+    });
+
+    it("should allow PICKUP order to be delivered without a proof photo", () => {
+      const pickup = Order.place({
+        ...validPlaceOrderProps,
+        orderType: "PICKUP",
+        deliveryAddress: "",
+      }).value;
+      pickup.confirm();
+      pickup.startPreparing();
+      pickup.markReadyForPickup();
+      pickup.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
+
+      pickup.markDelivered();
+      expect(pickup.orderStatus).toBe("DELIVERED");
+      expect(pickup.orderDeliveryProofPhotoUrl).toBeNull();
     });
 
     it("should cancel order from PENDING", () => {
@@ -201,7 +234,7 @@ describe("Order Aggregate", () => {
       order.startPreparing();
       order.markReadyForPickup();
       order.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
-      order.markDelivered();
+      order.markDelivered(deliveryProofPhotoUrl);
 
       expect(() => order.cancel("Late")).toThrow(
         "Cannot transition order from DELIVERED to CANCELLED",
@@ -290,7 +323,7 @@ describe("Order Aggregate", () => {
       order.startPreparing();
       order.markReadyForPickup();
       order.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
-      order.markDelivered();
+      order.markDelivered(deliveryProofPhotoUrl);
       expect(order.isActive()).toBe(false);
     });
 

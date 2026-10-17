@@ -148,11 +148,15 @@ export class GeminiClient implements AssistantLlmClient {
     this.assertReady();
 
     const parts: Array<Record<string, unknown>> = [{ text: req.prompt }];
-    for (const image of req.images ?? []) {
+    (req.images ?? []).forEach((image, index) => {
+      // Nhãn TRƯỚC mỗi ảnh để model biết ảnh đó của bên nào.
+      parts.push({
+        text: `ẢNH ${index + 1}${image.label ? ` — ${image.label}` : ""}`,
+      });
       parts.push({
         inlineData: { mimeType: image.mimeType, data: image.base64 },
       });
-    }
+    });
 
     const body = {
       systemInstruction: { parts: [{ text: req.systemInstruction }] },
@@ -212,6 +216,7 @@ export class GeminiClient implements AssistantLlmClient {
         rawText,
         model,
         endpoint,
+        imagesUsed: req.images?.length ?? 0,
         usage: {
           promptTokens: payload?.usageMetadata?.promptTokenCount ?? null,
           outputTokens: payload?.usageMetadata?.candidatesTokenCount ?? null,

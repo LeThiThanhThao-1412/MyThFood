@@ -7,6 +7,8 @@ import {
 import { OrderId } from "./order-id";
 import { OrderPlacedEvent } from "./events/order-placed.event";
 import { OrderStatusChangedEvent } from "./events/order-status-changed.event";
+import { OrderItemsChangedEvent } from "./events/order-items-changed.event";
+import { computeOrderTotals, isItemEditable } from "./order-change.policy";
 
 export type OrderStatus =
   | "PENDING"
@@ -76,10 +78,20 @@ export interface OrderProps {
   estimatedDeliveryTime: Date | null;
   notes: string | null;
   driverId: string | null;
+  /**
+   * Ảnh tài xế chụp món ăn lúc giao đến tay khách — bằng chứng bắt buộc trước
+   * khi đơn DELIVERY được đánh dấu DELIVERED (chống khiếu nại "chưa nhận hàng").
+   */
+  deliveryProofPhotoUrl?: string | null;
   cancelReason: string | null;
   rejectionReason: string | null;
   rejectionSource?: string | null;
   paymentMethod: string;
+  /**
+   * Số phiên bản danh sách món. Tăng mỗi lần áp dụng yêu cầu chỉnh sửa đã
+   * được khách xác nhận — dùng để chống race và version hóa hóa đơn.
+   */
+  itemsVersion?: number;
   createdAt?: Date | null;
   updatedAt?: Date | null;
 }
@@ -117,10 +129,12 @@ export class Order extends AggregateRoot<OrderId> {
   private estimatedDeliveryTime: Date | null;
   private notes: string | null;
   private driverId: string | null;
+  private deliveryProofPhotoUrl: string | null;
   private cancelReason: string | null;
   private rejectionReason: string | null;
   private rejectionSource: string | null;
   private paymentMethod: string;
+  private itemsVersion: number;
 
   private constructor(id: OrderId, props: OrderProps) {
     super(id, props.createdAt ?? undefined, props.updatedAt ?? undefined);
@@ -142,10 +156,12 @@ export class Order extends AggregateRoot<OrderId> {
     this.estimatedDeliveryTime = props.estimatedDeliveryTime;
     this.notes = props.notes;
     this.driverId = props.driverId;
+    this.deliveryProofPhotoUrl = props.deliveryProofPhotoUrl ?? null;
     this.cancelReason = props.cancelReason;
     this.rejectionReason = props.rejectionReason;
     this.rejectionSource = props.rejectionSource ?? null;
     this.paymentMethod = props.paymentMethod || "CASH";
+    this.itemsVersion = props.itemsVersion ?? 1;
   }
 
   // ===================== Factory Methods =====================
@@ -383,8 +399,28 @@ export class Order extends AggregateRoot<OrderId> {
 
   /**
    * Order is delivered to the customer.
+   *
+   * Đơn giao hàng (DELIVERY) bắt buộc phải có ảnh món ăn tài xế chụp lúc giao
+   * cho khách — dùng làm bằng chứng khi khách khiếu nại "chưa nhận được hàng".
+   * Đơn PICKUP (khách tự đến lấy) không cần ảnh.
    */
-  public markDelivered(): void {
+  public markDelivered(deliveryProofPhotoUrl?: string): void {
+    const proofUrl = deliveryProofPhotoUrl?.trim() ?? "";
+
+    if (
+      this.status === "OUT_FOR_DELIVERY" &&
+      this.orderType === "DELIVERY" &&
+      !proofUrl
+    ) {
+      throw new BusinessRuleViolationError(
+        "Phải chụp ảnh món ăn khi giao cho khách trước khi xác nhận giao hàng thành công",
+      );
+    }
+
+    if (proofUrl) {
+      this.deliveryProofPhotoUrl = proofUrl;
+    }
+
     this.transitionTo("DELIVERED");
   }
 
@@ -498,6 +534,96 @@ export class Order extends AggregateRoot<OrderId> {
     this.markUpdated();
   }
 
+  /**
+   * Áp dụng danh sách món mới đã được khách xác nhận.
+   *
+   * Chỉ cho phép khi đơn còn ở trạng thái có thể chỉnh sửa (mặc định
+   * CONFIRMED/PREPARING). Giá món do tầng application resolve từ menu
+   * (server-authoritative) rồi truyền vào đây; domain chỉ tính lại tổng tiền
+   * và đảm bảo bất biến (>= 1 món, tổng không âm, giảm giá không vượt tiền món).
+   */
+  public applyItemChange(input: {
+    items: OrderItemProps[];
+    reason?: string;
+    /** Mức giảm giá đã chốt trong yêu cầu (đã tính lại theo promotion). */
+    discount?: number;
+  }): void {
+    if (!isItemEditable(this.status)) {
+      throw new BusinessRuleViolationError(
+        `Không thể chỉnh sửa món khi đơn đang ở trạng thái ${this.status}`,
+      );
+    }
+    if (!input.items || input.items.length === 0) {
+      throw new BusinessRuleViolationError("Đơn hàng phải còn ít nhất một món");
+    }
+    for (const item of input.items) {
+      if (!item.quantity || item.quantity <= 0) {
+        throw new BusinessRuleViolationError(
+          `Số lượng món ${item.name} phải lớn hơn 0`,
+        );
+      }
+      if (item.unitPrice < 0) {
+        throw new BusinessRuleViolationError(
+          `Giá món ${item.name} không hợp lệ`,
+        );
+      }
+    }
+
+    const previous = {
+      itemsVersion: this.itemsVersion,
+      subtotal: this.subtotal,
+      discount: this.discount,
+      totalAmount: this.totalAmount,
+    };
+
+    const items: OrderItemProps[] = input.items.map((item) => ({
+      menuItemId: item.menuItemId,
+      name: item.name,
+      imageUrl: item.imageUrl ?? null,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      originalPrice: item.originalPrice ?? null,
+      flashSaleFundedBy: item.flashSaleFundedBy ?? null,
+      specialInstructions: item.specialInstructions ?? null,
+      options: item.options ?? null,
+      subtotal: item.quantity * item.unitPrice,
+    }));
+
+    const totals = computeOrderTotals({
+      items,
+      deliveryFee: this.deliveryFee,
+      serviceFee: this.serviceFee,
+      discount: input.discount ?? this.discount,
+    });
+
+    if (totals.totalAmount < 0) {
+      throw new BusinessRuleViolationError("Tổng tiền đơn hàng không được âm");
+    }
+
+    this.items = items;
+    this.subtotal = totals.subtotal;
+    this.discount = totals.discount;
+    this.totalAmount = totals.totalAmount;
+    this.itemsVersion = this.itemsVersion + 1;
+    this.markUpdated();
+
+    this.addDomainEvent(
+      new OrderItemsChangedEvent(this.id, {
+        orderId: this.id.toString(),
+        previousItemsVersion: previous.itemsVersion,
+        newItemsVersion: this.itemsVersion,
+        previousSubtotal: previous.subtotal,
+        newSubtotal: this.subtotal,
+        previousDiscount: previous.discount,
+        newDiscount: this.discount,
+        previousTotalAmount: previous.totalAmount,
+        newTotalAmount: this.totalAmount,
+        deltaAmount: this.totalAmount - previous.totalAmount,
+        reason: input.reason,
+      }),
+    );
+  }
+
   // ===================== Queries =====================
 
   public isActive(): boolean {
@@ -582,6 +708,10 @@ export class Order extends AggregateRoot<OrderId> {
     return this.driverId;
   }
 
+  get orderDeliveryProofPhotoUrl(): string | null {
+    return this.deliveryProofPhotoUrl;
+  }
+
   get orderCancelReason(): string | null {
     return this.cancelReason;
   }
@@ -596,5 +726,9 @@ export class Order extends AggregateRoot<OrderId> {
 
   get orderPaymentMethod(): string {
     return this.paymentMethod;
+  }
+
+  get orderItemsVersion(): number {
+    return this.itemsVersion;
   }
 }

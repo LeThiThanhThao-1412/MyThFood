@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { randomUUID } from "crypto";
 import { WalletRepository } from "../infrastructure/wallet.repository";
 import { SettlementRepository } from "../infrastructure/settlement.repository";
@@ -520,6 +520,104 @@ export class WalletService {
       "REFUND",
       orderId,
     );
+  }
+
+  /**
+   * Thu thêm / hoàn lại phần chênh lệch khi nhà hàng chỉnh sửa đơn.
+   *
+   * Idempotent theo `adjustmentId` + direction (referenceType
+   * ORDER_ADJUSTMENT_CHARGE / ORDER_ADJUSTMENT_REFUND) để order-service có thể
+   * retry an toàn mà không trừ/cộng tiền hai lần.
+   */
+  async adjustOrderAmount(input: {
+    adjustmentId: string;
+    ownerId: string;
+    ownerType: OwnerType;
+    direction: "CHARGE" | "REFUND";
+    amount: number;
+    orderId: string;
+    description?: string;
+  }): Promise<{
+    id: string;
+    balance: number;
+    duplicated: boolean;
+    direction: "CHARGE" | "REFUND";
+  }> {
+    const amount = Math.round(Number(input.amount));
+    if (!input.adjustmentId) {
+      throw new BadRequestException("adjustmentId is required");
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException("Adjustment amount must be positive");
+    }
+
+    const direction = input.direction === "REFUND" ? "REFUND" : "CHARGE";
+    const referenceType =
+      direction === "CHARGE"
+        ? "ORDER_ADJUSTMENT_CHARGE"
+        : "ORDER_ADJUSTMENT_REFUND";
+
+    const existing = await this.walletRepo.findTransactionByReference(
+      referenceType,
+      input.adjustmentId,
+    );
+    if (existing) {
+      const current = await this.getOrCreateWallet(
+        input.ownerId,
+        input.ownerType,
+      );
+      return {
+        id: current.id,
+        balance: Number(current.balance),
+        duplicated: true,
+        direction,
+      };
+    }
+
+    const entity = await this.getOrCreateWallet(input.ownerId, input.ownerType);
+    const balanceBefore = Number(entity.balance);
+
+    if (direction === "CHARGE" && balanceBefore < amount) {
+      throw new BadRequestException(
+        `Số dư ví không đủ. Cần ${amount.toLocaleString("vi-VN")} VND, hiện có ${balanceBefore.toLocaleString("vi-VN")} VND`,
+      );
+    }
+
+    entity.balance =
+      direction === "CHARGE" ? balanceBefore - amount : balanceBefore + amount;
+    await this.walletRepo.save(entity);
+
+    const orderShort = input.orderId.slice(0, 8);
+    const description =
+      input.description ??
+      (direction === "CHARGE"
+        ? `Thu thêm chênh lệch chỉnh sửa đơn #${orderShort}`
+        : `Hoàn chênh lệch chỉnh sửa đơn #${orderShort}`);
+
+    await this.walletRepo.recordTransaction({
+      id: randomUUID(),
+      walletId: entity.id,
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+      type: direction === "CHARGE" ? "DEBIT" : "CREDIT",
+      amount,
+      balanceBefore,
+      balanceAfter: Number(entity.balance),
+      description,
+      referenceType,
+      referenceId: input.adjustmentId,
+    });
+
+    this.logger.log(
+      `${direction} order adjustment ${input.adjustmentId}: ${input.ownerType}:${input.ownerId} ${direction === "CHARGE" ? "-" : "+"}${amount} VND`,
+    );
+
+    return {
+      id: entity.id,
+      balance: Number(entity.balance),
+      duplicated: false,
+      direction,
+    };
   }
 
   async settleCOD(

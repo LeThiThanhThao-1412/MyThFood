@@ -4,8 +4,15 @@ export {
   useCartStore,
   computeUnitPrice,
   buildVariantKey,
+  computeCartItemPricing,
+  computeCartLinePricing,
+  computeCartSubtotal,
 } from "./stores/cart.store";
-export type { CartItem, AddCartItemInput } from "./stores/cart.store";
+export type {
+  CartItem,
+  AddCartItemInput,
+  CartItemPricing,
+} from "./stores/cart.store";
 export { useLocationStore } from "./stores/location.store";
 export type { UserLocation } from "./stores/location.store";
 export {

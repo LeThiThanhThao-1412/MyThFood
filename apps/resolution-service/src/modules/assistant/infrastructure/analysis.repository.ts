@@ -81,6 +81,8 @@ export class CaseAiAnalysisRepository {
       source: entity.source as AiAnalysisSource,
       createdAt: entity.createdAt.toISOString(),
       suggestion: entity.payload as unknown as CaseAiSuggestion,
+      // Độ "cũ" do tầng service tính (so với phản hồi của bên bị khiếu nại).
+      stale: false,
       review: entity.reviewDecision
         ? {
             decision: entity.reviewDecision as AiReviewDecision,

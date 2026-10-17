@@ -209,6 +209,16 @@ export class StatusTransitionDto {
   noResponse?: boolean;
 }
 
+/**
+ * Xác nhận giao hàng thành công. Với đơn DELIVERY, `photoUrl` là ảnh tài xế
+ * chụp món ăn lúc giao cho khách và là **bắt buộc** (kiểm tra ở domain).
+ */
+export class MarkDeliveredDto {
+  @IsString()
+  @IsOptional()
+  photoUrl?: string;
+}
+
 export class OrderQueryDto {
   @IsString()
   @IsOptional()
@@ -250,10 +260,14 @@ export class OrderResponseDto {
   estimatedDeliveryTime!: string | null;
   notes!: string | null;
   driverId!: string | null;
+  /** Ảnh xác nhận giao hàng (tài xế chụp món ăn lúc giao cho khách). */
+  deliveryProofPhotoUrl!: string | null;
   cancelReason!: string | null;
   rejectionReason!: string | null;
   rejectionSource!: string | null;
   paymentMethod!: string;
+  /** Số phiên bản danh sách món (tăng sau mỗi lần khách xác nhận chỉnh sửa). */
+  itemsVersion!: number;
   createdAt!: Date;
   updatedAt!: Date;
 }

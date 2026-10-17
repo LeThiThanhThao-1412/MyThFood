@@ -47,6 +47,7 @@ export default function OrderDetailDrawer({
   const [reviewImages, setReviewImages] = useState<string[]>([]);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingChange, setPendingChange] = useState<any>(null);
 
   useEffect(() => {
     if (!orderId) {
@@ -71,6 +72,19 @@ export default function OrderDetailDrawer({
           setExistingReview(r?.data ?? null);
         } catch {
           setExistingReview(null);
+        }
+        try {
+          const changes = await orderApi.listChangeRequests(orderId);
+          const list = Array.isArray(changes) ? changes : [];
+          setPendingChange(
+            list.find(
+              (request: any) =>
+                request.status === "PENDING" ||
+                request.status === "AWAITING_PAYMENT",
+            ) ?? null,
+          );
+        } catch {
+          setPendingChange(null);
         }
       } catch {
         setOrder(null);
@@ -195,6 +209,23 @@ export default function OrderDetailDrawer({
               <span className="text-[#ff6b35] text-xs font-semibold shrink-0">
                 Xem ›
               </span>
+            </button>
+          )}
+
+          {pendingChange && (
+            <button
+              onClick={() => {
+                onClose();
+                router.push(`/orders/${order.id}`);
+              }}
+              className="w-full bg-orange-50 border border-orange-200 rounded-xl p-3 text-left hover:bg-orange-100 transition"
+            >
+              <p className="text-sm font-semibold text-orange-700">
+                🏪 Nhà hàng đề xuất chỉnh sửa đơn
+              </p>
+              <p className="text-xs text-gray-600 mt-0.5">
+                Nhấn để xem chi tiết và xác nhận / từ chối.
+              </p>
             </button>
           )}
 

@@ -87,6 +87,10 @@ export class OrderEntity {
   @Column("uuid", { name: "driver_id", nullable: true })
   driver_id!: string | null;
 
+  /** Ảnh tài xế chụp món ăn lúc giao cho khách (bằng chứng chống khiếu nại). */
+  @Column("text", { name: "delivery_proof_photo_url", nullable: true })
+  delivery_proof_photo_url!: string | null;
+
   @Column("text", { name: "cancel_reason", nullable: true })
   cancel_reason!: string | null;
 
@@ -98,6 +102,9 @@ export class OrderEntity {
 
   @Column("varchar", { length: 20, name: "payment_method", default: "CASH" })
   payment_method!: string;
+
+  @Column("int", { name: "items_version", default: 1 })
+  items_version!: number;
 
   @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   created_at!: Date;

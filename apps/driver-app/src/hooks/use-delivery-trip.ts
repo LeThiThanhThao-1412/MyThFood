@@ -288,68 +288,84 @@ export function useDeliveryTrip(orderId?: string | null) {
   }, [stage, driverLocation, restaurant, customer, merchant, order]);
 
   // ---- Thực thi bước kế tiếp ----
-  const advance = useCallback(async () => {
-    if (!order || busy) return;
+  /**
+   * Chuyển sang bước kế tiếp. Với bước “Giao hàng thành công”, truyền
+   * `deliveryProofPhotoUrl` (ảnh món ăn chụp lúc giao cho khách — bắt buộc).
+   * Trả về `true` khi thao tác thành công để UI đóng hộp thoại xác nhận.
+   */
+  const advance = useCallback(
+    async (deliveryProofPhotoUrl?: string): Promise<boolean> => {
+      if (!order || busy) return false;
 
-    let resolvedDriver = driver;
-    if (!resolvedDriver?.id) {
-      resolvedDriver = await loadDriver();
-    }
-    const driverId = resolvedDriver?.id || order.driverId || "";
-    if (!driverId) {
-      setError("Không tìm thấy hồ sơ tài xế của bạn.");
-      return;
-    }
-
-    setBusy(true);
-    setError("");
-    setMessage("");
-    try {
-      if (stage === "WAITING") {
-        setDispatch(await acceptOrder(order, driverId, merchant));
-        setMessage(
-          "✅ Đã nhận đơn — trạng thái: Đang đến quán. Đã thông báo cho khách.",
-        );
-      } else if (stage === "GOING_TO_RESTAURANT") {
-        setDispatch(
-          await arriveAtRestaurant(order, dispatch, driverId, restaurant),
-        );
-        setMessage("📍 Đã đến nhà hàng. Đã thông báo cho khách hàng.");
-        loadDriver();
-      } else if (stage === "AT_RESTAURANT") {
-        const res = await pickUpFood(order, dispatch, driverId);
-        setDispatch(res.dispatch);
-        if (res.order) setOrder(res.order);
-        setMessage("📦 Đã nhận món — đang giao tới khách hàng.");
-      } else if (stage === "DELIVERING") {
-        const res = await completeDelivery(order, dispatch, driverId, customer);
-        setDispatch(res.dispatch);
-        if (res.order) setOrder(res.order);
-        setMessage("🎉 Giao hàng thành công! Đã thông báo cho khách hàng.");
-        loadDriver();
+      let resolvedDriver = driver;
+      if (!resolvedDriver?.id) {
+        resolvedDriver = await loadDriver();
+      }
+      const driverId = resolvedDriver?.id || order.driverId || "";
+      if (!driverId) {
+        setError("Không tìm thấy hồ sơ tài xế của bạn.");
+        return false;
       }
 
-      // Đồng bộ lại từ server để UI chắc chắn hiển thị đúng bước kế tiếp
-      await load(true);
-    } catch (err: any) {
-      setError(friendlyError(err, "Không thực hiện được bước này"));
-      // Đồng bộ lại trạng thái thật từ server để UI không lệch
-      load(true);
-    } finally {
-      setBusy(false);
-    }
-  }, [
-    order,
-    dispatch,
-    merchant,
-    driver,
-    stage,
-    restaurant,
-    customer,
-    busy,
-    load,
-    loadDriver,
-  ]);
+      setBusy(true);
+      setError("");
+      setMessage("");
+      try {
+        if (stage === "WAITING") {
+          setDispatch(await acceptOrder(order, driverId, merchant));
+          setMessage(
+            "✅ Đã nhận đơn — trạng thái: Đang đến quán. Đã thông báo cho khách.",
+          );
+        } else if (stage === "GOING_TO_RESTAURANT") {
+          setDispatch(
+            await arriveAtRestaurant(order, dispatch, driverId, restaurant),
+          );
+          setMessage("📍 Đã đến nhà hàng. Đã thông báo cho khách hàng.");
+          loadDriver();
+        } else if (stage === "AT_RESTAURANT") {
+          const res = await pickUpFood(order, dispatch, driverId);
+          setDispatch(res.dispatch);
+          if (res.order) setOrder(res.order);
+          setMessage("📦 Đã nhận món — đang giao tới khách hàng.");
+        } else if (stage === "DELIVERING") {
+          const res = await completeDelivery(
+            order,
+            dispatch,
+            driverId,
+            customer,
+            deliveryProofPhotoUrl,
+          );
+          setDispatch(res.dispatch);
+          if (res.order) setOrder(res.order);
+          setMessage("🎉 Giao hàng thành công! Đã thông báo cho khách hàng.");
+          loadDriver();
+        }
+
+        // Đồng bộ lại từ server để UI chắc chắn hiển thị đúng bước kế tiếp
+        await load(true);
+        return true;
+      } catch (err: any) {
+        setError(friendlyError(err, "Không thực hiện được bước này"));
+        // Đồng bộ lại trạng thái thật từ server để UI không lệch
+        load(true);
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      order,
+      dispatch,
+      merchant,
+      driver,
+      stage,
+      restaurant,
+      customer,
+      busy,
+      load,
+      loadDriver,
+    ],
+  );
 
   /** Phí ship tài xế thực nhận (80% — 20% hoa hồng nền tảng). */
   const driverEarning = Math.round(toNum(order?.deliveryFee, 15000) * 0.8);

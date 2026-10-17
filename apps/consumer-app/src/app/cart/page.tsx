@@ -3,7 +3,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { merchantApi } from "@mythfood/api-client";
-import { useCartStore, useAuthStore } from "@mythfood/frontend-shared";
+import {
+  useCartStore,
+  useAuthStore,
+  computeCartLinePricing,
+} from "@mythfood/frontend-shared";
 
 export default function CartPage() {
   const router = useRouter();
@@ -44,6 +48,8 @@ export default function CartPage() {
   }
 
   const subtotal = getSubtotal();
+  // Tách giá từng dòng: phần trong suất flash sale giá sale, phần vượt giá thường.
+  const pricedItems = computeCartLinePricing(items);
   // FIX #6: Only show shipping fee when address is set (not known at cart page)
   const deliveryFee = 0;
   const serviceFee = 0;
@@ -131,7 +137,7 @@ export default function CartPage() {
 
               {/* Items */}
               <div className="space-y-3">
-                {items.map((item, idx) => (
+                {pricedItems.map(({ item, pricing }, idx) => (
                   <div
                     key={item.variantKey}
                     className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 hover:shadow-md transition-all animate-fade-in-up"
@@ -156,12 +162,27 @@ export default function CartPage() {
                         <h3 className="font-semibold text-gray-800">
                           {item.menuItem.name}
                         </h3>
-                        <p className="text-sm text-gray-400 mt-0.5">
-                          {(
-                            item.unitPrice ?? item.menuItem.price
-                          )?.toLocaleString("vi-VN")}
-                          ₫ / phần
-                        </p>
+                        {pricing.isFlashSale && pricing.regularQuantity > 0 ? (
+                          <p className="text-sm mt-0.5">
+                            <span className="text-orange-600 font-medium">
+                              🔥 {pricing.saleQuantity} ×{" "}
+                              {pricing.saleUnitPrice.toLocaleString("vi-VN")}₫
+                            </span>
+                            <span className="text-gray-400">
+                              {" + "}
+                              {pricing.regularQuantity} ×{" "}
+                              {pricing.regularUnitPrice.toLocaleString("vi-VN")}
+                              ₫
+                            </span>
+                          </p>
+                        ) : (
+                          <p className="text-sm text-gray-400 mt-0.5">
+                            {(
+                              item.unitPrice ?? item.menuItem.price
+                            )?.toLocaleString("vi-VN")}
+                            ₫ / phần
+                          </p>
+                        )}
                         {item.selectedGroups &&
                           item.selectedGroups.length > 0 && (
                             <div className="mt-2 space-y-0.5">
@@ -221,12 +242,13 @@ export default function CartPage() {
 
                         {/* Item total */}
                         <div className="text-right">
+                          {pricing.originalAmount > pricing.amount && (
+                            <span className="block text-xs text-gray-400 line-through">
+                              {pricing.originalAmount.toLocaleString("vi-VN")}₫
+                            </span>
+                          )}
                           <span className="font-bold text-[#ff6b35] text-base">
-                            {(
-                              (item.unitPrice ?? item.menuItem.price ?? 0) *
-                              item.quantity
-                            ).toLocaleString("vi-VN")}
-                            ₫
+                            {pricing.amount.toLocaleString("vi-VN")}₫
                           </span>
                         </div>
 

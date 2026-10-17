@@ -19,6 +19,10 @@ interface Props {
   }) => void;
   /** Giá gốc áp dụng cho món này (dùng cho flash sale) — nếu có thì lấy giá này thay giá menu. */
   flashSalePrice?: number | null;
+  /** Giá gốc (giá thường) của món khi đang flash sale. */
+  flashSaleOriginalPrice?: number | null;
+  /** Số suất flash sale tối đa mỗi khách — phần vượt tính giá thường. */
+  flashSaleLimitPerUser?: number | null;
 }
 
 type SelectionState = Record<string, SelectedMenuItemOption[]>;
@@ -57,6 +61,8 @@ export default function MenuItemOptionDrawer({
   onClose,
   onAdd,
   flashSalePrice,
+  flashSaleOriginalPrice,
+  flashSaleLimitPerUser,
 }: Props) {
   const [selection, setSelection] = useState<SelectionState>({});
   const [quantity, setQuantity] = useState(1);
@@ -90,7 +96,21 @@ export default function MenuItemOptionDrawer({
     : 0;
   const optionTotal = originalUnit - originalBase;
   const unitPrice = basePrice + optionTotal;
-  const totalPrice = unitPrice * quantity;
+  // Giá thường mỗi phần (giá gốc + tùy chọn) — dùng cho phần vượt suất sale.
+  const regularUnitPrice =
+    (flashSalePrice != null
+      ? (flashSaleOriginalPrice ?? originalBase)
+      : originalBase) + optionTotal;
+  // Mỗi khách chỉ được hưởng `flashSaleLimitPerUser` suất giá sale; phần còn
+  // lại tính giá thường (không chặn khách mua thêm).
+  const maxSaleQuantity =
+    flashSalePrice != null
+      ? Math.max(0, Math.floor(flashSaleLimitPerUser ?? quantity))
+      : quantity;
+  const saleQuantity = Math.min(quantity, maxSaleQuantity);
+  const regularQuantity = quantity - saleQuantity;
+  const totalPrice =
+    saleQuantity * unitPrice + regularQuantity * regularUnitPrice;
 
   const isGroupSatisfied = (g: MenuItemOptionGroup): boolean => {
     if (!g.required) return true;
@@ -395,6 +415,21 @@ export default function MenuItemOptionDrawer({
                   {basePrice.toLocaleString("vi-VN")}₫
                   {optionTotal > 0 ? " + " : " − "}
                   {Math.abs(optionTotal).toLocaleString("vi-VN")}₫ / phần
+                </p>
+              )}
+              {regularQuantity > 0 && (
+                <p className="text-xs text-orange-600">
+                  🔥 {saleQuantity} × {unitPrice.toLocaleString("vi-VN")}₫ +{" "}
+                  {regularQuantity} × {regularUnitPrice.toLocaleString("vi-VN")}
+                  ₫
+                  <span className="text-gray-400">
+                    {" "}
+                    (vượt {Math.max(
+                      0,
+                      Math.floor(flashSaleLimitPerUser ?? 0),
+                    )}{" "}
+                    suất/khách)
+                  </span>
                 </p>
               )}
               <p className="text-lg font-extrabold text-[#ff6b35]">

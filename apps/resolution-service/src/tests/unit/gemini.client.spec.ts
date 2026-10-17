@@ -110,7 +110,9 @@ describe("GeminiClient", () => {
       });
 
       const [, body] = httpService.post.mock.calls[0] as any[];
-      expect(body.contents[0].parts[1]).toEqual({
+      // Nhãn đứng trước ảnh để model biết ảnh của bên nào
+      expect(body.contents[0].parts[1]).toEqual({ text: "ẢNH 1" });
+      expect(body.contents[0].parts[2]).toEqual({
         inlineData: { mimeType: "image/png", data: "AAAA" },
       });
     });

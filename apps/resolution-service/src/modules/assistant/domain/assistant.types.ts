@@ -165,6 +165,13 @@ export interface CaseContextSnapshot {
   criticalMissingSourceIds: string[];
   /** Đã đính kèm bao nhiêu ảnh bằng chứng cho vision model. */
   imagesAttached: number;
+  /** Ảnh món ăn tài xế chụp lúc giao cho khách (bằng chứng hệ thống của đơn). */
+  deliveryProofPhotoUrl?: string | null;
+  /** Ảnh giao hàng của tài xế có thực sự được gửi cho vision model hay không. */
+  deliveryProofImageAttached?: boolean;
+  /** Số ảnh (đã tải được) của bên khiếu nại / bên bị khiếu nại. */
+  reporterImagesAttached: number;
+  respondentImagesAttached: number;
   /** Ảnh bị bỏ qua (không tải được). */
   imagesSkipped: string[];
 }
@@ -188,6 +195,15 @@ export type AiActionType = (typeof AI_ACTION_TYPES)[number];
 export const AI_TARGET_TYPES = ["CONSUMER", "DRIVER", "MERCHANT"] as const;
 export type AiTargetType = (typeof AI_TARGET_TYPES)[number];
 
+/** Ảnh bằng chứng có khớp với mô tả khiếu nại hay không. */
+export const AI_IMAGE_SUPPORT = [
+  "SUPPORTS",
+  "CONTRADICTS",
+  "NEUTRAL",
+  "NO_IMAGE",
+] as const;
+export type AiImageSupport = (typeof AI_IMAGE_SUPPORT)[number];
+
 export interface AiSuggestedAction {
   type: AiActionType;
   targetType: AiTargetType;
@@ -198,6 +214,38 @@ export interface AiSuggestedAction {
   reason: string;
 }
 
+/** Ảnh bằng chứng của **một bên**, đã phân tích riêng. */
+export interface AiSideImageAnalysis {
+  /** Số ảnh bên này đính kèm (đã tải được). */
+  attached: number;
+  /** Số ảnh bên này thực sự gửi cho model. */
+  analyzed: number;
+  support: AiImageSupport;
+  analysis: string;
+}
+
+/**
+ * Trọng số bằng chứng (%) của một lần phân tích — ảnh & dữ liệu hệ thống quyết
+ * định, lời khai chỉ định hướng.
+ *
+ * Thang cố định, tổng tối đa 100: ảnh giao hàng hệ thống 35 + ảnh bên khiếu nại
+ * 25 + ảnh bên bị khiếu nại 15 + dữ liệu hệ thống 20 + lời khai 5.
+ */
+export interface AiEvidenceWeight {
+  /** % từ ảnh (0–75). */
+  images: number;
+  /** % từ dữ liệu hệ thống (0–20). */
+  system: number;
+  /** % từ lời khai hai bên (0–5). */
+  testimony: number;
+  /** % bằng chứng khách quan = images + system (≥ 50 ⇒ đủ căn cứ kết luận). */
+  objective: number;
+  /** Nguồn mạnh nhất đã dùng. */
+  basis: "IMAGES" | "SYSTEM" | "TESTIMONY";
+  /** Ảnh của chính bên khiếu nại mâu thuẫn với lời khai ⇒ khiếu nại yếu. */
+  reporterSelfContradiction: boolean;
+}
+
 export interface CaseAiSuggestion {
   caseId: string;
   caseNumber: string;
@@ -205,6 +253,24 @@ export interface CaseAiSuggestion {
   model: string;
   /** Tóm tắt vụ việc theo góc nhìn điều tra viên. */
   summary: string;
+  /** Tổng số ảnh bằng chứng đã thực sự gửi cho model (0 = không có ảnh). */
+  imagesAnalyzed: number;
+  /** Phân tích ảnh của **bên khiếu nại**. */
+  reporterImages: AiSideImageAnalysis;
+  /** Phân tích ảnh của **bên bị khiếu nại**. */
+  respondentImages: AiSideImageAnalysis;
+  /**
+   * Ảnh giao hàng do tài xế chụp lúc bấm giao thành công (hệ thống ghi nhận).
+   * `analyzed=false` nghĩa là ảnh có nhưng chưa gửi được cho model.
+   */
+  deliveryProof: {
+    photoUrl: string | null;
+    analyzed: boolean;
+  };
+  /** Trọng số bằng chứng (%) đã dùng để kết luận — ảnh & hệ thống > lời khai. */
+  evidenceWeight: AiEvidenceWeight;
+  /** ≤ 3 câu so sánh lời khai/ảnh của hai bên trước khi kết luận. */
+  sideComparison: string;
   suggestedVerdict: Verdict;
   suggestedFaultParty: FaultParty;
   suggestedSeverity: Severity;
@@ -260,7 +326,13 @@ export interface CaseAiAnalysisReview {
   note: string | null;
 }
 
-/** Bản phân tích đã lưu cho một vụ việc (admin mở là đọc được ngay). */
+export type { AiDecisionOutcome } from "../../case/application/case.service";
+
+/** Kết quả trả về khi admin duyệt/bỏ qua gợi ý AI. */
+export interface CaseAiReviewResult {
+  analysis: CaseAiAnalysisRecord | null;
+  outcome: import("../../case/application/case.service").AiDecisionOutcome;
+}
 export interface CaseAiAnalysisRecord {
   caseId: string;
   caseNumber: string;
@@ -268,4 +340,9 @@ export interface CaseAiAnalysisRecord {
   createdAt: string;
   suggestion: CaseAiSuggestion;
   review: CaseAiAnalysisReview | null;
+  /**
+   * `true` khi vụ việc có dữ liệu mới **sau** thời điểm phân tích (vd bên bị
+   * khiếu nại vừa phản hồi) ⇒ bản gợi ý này đã cũ, nên chạy lại.
+   */
+  stale: boolean;
 }

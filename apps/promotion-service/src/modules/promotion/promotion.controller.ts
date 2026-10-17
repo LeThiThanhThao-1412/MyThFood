@@ -28,6 +28,8 @@ import {
   ValidateFlashSaleDto,
   ApplyFlashSaleDto,
   RefundFlashSaleDto,
+  RefundFlashSaleItemsDto,
+  RecalculateUsageDto,
 } from "./promotion.dto";
 
 @Controller("promotions")
@@ -250,6 +252,28 @@ export class PromotionController {
     return {
       statusCode: HttpStatus.OK,
       data: await this.promotionService.refundFlashSale(dto),
+    };
+  }
+
+  @Post("flash-sales/refund-items")
+  @Roles("ADMIN")
+  async refundFlashSaleItems(@Body() dto: RefundFlashSaleItemsDto) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.refundFlashSaleItems(dto),
+    };
+  }
+
+  /**
+   * Tính lại discount của mã khuyến mãi sau khi đơn được chỉnh sửa món.
+   * Order-service gọi bằng x-service-key (roles ADMIN) với dryRun để xem trước.
+   */
+  @Post("usages/recalculate")
+  @Roles("ADMIN")
+  async recalculateUsage(@Body() dto: RecalculateUsageDto) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.recalculateUsage(dto),
     };
   }
 

@@ -465,8 +465,13 @@
           "request": {
             "method": "PATCH",
             "header": [
+              { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"photoUrl\": \"http://localhost:3010/api/v1/upload/delivery-proof/proof.jpg\"\n}"
+            },
             "url": {
               "raw": "{{base_url_order}}/orders/:id/delivered",
               "host": ["{{base_url_order}}"],

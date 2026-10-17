@@ -403,3 +403,72 @@ export class RefundFlashSaleDto {
   @IsUUID("4")
   orderId!: string;
 }
+
+// ===================== Order adjustment (đổi món) =====================
+
+export class RecalculateUsageItemDto {
+  @IsUUID("4")
+  menuItemId!: string;
+
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  quantity!: number;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  unitPrice!: number;
+}
+
+/**
+ * Tính lại discount của promotion usage sau khi nhà hàng đổi món.
+ * `dryRun=true` chỉ xem trước, không ghi DB (dùng khi tạo yêu cầu chỉnh sửa).
+ */
+export class RecalculateUsageDto {
+  @IsUUID("4")
+  orderId!: string;
+
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  foodTotal!: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  shippingFee?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RecalculateUsageItemDto)
+  items?: RecalculateUsageItemDto[];
+}
+
+export class RefundFlashSaleItemDto {
+  @IsUUID("4")
+  menuItemId!: string;
+
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  quantity!: number;
+}
+
+/** Hoàn suất flash sale cho phần số lượng món bị giảm/xóa. */
+export class RefundFlashSaleItemsDto {
+  @IsUUID("4")
+  orderId!: string;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => RefundFlashSaleItemDto)
+  items!: RefundFlashSaleItemDto[];
+}

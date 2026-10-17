@@ -22,6 +22,7 @@ import {
 } from "@mythfood/frontend-shared";
 import type { RouteInfo } from "@mythfood/frontend-shared";
 import { reorderOrder } from "@/lib/reorder";
+import OrderChangeRequestCard from "@/components/OrderChangeRequestCard";
 
 const TrackingMap = dynamic(
   () => import("@mythfood/frontend-shared/components/MapView"),
@@ -144,6 +145,7 @@ export default function OrderDetailPage() {
   const router = useRouter();
   const { isAuthenticated, user } = useAuthStore();
   const [order, setOrder] = useState<any>(null);
+  const [changeRequests, setChangeRequests] = useState<any[]>([]);
   const [merchant, setMerchant] = useState<any>(null);
   const [dispatch, setDispatch] = useState<any>(null);
   const [dispatchLocation, setDispatchLocation] = useState<any>(null);
@@ -356,6 +358,13 @@ export default function OrderDetailPage() {
         const d = (dRes as any)?.data ?? null;
         setOrder(o);
         setDispatch(d);
+
+        try {
+          const changes = await orderApi.listChangeRequests(id);
+          setChangeRequests(Array.isArray(changes) ? changes : []);
+        } catch {
+          setChangeRequests([]);
+        }
 
         // Khi đơn giao thất bại: lấy case khiếu nại của đơn này
         if (o?.status === "DELIVERY_FAILED") {
@@ -690,6 +699,24 @@ export default function OrderDetailPage() {
         </p>
       </div>
 
+      {/* Ảnh tài xế chụp món ăn lúc giao — bằng chứng đối chiếu khi khiếu nại */}
+      {isDelivered && order.deliveryProofPhotoUrl && (
+        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-2">
+          <p className="text-sm font-bold text-[#1a1a2e]">
+            📷 Ảnh xác nhận giao hàng
+          </p>
+          <p className="text-xs text-gray-500">
+            Tài xế đã chụp ảnh món ăn lúc giao đến tay bạn.
+          </p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={order.deliveryProofPhotoUrl}
+            alt="Ảnh xác nhận giao hàng"
+            className="w-full max-h-64 object-cover rounded-xl border border-gray-200"
+          />
+        </div>
+      )}
+
       {/* Khiếu nại giao thất bại (bị tài xế khiếu nại) */}
       {order.status === "DELIVERY_FAILED" && deliveryCase && (
         <div className="bg-white rounded-2xl shadow-sm p-4 border border-amber-100 space-y-3">
@@ -964,6 +991,34 @@ export default function OrderDetailPage() {
         </div>
       )}
 
+      {/* Yêu cầu chỉnh sửa đơn đang chờ khách xác nhận */}
+      {(() => {
+        const pending = changeRequests.find(
+          (request) =>
+            request.status === "PENDING" ||
+            request.status === "AWAITING_PAYMENT",
+        );
+        if (!pending) return null;
+        return (
+          <OrderChangeRequestCard
+            key={pending.id}
+            request={pending}
+            onChange={async () => {
+              try {
+                const [freshOrder, list] = await Promise.all([
+                  orderApi.getById(id),
+                  orderApi.listChangeRequests(id),
+                ]);
+                setOrder(freshOrder);
+                setChangeRequests(Array.isArray(list) ? list : []);
+              } catch {
+                /* non-fatal */
+              }
+            }}
+          />
+        );
+      })()}
+
       {/* Items */}
       <div className="bg-white rounded-2xl shadow-sm p-5">
         <h3 className="font-bold text-[#1a1a2e] mb-3">🛒 Món đã đặt</h3>
@@ -972,6 +1027,12 @@ export default function OrderDetailPage() {
             <div key={i} className="flex justify-between text-sm">
               <span className="text-gray-700">
                 {item.quantity}x {item.name}
+                {item.originalPrice != null &&
+                  Number(item.originalPrice) > Number(item.unitPrice) && (
+                    <span className="ml-1.5 text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full font-semibold">
+                      🔥 Flash Sale
+                    </span>
+                  )}
               </span>
               <span className="text-gray-600 font-medium">
                 {((item.unitPrice || 0) * item.quantity).toLocaleString(

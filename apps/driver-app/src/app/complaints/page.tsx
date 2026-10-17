@@ -821,8 +821,16 @@ export default function ComplaintsPage() {
               </div>
             )}
             {selectedCase.respondentType === "DRIVER" &&
-              selectedCase.status === "OPEN" && (
+              ["OPEN", "UNDER_REVIEW", "WAITING_EVIDENCE"].includes(
+                selectedCase.status,
+              ) && (
                 <div className="space-y-2 border-t border-gray-100 pt-3">
+                  {selectedCase.status === "WAITING_EVIDENCE" && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+                      Admin đang yêu cầu bổ sung bằng chứng — hãy gửi giải
+                      trình/ảnh để AI phân tích lại.
+                    </p>
+                  )}
                   {respondingCaseId === selectedCase.id ? (
                     <div className="space-y-2">
                       <textarea

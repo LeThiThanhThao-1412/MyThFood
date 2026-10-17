@@ -6,7 +6,9 @@
 // Dùng để nhúng trực tiếp vào dashboard / bản đồ mà không cần mở trang chi tiết.
 // ============================================================================
 
+import { useState } from "react";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
+import DeliveryProofDialog from "@/components/DeliveryProofDialog";
 
 export default function DeliveryActionButtons({
   orderId,
@@ -30,6 +32,8 @@ export default function DeliveryActionButtons({
     startSimulation,
     stopSimulation,
   } = useDeliveryTrip(orderId);
+
+  const [proofOpen, setProofOpen] = useState(false);
 
   if (!order) return null;
 
@@ -58,6 +62,10 @@ export default function DeliveryActionButtons({
       {stageMeta.actionLabel && (
         <button
           onClick={async () => {
+            if (stage === "DELIVERING" && order.orderType !== "PICKUP") {
+              setProofOpen(true);
+              return;
+            }
             await advance();
             onChanged?.();
           }}
@@ -108,6 +116,18 @@ export default function DeliveryActionButtons({
           ❌ {error}
         </p>
       )}
+
+      <DeliveryProofDialog
+        open={proofOpen}
+        busy={busy}
+        serverError={error}
+        onClose={() => setProofOpen(false)}
+        onConfirm={async (url) => {
+          const ok = await advance(url);
+          if (ok) onChanged?.();
+          return ok;
+        }}
+      />
     </div>
   );
 }

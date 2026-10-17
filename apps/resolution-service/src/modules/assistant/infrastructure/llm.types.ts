@@ -37,6 +37,11 @@ export interface LlmJsonResponse<T> {
   endpoint: string;
   usage: LlmUsage;
   /**
+   * Số ảnh **thực sự đã gửi cho model** ở lượt trả kết quả này
+   * (0 = không có ảnh, hoặc ảnh bị bỏ vì model không nhận ảnh / lỗi).
+   */
+  imagesUsed?: number;
+  /**
    * Ghi chú kỹ thuật của provider, đưa thẳng vào `warnings` cho admin biết
    * (vd: đã bỏ ảnh bằng chứng vì model không nhận ảnh).
    */

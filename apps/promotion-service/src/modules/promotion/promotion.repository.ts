@@ -355,7 +355,11 @@ export class PromotionRepository {
   /**
    * Áp flash sale cho một món một cách nguyên tử:
    * khóa dòng item (pessimistic_write), re-check giờ/stock/limit, trừ stock,
-   * ghi usage. Trả về salePrice áp dụng.
+   * ghi usage.
+   *
+   * Không còn ném lỗi khi khách vượt `limitPerUser` hoặc flash sale không đủ
+   * suất: chỉ phần tối đa được hưởng (`saleQuantity`) mới tính giá sale, phần
+   * còn lại do order-service tính theo giá thường.
    */
   async applyFlashSaleItemAtomic(params: {
     flashSaleItemId: string;
@@ -365,7 +369,11 @@ export class PromotionRepository {
     limitPerUser: number;
     consumerId: string;
     orderId: string;
-  }): Promise<number> {
+  }): Promise<{
+    saleQuantity: number;
+    salePrice: number;
+    originalPrice: number;
+  }> {
     return this.dataSource.transaction(async (manager) => {
       const item = await manager.findOne(FlashSaleItemEntity, {
         where: { id: params.flashSaleItemId },
@@ -387,9 +395,7 @@ export class PromotionRepository {
       if (now > sale.endAt) {
         throw new BadRequestException("Flash sale đã kết thúc");
       }
-      if (item.soldQuantity + params.quantity > item.totalQuantity) {
-        throw new BadRequestException("Flash sale đã hết suất");
-      }
+
       const usedQty = await manager
         .getRepository(FlashSaleUsageEntity)
         .createQueryBuilder("u")
@@ -403,8 +409,28 @@ export class PromotionRepository {
         .andWhere("u.refundedAt IS NULL")
         .getRawOne();
       const used = Number(usedQty?.total ?? 0);
-      if (used + params.quantity > params.limitPerUser) {
-        throw new BadRequestException("Bạn đã đạt giới hạn số suất flash sale");
+
+      const remainingStock = Math.max(
+        0,
+        (item.totalQuantity ?? 0) - (item.soldQuantity ?? 0),
+      );
+      const remainingUserQuota = Math.max(
+        0,
+        Number(params.limitPerUser ?? 0) - used,
+      );
+      // Chỉ phần tối đa được hưởng giá sale; phần còn lại tính giá thường.
+      const saleQuantity = Math.min(
+        params.quantity,
+        remainingStock,
+        remainingUserQuota,
+      );
+
+      if (saleQuantity <= 0) {
+        return {
+          saleQuantity: 0,
+          salePrice: Number(params.salePrice),
+          originalPrice: Number(params.originalPrice),
+        };
       }
 
       const usage = new FlashSaleUsageEntity();
@@ -413,18 +439,22 @@ export class PromotionRepository {
       usage.flashSaleItemId = item.id;
       usage.orderId = params.orderId;
       usage.consumerId = params.consumerId;
-      usage.quantity = params.quantity;
+      usage.quantity = saleQuantity;
       usage.unitPrice = params.salePrice;
       usage.discountAmount =
         (Number(params.originalPrice) - Number(params.salePrice)) *
-        params.quantity;
+        saleQuantity;
       usage.refundedAt = null;
       await manager.save(usage);
 
-      item.soldQuantity = (item.soldQuantity ?? 0) + params.quantity;
+      item.soldQuantity = (item.soldQuantity ?? 0) + saleQuantity;
       await manager.save(item);
 
-      return Number(params.salePrice);
+      return {
+        saleQuantity,
+        salePrice: Number(params.salePrice),
+        originalPrice: Number(params.originalPrice),
+      };
     });
   }
 
@@ -456,6 +486,73 @@ export class PromotionRepository {
         changed = true;
       }
       return changed;
+    });
+  }
+
+  /**
+   * Hoàn suất flash sale theo từng món/số lượng khi đơn được chỉnh sửa (xóa
+   * hoặc giảm số lượng món). Idempotent theo phần đã hoàn: usage được giảm
+   * quantity, hết quantity thì đánh dấu refundedAt.
+   */
+  async refundFlashSaleItemsByOrderId(
+    orderId: string,
+    items: Array<{ menuItemId: string; quantity: number }>,
+  ): Promise<{ refundedQuantity: number }> {
+    return this.dataSource.transaction(async (manager) => {
+      let refundedQuantity = 0;
+
+      for (const input of items) {
+        if (!input.menuItemId || input.quantity <= 0) continue;
+
+        const usages = await manager
+          .getRepository(FlashSaleUsageEntity)
+          .createQueryBuilder("usage")
+          .innerJoin(
+            FlashSaleItemEntity,
+            "item",
+            "item.id = usage.flashSaleItemId",
+          )
+          .where("usage.orderId = :orderId", { orderId })
+          .andWhere("item.menuItemId = :menuItemId", {
+            menuItemId: input.menuItemId,
+          })
+          .andWhere("usage.refundedAt IS NULL")
+          .getMany();
+
+        let remaining = input.quantity;
+        for (const usage of usages) {
+          if (remaining <= 0) break;
+          const take = Math.min(usage.quantity, remaining);
+
+          const item = await manager.findOne(FlashSaleItemEntity, {
+            where: { id: usage.flashSaleItemId },
+            lock: { mode: "pessimistic_write" },
+          });
+          if (item) {
+            item.soldQuantity = Math.max(0, (item.soldQuantity ?? 0) - take);
+            await manager.save(item);
+          }
+
+          const discountPerUnit =
+            usage.quantity > 0
+              ? Number(usage.discountAmount) / usage.quantity
+              : 0;
+          usage.discountAmount = Math.max(
+            0,
+            Number(usage.discountAmount) - discountPerUnit * take,
+          );
+          usage.quantity -= take;
+          if (usage.quantity <= 0) {
+            usage.refundedAt = new Date();
+          }
+          await manager.save(usage);
+
+          remaining -= take;
+          refundedQuantity += take;
+        }
+      }
+
+      return { refundedQuantity };
     });
   }
 

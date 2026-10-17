@@ -3,8 +3,14 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { CqrsModule } from "@nestjs/cqrs";
 import { HttpModule } from "@nestjs/axios";
 import { OrderController } from "./presentation/order.controller";
+import {
+  OrderChangeController,
+  OrderChangeRequestController,
+} from "./presentation/order-change.controller";
 import { OrderService } from "./application/order.service";
 import { OrderScheduler } from "./application/order.scheduler";
+import { OrderChangeService } from "./application/order-change.service";
+import { OrderChangeScheduler } from "./application/order-change.scheduler";
 import { OrderTimelineHandler } from "./application/order-timeline.handler";
 import { OrderGateway } from "./gateway/order.gateway";
 import { OrderRepository } from "./infrastructure/order.repository";
@@ -12,6 +18,10 @@ import { OrderEntity } from "./infrastructure/order.entity";
 import { OrderItemEntity } from "./infrastructure/order-item.entity";
 import { OrderTimelineEntity } from "./infrastructure/order-timeline.entity";
 import { OrderTimelineRepository } from "./infrastructure/order-timeline.repository";
+import { OrderChangeRequestEntity } from "./infrastructure/order-change-request.entity";
+import { OrderChangeRequestRepository } from "./infrastructure/order-change-request.repository";
+import { OrderAdjustmentEntity } from "./infrastructure/order-adjustment.entity";
+import { OrderAdjustmentRepository } from "./infrastructure/order-adjustment.repository";
 import { MerchantComplianceService } from "./application/merchant-compliance.service";
 import { MerchantComplianceRepository } from "./infrastructure/merchant-compliance.repository";
 import { MerchantComplianceStateEntity } from "./infrastructure/merchant-compliance-state.entity";
@@ -26,6 +36,8 @@ import { IdempotencyInterceptor } from "../cache/idempotency.interceptor";
       OrderEntity,
       OrderItemEntity,
       OrderTimelineEntity,
+      OrderChangeRequestEntity,
+      OrderAdjustmentEntity,
       MerchantComplianceStateEntity,
       MerchantCompliancePenaltyEntity,
     ]),
@@ -34,18 +46,26 @@ import { IdempotencyInterceptor } from "../cache/idempotency.interceptor";
     HttpModule,
     CacheModule,
   ],
-  controllers: [OrderController],
+  controllers: [
+    OrderController,
+    OrderChangeController,
+    OrderChangeRequestController,
+  ],
   providers: [
     OrderService,
     OrderScheduler,
+    OrderChangeService,
+    OrderChangeScheduler,
     OrderTimelineHandler,
     OrderGateway,
     OrderRepository,
     OrderTimelineRepository,
+    OrderChangeRequestRepository,
+    OrderAdjustmentRepository,
     MerchantComplianceService,
     MerchantComplianceRepository,
     IdempotencyInterceptor,
   ],
-  exports: [OrderService, OrderGateway],
+  exports: [OrderService, OrderChangeService, OrderGateway],
 })
 export class OrderModule {}

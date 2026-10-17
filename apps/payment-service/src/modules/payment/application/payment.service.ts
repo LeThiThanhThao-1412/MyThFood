@@ -6,6 +6,7 @@ import { PaymentRepository } from "../infrastructure/payment.repository";
 import { StripeService } from "../../stripe/stripe.service";
 import { SplitPaymentService } from "./split-payment.service";
 import {
+  CreateAdjustmentPaymentDto,
   CreatePaymentDto,
   CreateStripePaymentDto,
   PaymentResponseDto,
@@ -56,6 +57,68 @@ export class PaymentService {
 
     this.logger.log(
       `Stripe payment created: ${payment.id.toString()} with PI ${paymentIntent.id}`,
+    );
+
+    return {
+      ...this.toResponseDto(payment),
+      clientSecret: paymentIntent.client_secret || "",
+    };
+  }
+
+  /**
+   * Tạo PaymentIntent bổ sung cho khoản chênh lệch khi nhà hàng chỉnh sửa đơn.
+   * Idempotent theo `adjustmentRequestId`: gọi lại sẽ trả payment cũ + clientSecret.
+   */
+  async createAdjustmentStripePayment(
+    dto: CreateAdjustmentPaymentDto,
+  ): Promise<PaymentResponseDto & { clientSecret: string }> {
+    const existing = await this.paymentRepository.findByAdjustmentRequestId(
+      dto.adjustmentRequestId,
+    );
+    if (existing) {
+      let clientSecret = "";
+      const paymentIntentId = existing.paymentStripePaymentIntentId;
+      if (paymentIntentId) {
+        try {
+          const intent =
+            await this.stripeService.retrievePaymentIntent(paymentIntentId);
+          clientSecret = intent.client_secret || "";
+        } catch (err: any) {
+          this.logger.warn(
+            `Cannot retrieve PaymentIntent ${paymentIntentId}: ${err?.message ?? err}`,
+          );
+        }
+      }
+      return { ...this.toResponseDto(existing), clientSecret };
+    }
+
+    const paymentIntent = await this.stripeService.createPaymentIntent({
+      amount: dto.amount,
+      currency: dto.currency,
+      orderId: dto.orderId,
+      consumerId: dto.consumerId,
+      description: `Order ${dto.orderId} - Adjustment ${dto.adjustmentRequestId}`,
+    });
+
+    const result = Payment.create({
+      orderId: dto.orderId,
+      consumerId: dto.consumerId,
+      merchantId: dto.merchantId,
+      amount: dto.amount,
+      paymentMethod: PaymentMethod.CREDIT_CARD,
+      adjustmentRequestId: dto.adjustmentRequestId,
+    });
+
+    if (result.isFailure) {
+      throw result.error;
+    }
+
+    const payment = result.value;
+    payment.hold(paymentIntent.id);
+    await this.paymentRepository.save(payment);
+
+    this.logger.log(
+      `Adjustment payment created: ${payment.id.toString()} for request ${dto.adjustmentRequestId} amount=${dto.amount}`,
     );
 
     return {
@@ -116,6 +179,17 @@ export class PaymentService {
   ): Promise<PaymentResponseDto> {
     const payment = await this.findByIdOrFail(paymentId);
     payment.complete(transactionId);
+    await this.paymentRepository.save(payment);
+    return this.toResponseDto(payment);
+  }
+
+  /** Xác nhận khoản thu bổ sung đã được Stripe capture (HELD → COMPLETED). */
+  async completeAdjustmentPayment(
+    paymentId: string,
+    transactionId: string,
+  ): Promise<PaymentResponseDto> {
+    const payment = await this.findByIdOrFail(paymentId);
+    payment.completeAdjustment(transactionId || "stripe-adjustment");
     await this.paymentRepository.save(payment);
     return this.toResponseDto(payment);
   }
@@ -256,6 +330,61 @@ export class PaymentService {
     return payment ? this.toResponseDto(payment) : null;
   }
 
+  async findByAdjustmentRequestId(
+    adjustmentRequestId: string,
+  ): Promise<PaymentResponseDto | null> {
+    const payment =
+      await this.paymentRepository.findByAdjustmentRequestId(
+        adjustmentRequestId,
+      );
+    return payment ? this.toResponseDto(payment) : null;
+  }
+
+  /**
+   * Trả lại clientSecret của PaymentIntent bổ sung để khách tiếp tục thanh
+   * toán sau khi rời trang (request đang AWAITING_PAYMENT).
+   */
+  async getAdjustmentPaymentSecret(adjustmentRequestId: string): Promise<{
+    paymentId: string | null;
+    clientSecret: string;
+    amount: number;
+    status: string | null;
+  }> {
+    const payment =
+      await this.paymentRepository.findByAdjustmentRequestId(
+        adjustmentRequestId,
+      );
+    if (!payment) {
+      return {
+        paymentId: null,
+        clientSecret: "",
+        amount: 0,
+        status: null,
+      };
+    }
+
+    let clientSecret = "";
+    const paymentIntentId = payment.paymentStripePaymentIntentId;
+    if (paymentIntentId) {
+      try {
+        const intent =
+          await this.stripeService.retrievePaymentIntent(paymentIntentId);
+        clientSecret = intent.client_secret || "";
+      } catch (err: any) {
+        this.logger.warn(
+          `Cannot retrieve PaymentIntent ${paymentIntentId}: ${err?.message ?? err}`,
+        );
+      }
+    }
+
+    return {
+      paymentId: payment.id.toString(),
+      clientSecret,
+      amount: payment.paymentAmount,
+      status: payment.paymentStatus,
+    };
+  }
+
   async findByConsumerId(consumerId: string): Promise<PaymentResponseDto[]> {
     const payments = await this.paymentRepository.findByConsumerId(consumerId);
     return payments.map((p) => this.toResponseDto(p));
@@ -309,6 +438,7 @@ export class PaymentService {
       failureReason: payment.paymentFailureReason,
       refundReason: payment.paymentRefundReason,
       refundedAmount: payment.paymentRefundedAmount,
+      adjustmentRequestId: payment.paymentAdjustmentRequestId,
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
     };
