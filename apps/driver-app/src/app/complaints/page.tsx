@@ -894,7 +894,6 @@ export default function ComplaintsPage() {
           </div>
         </div>
       )}
-
     </DriverShell>
   );
 }

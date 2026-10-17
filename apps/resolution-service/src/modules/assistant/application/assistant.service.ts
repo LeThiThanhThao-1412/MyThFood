@@ -125,7 +125,9 @@ export class AssistantService {
    */
   async triggerAutoAnalysis(caseId: string): Promise<void> {
     if (!this.autoAnalyze) {
-      this.logger.log(`Bỏ qua tự phân tích (AI_AUTO_ANALYZE=false) — case ${caseId}`);
+      this.logger.log(
+        `Bỏ qua tự phân tích (AI_AUTO_ANALYZE=false) — case ${caseId}`,
+      );
       return;
     }
     if (!this.llm.enabled || !this.llm.hasApiKey) {
@@ -137,7 +139,12 @@ export class AssistantService {
 
     const startedAt = Date.now();
     try {
-      const suggestion = await this.analyzeCase(caseId, {}, SYSTEM_ACTOR, "AUTO");
+      const suggestion = await this.analyzeCase(
+        caseId,
+        {},
+        SYSTEM_ACTOR,
+        "AUTO",
+      );
       this.logger.log(
         `AI tự phân tích ${suggestion.caseNumber} | verdict=${suggestion.suggestedVerdict} ` +
           `confidence=${suggestion.confidence} model=${suggestion.model} ms=${Date.now() - startedAt}`,
@@ -151,7 +158,16 @@ export class AssistantService {
 
   /** Bản phân tích đã lưu của vụ việc (null nếu chưa có). */
   async getAnalysis(caseId: string): Promise<CaseAiAnalysisRecord | null> {
-    return this.analysisRepo.findByCaseId(caseId);
+    try {
+      return await this.analysisRepo.findByCaseId(caseId);
+    } catch (err: any) {
+      // Bảng chưa được tạo (chưa migrate / thiếu entity) không được làm sập
+      // panel của cả vụ việc — chỉ coi như "chưa có bản phân tích".
+      this.logger.warn(
+        `Không đọc được bản phân tích (${caseId}): ${err?.message ?? err}`,
+      );
+      return null;
+    }
   }
 
   /** Admin duyệt / bỏ qua gợi ý. Trả `null` nếu vụ việc chưa có bản phân tích. */
@@ -453,7 +469,8 @@ export class AssistantService {
     field: string,
     warnings: string[],
   ): T {
-    const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
+    const normalized =
+      typeof value === "string" ? value.trim().toUpperCase() : "";
     const hit = allowed.find((a) => a.toUpperCase() === normalized);
     if (!hit) {
       warnings.push(
@@ -474,9 +491,7 @@ export class AssistantService {
   }
 
   /** Chỉ cho phép hình phạt nhắm vào bên thực sự có mặt trong vụ việc. */
-  private allowedTargetTypes(
-    snapshot: CaseContextSnapshot,
-  ): Set<AiTargetType> {
+  private allowedTargetTypes(snapshot: CaseContextSnapshot): Set<AiTargetType> {
     const targets = new Set<AiTargetType>();
     for (const actor of [
       snapshot.case.reporterType,
@@ -530,14 +545,15 @@ export class AssistantService {
       }
 
       const needsAmount = type === "FINE" || type === "COMPENSATION";
-      const needsDuration =
-        type === "SUSPEND" || type === "RESTRICT_ACTIVITY";
+      const needsDuration = type === "SUSPEND" || type === "RESTRICT_ACTIVITY";
 
       actions.push({
         type,
         targetType,
         amount: needsAmount ? this.positiveNumber(raw.amount) : null,
-        durationDays: needsDuration ? this.positiveNumber(raw.durationDays) : null,
+        durationDays: needsDuration
+          ? this.positiveNumber(raw.durationDays)
+          : null,
         reason: this.str(raw.reason) || "(model không nêu lý do)",
       });
     });

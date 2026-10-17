@@ -302,231 +302,226 @@ export default function DriverLocationPage() {
           onClick={toggleOnline}
           disabled={togglingOnline}
           className={`px-3 py-1 rounded-full text-xs font-bold transition ${
-            isOnline
-              ? "bg-green-500 text-white"
-              : "bg-gray-600 text-gray-300"
+            isOnline ? "bg-green-500 text-white" : "bg-gray-600 text-gray-300"
           }`}
         >
           {togglingOnline ? "..." : isOnline ? "🟢 ONLINE" : "⚫ OFFLINE"}
         </button>
       </div>
-        {/* Search Input */}
-        <div className="relative" ref={suggestionRef}>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
-              🔍
-            </span>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Tìm địa chỉ..."
-              className="w-full bg-white rounded-xl pl-11 pr-10 py-3 text-sm border border-gray-200 shadow-sm focus:border-[#ff6b35] focus:ring-2 focus:ring-orange-200 outline-none transition"
-            />
-            {search && (
-              <button
-                onClick={() => {
-                  setSearch("");
-                  setSuggestions([]);
-                }}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-          {showSuggestions && suggestions.length > 0 && (
-            <div className="absolute z-50 w-full mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 max-h-60 overflow-y-auto">
-              {suggestions.map((s, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => selectSuggestion(s)}
-                  className="w-full text-left px-4 py-3 text-sm hover:bg-orange-50 border-b border-gray-50 last:border-0 transition"
-                >
-                  <p className="text-gray-800 line-clamp-2">{s.display_name}</p>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Dispatch Info Panel (collapsed by default) */}
-        {showMechanism && (
-          <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3 text-sm text-gray-600">
-            <div className="bg-[#fff7ed] rounded-xl p-3 border border-orange-100">
-              <p className="font-semibold text-[#ff6b35] mb-2">
-                🔄 Cách dispatch tìm tài xế:
-              </p>
-              <ol className="list-decimal pl-4 space-y-1">
-                <li>Khoảng cách tài xế → nhà hàng</li>
-                <li>Tài xế ONLINE, không BUSY</li>
-                <li>Đơn COD: ví ≥ 2.000.000đ</li>
-                <li>Độ mệt mỏi (fatigue level)</li>
-              </ol>
-            </div>
-            <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
-              <p className="font-semibold text-blue-700 mb-1">📋 Quy trình:</p>
-              <p className="text-xs">
-                Đơn READY_FOR_PICKUP → Tính khoảng cách → Lọc tài xế gần nhất →
-                Gán đơn → Tài xế nhận thông báo
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Quick actions + Info */}
-        <div className="flex gap-2">
-          <button
-            onClick={useCurrentLocation}
-            className="flex-1 bg-white rounded-xl py-3 text-sm font-semibold text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
-          >
-            <span>📍</span> Lấy GPS
-          </button>
-          <button
-            onClick={updateLocation}
-            disabled={updating}
-            className="flex-[2] bg-[#ff6b35] text-white py-3 rounded-xl font-bold text-sm hover:bg-orange-600 disabled:opacity-50 transition flex items-center justify-center gap-2"
-          >
-            {updating ? (
-              <>
-                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />{" "}
-                Đang cập nhật...
-              </>
-            ) : (
-              <>🔄 Cập nhật vị trí</>
-            )}
-          </button>
-        </div>
-
-        {/* Coordinates display */}
-        <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
-          <span>📍</span>
-          <span className="font-mono">
-            {lat.toFixed(5)}, {lng.toFixed(5)}
+      {/* Search Input */}
+      <div className="relative" ref={suggestionRef}>
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
+            🔍
           </span>
-          <button
-            onClick={() => {
-              setLat(10.77);
-              setLng(106.7);
-            }}
-            className="text-[#ff6b35] hover:underline ml-2"
-          >
-            ↺ Reset
-          </button>
-        </div>
-
-        {status && (
-          <div
-            className={`p-3 rounded-xl text-sm font-medium text-center ${status.startsWith("✅") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}
-          >
-            {status}
-          </div>
-        )}
-
-        {/* Map */}
-        <div className="rounded-2xl overflow-hidden border border-gray-100 shadow-sm">
-          <DriverMap
-            locations={[
-              { latitude: lat, longitude: lng, label: "📍 Vị trí của tôi" },
-            ]}
-            interactive
-            height="calc(55vh - 100px)"
-            onLocationSelect={(newLat, newLng) => {
-              setLat(newLat);
-              setLng(newLng);
-            }}
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Tìm địa chỉ..."
+            className="w-full bg-white rounded-xl pl-11 pr-10 py-3 text-sm border border-gray-200 shadow-sm focus:border-[#ff6b35] focus:ring-2 focus:ring-orange-200 outline-none transition"
           />
-        </div>
-
-        {/* Active Dispatch */}
-        {activeDispatch && (
-          <div className="bg-gradient-to-r from-[#ff6b35] to-[#ff8f65] rounded-2xl p-4 text-white">
-            <p className="text-xs text-white/70">🚚 Đơn đang giao</p>
-            <div className="flex items-center justify-between mt-1">
-              <div>
-                <p className="font-bold">
-                  #{activeDispatch.orderId?.slice(0, 8)}
-                </p>
-                <p className="text-xs text-white/70">
-                  {activeDispatch.status === "DRIVER_ASSIGNED"
-                    ? "📩 Chờ nhận"
-                    : activeDispatch.status === "DRIVER_ACCEPTED"
-                      ? "✅ Đã nhận"
-                      : activeDispatch.status === "DRIVER_ARRIVED"
-                        ? "📍 Đã đến"
-                        : activeDispatch.status === "PICKED_UP"
-                          ? "📦 Đã lấy"
-                          : activeDispatch.status === "DELIVERING"
-                            ? "🛵 Đang giao"
-                            : activeDispatch.status}
-                </p>
-              </div>
-              <Link
-                href={`/delivery/${activeDispatch.orderId}`}
-                className="bg-white/20 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-white/30 transition"
-              >
-                Xem →
-              </Link>
-            </div>
-            <div className="mt-3">
-              <DeliveryActionButtons
-                orderId={activeDispatch.orderId}
-                variant="light"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Nearby Orders */}
-        <div className="bg-white rounded-2xl shadow-sm p-4">
-          <h3 className="font-bold text-[#1a1a2e] mb-3">
-            📋 Đơn gần đây ({nearbyOrders.length})
-          </h3>
-          {nearbyOrders.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">
-              Chưa có đơn nào gần đây
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {nearbyOrders.slice(0, 5).map((o: any) => (
-                <div
-                  key={o.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="font-semibold text-sm">
-                        #{o.id?.slice(0, 8)}
-                      </span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${o.paymentMethod === "CREDIT_CARD" ? "bg-purple-100 text-purple-700" : "bg-green-100 text-green-700"}`}
-                      >
-                        {o.paymentMethod === "CREDIT_CARD"
-                          ? "💳 Thẻ"
-                          : "💵 COD"}
-                      </span>
-                      <span className="text-[#ff6b35] font-bold text-sm">
-                        {toNum(o.totalAmount).toLocaleString("vi-VN")}₫
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 truncate">
-                      {o.deliveryAddress}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => acceptDispatch(o.id)}
-                    disabled={!isOnline || dispatchLoading}
-                    className={`ml-3 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${!isOnline ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-[#ff6b35] text-white hover:bg-orange-600"}`}
-                  >
-                    {!isOnline ? "⚠️ Offline" : "📥 Nhận đơn"}
-                  </button>
-                </div>
-              ))}
-            </div>
+          {search && (
+            <button
+              onClick={() => {
+                setSearch("");
+                setSuggestions([]);
+              }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              ✕
+            </button>
           )}
         </div>
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="absolute z-50 w-full mt-1 bg-white rounded-2xl shadow-lg border border-gray-100 max-h-60 overflow-y-auto">
+            {suggestions.map((s, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => selectSuggestion(s)}
+                className="w-full text-left px-4 py-3 text-sm hover:bg-orange-50 border-b border-gray-50 last:border-0 transition"
+              >
+                <p className="text-gray-800 line-clamp-2">{s.display_name}</p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
+      {/* Dispatch Info Panel (collapsed by default) */}
+      {showMechanism && (
+        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3 text-sm text-gray-600">
+          <div className="bg-[#fff7ed] rounded-xl p-3 border border-orange-100">
+            <p className="font-semibold text-[#ff6b35] mb-2">
+              🔄 Cách dispatch tìm tài xế:
+            </p>
+            <ol className="list-decimal pl-4 space-y-1">
+              <li>Khoảng cách tài xế → nhà hàng</li>
+              <li>Tài xế ONLINE, không BUSY</li>
+              <li>Đơn COD: ví ≥ 2.000.000đ</li>
+              <li>Độ mệt mỏi (fatigue level)</li>
+            </ol>
+          </div>
+          <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
+            <p className="font-semibold text-blue-700 mb-1">📋 Quy trình:</p>
+            <p className="text-xs">
+              Đơn READY_FOR_PICKUP → Tính khoảng cách → Lọc tài xế gần nhất →
+              Gán đơn → Tài xế nhận thông báo
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Quick actions + Info */}
+      <div className="flex gap-2">
+        <button
+          onClick={useCurrentLocation}
+          className="flex-1 bg-white rounded-xl py-3 text-sm font-semibold text-gray-700 border border-gray-200 shadow-sm hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+        >
+          <span>📍</span> Lấy GPS
+        </button>
+        <button
+          onClick={updateLocation}
+          disabled={updating}
+          className="flex-[2] bg-[#ff6b35] text-white py-3 rounded-xl font-bold text-sm hover:bg-orange-600 disabled:opacity-50 transition flex items-center justify-center gap-2"
+        >
+          {updating ? (
+            <>
+              <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />{" "}
+              Đang cập nhật...
+            </>
+          ) : (
+            <>🔄 Cập nhật vị trí</>
+          )}
+        </button>
+      </div>
+
+      {/* Coordinates display */}
+      <div className="flex items-center justify-center gap-2 text-xs text-gray-400">
+        <span>📍</span>
+        <span className="font-mono">
+          {lat.toFixed(5)}, {lng.toFixed(5)}
+        </span>
+        <button
+          onClick={() => {
+            setLat(10.77);
+            setLng(106.7);
+          }}
+          className="text-[#ff6b35] hover:underline ml-2"
+        >
+          ↺ Reset
+        </button>
+      </div>
+
+      {status && (
+        <div
+          className={`p-3 rounded-xl text-sm font-medium text-center ${status.startsWith("✅") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}
+        >
+          {status}
+        </div>
+      )}
+
+      {/* Map */}
+      <div className="rounded-2xl overflow-hidden border border-gray-100 shadow-sm">
+        <DriverMap
+          locations={[
+            { latitude: lat, longitude: lng, label: "📍 Vị trí của tôi" },
+          ]}
+          interactive
+          height="calc(55vh - 100px)"
+          onLocationSelect={(newLat, newLng) => {
+            setLat(newLat);
+            setLng(newLng);
+          }}
+        />
+      </div>
+
+      {/* Active Dispatch */}
+      {activeDispatch && (
+        <div className="bg-gradient-to-r from-[#ff6b35] to-[#ff8f65] rounded-2xl p-4 text-white">
+          <p className="text-xs text-white/70">🚚 Đơn đang giao</p>
+          <div className="flex items-center justify-between mt-1">
+            <div>
+              <p className="font-bold">
+                #{activeDispatch.orderId?.slice(0, 8)}
+              </p>
+              <p className="text-xs text-white/70">
+                {activeDispatch.status === "DRIVER_ASSIGNED"
+                  ? "📩 Chờ nhận"
+                  : activeDispatch.status === "DRIVER_ACCEPTED"
+                    ? "✅ Đã nhận"
+                    : activeDispatch.status === "DRIVER_ARRIVED"
+                      ? "📍 Đã đến"
+                      : activeDispatch.status === "PICKED_UP"
+                        ? "📦 Đã lấy"
+                        : activeDispatch.status === "DELIVERING"
+                          ? "🛵 Đang giao"
+                          : activeDispatch.status}
+              </p>
+            </div>
+            <Link
+              href={`/delivery/${activeDispatch.orderId}`}
+              className="bg-white/20 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-white/30 transition"
+            >
+              Xem →
+            </Link>
+          </div>
+          <div className="mt-3">
+            <DeliveryActionButtons
+              orderId={activeDispatch.orderId}
+              variant="light"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Nearby Orders */}
+      <div className="bg-white rounded-2xl shadow-sm p-4">
+        <h3 className="font-bold text-[#1a1a2e] mb-3">
+          📋 Đơn gần đây ({nearbyOrders.length})
+        </h3>
+        {nearbyOrders.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">
+            Chưa có đơn nào gần đây
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {nearbyOrders.slice(0, 5).map((o: any) => (
+              <div
+                key={o.id}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="font-semibold text-sm">
+                      #{o.id?.slice(0, 8)}
+                    </span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${o.paymentMethod === "CREDIT_CARD" ? "bg-purple-100 text-purple-700" : "bg-green-100 text-green-700"}`}
+                    >
+                      {o.paymentMethod === "CREDIT_CARD" ? "💳 Thẻ" : "💵 COD"}
+                    </span>
+                    <span className="text-[#ff6b35] font-bold text-sm">
+                      {toNum(o.totalAmount).toLocaleString("vi-VN")}₫
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 truncate">
+                    {o.deliveryAddress}
+                  </p>
+                </div>
+                <button
+                  onClick={() => acceptDispatch(o.id)}
+                  disabled={!isOnline || dispatchLoading}
+                  className={`ml-3 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition ${!isOnline ? "bg-gray-200 text-gray-400 cursor-not-allowed" : "bg-[#ff6b35] text-white hover:bg-orange-600"}`}
+                >
+                  {!isOnline ? "⚠️ Offline" : "📥 Nhận đơn"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </DriverShell>
   );
 }

@@ -427,7 +427,10 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
       const lastHeartbeat = driver.driverLastHeartbeatAt;
-      if (lastHeartbeat == null || lastHeartbeat.getTime() >= cutoff.getTime()) {
+      if (
+        lastHeartbeat == null ||
+        lastHeartbeat.getTime() >= cutoff.getTime()
+      ) {
         continue;
       }
 

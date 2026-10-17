@@ -3,7 +3,9 @@ import { GeminiClient } from "../../modules/assistant/infrastructure/gemini.clie
 
 const ORIGINAL_ENV = { ...process.env };
 
-function makeClient(postImpl: (url: string, body: any, config: any) => unknown) {
+function makeClient(
+  postImpl: (url: string, body: any, config: any) => unknown,
+) {
   const httpService = { post: jest.fn(postImpl) } as any;
   return { client: new GeminiClient(httpService), httpService };
 }
@@ -11,9 +13,7 @@ function makeClient(postImpl: (url: string, body: any, config: any) => unknown) 
 function geminiOk(text: string) {
   return of({
     data: {
-      candidates: [
-        { content: { parts: [{ text }] }, finishReason: "STOP" },
-      ],
+      candidates: [{ content: { parts: [{ text }] }, finishReason: "STOP" }],
       usageMetadata: {
         promptTokenCount: 11,
         candidatesTokenCount: 7,
@@ -77,9 +77,7 @@ describe("GeminiClient", () => {
 
   describe("generateJson", () => {
     it("gọi đúng endpoint, header và parse JSON", async () => {
-      const { client, httpService } = makeClient(() =>
-        geminiOk('{"ok":true}'),
-      );
+      const { client, httpService } = makeClient(() => geminiOk('{"ok":true}'));
 
       const result = await client.generateJson<{ ok: boolean }>({
         systemInstruction: "sys",

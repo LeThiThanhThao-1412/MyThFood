@@ -146,7 +146,8 @@ export default function MerchantRegisterPage() {
         longitude: merchant.longitude,
         primaryCategory: merchant.primaryCategory,
         secondaryCategories: merchant.secondaryCategories,
-        otherCategoryDescription: merchant.otherCategoryDescription.trim() || undefined,
+        otherCategoryDescription:
+          merchant.otherCategoryDescription.trim() || undefined,
       });
       setStep("done");
     } catch (err: unknown) {
@@ -442,7 +443,9 @@ export default function MerchantRegisterPage() {
                       }`}
                     >
                       <span className="text-xl">{cat.icon}</span>
-                      <span className="text-left leading-tight">{cat.label}</span>
+                      <span className="text-left leading-tight">
+                        {cat.label}
+                      </span>
                     </button>
                   ))}
                 </div>

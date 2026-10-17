@@ -170,9 +170,7 @@ export class OrderRepository implements IRepository<Order, OrderId> {
    * Thống kê tỉ lệ từ chối / không phản hồi theo nhà hàng trong cửa sổ đánh giá.
    * total = mọi đơn trong cửa sổ; rejected/noResponse = đơn REJECTED theo nguồn.
    */
-  async getMerchantComplianceStats(
-    since: Date,
-  ): Promise<
+  async getMerchantComplianceStats(since: Date): Promise<
     Array<{
       merchantId: string;
       total: number;

@@ -1258,4 +1258,3 @@ export interface CaseAiAnalysisRecord {
   suggestion: CaseAiSuggestion;
   review: CaseAiAnalysisReview | null;
 }
-

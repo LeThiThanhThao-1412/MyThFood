@@ -6,7 +6,11 @@ import {
 } from "@mythfood/shared-kernel";
 import { MerchantId } from "./merchant-id";
 import { MerchantRegisteredEvent } from "./events/merchant-registered.event";
-import { MenuItem, MenuItemOptionGroup, MenuItemAvailabilityStatus } from "./menu-item.entity";
+import {
+  MenuItem,
+  MenuItemOptionGroup,
+  MenuItemAvailabilityStatus,
+} from "./menu-item.entity";
 import { MenuItemId } from "./menu-item-id";
 import { OperatingHours, OperatingHoursProps } from "./operating-hours.vo";
 import { MerchantDocument } from "./merchant-document.entity";

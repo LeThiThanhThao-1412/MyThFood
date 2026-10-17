@@ -7,7 +7,10 @@ import {
   MerchantStatus,
   CapacityStatus,
 } from "../domain/merchant.aggregate";
-import { MenuItem, MenuItemAvailabilityStatus } from "../domain/menu-item.entity";
+import {
+  MenuItem,
+  MenuItemAvailabilityStatus,
+} from "../domain/menu-item.entity";
 import { OperatingHours } from "../domain/operating-hours.vo";
 import {
   MerchantDocument,
@@ -101,7 +104,8 @@ export class MerchantMapper {
     entity.current_order_count = merchant.merchantCurrentOrderCount;
     entity.primary_category = merchant.merchantPrimaryCategory;
     entity.secondary_categories = merchant.merchantSecondaryCategories;
-    entity.other_category_description = merchant.merchantOtherCategoryDescription;
+    entity.other_category_description =
+      merchant.merchantOtherCategoryDescription;
     entity.is_open = merchant.merchantIsOpen;
     return entity;
   }
@@ -176,7 +180,9 @@ export class MerchantMapper {
         : null,
       imageUrl: entity.image_url,
       availabilityStatus: (entity.availability_status ??
-        (entity.is_available ? "AVAILABLE" : "OUT_OF_STOCK")) as MenuItemAvailabilityStatus,
+        (entity.is_available
+          ? "AVAILABLE"
+          : "OUT_OF_STOCK")) as MenuItemAvailabilityStatus,
       outOfStockUntil: entity.out_of_stock_until ?? null,
       isFeatured: entity.is_featured,
       preparationTime: entity.preparation_time,

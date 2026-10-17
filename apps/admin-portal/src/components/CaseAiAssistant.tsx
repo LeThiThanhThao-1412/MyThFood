@@ -270,8 +270,8 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
 
       {healthState === "error" && (
         <p className="text-[11px] text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1">
-          Không đọc được cấu hình trợ lý AI — kiểm tra resolution-service rồi tải
-          lại trang.
+          Không đọc được cấu hình trợ lý AI — kiểm tra resolution-service rồi
+          tải lại trang.
         </p>
       )}
 
@@ -285,9 +285,10 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
       {healthState === "ready" && health?.enabled && !health?.hasApiKey && (
         <p className="text-[11px] text-red-700 bg-red-50 border border-red-100 rounded-lg px-2 py-1">
           Thiếu <b>{health?.apiKeyEnv ?? "API key"}</b> cho provider{" "}
-          <b>{health?.provider ?? "—"}</b> — thêm biến này vào <code>.env</code> rồi
-          khởi động lại resolution-service (Docker:{" "}
-          <code>docker compose up -d --force-recreate resolution-service</code>).
+          <b>{health?.provider ?? "—"}</b> — thêm biến này vào <code>.env</code>{" "}
+          rồi khởi động lại resolution-service (Docker:{" "}
+          <code>docker compose up -d --force-recreate resolution-service</code>
+          ).
         </p>
       )}
 
@@ -308,8 +309,8 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
           <div className="h-2 w-1/3 bg-gray-100 rounded animate-pulse" />
           <div className="h-2 w-4/5 bg-gray-100 rounded animate-pulse" />
           <p className="text-[11px] text-indigo-700">
-            AI đang tự phân tích vụ việc này (chạy nền từ lúc khiếu nại được tạo).
-            Panel tự cập nhật khi xong — thường 40–90 giây.
+            AI đang tự phân tích vụ việc này (chạy nền từ lúc khiếu nại được
+            tạo). Panel tự cập nhật khi xong — thường 40–90 giây.
           </p>
         </div>
       )}
@@ -383,7 +384,8 @@ function AnalysisCard({
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-            VERDICT_TONE[suggestion.suggestedVerdict] || "bg-gray-100 text-gray-600"
+            VERDICT_TONE[suggestion.suggestedVerdict] ||
+            "bg-gray-100 text-gray-600"
           }`}
         >
           {VERDICT_LABEL[suggestion.suggestedVerdict] ||
@@ -404,9 +406,7 @@ function AnalysisCard({
           Tự tin {confidence}%
         </span>
         <span className="px-2 py-0.5 rounded-full text-[11px] bg-gray-50 text-gray-500">
-          {record.source === "AUTO"
-            ? "AI tự phân tích"
-            : "Admin bấm phân tích"}
+          {record.source === "AUTO" ? "AI tự phân tích" : "Admin bấm phân tích"}
         </span>
         <span className="text-[11px] text-gray-400 ml-auto">
           {suggestion.model} · {formatDateTime(record.createdAt)}
@@ -523,8 +523,8 @@ function AnalysisCard({
       <div className="border-t border-gray-100 pt-2 space-y-2">
         {review ? (
           <p className="text-[11px] text-gray-600 bg-gray-50 border border-gray-100 rounded-lg px-2 py-1">
-            {review.decision === "ACCEPTED" ? "✅ Đã duyệt" : "✖️ Đã bỏ qua"} bởi{" "}
-            <b>{review.by}</b> lúc {formatDateTime(review.at)}
+            {review.decision === "ACCEPTED" ? "✅ Đã duyệt" : "✖️ Đã bỏ qua"}{" "}
+            bởi <b>{review.by}</b> lúc {formatDateTime(review.at)}
             {review.note ? ` — “${review.note}”` : ""}
           </p>
         ) : (
@@ -551,8 +551,8 @@ function AnalysisCard({
                 ✖️ Bỏ qua
               </button>
               <span className="text-[11px] text-gray-400">
-                Duyệt ở đây chỉ ghi nhận “đã xem gợi ý” — phán quyết vẫn nằm ở các
-                khối bên dưới.
+                Duyệt ở đây chỉ ghi nhận “đã xem gợi ý” — phán quyết vẫn nằm ở
+                các khối bên dưới.
               </span>
             </div>
           </>
@@ -600,7 +600,9 @@ function ContextViewer({ context }: { context: CaseAiContext }) {
       <p className="text-[11px] font-semibold text-gray-400 uppercase">
         Nguồn dữ liệu ({available}/{sources.length} khả dụng ·{" "}
         {context.imagesAttached} ảnh
-        {critical.length > 0 ? ` · thiếu ${critical.length} nguồn trọng yếu` : ""}
+        {critical.length > 0
+          ? ` · thiếu ${critical.length} nguồn trọng yếu`
+          : ""}
         )
       </p>
       {sources.map((source) => {

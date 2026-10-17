@@ -861,7 +861,6 @@ export default function ComplaintsPage() {
           </div>
         </div>
       )}
-
     </MerchantShell>
   );
 }

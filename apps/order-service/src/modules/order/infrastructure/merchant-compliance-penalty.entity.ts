@@ -1,9 +1,4 @@
-import {
-  Entity,
-  PrimaryColumn,
-  Column,
-  CreateDateColumn,
-} from "typeorm";
+import { Entity, PrimaryColumn, Column, CreateDateColumn } from "typeorm";
 
 /**
  * Nhật ký các hình phạt leo thang đã áp dụng cho nhà hàng (phục vụ kiểm toán

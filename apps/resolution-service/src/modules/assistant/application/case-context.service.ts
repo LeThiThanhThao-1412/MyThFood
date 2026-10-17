@@ -256,9 +256,9 @@ export class CaseContextService {
       }
     }
 
-    const sources = CASE_CONTEXT_SOURCES.map((def) => results.get(def.id)).filter(
-      (s): s is ContextSourceResult => !!s,
-    );
+    const sources = CASE_CONTEXT_SOURCES.map((def) =>
+      results.get(def.id),
+    ).filter((s): s is ContextSourceResult => !!s);
     const missingSourceIds = sources
       .filter((s) => !s.available)
       .map((s) => s.id);
@@ -371,7 +371,8 @@ export class CaseContextService {
     if (value === null || value === undefined) {
       return {
         available: false,
-        detail: "Không lấy được dữ liệu (service không phản hồi hoặc chưa có bản ghi)",
+        detail:
+          "Không lấy được dữ liệu (service không phản hồi hoặc chưa có bản ghi)",
       };
     }
     if (Array.isArray(value)) {
@@ -379,7 +380,10 @@ export class CaseContextService {
         ? { available: true }
         : { available: false, detail: "Không có bản ghi nào" };
     }
-    if (typeof value === "object" && Object.keys(value as object).length === 0) {
+    if (
+      typeof value === "object" &&
+      Object.keys(value as object).length === 0
+    ) {
       return { available: false, detail: "Bản ghi rỗng" };
     }
     return { available: true };

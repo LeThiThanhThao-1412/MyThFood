@@ -156,167 +156,167 @@ export default function DriverEarningsPage() {
 
   return (
     <DriverShell title="💰 Thu nhập" backHref="/dashboard">
-        {/* Summary Card */}
-        <div className="bg-gradient-to-br from-[#2ecc71] to-[#27ae60] rounded-2xl p-6 text-white">
-          <p className="text-sm text-white/80">Tổng thu nhập (80% phí ship)</p>
-          <p className="text-3xl font-extrabold mt-1">
-            {totalEarnings.toLocaleString("vi-VN")}₫
+      {/* Summary Card */}
+      <div className="bg-gradient-to-br from-[#2ecc71] to-[#27ae60] rounded-2xl p-6 text-white">
+        <p className="text-sm text-white/80">Tổng thu nhập (80% phí ship)</p>
+        <p className="text-3xl font-extrabold mt-1">
+          {totalEarnings.toLocaleString("vi-VN")}₫
+        </p>
+        <div className="mt-4 pt-4 border-t border-white/20 flex justify-between">
+          <div>
+            <p className="text-xs text-white/60">Đơn đã giao</p>
+            <p className="text-lg font-bold">{totalOrders}</p>
+          </div>
+          <div>
+            <p className="text-xs text-white/60">TB mỗi đơn</p>
+            <p className="text-lg font-bold">
+              {totalOrders > 0
+                ? Math.round(totalEarnings / totalOrders).toLocaleString(
+                    "vi-VN",
+                  )
+                : 0}
+              ₫
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-white/60">Hôm nay</p>
+            <p className="text-lg font-bold">
+              {todayEarnings.toLocaleString("vi-VN")}₫
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Breakdown COD vs Online */}
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="bg-white rounded-2xl shadow-sm p-4">
+          <p className="text-sm font-semibold text-gray-500 mb-1">
+            💵 COD (tiền mặt)
           </p>
-          <div className="mt-4 pt-4 border-t border-white/20 flex justify-between">
-            <div>
-              <p className="text-xs text-white/60">Đơn đã giao</p>
-              <p className="text-lg font-bold">{totalOrders}</p>
-            </div>
-            <div>
-              <p className="text-xs text-white/60">TB mỗi đơn</p>
-              <p className="text-lg font-bold">
-                {totalOrders > 0
-                  ? Math.round(totalEarnings / totalOrders).toLocaleString(
-                      "vi-VN",
-                    )
-                  : 0}
-                ₫
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-white/60">Hôm nay</p>
-              <p className="text-lg font-bold">
-                {todayEarnings.toLocaleString("vi-VN")}₫
-              </p>
-            </div>
-          </div>
+          <p className="text-xl font-bold text-[#1a1a2e]">
+            {codEarnings.toLocaleString("vi-VN")}₫
+          </p>
+          <p className="text-xs text-gray-400 mt-1">{codOrders.length} đơn</p>
         </div>
-
-        {/* Breakdown COD vs Online */}
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div className="bg-white rounded-2xl shadow-sm p-4">
-            <p className="text-sm font-semibold text-gray-500 mb-1">
-              💵 COD (tiền mặt)
-            </p>
-            <p className="text-xl font-bold text-[#1a1a2e]">
-              {codEarnings.toLocaleString("vi-VN")}₫
-            </p>
-            <p className="text-xs text-gray-400 mt-1">{codOrders.length} đơn</p>
-          </div>
-          <div className="bg-white rounded-2xl shadow-sm p-4">
-            <p className="text-sm font-semibold text-gray-500 mb-1">
-              💳 Online (thẻ)
-            </p>
-            <p className="text-xl font-bold text-[#1a1a2e]">
-              {onlineEarnings.toLocaleString("vi-VN")}₫
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              {onlineOrders.length} đơn
-            </p>
-          </div>
+        <div className="bg-white rounded-2xl shadow-sm p-4">
+          <p className="text-sm font-semibold text-gray-500 mb-1">
+            💳 Online (thẻ)
+          </p>
+          <p className="text-xl font-bold text-[#1a1a2e]">
+            {onlineEarnings.toLocaleString("vi-VN")}₫
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            {onlineOrders.length} đơn
+          </p>
         </div>
+      </div>
 
-        {/* Chart */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-[#1a1a2e]">📊 Biểu đồ thu nhập</h3>
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-              {(["day", "week", "month"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${period === p ? "bg-white text-[#ff6b35] shadow-sm" : "text-gray-500"}`}
-                >
-                  {p === "day" ? "Ngày" : p === "week" ? "Tuần" : "Tháng"}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="h-[260px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={chartData}
-                margin={{ top: 5, right: 5, left: 0, bottom: 0 }}
+      {/* Chart */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-[#1a1a2e]">📊 Biểu đồ thu nhập</h3>
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+            {(["day", "week", "month"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${period === p ? "bg-white text-[#ff6b35] shadow-sm" : "text-gray-500"}`}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#888" }} />
-                <YAxis
-                  tick={{ fontSize: 11, fill: "#888" }}
-                  tickFormatter={(v: any) => `${Math.round(Number(v) / 1000)}k`}
-                  width={44}
-                />
-                <Tooltip
-                  formatter={(v: any, name: any) => [
-                    `${Number(v).toLocaleString("vi-VN")}₫`,
-                    name === "cod" ? "COD" : "Online",
-                  ]}
-                />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="cod" name="COD" stackId="a" fill="#2ecc71" />
-                <Bar
-                  dataKey="online"
-                  name="Online"
-                  stackId="a"
-                  fill="#9b59b6"
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+                {p === "day" ? "Ngày" : p === "week" ? "Tuần" : "Tháng"}
+              </button>
+            ))}
           </div>
         </div>
+        <div className="h-[260px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={chartData}
+              margin={{ top: 5, right: 5, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#888" }} />
+              <YAxis
+                tick={{ fontSize: 11, fill: "#888" }}
+                tickFormatter={(v: any) => `${Math.round(Number(v) / 1000)}k`}
+                width={44}
+              />
+              <Tooltip
+                formatter={(v: any, name: any) => [
+                  `${Number(v).toLocaleString("vi-VN")}₫`,
+                  name === "cod" ? "COD" : "Online",
+                ]}
+              />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="cod" name="COD" stackId="a" fill="#2ecc71" />
+              <Bar
+                dataKey="online"
+                name="Online"
+                stackId="a"
+                fill="#9b59b6"
+                radius={[4, 4, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
-        {/* Delivered Orders List */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-[#1a1a2e] mb-3">Đơn đã giao</h3>
-          {sortedDelivered.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">
-              Chưa có đơn nào đã giao
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {sortedDelivered.map((o) => {
-                const isCard = o.paymentMethod === "CREDIT_CARD";
-                return (
-                  <div
-                    key={o.id}
-                    className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">
-                          #{o.id?.slice(0, 8)}
-                        </span>
-                        <span
-                          className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isCard ? "bg-purple-100 text-purple-700" : "bg-green-100 text-green-700"}`}
-                        >
-                          {isCard ? "💳 Thẻ" : "💵 COD"}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-0.5 truncate">
-                        {new Date(o.createdAt).toLocaleDateString("vi-VN")} ·{" "}
-                        {o.deliveryAddress}
-                      </p>
+      {/* Delivered Orders List */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-[#1a1a2e] mb-3">Đơn đã giao</h3>
+        {sortedDelivered.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">
+            Chưa có đơn nào đã giao
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {sortedDelivered.map((o) => {
+              const isCard = o.paymentMethod === "CREDIT_CARD";
+              return (
+                <div
+                  key={o.id}
+                  className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold">
+                        #{o.id?.slice(0, 8)}
+                      </span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isCard ? "bg-purple-100 text-purple-700" : "bg-green-100 text-green-700"}`}
+                      >
+                        {isCard ? "💳 Thẻ" : "💵 COD"}
+                      </span>
                     </div>
-                    <span className="text-sm font-bold text-[#ff6b35] ml-3 whitespace-nowrap">
-                      +{earnOf(o).toLocaleString("vi-VN")}₫
-                    </span>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">
+                      {new Date(o.createdAt).toLocaleDateString("vi-VN")} ·{" "}
+                      {o.deliveryAddress}
+                    </p>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Link to Wallet */}
-        <Link
-          href="/wallet"
-          className="block bg-white rounded-2xl shadow-sm p-5 hover:shadow-md transition"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-bold text-[#1a1a2e]">Ví & Rút tiền</p>
-              <p className="text-sm text-gray-400 mt-0.5">
-                Quản lý ví và rút thu nhập
-              </p>
-            </div>
-            <span className="text-[#ff6b35] text-xl">→</span>
+                  <span className="text-sm font-bold text-[#ff6b35] ml-3 whitespace-nowrap">
+                    +{earnOf(o).toLocaleString("vi-VN")}₫
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        </Link>
+        )}
+      </div>
+
+      {/* Link to Wallet */}
+      <Link
+        href="/wallet"
+        className="block bg-white rounded-2xl shadow-sm p-5 hover:shadow-md transition"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-bold text-[#1a1a2e]">Ví & Rút tiền</p>
+            <p className="text-sm text-gray-400 mt-0.5">
+              Quản lý ví và rút thu nhập
+            </p>
+          </div>
+          <span className="text-[#ff6b35] text-xl">→</span>
+        </div>
+      </Link>
     </DriverShell>
   );
 }

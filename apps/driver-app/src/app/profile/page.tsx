@@ -161,202 +161,202 @@ export default function DriverProfilePage() {
   }
 
   return (
-    <DriverShell title="👤 Hồ sơ tài xế" backHref="/dashboard" contentClassName="max-w-2xl">
-        {status && (
-          <div
-            className={`p-3 rounded-lg text-sm ${
-              status.startsWith("✅")
-                ? "bg-green-50 text-green-700"
-                : "bg-red-50 text-red-600"
-            }`}
-          >
-            {status}
-          </div>
-        )}
+    <DriverShell
+      title="👤 Hồ sơ tài xế"
+      backHref="/dashboard"
+      contentClassName="max-w-2xl"
+    >
+      {status && (
+        <div
+          className={`p-3 rounded-lg text-sm ${
+            status.startsWith("✅")
+              ? "bg-green-50 text-green-700"
+              : "bg-red-50 text-red-600"
+          }`}
+        >
+          {status}
+        </div>
+      )}
 
-        {/* Chỉnh sửa hồ sơ */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">✏️ Chỉnh sửa hồ sơ</h3>
-          <div className="flex items-center gap-4 mb-4">
+      {/* Chỉnh sửa hồ sơ */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">✏️ Chỉnh sửa hồ sơ</h3>
+        <div className="flex items-center gap-4 mb-4">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="w-16 h-16 rounded-full overflow-hidden bg-[#ff6b35] flex items-center justify-center text-white font-bold text-xl shrink-0"
+          >
+            {avatar ? (
+              <img
+                src={avatar}
+                alt="avatar"
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              (fullName || driver?.fullName || "?")[0]?.toUpperCase()
+            )}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarUpload}
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-gray-500 mb-1">Ảnh đại diện</p>
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="w-16 h-16 rounded-full overflow-hidden bg-[#ff6b35] flex items-center justify-center text-white font-bold text-xl shrink-0"
+              disabled={uploading}
+              className="text-sm font-semibold text-[#ff6b35] hover:text-orange-600 disabled:opacity-50"
             >
-              {avatar ? (
-                <img
-                  src={avatar}
-                  alt="avatar"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                (fullName || driver?.fullName || "?")[0]?.toUpperCase()
-              )}
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatarUpload}
-            />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-gray-500 mb-1">Ảnh đại diện</p>
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className="text-sm font-semibold text-[#ff6b35] hover:text-orange-600 disabled:opacity-50"
-              >
-                {uploading ? "Đang tải..." : "📷 Tải ảnh lên"}
-              </button>
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className="text-sm text-gray-500">Họ tên</label>
-              <input
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Họ tên"
-                className="mt-1 w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-              />
-            </div>
-            <button
-              onClick={saveProfile}
-              disabled={savingProfile}
-              className="w-full bg-[#ff6b35] text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-50"
-            >
-              {savingProfile ? "Đang lưu..." : "Lưu hồ sơ"}
+              {uploading ? "Đang tải..." : "📷 Tải ảnh lên"}
             </button>
           </div>
         </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm text-gray-500">Họ tên</label>
+            <input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Họ tên"
+              className="mt-1 w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+            />
+          </div>
+          <button
+            onClick={saveProfile}
+            disabled={savingProfile}
+            className="w-full bg-[#ff6b35] text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-50"
+          >
+            {savingProfile ? "Đang lưu..." : "Lưu hồ sơ"}
+          </button>
+        </div>
+      </div>
 
-        {/* Thông tin tài khoản */}
+      {/* Thông tin tài khoản */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">👤 Thông tin tài khoản</h3>
+        <div className="space-y-3">
+          <div className="flex items-start gap-3">
+            <span className="w-24 shrink-0 text-sm text-gray-500">Họ tên</span>
+            <span className="font-medium text-gray-800">
+              {driver?.fullName || user?.fullName || "—"}
+            </span>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="w-24 shrink-0 text-sm text-gray-500">SĐT</span>
+            <span className="font-medium text-gray-800">
+              {driver?.phoneNumber || user?.phone || "—"}
+            </span>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="w-24 shrink-0 text-sm text-gray-500">Email</span>
+            <span className="font-medium text-gray-800">
+              {driver?.email || user?.email || "—"}
+            </span>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="w-24 shrink-0 text-sm text-gray-500">Vai trò</span>
+            <span className="font-medium text-gray-800">
+              {(user?.roles || []).map((r) => ROLE_LABELS[r] || r).join(", ")}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Thông tin xe */}
+      {driver && (
         <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">👤 Thông tin tài khoản</h3>
+          <h3 className="font-bold text-lg mb-4">🛵 Thông tin xe</h3>
           <div className="space-y-3">
             <div className="flex items-start gap-3">
               <span className="w-24 shrink-0 text-sm text-gray-500">
-                Họ tên
+                Biển số
               </span>
               <span className="font-medium text-gray-800">
-                {driver?.fullName || user?.fullName || "—"}
-              </span>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="w-24 shrink-0 text-sm text-gray-500">SĐT</span>
-              <span className="font-medium text-gray-800">
-                {driver?.phoneNumber || user?.phone || "—"}
-              </span>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="w-24 shrink-0 text-sm text-gray-500">Email</span>
-              <span className="font-medium text-gray-800">
-                {driver?.email || user?.email || "—"}
+                {driver.vehicleRegistrationNumber || "—"}
               </span>
             </div>
             <div className="flex items-start gap-3">
               <span className="w-24 shrink-0 text-sm text-gray-500">
-                Vai trò
+                Trạng thái
               </span>
               <span className="font-medium text-gray-800">
-                {(user?.roles || []).map((r) => ROLE_LABELS[r] || r).join(", ")}
+                {DRIVER_STATUS_LABELS[driver.status] || driver.status}
+              </span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="w-24 shrink-0 text-sm text-gray-500">
+                Đánh giá
+              </span>
+              <span className="font-medium text-gray-800">
+                ⭐ {driver.rating ?? 0} ({driver.totalRatings ?? 0} đánh giá)
+              </span>
+            </div>
+            <div className="flex items-start gap-3">
+              <span className="w-24 shrink-0 text-sm text-gray-500">
+                Đơn đã giao
+              </span>
+              <span className="font-medium text-gray-800">
+                {driver.totalOrders ?? 0}
               </span>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Thông tin xe */}
-        {driver && (
-          <div className="bg-white rounded-2xl shadow-sm p-5">
-            <h3 className="font-bold text-lg mb-4">🛵 Thông tin xe</h3>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3">
-                <span className="w-24 shrink-0 text-sm text-gray-500">
-                  Biển số
-                </span>
-                <span className="font-medium text-gray-800">
-                  {driver.vehicleRegistrationNumber || "—"}
-                </span>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="w-24 shrink-0 text-sm text-gray-500">
-                  Trạng thái
-                </span>
-                <span className="font-medium text-gray-800">
-                  {DRIVER_STATUS_LABELS[driver.status] || driver.status}
-                </span>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="w-24 shrink-0 text-sm text-gray-500">
-                  Đánh giá
-                </span>
-                <span className="font-medium text-gray-800">
-                  ⭐ {driver.rating ?? 0} ({driver.totalRatings ?? 0} đánh giá)
-                </span>
-              </div>
-              <div className="flex items-start gap-3">
-                <span className="w-24 shrink-0 text-sm text-gray-500">
-                  Đơn đã giao
-                </span>
-                <span className="font-medium text-gray-800">
-                  {driver.totalOrders ?? 0}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Đổi mật khẩu */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">🔐 Đổi mật khẩu</h3>
-          <div className="space-y-3">
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              placeholder="Mật khẩu hiện tại"
-              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-            />
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Mật khẩu mới (ít nhất 8 ký tự)"
-              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-            />
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Nhập lại mật khẩu mới"
-              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-            />
-            <p className="text-xs text-gray-400 leading-relaxed">
-              Mật khẩu mới cần tối thiểu 8 ký tự, gồm chữ HOA, chữ thường, số và
-              ký tự đặc biệt (ví dụ: Abc@1234).
-            </p>
-            <button
-              onClick={changePassword}
-              disabled={saving}
-              className="w-full bg-[#1a1a2e] text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-50"
-            >
-              {saving ? "Đang xử lý..." : "Đổi mật khẩu"}
-            </button>
-          </div>
+      {/* Đổi mật khẩu */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">🔐 Đổi mật khẩu</h3>
+        <div className="space-y-3">
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            placeholder="Mật khẩu hiện tại"
+            className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+          />
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Mật khẩu mới (ít nhất 8 ký tự)"
+            className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+          />
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Nhập lại mật khẩu mới"
+            className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+          />
+          <p className="text-xs text-gray-400 leading-relaxed">
+            Mật khẩu mới cần tối thiểu 8 ký tự, gồm chữ HOA, chữ thường, số và
+            ký tự đặc biệt (ví dụ: Abc@1234).
+          </p>
+          <button
+            onClick={changePassword}
+            disabled={saving}
+            className="w-full bg-[#1a1a2e] text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-50"
+          >
+            {saving ? "Đang xử lý..." : "Đổi mật khẩu"}
+          </button>
         </div>
+      </div>
 
-        {/* Đăng xuất */}
-        <button
-          onClick={() => {
-            clearAuth();
-            router.push("/");
-          }}
-          className="w-full bg-white rounded-2xl shadow-sm p-4 text-red-500 font-semibold text-sm hover:bg-red-50"
-        >
-          Đăng xuất
-        </button>
+      {/* Đăng xuất */}
+      <button
+        onClick={() => {
+          clearAuth();
+          router.push("/");
+        }}
+        className="w-full bg-white rounded-2xl shadow-sm p-4 text-red-500 font-semibold text-sm hover:bg-red-50"
+      >
+        Đăng xuất
+      </button>
     </DriverShell>
   );
 }

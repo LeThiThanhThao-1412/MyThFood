@@ -1,9 +1,4 @@
-import {
-  Entity,
-  PrimaryColumn,
-  Column,
-  UpdateDateColumn,
-} from "typeorm";
+import { Entity, PrimaryColumn, Column, UpdateDateColumn } from "typeorm";
 
 /**
  * Lưu bậc phạt leo thang hiện tại của từng nhà hàng để:

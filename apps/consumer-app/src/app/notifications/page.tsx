@@ -45,37 +45,35 @@ export default function NotificationsPage() {
           Đã đọc tất cả
         </button>
       </div>
-        {items.length === 0 ? (
-          <div className="text-center py-16">
-            <p className="text-5xl mb-3">🔕</p>
-            <p className="text-gray-400">Chưa có thông báo nào</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {items.map((n: any) => (
-              <button
-                key={n.id}
-                onClick={() => {
-                  if (!n.isRead) markRead(n.id);
-                }}
-                className={`w-full text-left bg-white rounded-2xl shadow-sm p-4 hover:shadow-md transition ${n.isRead ? "opacity-60" : "border-l-4 border-[#ff6b35]"}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <p className="font-semibold text-gray-800">{n.title}</p>
-                  {!n.isRead && (
-                    <span className="w-2.5 h-2.5 rounded-full bg-[#ff6b35] shrink-0 mt-1" />
-                  )}
-                </div>
-                {n.body && (
-                  <p className="text-sm text-gray-500 mt-1">{n.body}</p>
+      {items.length === 0 ? (
+        <div className="text-center py-16">
+          <p className="text-5xl mb-3">🔕</p>
+          <p className="text-gray-400">Chưa có thông báo nào</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((n: any) => (
+            <button
+              key={n.id}
+              onClick={() => {
+                if (!n.isRead) markRead(n.id);
+              }}
+              className={`w-full text-left bg-white rounded-2xl shadow-sm p-4 hover:shadow-md transition ${n.isRead ? "opacity-60" : "border-l-4 border-[#ff6b35]"}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <p className="font-semibold text-gray-800">{n.title}</p>
+                {!n.isRead && (
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#ff6b35] shrink-0 mt-1" />
                 )}
-                <p className="text-[11px] text-gray-400 mt-2">
-                  {timeAgo(n.createdAt)}
-                </p>
-              </button>
-            ))}
-          </div>
-        )}
+              </div>
+              {n.body && <p className="text-sm text-gray-500 mt-1">{n.body}</p>}
+              <p className="text-[11px] text-gray-400 mt-2">
+                {timeAgo(n.createdAt)}
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
     </ConsumerShell>
   );
 }

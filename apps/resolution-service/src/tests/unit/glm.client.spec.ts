@@ -3,7 +3,9 @@ import { GlmClient } from "../../modules/assistant/infrastructure/glm.client";
 
 const ORIGINAL_ENV = { ...process.env };
 
-function makeClient(postImpl: (url: string, body: any, config: any) => unknown) {
+function makeClient(
+  postImpl: (url: string, body: any, config: any) => unknown,
+) {
   const httpService = { post: jest.fn(postImpl) } as any;
   return { client: new GlmClient(httpService), httpService };
 }
@@ -11,9 +13,7 @@ function makeClient(postImpl: (url: string, body: any, config: any) => unknown) 
 function glmOk(content: string, model = "glm-4.5-flash") {
   return of({
     data: {
-      choices: [
-        { finish_reason: "stop", index: 0, message: { content } },
-      ],
+      choices: [{ finish_reason: "stop", index: 0, message: { content } }],
       usage: {
         prompt_tokens: 11,
         completion_tokens: 7,
@@ -121,6 +121,8 @@ describe("GlmClient", () => {
         type: "image_url",
         image_url: { url: "data:image/png;base64,AAAA" },
       });
+      // Lượt có ảnh: tắt thinking để model vision không "suy nghĩ" hết token
+      expect(body.thinking).toEqual({ type: "disabled" });
     });
 
     it("tự cắt JSON khi model thêm văn bản thừa", async () => {
@@ -135,6 +137,56 @@ describe("GlmClient", () => {
       });
 
       expect(result.data.ok).toBe(true);
+    });
+
+    it("JSON hỏng ⇒ tự thử lại 1 lần với “chỉ JSON” + tắt thinking", async () => {
+      let calls = 0;
+      const { client, httpService } = makeClient(() => {
+        calls += 1;
+        return calls === 1
+          ? glmOk("Xin chào, tôi đã phân tích xong vụ việc này...")
+          : glmOk('{"ok":true}');
+      });
+
+      const result = await client.generateJson<{ ok: boolean }>({
+        systemInstruction: "sys",
+        prompt: "prompt",
+        schema: { type: "object" },
+      });
+
+      expect(result.data.ok).toBe(true);
+      expect(httpService.post).toHaveBeenCalledTimes(2);
+
+      const secondBody = httpService.post.mock.calls[1][1] as any;
+      expect(secondBody.thinking).toEqual({ type: "disabled" });
+      expect(secondBody.messages[0].content).toMatch(/JSON KHÔNG HỢP LỆ/);
+    });
+
+    it("báo lỗi JSON kèm finish_reason + đoạn đầu để dễ chẩn đoán", async () => {
+      const { client } = makeClient(() =>
+        of({
+          data: {
+            choices: [
+              {
+                finish_reason: "length",
+                message: { content: '{"summary":"đang viết dở' },
+              },
+            ],
+          },
+        }),
+      );
+
+      const error: any = await client
+        .generateJson({
+          systemInstruction: "sys",
+          prompt: "prompt",
+          schema: { type: "object" },
+        })
+        .catch((e) => e);
+
+      expect(error.message).toMatch(/không phải JSON hợp lệ/);
+      expect(error.message).toMatch(/finish_reason=length/);
+      expect(error.message).toMatch(/Đoạn đầu/);
     });
 
     it("báo lỗi rõ ràng khi model trả rỗng (hết token lúc đang suy luận)", async () => {
@@ -251,7 +303,9 @@ describe("GlmClient", () => {
     it("model vision hỏng ⇒ vẫn phân tích bằng model chữ và ghi chú đã bỏ ảnh", async () => {
       const { client, httpService } = makeClient((_url: string, body: any) =>
         body.model === "glm-4.6v-flash"
-          ? throwError(() => glmError(400, "1210", "messages.content.type 非法"))
+          ? throwError(() =>
+              glmError(400, "1210", "messages.content.type 非法"),
+            )
           : glmOk('{"ok":true}', "glm-4.5-flash"),
       );
 

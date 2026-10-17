@@ -132,21 +132,19 @@ export class GlmClient implements AssistantLlmClient {
   }
 
   /**
-   * Model dự phòng, thử khi model chính bị hết quota/không tồn tại.
+   * Model dự phòng khi model chính **không dùng được** (hết quota/không tồn tại).
    *
-   * Mặc định `glm-4.6v-flash` vì đây là model GLM thứ hai chạy free cho key của
-   * dự án (đo 10/2026). Tắt dự phòng bằng `GLM_FALLBACK_MODELS=none`.
+   * Mặc định **không có** (`none`): model vision free (`glm-4.6v-flash`) không làm
+   * nổi schema lớn — đo thật cho ra JSON hỏng, nên không đưa nó vào chuỗi dự phòng
+   * của đường chữ. Muốn bật lại: `GLM_FALLBACK_MODELS=glm-4.6v-flash`.
    */
   get fallbackModels(): string[] {
     const raw = (process.env.GLM_FALLBACK_MODELS ?? "").trim();
-    if (raw.toLowerCase() === "none") return [];
-    const configured = raw
-      ? raw
-          .split(",")
-          .map((m) => m.trim())
-          .filter((m) => m.length > 0)
-      : ["glm-4.6v-flash"];
-    return configured;
+    if (!raw || raw.toLowerCase() === "none") return [];
+    return raw
+      .split(",")
+      .map((m) => m.trim())
+      .filter((m) => m.length > 0);
   }
 
   /** Ném lỗi rõ ràng nếu assistant chưa được cấu hình. */
@@ -171,20 +169,20 @@ export class GlmClient implements AssistantLlmClient {
 
     // Không có ảnh ⇒ đường chữ thuần.
     if (images.length === 0) {
-      return this.callModels<T>(request, [], false);
+      return this.callWithJsonRetry<T>(request, [], false);
     }
 
     // Tắt hẳn phần ảnh (GLM_VISION_MODEL=none) ⇒ không gọi mạng vô ích.
     if (!visionModel) {
       return this.withImageNote(
-        await this.callModels<T>({ ...request, images: [] }, [], false),
+        await this.callWithJsonRetry<T>({ ...request, images: [] }, [], false),
         images.length,
         "chưa bật model vision (GLM_VISION_MODEL=none)",
       );
     }
 
     try {
-      return await this.callModels<T>(request, images, true);
+      return await this.callWithJsonRetry<T>(request, images, true);
     } catch (err: any) {
       // Ảnh bằng chứng là phần *bổ trợ*: model vision hỏng (hết quota, bị gỡ,
       // trả JSON lỗi...) không nên làm mất luôn cả kết quả phân tích.
@@ -195,11 +193,51 @@ export class GlmClient implements AssistantLlmClient {
       );
 
       return this.withImageNote(
-        await this.callModels<T>({ ...request, images: [] }, [], false),
+        await this.callWithJsonRetry<T>({ ...request, images: [] }, [], false),
         images.length,
         `model vision "${visionModel}" lỗi`,
       );
     }
+  }
+
+  /**
+   * Gọi model; nếu model trả **JSON hỏng** thì thử lại **một lần** với:
+   * tắt "thinking" (đỡ tốn token cho phần suy luận) + nhắc chỉ trả JSON.
+   *
+   * Lỗi mạng/quota/model thì KHÔNG thử kiểu này (đã có tầng retry/đổi model riêng).
+   */
+  private async callWithJsonRetry<T>(
+    request: LlmJsonRequest,
+    images: LlmInlineImage[],
+    useVision: boolean,
+  ): Promise<LlmJsonResponse<T>> {
+    try {
+      return await this.callModels<T>(request, images, useVision);
+    } catch (err: any) {
+      if (!this.isJsonError(err)) throw err;
+
+      this.logger.warn(
+        "Model trả JSON không hợp lệ — thử lại 1 lần với “chỉ JSON” và tắt thinking.",
+      );
+      return this.callModels<T>(request, images, useVision, {
+        strictJson: true,
+        noThinking: true,
+      });
+    }
+  }
+
+  /** Lỗi nội dung do JSON hỏng/model không trả nội dung — đánh dấu để chỉ retry đúng loại này. */
+  private jsonError(message: string): BadGatewayException {
+    const error = new BadGatewayException(message) as BadGatewayException & {
+      isJsonError?: boolean;
+    };
+    error.isJsonError = true;
+    return error;
+  }
+
+  /** Chỉ retry khi đúng là lỗi nội dung JSON (không retry lỗi 1210/timeout...). */
+  private isJsonError(err: any): boolean {
+    return err?.isJsonError === true;
   }
 
   /** Gắn ghi chú "đã bỏ ảnh" (đi thẳng vào `warnings` cho admin đọc). */
@@ -222,6 +260,7 @@ export class GlmClient implements AssistantLlmClient {
     request: LlmJsonRequest,
     images: LlmInlineImage[],
     useVision: boolean,
+    options: { strictJson?: boolean; noThinking?: boolean } = {},
   ): Promise<LlmJsonResponse<T>> {
     const primary = useVision ? (this.visionModel ?? this.model) : this.model;
     const chain = [
@@ -240,7 +279,7 @@ export class GlmClient implements AssistantLlmClient {
         response = await this.postWithRetry(
           model,
           endpoint,
-          this.buildBody(model, request, images),
+          this.buildBody(model, request, images, options),
         );
       } catch (err: any) {
         lastError = err;
@@ -265,10 +304,11 @@ export class GlmClient implements AssistantLlmClient {
       // Lỗi *nội dung* (JSON hỏng, model trả rỗng) thì KHÔNG đổi model: đổi
       // model không chắc sửa được mà lại tốn thêm token.
       const payload = response?.data ?? {};
+      const finishReason = payload?.choices?.[0]?.finish_reason;
       const rawText = this.extractContent(payload, model);
 
       return {
-        data: this.parseJson<T>(rawText, model),
+        data: this.parseJson<T>(rawText, model, finishReason),
         rawText,
         model,
         endpoint,
@@ -284,6 +324,7 @@ export class GlmClient implements AssistantLlmClient {
     model: string,
     request: LlmJsonRequest,
     images: LlmInlineImage[],
+    options: { strictJson?: boolean; noThinking?: boolean } = {},
   ): Record<string, unknown> {
     const userContent = images.length
       ? [
@@ -297,18 +338,45 @@ export class GlmClient implements AssistantLlmClient {
         ]
       : request.prompt;
 
+    const system = options.strictJson
+      ? `${this.withSchemaHint(request)}\n\n` +
+        "LẦN TRƯỚC BẠN ĐÃ TRẢ JSON KHÔNG HỢP LỆ. Lần này chỉ trả về DUY NHẤT một object JSON " +
+        "hợp lệ: không markdown, không giải thích, không bỏ dở giữa chừng, không thêm chữ ngoài JSON."
+      : this.withSchemaHint(request);
+
+    const thinking = this.thinkingParam(images, options);
+
     return {
       model,
       messages: [
-        { role: "system", content: this.withSchemaHint(request) },
+        { role: "system", content: system },
         { role: "user", content: userContent },
       ],
       temperature: request.temperature ?? 0.2,
       max_tokens: request.maxOutputTokens ?? 4096,
       // JSON cứng: prompt của module đã yêu cầu "chỉ trả về JSON" nên GLM nhận.
       response_format: { type: "json_object" },
-      ...(this.thinking === "auto" ? {} : { thinking: { type: this.thinking } }),
+      ...(thinking ? { thinking } : {}),
     };
+  }
+
+  /**
+   * Tham số `thinking` gửi lên GLM.
+   *
+   * - Lượt **có ảnh**: mặc định tắt thinking — model vision free hay "suy nghĩ"
+   *   dài rồi bị cắt token ⇒ JSON cụt (đo thật: trả nội dung không phải JSON).
+   * - Lượt **thử lại vì JSON hỏng**: luôn tắt thinking.
+   * - Còn lại: theo `GLM_THINKING` (`auto` ⇒ không gửi tham số).
+   */
+  private thinkingParam(
+    images: LlmInlineImage[],
+    options: { noThinking?: boolean },
+  ): { type: string } | null {
+    if (options.noThinking) return { type: "disabled" };
+    if (images.length > 0 && this.thinking === "auto")
+      return { type: "disabled" };
+    if (this.thinking === "auto") return null;
+    return { type: this.thinking };
   }
 
   /**
@@ -369,7 +437,7 @@ export class GlmClient implements AssistantLlmClient {
     if (!text) {
       const finishReason = choice?.finish_reason ?? "n/a";
       const reasoning = String(choice?.message?.reasoning_content ?? "").trim();
-      throw new BadGatewayException(
+      throw this.jsonError(
         `GLM "${model}" không trả về nội dung (finish_reason=${finishReason}).` +
           (reasoning
             ? " Model chỉ kịp trả phần suy luận — tăng maxOutputTokens hoặc đặt GLM_THINKING=disabled."
@@ -390,9 +458,15 @@ export class GlmClient implements AssistantLlmClient {
    * Parse JSON từ output của model.
    *
    * Dù đã bật `response_format: json_object`, vẫn có trường hợp model bọc thêm
-   * ```json ... ``` hoặc vài câu dẫn ⇒ cắt lấy object đầu tiên.
+   * ```json ... ``` hoặc vài câu dẫn ⇒ cắt lấy object đầu tiên. Nếu vẫn hỏng,
+   * báo lỗi kèm `finish_reason` + đoạn đầu nội dung để biết ngay nguyên nhân
+   * (thường là `length` = bị cắt vì hết token).
    */
-  private parseJson<T>(rawText: string, model: string): T {
+  private parseJson<T>(
+    rawText: string,
+    model: string,
+    finishReason?: string,
+  ): T {
     try {
       return JSON.parse(rawText) as T;
     } catch {
@@ -407,8 +481,10 @@ export class GlmClient implements AssistantLlmClient {
           /* rơi xuống dưới */
         }
       }
-      throw new BadGatewayException(
-        `GLM "${model}" trả về nội dung không phải JSON hợp lệ.`,
+      throw this.jsonError(
+        `GLM "${model}" trả về nội dung không phải JSON hợp lệ ` +
+          `(finish_reason=${finishReason ?? "n/a"}, ${rawText.length} ký tự). ` +
+          `Đoạn đầu: ${shorten(rawText, 140)}`,
       );
     }
   }

@@ -125,114 +125,114 @@ export default function OrdersPage() {
 
   return (
     <ConsumerShell title="📦 Đơn hàng" backHref="/dashboard">
-        {/* Filter tabs */}
-        <div className="flex gap-2 mb-5 overflow-x-auto hide-scrollbar pb-1">
-          {[
-            { key: "ALL", label: "Tất cả" },
-            { key: "ACTIVE", label: "Đang xử lý" },
-            { key: "DELIVERED", label: "Đã giao" },
-            { key: "CANCELLED", label: "Đã hủy" },
-          ].map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`px-4 py-2 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition ${
-                filter === f.key
-                  ? "bg-[#ff6b35] text-white shadow-md"
-                  : "bg-white text-gray-500 border border-gray-100"
-              }`}
+      {/* Filter tabs */}
+      <div className="flex gap-2 mb-5 overflow-x-auto hide-scrollbar pb-1">
+        {[
+          { key: "ALL", label: "Tất cả" },
+          { key: "ACTIVE", label: "Đang xử lý" },
+          { key: "DELIVERED", label: "Đã giao" },
+          { key: "CANCELLED", label: "Đã hủy" },
+        ].map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className={`px-4 py-2 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap transition ${
+              filter === f.key
+                ? "bg-[#ff6b35] text-white shadow-md"
+                : "bg-white text-gray-500 border border-gray-100"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="bg-white rounded-2xl shadow-sm p-5 animate-pulse"
             >
-              {f.label}
-            </button>
+              <div className="h-4 bg-gray-200 rounded w-1/3 mb-3" />
+              <div className="h-3 bg-gray-200 rounded w-1/2 mb-2" />
+              <div className="h-3 bg-gray-200 rounded w-3/4" />
+            </div>
           ))}
         </div>
-
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <div
-                key={i}
-                className="bg-white rounded-2xl shadow-sm p-5 animate-pulse"
-              >
-                <div className="h-4 bg-gray-200 rounded w-1/3 mb-3" />
-                <div className="h-3 bg-gray-200 rounded w-1/2 mb-2" />
-                <div className="h-3 bg-gray-200 rounded w-3/4" />
-              </div>
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
-            <p className="text-5xl mb-3">📦</p>
-            <p className="text-gray-400 text-base font-medium">
-              Chưa có đơn hàng nào
-            </p>
-            <Link
-              href="/restaurants"
-              className="mt-4 inline-block bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
+          <p className="text-5xl mb-3">📦</p>
+          <p className="text-gray-400 text-base font-medium">
+            Chưa có đơn hàng nào
+          </p>
+          <Link
+            href="/restaurants"
+            className="mt-4 inline-block bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
+          >
+            Đặt món ngay →
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {reorderMsg && (
+            <p
+              className={`text-sm font-medium text-center bg-white rounded-xl px-3 py-2 shadow-sm ${reorderMsg.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
             >
-              Đặt món ngay →
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {reorderMsg && (
-              <p
-                className={`text-sm font-medium text-center bg-white rounded-xl px-3 py-2 shadow-sm ${reorderMsg.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
+              {reorderMsg}
+            </p>
+          )}
+          {filtered.map((o: any) => {
+            const s = STATUS_LABELS[o.status] || STATUS_LABELS.PENDING;
+            return (
+              <div
+                key={o.id}
+                onClick={() => router.push(`/orders/${o.id}`)}
+                className="bg-white rounded-2xl shadow-sm p-4 hover:shadow-md transition cursor-pointer"
               >
-                {reorderMsg}
-              </p>
-            )}
-            {filtered.map((o: any) => {
-              const s = STATUS_LABELS[o.status] || STATUS_LABELS.PENDING;
-              return (
-                <div
-                  key={o.id}
-                  onClick={() => router.push(`/orders/${o.id}`)}
-                  className="bg-white rounded-2xl shadow-sm p-4 hover:shadow-md transition cursor-pointer"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-gray-800">
-                        #{o.id?.slice(0, 8)}
-                      </span>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.cls}`}
-                      >
-                        {s.icon} {s.label}
-                      </span>
-                    </div>
-                    <span className="text-[#ff6b35] font-bold">
-                      {toNum(o.totalAmount).toLocaleString("vi-VN")}₫
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gray-800">
+                      #{o.id?.slice(0, 8)}
+                    </span>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.cls}`}
+                    >
+                      {s.icon} {s.label}
                     </span>
                   </div>
-                  <div className="text-sm text-gray-500 line-clamp-2">
-                    🛒{" "}
-                    {o.items
-                      ?.map((i: any) => `${i.quantity}x ${i.name}`)
-                      .join(", ")}
-                  </div>
-                  {o.deliveryAddress && (
-                    <div className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
-                      <span>📍</span>
-                      <span className="truncate">{o.deliveryAddress}</span>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    disabled={reorderingId === o.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleReorder(o);
-                    }}
-                    className="mt-3 text-xs font-semibold text-[#ff6b35] bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
-                  >
-                    {reorderingId === o.id ? "Đang thêm..." : "🔄 Đặt lại"}
-                  </button>
+                  <span className="text-[#ff6b35] font-bold">
+                    {toNum(o.totalAmount).toLocaleString("vi-VN")}₫
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <div className="text-sm text-gray-500 line-clamp-2">
+                  🛒{" "}
+                  {o.items
+                    ?.map((i: any) => `${i.quantity}x ${i.name}`)
+                    .join(", ")}
+                </div>
+                {o.deliveryAddress && (
+                  <div className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                    <span>📍</span>
+                    <span className="truncate">{o.deliveryAddress}</span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  disabled={reorderingId === o.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleReorder(o);
+                  }}
+                  className="mt-3 text-xs font-semibold text-[#ff6b35] bg-orange-50 hover:bg-orange-100 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                >
+                  {reorderingId === o.id ? "Đang thêm..." : "🔄 Đặt lại"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </ConsumerShell>
   );
 }

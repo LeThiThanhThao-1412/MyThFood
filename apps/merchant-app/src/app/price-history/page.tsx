@@ -167,376 +167,367 @@ export default function MerchantPriceHistoryPage() {
 
   return (
     <MerchantShell>
-        <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
-          📉 Lịch sử biến động giá
-        </h1>
-        {/* Tabs */}
-        <div className="flex gap-2 bg-white rounded-2xl p-1.5 shadow-sm w-fit">
-          {(
-            [
-              { key: "history", icon: "📜", label: "Lịch sử" },
-              { key: "alerts", icon: "🚨", label: "Cảnh báo" },
-              { key: "report", icon: "📊", label: "Báo cáo" },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
-                tab === t.key
-                  ? "bg-[#ff6b35] text-white"
-                  : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
+      <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
+        📉 Lịch sử biến động giá
+      </h1>
+      {/* Tabs */}
+      <div className="flex gap-2 bg-white rounded-2xl p-1.5 shadow-sm w-fit">
+        {(
+          [
+            { key: "history", icon: "📜", label: "Lịch sử" },
+            { key: "alerts", icon: "🚨", label: "Cảnh báo" },
+            { key: "report", icon: "📊", label: "Báo cáo" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
+              tab === t.key
+                ? "bg-[#ff6b35] text-white"
+                : "text-gray-500 hover:bg-gray-50"
+            }`}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
 
-        {tab === "history" && (
-          <div className="bg-white rounded-2xl shadow-sm p-5">
-            <div className="flex flex-wrap items-end gap-3 mb-4">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Món (ID)
-                </label>
-                <input
-                  value={menuItemId}
-                  onChange={(e) => setMenuItemId(e.target.value)}
-                  placeholder="UUID món"
-                  className="border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Từ</label>
-                <input
-                  type="datetime-local"
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                  className="border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Đến</label>
-                <input
-                  type="datetime-local"
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
-                />
-              </div>
-              <button
-                onClick={applyFilter}
-                className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#1a1a2e] text-white hover:bg-black"
-              >
-                Lọc
-              </button>
-              <button
-                onClick={exportCsv}
-                className="px-4 py-2 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700"
-              >
-                ⬇️ Xuất CSV
-              </button>
+      {tab === "history" && (
+        <div className="bg-white rounded-2xl shadow-sm p-5">
+          <div className="flex flex-wrap items-end gap-3 mb-4">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">
+                Món (ID)
+              </label>
+              <input
+                value={menuItemId}
+                onChange={(e) => setMenuItemId(e.target.value)}
+                placeholder="UUID món"
+                className="border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
+              />
             </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Từ</label>
+              <input
+                type="datetime-local"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Đến</label>
+              <input
+                type="datetime-local"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className="border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
+              />
+            </div>
+            <button
+              onClick={applyFilter}
+              className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#1a1a2e] text-white hover:bg-black"
+            >
+              Lọc
+            </button>
+            <button
+              onClick={exportCsv}
+              className="px-4 py-2 rounded-xl text-sm font-semibold bg-green-600 text-white hover:bg-green-700"
+            >
+              ⬇️ Xuất CSV
+            </button>
+          </div>
 
-            <p className="text-xs text-gray-400 mb-2">
-              {total} thay đổi giá được ghi nhận
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-400 border-b">
-                    <th className="py-2 pr-3">Món</th>
-                    <th className="py-2 pr-3">Thời gian</th>
-                    <th className="py-2 pr-3">Giá cũ</th>
-                    <th className="py-2 pr-3">Giá mới</th>
-                    <th className="py-2 pr-3">Lý do</th>
-                    <th className="py-2 pr-3">Trạng thái</th>
-                    <th className="py-2">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.map((h) => (
-                    <tr key={h.id} className="border-b last:border-0">
-                      <td className="py-2 pr-3 min-w-[180px]">
-                        <div className="font-medium text-gray-800">
-                          {h.menuItemName || "—"}
-                        </div>
-                        <div className="text-xs text-gray-400">
-                          {h.menuItemId}
-                        </div>
-                        {h.type === "FLASH_SALE" && (
-                          <span className="inline-block text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full mt-1 font-semibold">
-                            🔥 Flash Sale
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-3 text-gray-600">
-                        {fmt(h.createdAt)}
-                      </td>
-                      <td className="py-2 pr-3">
-                        {toNum(h.oldPrice).toLocaleString("vi-VN")}đ
-                      </td>
-                      <td className="py-2 pr-3 font-semibold text-[#ff6b35]">
-                        {toNum(h.newPrice).toLocaleString("vi-VN")}đ
-                      </td>
-                      <td className="py-2 pr-3 text-gray-500 max-w-[200px] truncate">
-                        {h.reason || "—"}
-                      </td>
-                      <td className="py-2 pr-3">
-                        <span
-                          className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                            STATUS_META[h.status]?.cls ||
-                            "bg-gray-100 text-gray-500"
-                          }`}
-                        >
-                          {STATUS_META[h.status]?.label || h.status}
+          <p className="text-xs text-gray-400 mb-2">
+            {total} thay đổi giá được ghi nhận
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-400 border-b">
+                  <th className="py-2 pr-3">Món</th>
+                  <th className="py-2 pr-3">Thời gian</th>
+                  <th className="py-2 pr-3">Giá cũ</th>
+                  <th className="py-2 pr-3">Giá mới</th>
+                  <th className="py-2 pr-3">Lý do</th>
+                  <th className="py-2 pr-3">Trạng thái</th>
+                  <th className="py-2">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((h) => (
+                  <tr key={h.id} className="border-b last:border-0">
+                    <td className="py-2 pr-3 min-w-[180px]">
+                      <div className="font-medium text-gray-800">
+                        {h.menuItemName || "—"}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {h.menuItemId}
+                      </div>
+                      {h.type === "FLASH_SALE" && (
+                        <span className="inline-block text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full mt-1 font-semibold">
+                          🔥 Flash Sale
                         </span>
-                      </td>
-                      <td className="py-2">
-                        {h.status !== "AUDITED" && (
-                          <button
-                            onClick={() => setStatus(h.id, "AUDITED")}
-                            className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded-lg font-semibold hover:bg-green-100 mr-1"
-                          >
-                            ✓ Kiểm toán
-                          </button>
-                        )}
-                        {h.status !== "FLAGGED" && (
-                          <button
-                            onClick={() => setStatus(h.id, "FLAGGED")}
-                            className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded-lg font-semibold hover:bg-red-100"
-                          >
-                            ⚑ Cờ
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {history.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="py-6 text-center text-gray-400"
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-gray-600">
+                      {fmt(h.createdAt)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {toNum(h.oldPrice).toLocaleString("vi-VN")}đ
+                    </td>
+                    <td className="py-2 pr-3 font-semibold text-[#ff6b35]">
+                      {toNum(h.newPrice).toLocaleString("vi-VN")}đ
+                    </td>
+                    <td className="py-2 pr-3 text-gray-500 max-w-[200px] truncate">
+                      {h.reason || "—"}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                          STATUS_META[h.status]?.cls ||
+                          "bg-gray-100 text-gray-500"
+                        }`}
                       >
-                        Chưa có thay đổi giá nào
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                        {STATUS_META[h.status]?.label || h.status}
+                      </span>
+                    </td>
+                    <td className="py-2">
+                      {h.status !== "AUDITED" && (
+                        <button
+                          onClick={() => setStatus(h.id, "AUDITED")}
+                          className="text-xs bg-green-50 text-green-600 px-2 py-1 rounded-lg font-semibold hover:bg-green-100 mr-1"
+                        >
+                          ✓ Kiểm toán
+                        </button>
+                      )}
+                      {h.status !== "FLAGGED" && (
+                        <button
+                          onClick={() => setStatus(h.id, "FLAGGED")}
+                          className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded-lg font-semibold hover:bg-red-100"
+                        >
+                          ⚑ Cờ
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {history.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-6 text-center text-gray-400">
+                      Chưa có thay đổi giá nào
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {tab === "alerts" && (
+        <div className="bg-white rounded-2xl shadow-sm p-5 space-y-3">
+          <h2 className="font-bold text-lg">
+            🚨 Cảnh báo bất thường (&gt; 50%)
+          </h2>
+          {alerts.map((a) => (
+            <div
+              key={a.id}
+              className="flex items-start justify-between gap-3 bg-red-50 rounded-xl p-3"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-red-700">{a.message}</p>
+                <p className="text-xs text-gray-500 mt-1">{fmt(a.createdAt)}</p>
+              </div>
+              <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-semibold shrink-0">
+                {toNum(a.changePercent).toFixed(2)}%
+              </span>
+            </div>
+          ))}
+          {alerts.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-6">
+              Không có cảnh báo nào
+            </p>
+          )}
+        </div>
+      )}
+      {tab === "report" && (
+        <div className="space-y-5">
+          <div className="grid sm:grid-cols-3 gap-4">
+            <div className="bg-white rounded-2xl shadow-sm p-5">
+              <p className="text-sm text-gray-400">Tổng số lần đổi giá</p>
+              <p className="text-2xl font-extrabold text-[#1a1a2e]">
+                {report?.totalChanges ?? 0}
+              </p>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm p-5">
+              <p className="text-sm text-gray-400">Số lần bất thường</p>
+              <p className="text-2xl font-extrabold text-red-600">
+                {report?.flaggedCount ?? 0}
+              </p>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm p-5">
+              <p className="text-sm text-gray-400">Biến động lớn nhất</p>
+              <p className="text-2xl font-extrabold text-[#ff6b35]">
+                {toNum(report?.maxChangePercent).toFixed(2)}%
+              </p>
             </div>
           </div>
-        )}
-        {tab === "alerts" && (
-          <div className="bg-white rounded-2xl shadow-sm p-5 space-y-3">
-            <h2 className="font-bold text-lg">
-              🚨 Cảnh báo bất thường (&gt; 50%)
-            </h2>
-            {alerts.map((a) => (
-              <div
-                key={a.id}
-                className="flex items-start justify-between gap-3 bg-red-50 rounded-xl p-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-red-700">
-                    {a.message}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {fmt(a.createdAt)}
-                  </p>
-                </div>
-                <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-semibold shrink-0">
-                  {toNum(a.changePercent).toFixed(2)}%
-                </span>
+
+          <div className="bg-white rounded-2xl shadow-sm p-5">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <h2 className="font-bold text-lg">💼 Đối soát doanh thu</h2>
+              <div className="flex items-center gap-2">
+                <select
+                  value={period}
+                  onChange={(e) => setPeriod(e.target.value)}
+                  className="border rounded-xl px-3 py-2 text-sm outline-none"
+                >
+                  <option value="today">Hôm nay</option>
+                  <option value="week">7 ngày</option>
+                  <option value="month">30 ngày</option>
+                </select>
+                <button
+                  onClick={loadReconcile}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#1a1a2e] text-white hover:bg-black"
+                >
+                  Chạy đối soát
+                </button>
               </div>
-            ))}
-            {alerts.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-6">
-                Không có cảnh báo nào
+            </div>
+            {reconcile ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-xs text-gray-500">Tổng đơn</p>
+                    <p className="text-xl font-extrabold text-[#1a1a2e]">
+                      {toNum(reconcile.totalOrders)}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-xs text-gray-500">Doanh thu thực tế</p>
+                    <p className="text-xl font-extrabold text-green-600">
+                      {toNum(reconcile.totalRevenue).toLocaleString("vi-VN")}đ
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-xs text-gray-500">Theo giá niêm yết</p>
+                    <p className="text-xl font-extrabold text-[#1a1a2e]">
+                      {toNum(reconcile.expectedRevenue).toLocaleString("vi-VN")}
+                      đ
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3">
+                    <p className="text-xs text-gray-500">Chênh lệch</p>
+                    <p
+                      className={`text-xl font-extrabold ${toNum(reconcile.difference) > 0 ? "text-red-600" : "text-green-600"}`}
+                    >
+                      {toNum(reconcile.difference) > 0 ? "-" : "+"}
+                      {Math.abs(toNum(reconcile.difference)).toLocaleString(
+                        "vi-VN",
+                      )}
+                      đ
+                    </p>
+                  </div>
+                </div>
+
+                {Array.isArray(reconcile.items) &&
+                  reconcile.items.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-gray-400 border-b">
+                            <th className="py-2 pr-3">Món</th>
+                            <th className="py-2 pr-3">SL</th>
+                            <th className="py-2 pr-3">Giá niêm yết</th>
+                            <th className="py-2 pr-3">Giá bán</th>
+                            <th className="py-2">Chênh lệch</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reconcile.items.map((it: any, idx: number) => (
+                            <tr
+                              key={`${it.orderId}-${idx}`}
+                              className="border-b last:border-0"
+                            >
+                              <td className="py-2 pr-3">
+                                <div className="font-medium text-gray-800">
+                                  {it.name || "—"}
+                                </div>
+                                <div className="text-xs text-gray-400">
+                                  {fmt(it.createdAt)}
+                                </div>
+                              </td>
+                              <td className="py-2 pr-3">{it.quantity}</td>
+                              <td className="py-2 pr-3">
+                                {it.listPrice != null
+                                  ? toNum(it.listPrice).toLocaleString(
+                                      "vi-VN",
+                                    ) + "đ"
+                                  : "—"}
+                              </td>
+                              <td className="py-2 pr-3">
+                                {toNum(it.unitPrice).toLocaleString("vi-VN")}đ
+                              </td>
+                              <td className="py-2">
+                                {it.difference == null ? (
+                                  "—"
+                                ) : (
+                                  <span
+                                    className={`font-semibold ${toNum(it.difference) > 0 ? "text-red-600" : "text-green-600"}`}
+                                  >
+                                    {toNum(it.difference) > 0 ? "-" : "+"}
+                                    {Math.abs(
+                                      toNum(it.difference),
+                                    ).toLocaleString("vi-VN")}
+                                    đ
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                {Array.isArray(reconcile.revenueByDay) &&
+                  reconcile.revenueByDay.length > 0 && (
+                    <div>
+                      <p className="text-sm font-semibold text-gray-600 mb-2">
+                        Doanh thu theo ngày
+                      </p>
+                      <div className="space-y-1">
+                        {reconcile.revenueByDay.map((d: any) => (
+                          <div
+                            key={d.date}
+                            className="flex justify-between text-sm text-gray-600"
+                          >
+                            <span>{d.date}</span>
+                            <span>
+                              {d.orders} đơn ·{" "}
+                              {toNum(d.revenue).toLocaleString("vi-VN")}đ
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                <p className="text-xs text-gray-400">
+                  * Đối soát từng dòng đơn hàng: so sánh giá bán thực tế với giá
+                  niêm yết (giá gốc tại thời điểm đặt hàng).
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">
+                Chọn kỳ và nhấn &quot;Chạy đối soát&quot; để so sánh doanh thu
+                thực tế với giá niêm yết.
               </p>
             )}
           </div>
-        )}
-        {tab === "report" && (
-          <div className="space-y-5">
-            <div className="grid sm:grid-cols-3 gap-4">
-              <div className="bg-white rounded-2xl shadow-sm p-5">
-                <p className="text-sm text-gray-400">Tổng số lần đổi giá</p>
-                <p className="text-2xl font-extrabold text-[#1a1a2e]">
-                  {report?.totalChanges ?? 0}
-                </p>
-              </div>
-              <div className="bg-white rounded-2xl shadow-sm p-5">
-                <p className="text-sm text-gray-400">Số lần bất thường</p>
-                <p className="text-2xl font-extrabold text-red-600">
-                  {report?.flaggedCount ?? 0}
-                </p>
-              </div>
-              <div className="bg-white rounded-2xl shadow-sm p-5">
-                <p className="text-sm text-gray-400">Biến động lớn nhất</p>
-                <p className="text-2xl font-extrabold text-[#ff6b35]">
-                  {toNum(report?.maxChangePercent).toFixed(2)}%
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-sm p-5">
-              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                <h2 className="font-bold text-lg">💼 Đối soát doanh thu</h2>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={period}
-                    onChange={(e) => setPeriod(e.target.value)}
-                    className="border rounded-xl px-3 py-2 text-sm outline-none"
-                  >
-                    <option value="today">Hôm nay</option>
-                    <option value="week">7 ngày</option>
-                    <option value="month">30 ngày</option>
-                  </select>
-                  <button
-                    onClick={loadReconcile}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#1a1a2e] text-white hover:bg-black"
-                  >
-                    Chạy đối soát
-                  </button>
-                </div>
-              </div>
-              {reconcile ? (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="bg-gray-50 rounded-xl p-3">
-                      <p className="text-xs text-gray-500">Tổng đơn</p>
-                      <p className="text-xl font-extrabold text-[#1a1a2e]">
-                        {toNum(reconcile.totalOrders)}
-                      </p>
-                    </div>
-                    <div className="bg-gray-50 rounded-xl p-3">
-                      <p className="text-xs text-gray-500">Doanh thu thực tế</p>
-                      <p className="text-xl font-extrabold text-green-600">
-                        {toNum(reconcile.totalRevenue).toLocaleString("vi-VN")}đ
-                      </p>
-                    </div>
-                    <div className="bg-gray-50 rounded-xl p-3">
-                      <p className="text-xs text-gray-500">Theo giá niêm yết</p>
-                      <p className="text-xl font-extrabold text-[#1a1a2e]">
-                        {toNum(reconcile.expectedRevenue).toLocaleString(
-                          "vi-VN",
-                        )}
-                        đ
-                      </p>
-                    </div>
-                    <div className="bg-gray-50 rounded-xl p-3">
-                      <p className="text-xs text-gray-500">Chênh lệch</p>
-                      <p
-                        className={`text-xl font-extrabold ${toNum(reconcile.difference) > 0 ? "text-red-600" : "text-green-600"}`}
-                      >
-                        {toNum(reconcile.difference) > 0 ? "-" : "+"}
-                        {Math.abs(toNum(reconcile.difference)).toLocaleString(
-                          "vi-VN",
-                        )}
-                        đ
-                      </p>
-                    </div>
-                  </div>
-
-                  {Array.isArray(reconcile.items) &&
-                    reconcile.items.length > 0 && (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-left text-gray-400 border-b">
-                              <th className="py-2 pr-3">Món</th>
-                              <th className="py-2 pr-3">SL</th>
-                              <th className="py-2 pr-3">Giá niêm yết</th>
-                              <th className="py-2 pr-3">Giá bán</th>
-                              <th className="py-2">Chênh lệch</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {reconcile.items.map((it: any, idx: number) => (
-                              <tr
-                                key={`${it.orderId}-${idx}`}
-                                className="border-b last:border-0"
-                              >
-                                <td className="py-2 pr-3">
-                                  <div className="font-medium text-gray-800">
-                                    {it.name || "—"}
-                                  </div>
-                                  <div className="text-xs text-gray-400">
-                                    {fmt(it.createdAt)}
-                                  </div>
-                                </td>
-                                <td className="py-2 pr-3">{it.quantity}</td>
-                                <td className="py-2 pr-3">
-                                  {it.listPrice != null
-                                    ? toNum(it.listPrice).toLocaleString(
-                                        "vi-VN",
-                                      ) + "đ"
-                                    : "—"}
-                                </td>
-                                <td className="py-2 pr-3">
-                                  {toNum(it.unitPrice).toLocaleString("vi-VN")}đ
-                                </td>
-                                <td className="py-2">
-                                  {it.difference == null ? (
-                                    "—"
-                                  ) : (
-                                    <span
-                                      className={`font-semibold ${toNum(it.difference) > 0 ? "text-red-600" : "text-green-600"}`}
-                                    >
-                                      {toNum(it.difference) > 0 ? "-" : "+"}
-                                      {Math.abs(
-                                        toNum(it.difference),
-                                      ).toLocaleString("vi-VN")}
-                                      đ
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-
-                  {Array.isArray(reconcile.revenueByDay) &&
-                    reconcile.revenueByDay.length > 0 && (
-                      <div>
-                        <p className="text-sm font-semibold text-gray-600 mb-2">
-                          Doanh thu theo ngày
-                        </p>
-                        <div className="space-y-1">
-                          {reconcile.revenueByDay.map((d: any) => (
-                            <div
-                              key={d.date}
-                              className="flex justify-between text-sm text-gray-600"
-                            >
-                              <span>{d.date}</span>
-                              <span>
-                                {d.orders} đơn ·{" "}
-                                {toNum(d.revenue).toLocaleString("vi-VN")}đ
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                  <p className="text-xs text-gray-400">
-                    * Đối soát từng dòng đơn hàng: so sánh giá bán thực tế với
-                    giá niêm yết (giá gốc tại thời điểm đặt hàng).
-                  </p>
-                </div>
-              ) : (
-                <p className="text-sm text-gray-400">
-                  Chọn kỳ và nhấn &quot;Chạy đối soát&quot; để so sánh doanh thu
-                  thực tế với giá niêm yết.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+        </div>
+      )}
     </MerchantShell>
   );
 }

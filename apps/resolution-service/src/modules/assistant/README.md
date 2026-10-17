@@ -59,14 +59,13 @@ bổ sung tách riêng **khách hàng** (`followUpQuestions`) và **tài xế/nh
 dài, và `normalize()` **chốt lại lần cuối** (ghi `warnings` khi phải cắt) để UI luôn
 nhận được output ngắn bất kể model trả gì.
 
-
 **Nhà cung cấp model** (`AI_PROVIDER`, mặc định `glm`): cả hai client đều thoả
 `AssistantLlmClient`, `AssistantService` không biết đang dùng vendor nào.
 
-| Provider | Model chữ | Model ảnh | Ghi chú |
-|---|---|---|---|
-| `glm` (mặc định) | `glm-4.5-flash` | `glm-4.6v-flash` | Model **free** của GLM; `json_object` chỉ bảo đảm JSON hợp lệ nên client **nhét danh sách field của schema vào prompt** |
-| `gemini` | `gemini-3.8-flash` | (dùng chung) | Ép schema ở phía server; đo 10/2026 hay trả **503 `high demand`** |
+| Provider         | Model chữ          | Model ảnh        | Ghi chú                                                                                                                 |
+| ---------------- | ------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `glm` (mặc định) | `glm-4.5-flash`    | `glm-4.6v-flash` | Model **free** của GLM; `json_object` chỉ bảo đảm JSON hợp lệ nên client **nhét danh sách field của schema vào prompt** |
+| `gemini`         | `gemini-3.8-flash` | (dùng chung)     | Ép schema ở phía server; đo 10/2026 hay trả **503 `high demand`**                                                       |
 
 Số đo thật khi chọn model (10/2026): `glm-4v-flash` / nhiều model vision cũ đã bị
 **gỡ (1211)**; `glm-4.5`, `4.6`, `4.7`, `5.x` trả **429/1113** (không có gói);
@@ -75,50 +74,83 @@ module: `glm-4.5-flash` trả **đủ 11/11 field** (~43s), còn `glm-4.6v-flash
 prompt schema lớn hay trả JSON lỗi ⇒ client **tự lùi về phân tích chữ, bỏ ảnh và
 ghi chú vào `warnings`** (đặt `GLM_VISION_MODEL=none` để bỏ hẳn phần ảnh).
 
+**Chống JSON hỏng (3 lớp):** (1) lượt có ảnh mặc định **tắt `thinking`** để model
+không "suy nghĩ" hết token rồi trả JSON cụt; (2) JSON vẫn hỏng ⇒ **thử lại 1 lần**
+với system nhắc “chỉ JSON” + tắt thinking; (3) vẫn hỏng ⇒ lùi về model chữ (bỏ ảnh)
+và ghi chú. Lỗi cuối cùng (nếu có) nêu rõ `finish_reason` + đoạn đầu nội dung để
+biết ngay là bị cắt token hay model trả văn bản. Đường chữ mặc định
+`GLM_FALLBACK_MODELS=none` — **không** lấy model vision làm dự phòng.
+
 ## 2. API
 
-| Method | Path | Role | Mô tả |
-|---|---|---|---|
-| `GET` | `/api/v1/assistant/health` | ADMIN | Trạng thái cấu hình (enabled, có key, model, API base) |
-| `GET` | `/api/v1/assistant/cases/:id/context` | ADMIN | **Không tốn token**: trả đúng ngữ cảnh sẽ gửi cho model |
-| `GET` | `/api/v1/assistant/cases/:id/analysis` | ADMIN | Bản phân tích AI đã lưu (AI tự chạy nền khi khiếu nại được tạo); `data: null` nếu chưa có |
-| `POST` | `/api/v1/assistant/cases/:id/analyze` | ADMIN | Gọi LLM (GLM/Gemini theo `AI_PROVIDER`), trả gợi ý xử lý |
-| `POST` | `/api/v1/assistant/cases/:id/analysis/review` | ADMIN | Admin duyệt / bỏ qua gợi ý: `{ "decision": "ACCEPTED" \| "REJECTED", "note"?: string }` |
+| Method | Path                                          | Role  | Mô tả                                                                                     |
+| ------ | --------------------------------------------- | ----- | ----------------------------------------------------------------------------------------- |
+| `GET`  | `/api/v1/assistant/health`                    | ADMIN | Trạng thái cấu hình (enabled, có key, model, API base)                                    |
+| `GET`  | `/api/v1/assistant/cases/:id/context`         | ADMIN | **Không tốn token**: trả đúng ngữ cảnh sẽ gửi cho model                                   |
+| `GET`  | `/api/v1/assistant/cases/:id/analysis`        | ADMIN | Bản phân tích AI đã lưu (AI tự chạy nền khi khiếu nại được tạo); `data: null` nếu chưa có |
+| `POST` | `/api/v1/assistant/cases/:id/analyze`         | ADMIN | Gọi LLM (GLM/Gemini theo `AI_PROVIDER`), trả gợi ý xử lý                                  |
+| `POST` | `/api/v1/assistant/cases/:id/analysis/review` | ADMIN | Admin duyệt / bỏ qua gợi ý: `{ "decision": "ACCEPTED" \| "REJECTED", "note"?: string }`   |
 
 Body của `analyze` (tuỳ chọn): `{ "skipImages": true, "maxImages": 2 }`.
 
 ## 3. Biến môi trường
 
-| Biến | Mặc định | Ý nghĩa |
-|---|---|---|
-| `AI_ASSISTANT_ENABLED` | `false` | Công tắc tổng. `false` ⇒ mọi lệnh analyze trả 503 |
-| `AI_AUTO_ANALYZE` | `true` | AI tự phân tích ngay khi khiếu nại được tạo (admin chỉ đọc & duyệt). `false` ⇒ quay lại luồng bấm tay |
-| `AI_PROVIDER` | `glm` | Chọn nhà cung cấp: `glm` (Zhipu) hoặc `gemini` (Google) |
-| `GLM_API_KEY` | — | **Bắt buộc khi `AI_PROVIDER=glm`**. Chỉ để trong `.env`, không commit |
-| `GLM_MODEL` | `glm-4.5-flash` | Model cho dữ liệu chữ (model free) |
-| `GLM_VISION_MODEL` | `glm-4.6v-flash` | Model nhận ảnh bằng chứng; đặt `none` để bỏ hẳn phần ảnh |
-| `GLM_API_BASE` | `https://open.bigmodel.cn/api/paas/v4` | Đổi khi dùng endpoint z.ai/khác |
-| `GLM_TIMEOUT_MS` | `120000` | Timeout mỗi lượt gọi model |
-| `GLM_MAX_ATTEMPTS` | `3` (tối đa 6) | Số lần gọi **mỗi** model khi lỗi tạm thời (429/5xx/mạng) |
-| `GLM_RETRY_BASE_MS` | `1500` | Chờ giữa 2 lần thử (backoff mũ + jitter, tôn trọng `Retry-After`) |
-| `GLM_FALLBACK_MODELS` | `glm-4.6v-flash` | Model dự phòng khi model chính 1113/1211/404; `none` để tắt |
-| `GLM_THINKING` | `auto` | `auto` = để model tự quyết; `disabled` = trả lời ngay; `enabled` = suy luận dài |
-| `GEMINI_API_KEY` | — | **Bắt buộc khi `AI_PROVIDER=gemini`** |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | Model dùng cho cả text và vision |
-| `GEMINI_API_BASE` | `https://generativelanguage.googleapis.com` | Đổi khi Google chuyển API version |
-| `GEMINI_TIMEOUT_MS` | `120000` | Timeout gọi model |
-| `AI_ASSISTANT_MAX_IMAGES` | `4` (tối đa 8) | Số ảnh bằng chứng gửi kèm |
-| `GEMINI_MAX_ATTEMPTS` | `3` (tối đa 6) | Số lần gọi **mỗi** model khi Google quá tải / 5xx |
-| `GEMINI_RETRY_BASE_MS` | `1500` | Chờ giữa 2 lần thử (backoff mũ + jitter, tôn trọng `Retry-After`) |
-| `GEMINI_FALLBACK_MODELS` | `gemini-3.6-flash,gemini-3.5-flash` | Model dự phòng, tự chuyển khi model chính 503/429/404. Đo thật 10/2026: `2.5-flash`/`2.5-pro` trả **404** (Google khoá với tài khoản mới) nên không dùng |
-| `UPLOAD_SERVICE_URL` | — | Để đổi `localhost:3010` → địa chỉ upload-service khi chạy docker |
-| `CHAT_SERVICE_URL` | `http://chat-service:3015` | Nguồn D11 |
-| `DISPATCH_SERVICE_URL` | `http://dispatch-service:3008` | Nguồn D3 |
-| `REVIEW_SERVICE_URL` | `http://review-service:3011` | Nguồn D5 |
-| `PAYMENT_SERVICE_URL` | `http://payment-service:3006` | Nguồn D6 |
+| Biến                      | Mặc định                                    | Ý nghĩa                                                                                                                                                  |
+| ------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AI_ASSISTANT_ENABLED`    | `false`                                     | Công tắc tổng. `false` ⇒ mọi lệnh analyze trả 503                                                                                                        |
+| `AI_AUTO_ANALYZE`         | `true`                                      | AI tự phân tích ngay khi khiếu nại được tạo (admin chỉ đọc & duyệt). `false` ⇒ quay lại luồng bấm tay                                                    |
+| `AI_PROVIDER`             | `glm`                                       | Chọn nhà cung cấp: `glm` (Zhipu) hoặc `gemini` (Google)                                                                                                  |
+| `GLM_API_KEY`             | —                                           | **Bắt buộc khi `AI_PROVIDER=glm`**. Chỉ để trong `.env`, không commit                                                                                    |
+| `GLM_MODEL`               | `glm-4.5-flash`                             | Model cho dữ liệu chữ (model free)                                                                                                                       |
+| `GLM_VISION_MODEL`        | `glm-4.6v-flash`                            | Model nhận ảnh bằng chứng; đặt `none` để bỏ hẳn phần ảnh                                                                                                 |
+| `GLM_API_BASE`            | `https://open.bigmodel.cn/api/paas/v4`      | Đổi khi dùng endpoint z.ai/khác                                                                                                                          |
+| `GLM_TIMEOUT_MS`          | `120000`                                    | Timeout mỗi lượt gọi model                                                                                                                               |
+| `GLM_MAX_ATTEMPTS`        | `3` (tối đa 6)                              | Số lần gọi **mỗi** model khi lỗi tạm thời (429/5xx/mạng)                                                                                                 |
+| `GLM_RETRY_BASE_MS`       | `1500`                                      | Chờ giữa 2 lần thử (backoff mũ + jitter, tôn trọng `Retry-After`)                                                                                        |
+| `GLM_FALLBACK_MODELS`     | `glm-4.6v-flash`                            | Model dự phòng khi model chính 1113/1211/404; `none` để tắt                                                                                              |
+| `GLM_THINKING`            | `auto`                                      | `auto` = để model tự quyết; `disabled` = trả lời ngay; `enabled` = suy luận dài                                                                          |
+| `GEMINI_API_KEY`          | —                                           | **Bắt buộc khi `AI_PROVIDER=gemini`**                                                                                                                    |
+| `GEMINI_MODEL`            | `gemini-3.8-flash`                          | Model dùng cho cả text và vision                                                                                                                         |
+| `GEMINI_API_BASE`         | `https://generativelanguage.googleapis.com` | Đổi khi Google chuyển API version                                                                                                                        |
+| `GEMINI_TIMEOUT_MS`       | `120000`                                    | Timeout gọi model                                                                                                                                        |
+| `AI_ASSISTANT_MAX_IMAGES` | `4` (tối đa 8)                              | Số ảnh bằng chứng gửi kèm                                                                                                                                |
+| `GEMINI_MAX_ATTEMPTS`     | `3` (tối đa 6)                              | Số lần gọi **mỗi** model khi Google quá tải / 5xx                                                                                                        |
+| `GEMINI_RETRY_BASE_MS`    | `1500`                                      | Chờ giữa 2 lần thử (backoff mũ + jitter, tôn trọng `Retry-After`)                                                                                        |
+| `GEMINI_FALLBACK_MODELS`  | `gemini-3.6-flash,gemini-3.5-flash`         | Model dự phòng, tự chuyển khi model chính 503/429/404. Đo thật 10/2026: `2.5-flash`/`2.5-pro` trả **404** (Google khoá với tài khoản mới) nên không dùng |
+| `UPLOAD_SERVICE_URL`      | —                                           | Để đổi `localhost:3010` → địa chỉ upload-service khi chạy docker                                                                                         |
+| `CHAT_SERVICE_URL`        | `http://chat-service:3015`                  | Nguồn D11                                                                                                                                                |
+| `DISPATCH_SERVICE_URL`    | `http://dispatch-service:3008`              | Nguồn D3                                                                                                                                                 |
+| `REVIEW_SERVICE_URL`      | `http://review-service:3011`                | Nguồn D5                                                                                                                                                 |
+| `PAYMENT_SERVICE_URL`     | `http://payment-service:3006`               | Nguồn D6                                                                                                                                                 |
 
 Các biến `ORDER_/DRIVER_/MERCHANT_/CONSUMER_/WALLET_/NOTIFICATION_SERVICE_URL`
 đã có sẵn cho `IntegrationService`.
+
+> **Bảng `case_ai_analyses`:** entity được khai báo trong `config/database.config.ts`
+> (`entities: [...]` — thiếu chỗ này sẽ lỗi `No metadata for "CaseAiAnalysisEntity"`).
+> Ở `NODE_ENV=development`, TypeORM `synchronize` tự tạo bảng. Nếu chạy production
+> (`synchronize=false`), tạo tay:
+>
+> ```sql
+> CREATE TABLE IF NOT EXISTS case_ai_analyses (
+>   id uuid PRIMARY KEY,
+>   "caseId" uuid NOT NULL,
+>   "caseNumber" varchar(40) NOT NULL,
+>   source varchar(10) NOT NULL,
+>   model varchar(80) NOT NULL,
+>   verdict varchar(20) NOT NULL,
+>   confidence numeric(4,3) NOT NULL,
+>   payload jsonb NOT NULL,
+>   "reviewDecision" varchar(10),
+>   "reviewedBy" varchar(100),
+>   "reviewedAt" timestamptz,
+>   "reviewNote" text,
+>   "createdAt" timestamptz NOT NULL DEFAULT now(),
+>   "updatedAt" timestamptz NOT NULL DEFAULT now()
+> );
+> CREATE UNIQUE INDEX IF NOT EXISTS idx_case_ai_analyses_case_id
+>   ON case_ai_analyses ("caseId");
+> ```
 
 > **⚠️ Nơi đặt biến & cách nạp:** file `.env` nằm ở **gốc monorepo** (`mythfood/.env`).
 > `ConfigModule` đọc `.env` theo CWD nên `app.module.ts` đã thêm đường dẫn tuyệt đối
@@ -131,25 +163,25 @@ Các biến `ORDER_/DRIVER_/MERCHANT_/CONSUMER_/WALLET_/NOTIFICATION_SERVICE_URL
 
 ## 4. Nguồn dữ liệu
 
-| ID | Dữ liệu | Service |
-|---|---|---|
-| D1 | Chi tiết đơn hàng | order |
-| D2 | Timeline trạng thái đơn | order |
-| D3 | Chuyến điều phối (dispatch) | dispatch |
-| D4 | Vết GPS tài xế | driver |
-| D5 | Đánh giá của đơn | review |
-| D6 | Thanh toán của đơn | payment |
-| D7 | Chat khách ↔ tài xế | chat (**endpoint `conversations/order/:orderId/messages` được thêm trong cùng thay đổi này**) |
-| D8 | Giao dịch ví | wallet |
-| D9 | Lịch sử đơn của khách | order |
-| D10 | Lịch sử đơn của tài xế | order |
-| D11 | Hồ sơ công khai tài xế | driver |
-| D12 | Hồ sơ nhà hàng | merchant |
-| D13 | Hồ sơ khách hàng | consumer |
-| D14 | Khiếu nại trước đó của 2 bên | resolution (nội bộ) |
+| ID  | Dữ liệu                      | Service                                                                                       |
+| --- | ---------------------------- | --------------------------------------------------------------------------------------------- |
+| D1  | Chi tiết đơn hàng            | order                                                                                         |
+| D2  | Timeline trạng thái đơn      | order                                                                                         |
+| D3  | Chuyến điều phối (dispatch)  | dispatch                                                                                      |
+| D4  | Vết GPS tài xế               | driver                                                                                        |
+| D5  | Đánh giá của đơn             | review                                                                                        |
+| D6  | Thanh toán của đơn           | payment                                                                                       |
+| D7  | Chat khách ↔ tài xế          | chat (**endpoint `conversations/order/:orderId/messages` được thêm trong cùng thay đổi này**) |
+| D8  | Giao dịch ví                 | wallet                                                                                        |
+| D9  | Lịch sử đơn của khách        | order                                                                                         |
+| D10 | Lịch sử đơn của tài xế       | order                                                                                         |
+| D11 | Hồ sơ công khai tài xế       | driver                                                                                        |
+| D12 | Hồ sơ nhà hàng               | merchant                                                                                      |
+| D13 | Hồ sơ khách hàng             | consumer                                                                                      |
+| D14 | Khiếu nại trước đó của 2 bên | resolution (nội bộ)                                                                           |
 
 Nguồn nào lỗi/không có dữ liệu vẫn được ghi vào prompt dưới nhãn `KHÔNG CÓ`.
-Danh mục nào thiếu nguồn *bắt buộc* (khai báo trong `CASE_CONTEXT_SOURCES[].criticalFor`)
+Danh mục nào thiếu nguồn _bắt buộc_ (khai báo trong `CASE_CONTEXT_SOURCES[].criticalFor`)
 sẽ sinh thêm cảnh báo và được model yêu cầu hạ `confidence`.
 
 ## 5. Nguyên tắc an toàn
@@ -163,10 +195,10 @@ sẽ sinh thêm cảnh báo và được model yêu cầu hạ `confidence`.
   để admin biết gợi ý dựa trên dữ liệu gì.
 - Google trả **503 (model quá tải)** ⇒ client tự thử lại 3 lần (backoff 1.5s → 3s → 6s,
   tôn trọng `Retry-After`) rồi tự chuyển sang model dự phòng; hết cách mới báo lỗi
-  kèm gợi ý *"đợi 30–60 giây rồi bấm Phân tích lại"* — admin không phải tự mò.
+  kèm gợi ý _"đợi 30–60 giây rồi bấm Phân tích lại"_ — admin không phải tự mò.
 - Lỗi cấu hình (thiếu/sai key, assistant bị tắt) thì **không** thử lại: trả 503 ngay
   để biết phải sửa `.env`, không tốn thời gian chờ vô ích.
-- Lỗi *nội dung* (model trả JSON hỏng, bị chặn SAFETY) thì **không** đổi model —
+- Lỗi _nội dung_ (model trả JSON hỏng, bị chặn SAFETY) thì **không** đổi model —
   đổi model không chắc sửa được mà lại tốn thêm token.
 
 ## 6. Kiểm thử thủ công

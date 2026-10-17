@@ -312,389 +312,389 @@ export default function SettingsPage() {
 
   return (
     <MerchantShell>
-        <h1 className="text-2xl font-extrabold text-[#1a1a2e] mb-4">
-          ⚙️ Cài đặt nhà hàng
-        </h1>
-        {status && (
-          <div
-            className={`p-4 rounded-xl text-sm font-medium ${status.startsWith("✅") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}
-          >
-            {status}
-          </div>
-        )}
+      <h1 className="text-2xl font-extrabold text-[#1a1a2e] mb-4">
+        ⚙️ Cài đặt nhà hàng
+      </h1>
+      {status && (
+        <div
+          className={`p-4 rounded-xl text-sm font-medium ${status.startsWith("✅") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}
+        >
+          {status}
+        </div>
+      )}
 
-        {/* Info & Images */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">🏪 Thông tin & Hình ảnh</h3>
+      {/* Info & Images */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">🏪 Thông tin & Hình ảnh</h3>
 
-          {/* Cover */}
-          <div className="relative h-32 rounded-xl overflow-hidden mb-4 bg-gray-100">
-            {coverUrl ? (
+        {/* Cover */}
+        <div className="relative h-32 rounded-xl overflow-hidden mb-4 bg-gray-100">
+          {coverUrl ? (
+            <img
+              src={coverUrl}
+              alt="Ảnh bìa"
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-gray-400">
+              Ảnh bìa
+            </div>
+          )}
+          <label className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-3 py-1.5 rounded-lg cursor-pointer hover:bg-black/80 transition">
+            {uploading === "cover" ? "Đang tải..." : "🖼️ Đổi ảnh bìa"}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={uploadCover}
+            />
+          </label>
+        </div>
+
+        {/* Logo */}
+        <div className="flex items-center gap-4 mb-4">
+          <div className="relative w-16 h-16 rounded-full overflow-hidden bg-gray-100 shrink-0">
+            {logoUrl ? (
               <img
-                src={coverUrl}
-                alt="Ảnh bìa"
+                src={logoUrl}
+                alt="Logo"
                 className="w-full h-full object-cover"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400">
-                Ảnh bìa
+              <div className="w-full h-full flex items-center justify-center text-2xl text-gray-400">
+                🏪
               </div>
             )}
-            <label className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-3 py-1.5 rounded-lg cursor-pointer hover:bg-black/80 transition">
-              {uploading === "cover" ? "Đang tải..." : "🖼️ Đổi ảnh bìa"}
+            <label className="absolute inset-0 flex items-end justify-center bg-black/40 opacity-0 hover:opacity-100 transition cursor-pointer">
+              <span className="text-white text-[10px] pb-1">📷</span>
               <input
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={uploadCover}
+                onChange={uploadLogo}
               />
             </label>
           </div>
-
-          {/* Logo */}
-          <div className="flex items-center gap-4 mb-4">
-            <div className="relative w-16 h-16 rounded-full overflow-hidden bg-gray-100 shrink-0">
-              {logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt="Logo"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-2xl text-gray-400">
-                  🏪
-                </div>
-              )}
-              <label className="absolute inset-0 flex items-end justify-center bg-black/40 opacity-0 hover:opacity-100 transition cursor-pointer">
-                <span className="text-white text-[10px] pb-1">📷</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={uploadLogo}
-                />
-              </label>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-gray-800 truncate">
-                {info.name || "Nhà hàng"}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {uploading === "logo"
-                  ? "Đang tải logo..."
-                  : "Bấm vào logo để đổi"}
-              </p>
-            </div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-gray-800 truncate">
+              {info.name || "Nhà hàng"}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {uploading === "logo"
+                ? "Đang tải logo..."
+                : "Bấm vào logo để đổi"}
+            </p>
           </div>
-
-          {/* Info fields */}
-          <div className="grid sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Tên nhà hàng
-              </label>
-              <input
-                value={info.name}
-                onChange={(e) => setInfo({ ...info, name: e.target.value })}
-                className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Số điện thoại
-              </label>
-              <input
-                value={info.phone}
-                onChange={(e) => setInfo({ ...info, phone: e.target.value })}
-                className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Địa chỉ
-              </label>
-              <input
-                value={info.address}
-                onChange={(e) => setInfo({ ...info, address: e.target.value })}
-                className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Mô tả
-              </label>
-              <textarea
-                value={info.description}
-                onChange={(e) =>
-                  setInfo({ ...info, description: e.target.value })
-                }
-                rows={2}
-                className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
-              />
-            </div>
-          </div>
-          <button
-            onClick={saveInfo}
-            disabled={saving}
-            className="mt-3 bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50"
-          >
-            {saving ? "Đang lưu..." : "💾 Lưu thông tin"}
-          </button>
         </div>
 
-        {/* Open/Close toggle */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">🚪 Trạng thái hoạt động</h3>
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-            <div>
-              <p className="font-semibold text-gray-800">
-                {isOpen ? "🟢 Đang mở cửa" : "🔴 Tạm đóng cửa"}
-              </p>
-              <p className="text-sm text-gray-500 mt-0.5">
-                {isOpen
-                  ? "Khách hàng có thể đặt món (nếu trong giờ hoạt động)"
-                  : "Khách hàng sẽ không thể đặt món từ nhà hàng của bạn"}
-              </p>
-            </div>
-            <button
-              onClick={toggleOpenStatus}
-              className={`relative w-14 h-7 rounded-full transition-colors duration-200 ${isOpen ? "bg-green-500" : "bg-gray-300"}`}
+        {/* Info fields */}
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Tên nhà hàng
+            </label>
+            <input
+              value={info.name}
+              onChange={(e) => setInfo({ ...info, name: e.target.value })}
+              className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Số điện thoại
+            </label>
+            <input
+              value={info.phone}
+              onChange={(e) => setInfo({ ...info, phone: e.target.value })}
+              className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Địa chỉ
+            </label>
+            <input
+              value={info.address}
+              onChange={(e) => setInfo({ ...info, address: e.target.value })}
+              className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Mô tả
+            </label>
+            <textarea
+              value={info.description}
+              onChange={(e) =>
+                setInfo({ ...info, description: e.target.value })
+              }
+              rows={2}
+              className="w-full border rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-orange-200"
+            />
+          </div>
+        </div>
+        <button
+          onClick={saveInfo}
+          disabled={saving}
+          className="mt-3 bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50"
+        >
+          {saving ? "Đang lưu..." : "💾 Lưu thông tin"}
+        </button>
+      </div>
+
+      {/* Open/Close toggle */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">🚪 Trạng thái hoạt động</h3>
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+          <div>
+            <p className="font-semibold text-gray-800">
+              {isOpen ? "🟢 Đang mở cửa" : "🔴 Tạm đóng cửa"}
+            </p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {isOpen
+                ? "Khách hàng có thể đặt món (nếu trong giờ hoạt động)"
+                : "Khách hàng sẽ không thể đặt món từ nhà hàng của bạn"}
+            </p>
+          </div>
+          <button
+            onClick={toggleOpenStatus}
+            className={`relative w-14 h-7 rounded-full transition-colors duration-200 ${isOpen ? "bg-green-500" : "bg-gray-300"}`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform duration-200 ${isOpen ? "translate-x-7" : "translate-x-0"}`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Operating Hours */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">🕐 Giờ hoạt động</h3>
+        <div className="space-y-2">
+          {hours.map((h, i) => (
+            <div
+              key={h.dayOfWeek}
+              className="flex items-center gap-3 py-2 flex-wrap"
             >
-              <span
-                className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform duration-200 ${isOpen ? "translate-x-7" : "translate-x-0"}`}
+              <span className="w-10 text-sm font-semibold text-gray-600">
+                {h.label}
+              </span>
+              <input
+                type="time"
+                value={h.openTime}
+                disabled={!!h.isClosed}
+                onChange={(e) => {
+                  const nh = [...hours];
+                  nh[i] = { ...nh[i], openTime: e.target.value };
+                  setHours(nh);
+                }}
+                className="border rounded-lg px-3 py-2 text-sm w-32 disabled:opacity-40 disabled:bg-gray-50"
               />
-            </button>
-          </div>
-        </div>
-
-        {/* Operating Hours */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">🕐 Giờ hoạt động</h3>
-          <div className="space-y-2">
-            {hours.map((h, i) => (
-              <div
-                key={h.dayOfWeek}
-                className="flex items-center gap-3 py-2 flex-wrap"
-              >
-                <span className="w-10 text-sm font-semibold text-gray-600">
-                  {h.label}
+              <span className="text-gray-400">đến</span>
+              <input
+                type="time"
+                value={h.closeTime}
+                disabled={!!h.isClosed}
+                onChange={(e) => {
+                  const nh = [...hours];
+                  nh[i] = { ...nh[i], closeTime: e.target.value };
+                  setHours(nh);
+                }}
+                className="border rounded-lg px-3 py-2 text-sm w-32 disabled:opacity-40 disabled:bg-gray-50"
+              />
+              <label className="ml-2 flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!!h.isClosed}
+                  onChange={(e) => {
+                    const nh = [...hours];
+                    nh[i] = { ...nh[i], isClosed: e.target.checked };
+                    setHours(nh);
+                  }}
+                  className="w-4 h-4 accent-[#ff6b35]"
+                />
+                <span
+                  className={h.isClosed ? "text-red-500 font-semibold" : ""}
+                >
+                  Nghỉ ngày này
                 </span>
-                <input
-                  type="time"
-                  value={h.openTime}
-                  disabled={!!h.isClosed}
-                  onChange={(e) => {
-                    const nh = [...hours];
-                    nh[i] = { ...nh[i], openTime: e.target.value };
-                    setHours(nh);
-                  }}
-                  className="border rounded-lg px-3 py-2 text-sm w-32 disabled:opacity-40 disabled:bg-gray-50"
-                />
-                <span className="text-gray-400">đến</span>
-                <input
-                  type="time"
-                  value={h.closeTime}
-                  disabled={!!h.isClosed}
-                  onChange={(e) => {
-                    const nh = [...hours];
-                    nh[i] = { ...nh[i], closeTime: e.target.value };
-                    setHours(nh);
-                  }}
-                  className="border rounded-lg px-3 py-2 text-sm w-32 disabled:opacity-40 disabled:bg-gray-50"
-                />
-                <label className="ml-2 flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={!!h.isClosed}
-                    onChange={(e) => {
-                      const nh = [...hours];
-                      nh[i] = { ...nh[i], isClosed: e.target.checked };
-                      setHours(nh);
-                    }}
-                    className="w-4 h-4 accent-[#ff6b35]"
-                  />
-                  <span
-                    className={h.isClosed ? "text-red-500 font-semibold" : ""}
-                  >
-                    Nghỉ ngày này
-                  </span>
-                </label>
-              </div>
-            ))}
-          </div>
-          <button
-            onClick={saveHours}
-            disabled={saving}
-            className="mt-4 bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50"
-          >
-            {saving ? "Đang lưu..." : "Lưu giờ hoạt động"}
-          </button>
-        </div>
-
-        {/* Capacity */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">📊 Sức chứa & Chuẩn bị</h3>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Số đơn tối đa cùng lúc
               </label>
-              <input
-                type="number"
-                value={capacity.maxConcurrentOrders}
-                onChange={(e) =>
-                  setCapacity({
-                    ...capacity,
-                    maxConcurrentOrders: Number(e.target.value),
-                  })
-                }
-                className="w-full border rounded-lg px-3 py-2 text-sm"
-                min={1}
-              />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Thời gian chuẩn bị TB (phút)
-              </label>
-              <input
-                type="number"
-                value={capacity.averagePreparationMinutes}
-                onChange={(e) =>
-                  setCapacity({
-                    ...capacity,
-                    averagePreparationMinutes: Number(e.target.value),
-                  })
-                }
-                className="w-full border rounded-lg px-3 py-2 text-sm"
-                min={5}
-              />
-            </div>
-          </div>
-          <button
-            onClick={saveCapacity}
-            disabled={saving}
-            className="mt-4 bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50"
-          >
-            {saving ? "Đang lưu..." : "Lưu sức chứa"}
-          </button>
+          ))}
         </div>
+        <button
+          onClick={saveHours}
+          disabled={saving}
+          className="mt-4 bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50"
+        >
+          {saving ? "Đang lưu..." : "Lưu giờ hoạt động"}
+        </button>
+      </div>
 
-        {/* Categories */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">🍽️ Loại nhà hàng</h3>
-          <p className="text-sm text-gray-500 mb-3">
-            Chọn loại chính để khách hàng dễ tìm thấy bạn
-          </p>
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            {PRIMARY_CATEGORIES.map((cat) => (
+      {/* Capacity */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">📊 Sức chứa & Chuẩn bị</h3>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Số đơn tối đa cùng lúc
+            </label>
+            <input
+              type="number"
+              value={capacity.maxConcurrentOrders}
+              onChange={(e) =>
+                setCapacity({
+                  ...capacity,
+                  maxConcurrentOrders: Number(e.target.value),
+                })
+              }
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              min={1}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Thời gian chuẩn bị TB (phút)
+            </label>
+            <input
+              type="number"
+              value={capacity.averagePreparationMinutes}
+              onChange={(e) =>
+                setCapacity({
+                  ...capacity,
+                  averagePreparationMinutes: Number(e.target.value),
+                })
+              }
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              min={5}
+            />
+          </div>
+        </div>
+        <button
+          onClick={saveCapacity}
+          disabled={saving}
+          className="mt-4 bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50"
+        >
+          {saving ? "Đang lưu..." : "Lưu sức chứa"}
+        </button>
+      </div>
+
+      {/* Categories */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">🍽️ Loại nhà hàng</h3>
+        <p className="text-sm text-gray-500 mb-3">
+          Chọn loại chính để khách hàng dễ tìm thấy bạn
+        </p>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {PRIMARY_CATEGORIES.map((cat) => (
+            <button
+              key={cat.key}
+              onClick={() => setPrimaryCategory(cat.key)}
+              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition ${
+                primaryCategory === cat.key
+                  ? "border-[#ff6b35] bg-orange-50 text-[#ff6b35]"
+                  : "border-gray-200 bg-white text-gray-600 hover:border-orange-200"
+              }`}
+            >
+              <span className="text-xl">{cat.icon}</span>
+              <span className="text-left leading-tight">{cat.label}</span>
+            </button>
+          ))}
+        </div>
+        <p className="text-sm font-medium text-gray-700 mb-2">
+          Loại phụ (1-3 · {secondaryCategories.length}/3)
+        </p>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {SECONDARY_CATEGORIES.map((cat) => {
+            const active = secondaryCategories.includes(cat.key);
+            return (
               <button
                 key={cat.key}
-                onClick={() => setPrimaryCategory(cat.key)}
-                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition ${
-                  primaryCategory === cat.key
-                    ? "border-[#ff6b35] bg-orange-50 text-[#ff6b35]"
-                    : "border-gray-200 bg-white text-gray-600 hover:border-orange-200"
+                onClick={() => toggleSecondaryCategory(cat.key)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                  active
+                    ? "bg-[#ff6b35] text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
               >
-                <span className="text-xl">{cat.icon}</span>
-                <span className="text-left leading-tight">{cat.label}</span>
+                {cat.label}
               </button>
-            ))}
-          </div>
-          <p className="text-sm font-medium text-gray-700 mb-2">
-            Loại phụ (1-3 · {secondaryCategories.length}/3)
-          </p>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {SECONDARY_CATEGORIES.map((cat) => {
-              const active = secondaryCategories.includes(cat.key);
-              return (
-                <button
-                  key={cat.key}
-                  onClick={() => toggleSecondaryCategory(cat.key)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
-                    active
-                      ? "bg-[#ff6b35] text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              );
-            })}
-            <button
-              onClick={() => toggleSecondaryCategory(OTHER_CATEGORY_KEY)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
-                secondaryCategories.includes(OTHER_CATEGORY_KEY)
-                  ? "bg-[#ff6b35] text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              ➕ Khác
-            </button>
-          </div>
-          {secondaryCategories.includes(OTHER_CATEGORY_KEY) && (
-            <input
-              value={otherCategoryDescription}
-              onChange={(e) => setOtherCategoryDescription(e.target.value)}
-              placeholder="Mô tả món đặc biệt của quán (để admin duyệt)"
-              className="mb-4 w-full rounded-lg border px-4 py-2.5 text-sm focus:border-orange-400 outline-none"
-            />
-          )}
+            );
+          })}
           <button
-            onClick={saveCategories}
-            disabled={saving}
-            className="bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50"
+            onClick={() => toggleSecondaryCategory(OTHER_CATEGORY_KEY)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+              secondaryCategories.includes(OTHER_CATEGORY_KEY)
+                ? "bg-[#ff6b35] text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
           >
-            {saving ? "Đang lưu..." : "Lưu loại nhà hàng"}
+            ➕ Khác
           </button>
         </div>
+        {secondaryCategories.includes(OTHER_CATEGORY_KEY) && (
+          <input
+            value={otherCategoryDescription}
+            onChange={(e) => setOtherCategoryDescription(e.target.value)}
+            placeholder="Mô tả món đặc biệt của quán (để admin duyệt)"
+            className="mb-4 w-full rounded-lg border px-4 py-2.5 text-sm focus:border-orange-400 outline-none"
+          />
+        )}
+        <button
+          onClick={saveCategories}
+          disabled={saving}
+          className="bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50"
+        >
+          {saving ? "Đang lưu..." : "Lưu loại nhà hàng"}
+        </button>
+      </div>
 
-        {/* COD Settings */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">💵 Cài đặt thanh toán COD</h3>
-          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-            <div>
-              <p className="font-semibold text-gray-800">Nhận đơn COD</p>
-              <p className="text-sm text-gray-500 mt-0.5">
-                {acceptsCod
-                  ? "Khách hàng có thể chọn thanh toán khi nhận hàng"
-                  : "Chỉ chấp nhận thanh toán qua thẻ"}
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                const newValue = !acceptsCod;
-                setAcceptsCod(newValue);
-                if (merchant) {
-                  localStorage.setItem(
-                    `merchant_${merchant.id}_acceptsCod`,
-                    String(newValue),
-                  );
-                }
-                setStatus(`✅ Đã ${newValue ? "bật" : "tắt"} nhận đơn COD`);
-              }}
-              className={`relative w-14 h-7 rounded-full transition-colors duration-200 ${
-                acceptsCod ? "bg-green-500" : "bg-gray-300"
+      {/* COD Settings */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">💵 Cài đặt thanh toán COD</h3>
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+          <div>
+            <p className="font-semibold text-gray-800">Nhận đơn COD</p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {acceptsCod
+                ? "Khách hàng có thể chọn thanh toán khi nhận hàng"
+                : "Chỉ chấp nhận thanh toán qua thẻ"}
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              const newValue = !acceptsCod;
+              setAcceptsCod(newValue);
+              if (merchant) {
+                localStorage.setItem(
+                  `merchant_${merchant.id}_acceptsCod`,
+                  String(newValue),
+                );
+              }
+              setStatus(`✅ Đã ${newValue ? "bật" : "tắt"} nhận đơn COD`);
+            }}
+            className={`relative w-14 h-7 rounded-full transition-colors duration-200 ${
+              acceptsCod ? "bg-green-500" : "bg-gray-300"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform duration-200 ${
+                acceptsCod ? "translate-x-7" : "translate-x-0"
               }`}
-            >
-              <span
-                className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform duration-200 ${
-                  acceptsCod ? "translate-x-7" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
-          <div className="mt-3 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
-            <p className="font-semibold mb-1">ℹ️ Lưu ý về COD:</p>
-            <ul className="list-disc pl-4 space-y-0.5">
-              <li>Tài xế cần số dư ví ≥ 2.000.000₫ để nhận đơn COD</li>
-              <li>
-                Tiền món sẽ được giữ trong ví tài xế đến khi giao thành công
-              </li>
-              <li>Nếu tắt COD, khách chỉ có thể thanh toán qua thẻ</li>
-            </ul>
-          </div>
+            />
+          </button>
         </div>
+        <div className="mt-3 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
+          <p className="font-semibold mb-1">ℹ️ Lưu ý về COD:</p>
+          <ul className="list-disc pl-4 space-y-0.5">
+            <li>Tài xế cần số dư ví ≥ 2.000.000₫ để nhận đơn COD</li>
+            <li>
+              Tiền món sẽ được giữ trong ví tài xế đến khi giao thành công
+            </li>
+            <li>Nếu tắt COD, khách chỉ có thể thanh toán qua thẻ</li>
+          </ul>
+        </div>
+      </div>
     </MerchantShell>
   );
 }

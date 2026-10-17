@@ -200,18 +200,24 @@ export class MerchantComplianceService {
     amount: number,
     reason: string,
   ): Promise<void> {
-    const url =
-      process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
+    const url = process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
     try {
       await firstValueFrom(
         this.httpService.post(
           `${url}/api/v1/wallets/penalty/debit`,
-          { ownerId: merchantId, ownerType: "MERCHANT", amount, description: reason },
+          {
+            ownerId: merchantId,
+            ownerType: "MERCHANT",
+            amount,
+            description: reason,
+          },
           { headers: { "x-service-key": this.serviceKey } },
         ),
       );
     } catch (err: any) {
-      this.logger.warn(`debitMerchant failed for ${merchantId}: ${err?.message}`);
+      this.logger.warn(
+        `debitMerchant failed for ${merchantId}: ${err?.message}`,
+      );
     }
   }
 
@@ -243,7 +249,8 @@ export class MerchantComplianceService {
     reason: string,
   ): Promise<void> {
     const url =
-      process.env.NOTIFICATION_SERVICE_URL || "http://notification-service:3013";
+      process.env.NOTIFICATION_SERVICE_URL ||
+      "http://notification-service:3013";
     try {
       await firstValueFrom(
         this.httpService.post(
@@ -257,7 +264,9 @@ export class MerchantComplianceService {
         ),
       );
     } catch (err: any) {
-      this.logger.warn(`notifyMerchant failed for ${merchantId}: ${err?.message}`);
+      this.logger.warn(
+        `notifyMerchant failed for ${merchantId}: ${err?.message}`,
+      );
     }
   }
 
@@ -270,4 +279,3 @@ export class MerchantComplianceService {
     return [...new Set(urls)];
   }
 }
-

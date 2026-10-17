@@ -12,7 +12,10 @@ import {
 import { Roles, RolesGuard } from "@mythfood/common";
 import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { AssistantService } from "../application/assistant.service";
-import { AnalyzeCaseDto, ReviewAnalysisDto } from "../application/dtos/assistant.dto";
+import {
+  AnalyzeCaseDto,
+  ReviewAnalysisDto,
+} from "../application/dtos/assistant.dto";
 
 /**
  * Trợ lý AI cho admin (human-in-the-loop).

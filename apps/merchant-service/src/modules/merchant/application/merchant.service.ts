@@ -10,7 +10,10 @@ import { firstValueFrom } from "rxjs";
 import { Merchant } from "../domain/merchant.aggregate";
 import { MerchantId } from "../domain/merchant-id";
 import { MenuItemId } from "../domain/menu-item-id";
-import { MenuItem, MenuItemAvailabilityStatus } from "../domain/menu-item.entity";
+import {
+  MenuItem,
+  MenuItemAvailabilityStatus,
+} from "../domain/menu-item.entity";
 import { MenuCategory } from "../domain/menu-category.entity";
 import { OperatingHoursProps } from "../domain/operating-hours.vo";
 import { MerchantRepository } from "../infrastructure/merchant.repository";
@@ -26,7 +29,11 @@ import {
   MenuSearchItemDto,
   RecordFlashSalePriceHistoryDto,
 } from "./dtos/merchant.dto";
-import { CreateMenuItemDto, UpdateMenuItemDto, SetMenuItemAvailabilityDto } from "./dtos/menu.dto";
+import {
+  CreateMenuItemDto,
+  UpdateMenuItemDto,
+  SetMenuItemAvailabilityDto,
+} from "./dtos/menu.dto";
 import {
   CreateMenuCategoryDto,
   UpdateMenuCategoryDto,
@@ -485,9 +492,8 @@ export class MerchantService {
 
     // Tắt danh mục → ẩn toàn bộ món thuộc danh mục đó khỏi menu người mua.
     if (!includeUnavailable) {
-      const disabledIds = await this.menuCategoryRepository.findDisabledIds(
-        merchantId,
-      );
+      const disabledIds =
+        await this.menuCategoryRepository.findDisabledIds(merchantId);
       if (disabledIds.size > 0) {
         items = items.filter(
           (mi) => !mi.itemCategoryId || !disabledIds.has(mi.itemCategoryId),

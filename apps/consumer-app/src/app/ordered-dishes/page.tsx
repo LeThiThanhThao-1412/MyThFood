@@ -165,82 +165,80 @@ export default function OrderedDishesPage() {
 
   return (
     <ConsumerShell title="🔄 Món đã đặt" backHref="/dashboard">
-        {loading ? (
+      {loading ? (
+        <div className="grid grid-cols-2 gap-3">
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="bg-white rounded-2xl shadow-sm p-3 animate-pulse"
+            >
+              <div className="h-28 bg-gray-200 rounded-xl mb-3" />
+              <div className="h-3 bg-gray-200 rounded w-3/4" />
+            </div>
+          ))}
+        </div>
+      ) : orderedDishes.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
+          <p className="text-5xl mb-3">🍽️</p>
+          <p className="text-gray-400 text-base font-medium">
+            Chưa có món nào đã đặt
+          </p>
+          <Link
+            href="/restaurants"
+            className="mt-4 inline-block bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
+          >
+            Đặt món ngay →
+          </Link>
+        </div>
+      ) : (
+        <>
+          {reorderMsg && (
+            <p
+              className={`text-sm font-medium text-center bg-white rounded-xl px-3 py-2 shadow-sm mb-3 ${
+                reorderMsg.startsWith("✅") ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              {reorderMsg}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
-            {[1, 2, 3, 4].map((i) => (
+            {orderedDishes.map((d) => (
               <div
-                key={i}
-                className="bg-white rounded-2xl shadow-sm p-3 animate-pulse"
+                key={d.key}
+                className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col"
               >
-                <div className="h-28 bg-gray-200 rounded-xl mb-3" />
-                <div className="h-3 bg-gray-200 rounded w-3/4" />
+                <div className="h-28 bg-[#fff7ed] flex items-center justify-center overflow-hidden">
+                  {d.imageUrl || dishImageMap[d.menuItemId] ? (
+                    <img
+                      src={d.imageUrl || dishImageMap[d.menuItemId]}
+                      alt={d.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-3xl">🍽️</span>
+                  )}
+                </div>
+                <div className="p-3 flex-1 flex flex-col">
+                  <p className="text-sm font-semibold text-gray-800 line-clamp-2">
+                    {d.name}
+                  </p>
+                  <p className="text-xs text-gray-400 truncate mt-0.5">
+                    {merchantNameById.get(d.merchantId) || "Nhà hàng"}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={reorderingId === d.key}
+                    onClick={() => handleReorderDish(d)}
+                    className="mt-auto pt-2 w-full text-xs font-semibold text-[#ff6b35] bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-lg transition disabled:opacity-50"
+                  >
+                    {reorderingId === d.key ? "Đang thêm..." : "🔄 Đặt lại"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
-        ) : orderedDishes.length === 0 ? (
-          <div className="text-center py-16 bg-white rounded-2xl shadow-sm">
-            <p className="text-5xl mb-3">🍽️</p>
-            <p className="text-gray-400 text-base font-medium">
-              Chưa có món nào đã đặt
-            </p>
-            <Link
-              href="/restaurants"
-              className="mt-4 inline-block bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
-            >
-              Đặt món ngay →
-            </Link>
-          </div>
-        ) : (
-          <>
-            {reorderMsg && (
-              <p
-                className={`text-sm font-medium text-center bg-white rounded-xl px-3 py-2 shadow-sm mb-3 ${
-                  reorderMsg.startsWith("✅")
-                    ? "text-green-600"
-                    : "text-red-600"
-                }`}
-              >
-                {reorderMsg}
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-3">
-              {orderedDishes.map((d) => (
-                <div
-                  key={d.key}
-                  className="bg-white rounded-2xl shadow-sm overflow-hidden flex flex-col"
-                >
-                  <div className="h-28 bg-[#fff7ed] flex items-center justify-center overflow-hidden">
-                    {d.imageUrl || dishImageMap[d.menuItemId] ? (
-                      <img
-                        src={d.imageUrl || dishImageMap[d.menuItemId]}
-                        alt={d.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-3xl">🍽️</span>
-                    )}
-                  </div>
-                  <div className="p-3 flex-1 flex flex-col">
-                    <p className="text-sm font-semibold text-gray-800 line-clamp-2">
-                      {d.name}
-                    </p>
-                    <p className="text-xs text-gray-400 truncate mt-0.5">
-                      {merchantNameById.get(d.merchantId) || "Nhà hàng"}
-                    </p>
-                    <button
-                      type="button"
-                      disabled={reorderingId === d.key}
-                      onClick={() => handleReorderDish(d)}
-                      className="mt-auto pt-2 w-full text-xs font-semibold text-[#ff6b35] bg-orange-50 hover:bg-orange-100 px-3 py-2 rounded-lg transition disabled:opacity-50"
-                    >
-                      {reorderingId === d.key ? "Đang thêm..." : "🔄 Đặt lại"}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
+        </>
+      )}
     </ConsumerShell>
   );
 }

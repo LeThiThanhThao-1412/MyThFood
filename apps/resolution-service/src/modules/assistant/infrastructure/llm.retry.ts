@@ -27,7 +27,9 @@ export function retryDelayMs(
   attempt: number,
   headers?: Record<string, unknown>,
 ): number {
-  const retryAfter = Number(headers?.["retry-after"] ?? headers?.["Retry-After"]);
+  const retryAfter = Number(
+    headers?.["retry-after"] ?? headers?.["Retry-After"],
+  );
   if (Number.isFinite(retryAfter) && retryAfter > 0) {
     return Math.min(Math.round(retryAfter * 1000), MAX_RETRY_DELAY_MS);
   }
@@ -56,6 +58,8 @@ export function envNumber(
 
 /** Rút gọn thông báo lỗi để ghi log/ trả về FE. */
 export function shorten(text: unknown, max = 200): string {
-  const flat = String(text ?? "").replace(/\s+/g, " ").trim();
+  const flat = String(text ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }

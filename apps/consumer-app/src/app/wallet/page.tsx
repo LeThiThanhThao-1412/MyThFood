@@ -253,243 +253,238 @@ export default function WalletPage() {
 
   return (
     <ConsumerShell title="💰 Ví của tôi" backHref="/profile">
-        {/* ─── Balance Card ─── */}
-        <div className="bg-gradient-to-br from-[#ff6b35] to-[#ff8f65] rounded-2xl p-6 text-white">
-          <p className="text-sm text-white/80">Số dư ví</p>
-          <p className="text-3xl font-extrabold mt-1">
-            {walletBalance.toLocaleString("vi-VN")}₫
-          </p>
-          <p className="text-xs text-white/70 mt-3">
-            Dùng số dư ví để thanh toán đơn hàng, nạp tiền qua Stripe hoặc rút
-            về tài khoản.
-          </p>
-        </div>
+      {/* ─── Balance Card ─── */}
+      <div className="bg-gradient-to-br from-[#ff6b35] to-[#ff8f65] rounded-2xl p-6 text-white">
+        <p className="text-sm text-white/80">Số dư ví</p>
+        <p className="text-3xl font-extrabold mt-1">
+          {walletBalance.toLocaleString("vi-VN")}₫
+        </p>
+        <p className="text-xs text-white/70 mt-3">
+          Dùng số dư ví để thanh toán đơn hàng, nạp tiền qua Stripe hoặc rút về
+          tài khoản.
+        </p>
+      </div>
 
-        {/* ─── Top-up (Stripe) ─── */}
-        {showStripe && clientSecret ? (
-          <Elements
-            stripe={stripePromise}
-            options={{
-              appearance: {
-                theme: "stripe",
-                variables: { colorPrimary: "#ff6b35", borderRadius: "12px" },
-              },
-            }}
-          >
-            <StripeTopupForm
-              clientSecret={clientSecret}
-              amount={Number(topupAmount)}
-              onSuccess={async () => {
-                // Credit the wallet directly after the card is charged.
-                // (Stripe webhook is not reachable on localhost, so we can't
-                // rely on it to credit the wallet here.)
-                try {
-                  await walletApi.topup(
-                    consumerId,
-                    "CONSUMER",
-                    Number(topupAmount),
-                  );
-                } catch {
-                  /* non-fatal - webhook may still credit it */
-                }
-                setShowStripe(false);
-                setClientSecret("");
-                setTopupStatus(
-                  `✅ Đã nạp ${Number(topupAmount).toLocaleString("vi-VN")}₫ thành công!`,
+      {/* ─── Top-up (Stripe) ─── */}
+      {showStripe && clientSecret ? (
+        <Elements
+          stripe={stripePromise}
+          options={{
+            appearance: {
+              theme: "stripe",
+              variables: { colorPrimary: "#ff6b35", borderRadius: "12px" },
+            },
+          }}
+        >
+          <StripeTopupForm
+            clientSecret={clientSecret}
+            amount={Number(topupAmount)}
+            onSuccess={async () => {
+              // Credit the wallet directly after the card is charged.
+              // (Stripe webhook is not reachable on localhost, so we can't
+              // rely on it to credit the wallet here.)
+              try {
+                await walletApi.topup(
+                  consumerId,
+                  "CONSUMER",
+                  Number(topupAmount),
                 );
-                setTopupAmount("");
-                loadWallet(consumerId);
-              }}
-              onError={(msg) => {
-                setTopupStatus("❌ " + msg);
-                setShowStripe(false);
-                setClientSecret("");
-              }}
-              onCancel={() => {
-                setShowStripe(false);
-                setClientSecret("");
-              }}
-            />
-          </Elements>
-        ) : (
-          <div className="bg-white rounded-2xl shadow-sm p-5">
-            <h3 className="font-bold text-[#1a1a2e] mb-3">
-              💳 Nạp tiền qua Stripe
-            </h3>
-            <div className="flex gap-2 mb-3 flex-wrap">
-              {QUICK_AMOUNTS.map((amt) => (
-                <button
-                  key={amt}
-                  onClick={() => setTopupAmount(amt.toString())}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
-                    topupAmount === amt.toString()
-                      ? "border-[#ff6b35] bg-[#fff7ed] text-[#ff6b35]"
-                      : "border-gray-200 text-gray-500"
-                  }`}
-                >
-                  {amt >= 1000000
-                    ? `${amt / 1000000}tr`
-                    : `${(amt / 1000).toFixed(0)}k`}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                value={topupAmount}
-                onChange={(e) => setTopupAmount(e.target.value)}
-                placeholder={`Số tiền (tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}₫)`}
-                className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]"
-              />
-              <button
-                onClick={async () => {
-                  if (!topupAmount || Number(topupAmount) < MIN_WITHDRAW) {
-                    setTopupStatus(
-                      `❌ Tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}₫`,
-                    );
-                    return;
-                  }
-                  try {
-                    const res = await walletApi.topupStripe(
-                      consumerId,
-                      "CONSUMER",
-                      Number(topupAmount),
-                    );
-                    setClientSecret(res.clientSecret || "");
-                    setShowStripe(true);
-                    setTopupStatus("");
-                  } catch (err: any) {
-                    setTopupStatus(
-                      "❌ " +
-                        (err.message || "Không thể tạo giao dịch nạp tiền"),
-                    );
-                  }
-                }}
-                className="bg-[#ff6b35] text-white px-5 py-3 rounded-xl font-semibold text-sm hover:bg-orange-600 transition whitespace-nowrap"
-              >
-                Nạp qua Stripe
-              </button>
-            </div>
-            {topupStatus && (
-              <p
-                className={`text-sm mt-2 font-medium ${
-                  topupStatus.startsWith("✅")
-                    ? "text-green-600"
-                    : "text-red-500"
-                }`}
-              >
-                {topupStatus}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* ─── Withdraw ─── */}
+              } catch {
+                /* non-fatal - webhook may still credit it */
+              }
+              setShowStripe(false);
+              setClientSecret("");
+              setTopupStatus(
+                `✅ Đã nạp ${Number(topupAmount).toLocaleString("vi-VN")}₫ thành công!`,
+              );
+              setTopupAmount("");
+              loadWallet(consumerId);
+            }}
+            onError={(msg) => {
+              setTopupStatus("❌ " + msg);
+              setShowStripe(false);
+              setClientSecret("");
+            }}
+            onCancel={() => {
+              setShowStripe(false);
+              setClientSecret("");
+            }}
+          />
+        </Elements>
+      ) : (
         <div className="bg-white rounded-2xl shadow-sm p-5">
           <h3 className="font-bold text-[#1a1a2e] mb-3">
-            🏦 Rút tiền về ngân hàng
+            💳 Nạp tiền qua Stripe
           </h3>
-          <p className="text-xs text-gray-400 mb-3">
-            Tối thiểu {MIN_WITHDRAW.toLocaleString("vi-VN")}₫
-          </p>
-          <div className="flex gap-2 mb-2">
+          <div className="flex gap-2 mb-3 flex-wrap">
+            {QUICK_AMOUNTS.map((amt) => (
+              <button
+                key={amt}
+                onClick={() => setTopupAmount(amt.toString())}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                  topupAmount === amt.toString()
+                    ? "border-[#ff6b35] bg-[#fff7ed] text-[#ff6b35]"
+                    : "border-gray-200 text-gray-500"
+                }`}
+              >
+                {amt >= 1000000
+                  ? `${amt / 1000000}tr`
+                  : `${(amt / 1000).toFixed(0)}k`}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
             <input
               type="number"
-              value={withdrawAmount}
-              onChange={(e) => setWithdrawAmount(e.target.value)}
-              placeholder={`Tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}₫`}
+              value={topupAmount}
+              onChange={(e) => setTopupAmount(e.target.value)}
+              placeholder={`Số tiền (tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}₫)`}
               className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]"
             />
             <button
               onClick={async () => {
-                const amt = Number(withdrawAmount);
-                if (!amt || amt < MIN_WITHDRAW) {
-                  setWithdrawStatus(
+                if (!topupAmount || Number(topupAmount) < MIN_WITHDRAW) {
+                  setTopupStatus(
                     `❌ Tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}₫`,
                   );
                   return;
                 }
                 try {
-                  const result = await walletApi.withdraw(
+                  const res = await walletApi.topupStripe(
                     consumerId,
                     "CONSUMER",
-                    amt,
+                    Number(topupAmount),
                   );
-                  setWalletBalance(result.balance);
-                  setWithdrawStatus(
-                    `✅ Đã rút ${amt.toLocaleString("vi-VN")}₫. Số dư mới: ${result.balance.toLocaleString("vi-VN")}₫`,
-                  );
-                  setWithdrawAmount("");
-                  loadWallet(consumerId);
+                  setClientSecret(res.clientSecret || "");
+                  setShowStripe(true);
+                  setTopupStatus("");
                 } catch (err: any) {
-                  setWithdrawStatus("❌ " + (err.message || "Lỗi rút tiền"));
+                  setTopupStatus(
+                    "❌ " + (err.message || "Không thể tạo giao dịch nạp tiền"),
+                  );
                 }
               }}
               className="bg-[#ff6b35] text-white px-5 py-3 rounded-xl font-semibold text-sm hover:bg-orange-600 transition whitespace-nowrap"
             >
-              Rút tiền
+              Nạp qua Stripe
             </button>
           </div>
-          {withdrawStatus && (
+          {topupStatus && (
             <p
-              className={`text-sm font-medium ${
-                withdrawStatus.startsWith("✅")
-                  ? "text-green-600"
-                  : "text-red-500"
+              className={`text-sm mt-2 font-medium ${
+                topupStatus.startsWith("✅") ? "text-green-600" : "text-red-500"
               }`}
             >
-              {withdrawStatus}
+              {topupStatus}
             </p>
           )}
         </div>
+      )}
 
-        {/* ─── Transaction History ─── */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-[#1a1a2e] mb-3">
-            📋 Lịch sử giao dịch
-          </h3>
-          <div className="space-y-2">
-            {walletTx.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-4">
-                Chưa có giao dịch
-              </p>
-            )}
-            {walletTx.map((tx: any) => (
-              <div
-                key={tx.id}
-                className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                        tx.type === "CREDIT"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-red-100 text-red-600"
-                      }`}
-                    >
-                      {tx.type === "CREDIT" ? "NHẬN" : "CHI"}
-                    </span>
-                    <span className="text-sm text-gray-700 truncate">
-                      {tx.description}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {new Date(tx.createdAt).toLocaleString("vi-VN")}
-                  </p>
-                </div>
-                <span
-                  className={`text-sm font-semibold ml-3 ${
-                    tx.type === "CREDIT" ? "text-green-600" : "text-red-500"
-                  }`}
-                >
-                  {tx.type === "CREDIT" ? "+" : "-"}
-                  {toNum(tx.amount).toLocaleString("vi-VN")}₫
-                </span>
-              </div>
-            ))}
-          </div>
+      {/* ─── Withdraw ─── */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-[#1a1a2e] mb-3">
+          🏦 Rút tiền về ngân hàng
+        </h3>
+        <p className="text-xs text-gray-400 mb-3">
+          Tối thiểu {MIN_WITHDRAW.toLocaleString("vi-VN")}₫
+        </p>
+        <div className="flex gap-2 mb-2">
+          <input
+            type="number"
+            value={withdrawAmount}
+            onChange={(e) => setWithdrawAmount(e.target.value)}
+            placeholder={`Tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}₫`}
+            className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]"
+          />
+          <button
+            onClick={async () => {
+              const amt = Number(withdrawAmount);
+              if (!amt || amt < MIN_WITHDRAW) {
+                setWithdrawStatus(
+                  `❌ Tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}₫`,
+                );
+                return;
+              }
+              try {
+                const result = await walletApi.withdraw(
+                  consumerId,
+                  "CONSUMER",
+                  amt,
+                );
+                setWalletBalance(result.balance);
+                setWithdrawStatus(
+                  `✅ Đã rút ${amt.toLocaleString("vi-VN")}₫. Số dư mới: ${result.balance.toLocaleString("vi-VN")}₫`,
+                );
+                setWithdrawAmount("");
+                loadWallet(consumerId);
+              } catch (err: any) {
+                setWithdrawStatus("❌ " + (err.message || "Lỗi rút tiền"));
+              }
+            }}
+            className="bg-[#ff6b35] text-white px-5 py-3 rounded-xl font-semibold text-sm hover:bg-orange-600 transition whitespace-nowrap"
+          >
+            Rút tiền
+          </button>
         </div>
+        {withdrawStatus && (
+          <p
+            className={`text-sm font-medium ${
+              withdrawStatus.startsWith("✅")
+                ? "text-green-600"
+                : "text-red-500"
+            }`}
+          >
+            {withdrawStatus}
+          </p>
+        )}
+      </div>
+
+      {/* ─── Transaction History ─── */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-[#1a1a2e] mb-3">📋 Lịch sử giao dịch</h3>
+        <div className="space-y-2">
+          {walletTx.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-4">
+              Chưa có giao dịch
+            </p>
+          )}
+          {walletTx.map((tx: any) => (
+            <div
+              key={tx.id}
+              className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                      tx.type === "CREDIT"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-red-100 text-red-600"
+                    }`}
+                  >
+                    {tx.type === "CREDIT" ? "NHẬN" : "CHI"}
+                  </span>
+                  <span className="text-sm text-gray-700 truncate">
+                    {tx.description}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {new Date(tx.createdAt).toLocaleString("vi-VN")}
+                </p>
+              </div>
+              <span
+                className={`text-sm font-semibold ml-3 ${
+                  tx.type === "CREDIT" ? "text-green-600" : "text-red-500"
+                }`}
+              >
+                {tx.type === "CREDIT" ? "+" : "-"}
+                {toNum(tx.amount).toLocaleString("vi-VN")}₫
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
     </ConsumerShell>
   );
 }

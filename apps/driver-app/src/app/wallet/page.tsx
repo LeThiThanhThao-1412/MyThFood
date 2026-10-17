@@ -267,334 +267,329 @@ export default function DriverWalletPage() {
 
   return (
     <DriverShell title="💰 Ví của tôi" backHref="/dashboard">
-        {/* ─── Balance Card ─── */}
-        <div className="bg-gradient-to-br from-[#1a1a2e] to-[#2d2d44] rounded-2xl p-6 text-white">
-          <p className="text-sm text-white/60">Số dư ví</p>
-          <p className="text-3xl font-extrabold mt-1">
-            {walletBalance.toLocaleString("vi-VN")}₫
-          </p>
-          <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-white/10">
-            <div>
-              <p className="text-xs text-white/50">Khả dụng</p>
-              <p className="text-lg font-bold text-[#2ecc71]">
-                {availableBalance.toLocaleString("vi-VN")}₫
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-white/50">Đang giữ COD</p>
-              <p className="text-lg font-bold text-[#e67e22]">
-                {holdAmount.toLocaleString("vi-VN")}₫
-              </p>
-            </div>
+      {/* ─── Balance Card ─── */}
+      <div className="bg-gradient-to-br from-[#1a1a2e] to-[#2d2d44] rounded-2xl p-6 text-white">
+        <p className="text-sm text-white/60">Số dư ví</p>
+        <p className="text-3xl font-extrabold mt-1">
+          {walletBalance.toLocaleString("vi-VN")}₫
+        </p>
+        <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-white/10">
+          <div>
+            <p className="text-xs text-white/50">Khả dụng</p>
+            <p className="text-lg font-bold text-[#2ecc71]">
+              {availableBalance.toLocaleString("vi-VN")}₫
+            </p>
           </div>
-          {/* COD min balance indicator */}
-          <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-2">
-            <span
-              className={`inline-block w-2 h-2 rounded-full ${walletBalance >= MIN_COD_BALANCE ? "bg-[#2ecc71]" : "bg-red-400"}`}
-            />
-            <p
-              className={`text-xs ${walletBalance >= MIN_COD_BALANCE ? "text-white/60" : "text-red-300"}`}
-            >
-              {walletBalance >= MIN_COD_BALANCE
-                ? `✅ Đủ điều kiện nhận đơn COD (≥ ${MIN_COD_BALANCE.toLocaleString("vi-VN")}₫)`
-                : `⚠️ Cần nạp thêm ${(MIN_COD_BALANCE - walletBalance).toLocaleString("vi-VN")}₫ để nhận đơn COD`}
+          <div>
+            <p className="text-xs text-white/50">Đang giữ COD</p>
+            <p className="text-lg font-bold text-[#e67e22]">
+              {holdAmount.toLocaleString("vi-VN")}₫
             </p>
           </div>
         </div>
-
-        {/* ─── Wallet Rules ─── */}
-        <div className="bg-[#fff7ed] rounded-2xl p-4 border border-orange-100 text-sm text-gray-600">
-          <p className="font-semibold text-[#ff6b35] mb-2">
-            💡 Quy tắc ví COD:
-          </p>
-          <ul className="space-y-1.5 list-disc pl-4">
-            <li>
-              Số dư{" "}
-              <strong>≥ {MIN_COD_BALANCE.toLocaleString("vi-VN")}₫</strong> mới
-              được nhận đơn COD
-            </li>
-            <li>
-              Nhận COD → tài xế thu <strong>tiền mặt</strong> từ khách (món +
-              ship)
-            </li>
-            <li>
-              Giao xong → ví bị <strong>trừ tiền món</strong> để trả nhà hàng &
-              nền tảng
-            </li>
-            <li>
-              Phí ship tài xế <strong>giữ lại</strong> (đã nhận tiền mặt, không
-              cộng vào ví)
-            </li>
-            <li>
-              Rút tối thiểu{" "}
-              <strong>{MIN_WITHDRAW.toLocaleString("vi-VN")}₫</strong>, sau rút
-              vẫn giữ ≥ {MIN_COD_BALANCE.toLocaleString("vi-VN")}₫
-            </li>
-            <li>
-              🔄 <strong>Tối đa 1 lần rút/ngày</strong>
-            </li>
-          </ul>
-        </div>
-
-        {/* ─── Top-up (Stripe) ─── */}
-        {showStripe && Number(topupAmount) >= MIN_WITHDRAW ? (
-          <Elements
-            stripe={getStripePromise()}
-            options={{
-              appearance: {
-                theme: "stripe",
-                variables: { colorPrimary: "#f97316", borderRadius: "12px" },
-              },
-            }}
+        {/* COD min balance indicator */}
+        <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-2">
+          <span
+            className={`inline-block w-2 h-2 rounded-full ${walletBalance >= MIN_COD_BALANCE ? "bg-[#2ecc71]" : "bg-red-400"}`}
+          />
+          <p
+            className={`text-xs ${walletBalance >= MIN_COD_BALANCE ? "text-white/60" : "text-red-300"}`}
           >
-            <StripeTopupForm
-              amount={Number(topupAmount)}
-              ownerId={driverId}
-              onSuccess={(newBalance) => {
-                setWalletBalance(newBalance);
-                setShowStripe(false);
-                setTopupStatus(
-                  `✅ Đã nạp ${Number(topupAmount).toLocaleString("vi-VN")}đ thành công!`,
-                );
-                setTopupAmount("");
-              }}
-              onError={(msg) => {
-                setTopupStatus("❌ " + msg);
-                setShowStripe(false);
-              }}
-              onCancel={() => setShowStripe(false)}
-            />
-          </Elements>
-        ) : (
-          <div className="bg-white rounded-2xl shadow-sm p-5">
-            <h3 className="font-bold text-[#1a1a2e] mb-3">
-              💳 Nạp tiền qua Stripe
-            </h3>
-            <div className="flex gap-2 mb-3 flex-wrap">
-              {[100000, 200000, 500000, 1000000, 2000000].map((amt) => (
-                <button
-                  key={amt}
-                  onClick={() => setTopupAmount(amt.toString())}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${topupAmount === amt.toString() ? "border-[#ff6b35] bg-[#fff7ed] text-[#ff6b35]" : "border-gray-200 text-gray-500"}`}
-                >
-                  {amt >= 1000000
-                    ? `${amt / 1000000}tr`
-                    : `${(amt / 1000).toFixed(0)}k`}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                value={topupAmount}
-                onChange={(e) => setTopupAmount(e.target.value)}
-                placeholder={`Số tiền (tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}đ)`}
-                className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]"
-              />
-              <button
-                onClick={() => {
-                  if (!topupAmount || Number(topupAmount) < MIN_WITHDRAW) {
-                    setTopupStatus(
-                      `❌ Tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}đ`,
-                    );
-                    return;
-                  }
-                  setShowStripe(true);
-                }}
-                className="bg-[#ff6b35] text-white px-5 py-3 rounded-xl font-semibold text-sm hover:bg-orange-600 transition whitespace-nowrap"
-              >
-                Nạp qua Stripe
-              </button>
-            </div>
-            {topupStatus && (
-              <p
-                className={`text-sm mt-2 font-medium ${topupStatus.startsWith("✅") ? "text-green-600" : "text-red-500"}`}
-              >
-                {topupStatus}
-              </p>
-            )}
-          </div>
-        )}
+            {walletBalance >= MIN_COD_BALANCE
+              ? `✅ Đủ điều kiện nhận đơn COD (≥ ${MIN_COD_BALANCE.toLocaleString("vi-VN")}₫)`
+              : `⚠️ Cần nạp thêm ${(MIN_COD_BALANCE - walletBalance).toLocaleString("vi-VN")}₫ để nhận đơn COD`}
+          </p>
+        </div>
+      </div>
 
-        {/* ─── Withdraw ─── */}
+      {/* ─── Wallet Rules ─── */}
+      <div className="bg-[#fff7ed] rounded-2xl p-4 border border-orange-100 text-sm text-gray-600">
+        <p className="font-semibold text-[#ff6b35] mb-2">💡 Quy tắc ví COD:</p>
+        <ul className="space-y-1.5 list-disc pl-4">
+          <li>
+            Số dư <strong>≥ {MIN_COD_BALANCE.toLocaleString("vi-VN")}₫</strong>{" "}
+            mới được nhận đơn COD
+          </li>
+          <li>
+            Nhận COD → tài xế thu <strong>tiền mặt</strong> từ khách (món +
+            ship)
+          </li>
+          <li>
+            Giao xong → ví bị <strong>trừ tiền món</strong> để trả nhà hàng &
+            nền tảng
+          </li>
+          <li>
+            Phí ship tài xế <strong>giữ lại</strong> (đã nhận tiền mặt, không
+            cộng vào ví)
+          </li>
+          <li>
+            Rút tối thiểu{" "}
+            <strong>{MIN_WITHDRAW.toLocaleString("vi-VN")}₫</strong>, sau rút
+            vẫn giữ ≥ {MIN_COD_BALANCE.toLocaleString("vi-VN")}₫
+          </li>
+          <li>
+            🔄 <strong>Tối đa 1 lần rút/ngày</strong>
+          </li>
+        </ul>
+      </div>
+
+      {/* ─── Top-up (Stripe) ─── */}
+      {showStripe && Number(topupAmount) >= MIN_WITHDRAW ? (
+        <Elements
+          stripe={getStripePromise()}
+          options={{
+            appearance: {
+              theme: "stripe",
+              variables: { colorPrimary: "#f97316", borderRadius: "12px" },
+            },
+          }}
+        >
+          <StripeTopupForm
+            amount={Number(topupAmount)}
+            ownerId={driverId}
+            onSuccess={(newBalance) => {
+              setWalletBalance(newBalance);
+              setShowStripe(false);
+              setTopupStatus(
+                `✅ Đã nạp ${Number(topupAmount).toLocaleString("vi-VN")}đ thành công!`,
+              );
+              setTopupAmount("");
+            }}
+            onError={(msg) => {
+              setTopupStatus("❌ " + msg);
+              setShowStripe(false);
+            }}
+            onCancel={() => setShowStripe(false)}
+          />
+        </Elements>
+      ) : (
         <div className="bg-white rounded-2xl shadow-sm p-5">
           <h3 className="font-bold text-[#1a1a2e] mb-3">
-            🏦 Rút tiền về ngân hàng
+            💳 Nạp tiền qua Stripe
           </h3>
-          <p className="text-xs text-gray-400 mb-3">
-            Tối thiểu {MIN_WITHDRAW.toLocaleString("vi-VN")}₫ · Sau rút giữ ≥{" "}
-            {MIN_COD_BALANCE.toLocaleString("vi-VN")}₫ · Tối đa 1 lần/ngày
-          </p>
-          <div className="flex gap-2 mb-2">
+          <div className="flex gap-2 mb-3 flex-wrap">
+            {[100000, 200000, 500000, 1000000, 2000000].map((amt) => (
+              <button
+                key={amt}
+                onClick={() => setTopupAmount(amt.toString())}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${topupAmount === amt.toString() ? "border-[#ff6b35] bg-[#fff7ed] text-[#ff6b35]" : "border-gray-200 text-gray-500"}`}
+              >
+                {amt >= 1000000
+                  ? `${amt / 1000000}tr`
+                  : `${(amt / 1000).toFixed(0)}k`}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
             <input
               type="number"
-              value={withdrawAmount}
-              onChange={(e) => setWithdrawAmount(e.target.value)}
-              placeholder="Tối thiểu 50.000đ"
+              value={topupAmount}
+              onChange={(e) => setTopupAmount(e.target.value)}
+              placeholder={`Số tiền (tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}đ)`}
               className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]"
             />
             <button
-              onClick={async () => {
-                const amt = Number(withdrawAmount);
-                if (!amt || amt < MIN_WITHDRAW) {
-                  setWithdrawStatus(
+              onClick={() => {
+                if (!topupAmount || Number(topupAmount) < MIN_WITHDRAW) {
+                  setTopupStatus(
                     `❌ Tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}đ`,
                   );
                   return;
                 }
-                try {
-                  const result = await walletApi.withdraw(
-                    driverId,
-                    "DRIVER",
-                    amt,
-                  );
-                  setWalletBalance(result.balance);
-                  setWithdrawStatus(
-                    `✅ Đã rút ${amt.toLocaleString("vi-VN")}đ. Số dư mới: ${result.balance.toLocaleString("vi-VN")}đ`,
-                  );
-                  setWithdrawAmount("");
-                } catch (err: any) {
-                  setWithdrawStatus("❌ " + (err.message || "Lỗi rút tiền"));
-                }
+                setShowStripe(true);
               }}
               className="bg-[#ff6b35] text-white px-5 py-3 rounded-xl font-semibold text-sm hover:bg-orange-600 transition whitespace-nowrap"
             >
-              Rút tiền
+              Nạp qua Stripe
             </button>
           </div>
-          {withdrawStatus && (
+          {topupStatus && (
             <p
-              className={`text-sm font-medium ${withdrawStatus.startsWith("✅") ? "text-green-600" : "text-red-500"}`}
+              className={`text-sm mt-2 font-medium ${topupStatus.startsWith("✅") ? "text-green-600" : "text-red-500"}`}
             >
-              {withdrawStatus}
+              {topupStatus}
             </p>
           )}
         </div>
+      )}
 
-        {/* ─── Transaction History ─── */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-[#1a1a2e] mb-3">
-            📋 Lịch sử giao dịch
-          </h3>
-          <div className="space-y-2">
-            {walletTx.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-4">
-                Chưa có giao dịch
-              </p>
-            )}
-            {walletTx.map((tx: any) => (
-              <div
-                key={tx.id}
-                className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                        tx.type === "CREDIT"
-                          ? "bg-green-100 text-green-700"
-                          : tx.type === "DEBIT"
-                            ? "bg-red-100 text-red-600"
-                            : tx.type === "REVENUE"
-                              ? "bg-blue-100 text-blue-700"
-                              : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {tx.type === "CREDIT"
-                        ? "NẠP"
-                        : tx.type === "DEBIT"
-                          ? "TRỪ"
-                          : tx.type === "REVENUE"
-                            ? "DOANH THU"
-                            : tx.type}
-                    </span>
-                    <span className="text-sm text-gray-700 truncate">
-                      {tx.description || tx.referenceType}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {new Date(tx.createdAt).toLocaleString("vi-VN")}
-                  </p>
-                </div>
-                <span
-                  className={`text-sm font-semibold ml-3 ${
-                    tx.type === "CREDIT"
-                      ? "text-green-600"
-                      : tx.type === "DEBIT"
-                        ? "text-red-500"
-                        : tx.type === "REVENUE"
-                          ? "text-blue-500"
-                          : "text-gray-500"
-                  }`}
-                >
-                  {tx.type === "CREDIT"
-                    ? "+"
-                    : tx.type === "DEBIT"
-                      ? "-"
-                      : tx.type === "REVENUE"
-                        ? "💵"
-                        : ""}
-                  {Number(tx.amount).toLocaleString("vi-VN")}₫
-                </span>
-              </div>
-            ))}
-          </div>
+      {/* ─── Withdraw ─── */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-[#1a1a2e] mb-3">
+          🏦 Rút tiền về ngân hàng
+        </h3>
+        <p className="text-xs text-gray-400 mb-3">
+          Tối thiểu {MIN_WITHDRAW.toLocaleString("vi-VN")}₫ · Sau rút giữ ≥{" "}
+          {MIN_COD_BALANCE.toLocaleString("vi-VN")}₫ · Tối đa 1 lần/ngày
+        </p>
+        <div className="flex gap-2 mb-2">
+          <input
+            type="number"
+            value={withdrawAmount}
+            onChange={(e) => setWithdrawAmount(e.target.value)}
+            placeholder="Tối thiểu 50.000đ"
+            className="flex-1 bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]"
+          />
+          <button
+            onClick={async () => {
+              const amt = Number(withdrawAmount);
+              if (!amt || amt < MIN_WITHDRAW) {
+                setWithdrawStatus(
+                  `❌ Tối thiểu ${MIN_WITHDRAW.toLocaleString("vi-VN")}đ`,
+                );
+                return;
+              }
+              try {
+                const result = await walletApi.withdraw(
+                  driverId,
+                  "DRIVER",
+                  amt,
+                );
+                setWalletBalance(result.balance);
+                setWithdrawStatus(
+                  `✅ Đã rút ${amt.toLocaleString("vi-VN")}đ. Số dư mới: ${result.balance.toLocaleString("vi-VN")}đ`,
+                );
+                setWithdrawAmount("");
+              } catch (err: any) {
+                setWithdrawStatus("❌ " + (err.message || "Lỗi rút tiền"));
+              }
+            }}
+            className="bg-[#ff6b35] text-white px-5 py-3 rounded-xl font-semibold text-sm hover:bg-orange-600 transition whitespace-nowrap"
+          >
+            Rút tiền
+          </button>
         </div>
-
-        {/* ─── Delivered Orders (income reference) ─── */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-[#1a1a2e] mb-3">📦 Đơn COD đã giao</h3>
-          <p className="text-xs text-gray-400 mb-3">
-            💡 Với đơn COD, phí ship tài xế đã nhận <strong>tiền mặt</strong> từ
-            khách. Ví chỉ bị trừ tiền món để trả nhà hàng & nền tảng.
+        {withdrawStatus && (
+          <p
+            className={`text-sm font-medium ${withdrawStatus.startsWith("✅") ? "text-green-600" : "text-red-500"}`}
+          >
+            {withdrawStatus}
           </p>
-          <div className="space-y-2">
-            {deliveredOrders.length === 0 && (
-              <p className="text-sm text-gray-400 text-center py-4">
-                Chưa có đơn nào
-              </p>
-            )}
-            {deliveredOrders.map((o: any) => {
-              const isCOD = o.paymentMethod === "COD";
-              const foodTotal =
-                o.items?.reduce(
-                  (s: number, i: any) =>
-                    s + toNum(i.unitPrice) * (i.quantity || 1),
-                  0,
-                ) || 0;
-              const shipFee = toNum(o.deliveryFee || 15000);
-              return (
-                <div
-                  key={o.id}
-                  className="flex flex-col py-2 border-b border-gray-50"
-                >
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-700">
-                      #{o.id?.slice(0, 8)} {isCOD ? "💵" : "💳"}
-                    </span>
-                    <span className="text-gray-500">
-                      Tổng: {toNum(o.totalAmount).toLocaleString("vi-VN")}₫
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-xs mt-1">
-                    <span className="text-gray-400">
-                      {isCOD
-                        ? `Tiền mặt: +${(foodTotal + shipFee).toLocaleString("vi-VN")}đ | Ví: -${foodTotal.toLocaleString("vi-VN")}đ`
-                        : `Phí ship: +${Math.round(shipFee * 0.75).toLocaleString("vi-VN")}đ`}
-                    </span>
-                    <span
-                      className={`font-semibold ${isCOD ? "text-blue-600" : "text-green-600"}`}
-                    >
-                      {isCOD
-                        ? `Giữ: ${shipFee.toLocaleString("vi-VN")}đ`
-                        : `+${Math.round(shipFee * 0.75).toLocaleString("vi-VN")}đ`}
-                    </span>
-                  </div>
+        )}
+      </div>
+
+      {/* ─── Transaction History ─── */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-[#1a1a2e] mb-3">📋 Lịch sử giao dịch</h3>
+        <div className="space-y-2">
+          {walletTx.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-4">
+              Chưa có giao dịch
+            </p>
+          )}
+          {walletTx.map((tx: any) => (
+            <div
+              key={tx.id}
+              className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                      tx.type === "CREDIT"
+                        ? "bg-green-100 text-green-700"
+                        : tx.type === "DEBIT"
+                          ? "bg-red-100 text-red-600"
+                          : tx.type === "REVENUE"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {tx.type === "CREDIT"
+                      ? "NẠP"
+                      : tx.type === "DEBIT"
+                        ? "TRỪ"
+                        : tx.type === "REVENUE"
+                          ? "DOANH THU"
+                          : tx.type}
+                  </span>
+                  <span className="text-sm text-gray-700 truncate">
+                    {tx.description || tx.referenceType}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {new Date(tx.createdAt).toLocaleString("vi-VN")}
+                </p>
+              </div>
+              <span
+                className={`text-sm font-semibold ml-3 ${
+                  tx.type === "CREDIT"
+                    ? "text-green-600"
+                    : tx.type === "DEBIT"
+                      ? "text-red-500"
+                      : tx.type === "REVENUE"
+                        ? "text-blue-500"
+                        : "text-gray-500"
+                }`}
+              >
+                {tx.type === "CREDIT"
+                  ? "+"
+                  : tx.type === "DEBIT"
+                    ? "-"
+                    : tx.type === "REVENUE"
+                      ? "💵"
+                      : ""}
+                {Number(tx.amount).toLocaleString("vi-VN")}₫
+              </span>
+            </div>
+          ))}
         </div>
+      </div>
+
+      {/* ─── Delivered Orders (income reference) ─── */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-[#1a1a2e] mb-3">📦 Đơn COD đã giao</h3>
+        <p className="text-xs text-gray-400 mb-3">
+          💡 Với đơn COD, phí ship tài xế đã nhận <strong>tiền mặt</strong> từ
+          khách. Ví chỉ bị trừ tiền món để trả nhà hàng & nền tảng.
+        </p>
+        <div className="space-y-2">
+          {deliveredOrders.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-4">
+              Chưa có đơn nào
+            </p>
+          )}
+          {deliveredOrders.map((o: any) => {
+            const isCOD = o.paymentMethod === "COD";
+            const foodTotal =
+              o.items?.reduce(
+                (s: number, i: any) =>
+                  s + toNum(i.unitPrice) * (i.quantity || 1),
+                0,
+              ) || 0;
+            const shipFee = toNum(o.deliveryFee || 15000);
+            return (
+              <div
+                key={o.id}
+                className="flex flex-col py-2 border-b border-gray-50"
+              >
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-700">
+                    #{o.id?.slice(0, 8)} {isCOD ? "💵" : "💳"}
+                  </span>
+                  <span className="text-gray-500">
+                    Tổng: {toNum(o.totalAmount).toLocaleString("vi-VN")}₫
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs mt-1">
+                  <span className="text-gray-400">
+                    {isCOD
+                      ? `Tiền mặt: +${(foodTotal + shipFee).toLocaleString("vi-VN")}đ | Ví: -${foodTotal.toLocaleString("vi-VN")}đ`
+                      : `Phí ship: +${Math.round(shipFee * 0.75).toLocaleString("vi-VN")}đ`}
+                  </span>
+                  <span
+                    className={`font-semibold ${isCOD ? "text-blue-600" : "text-green-600"}`}
+                  >
+                    {isCOD
+                      ? `Giữ: ${shipFee.toLocaleString("vi-VN")}đ`
+                      : `+${Math.round(shipFee * 0.75).toLocaleString("vi-VN")}đ`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </DriverShell>
   );
 }

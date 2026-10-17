@@ -14,7 +14,9 @@ export class MerchantComplianceRepository {
     private readonly penaltyRepo: TypeOrmRepo<MerchantCompliancePenaltyEntity>,
   ) {}
 
-  async getState(merchantId: string): Promise<MerchantComplianceStateEntity | null> {
+  async getState(
+    merchantId: string,
+  ): Promise<MerchantComplianceStateEntity | null> {
     return this.stateRepo.findOne({ where: { merchant_id: merchantId } });
   }
 
@@ -57,9 +59,7 @@ export class MerchantComplianceRepository {
     take?: number;
   }): Promise<MerchantCompliancePenaltyEntity[]> {
     return this.penaltyRepo.find({
-      where: options?.merchantId
-        ? { merchant_id: options.merchantId }
-        : {},
+      where: options?.merchantId ? { merchant_id: options.merchantId } : {},
       order: { created_at: "DESC" },
       take: options?.take ?? 100,
     });

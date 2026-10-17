@@ -5,6 +5,7 @@ import { CaseTimelineEntity } from "../modules/case/infrastructure/case-timeline
 import { PenaltyEntity } from "../modules/penalty/infrastructure/penalty.entity";
 import { AppealEntity } from "../modules/penalty/infrastructure/appeal.entity";
 import { FraudRuleEntity } from "../modules/fraud/fraud-rule.entity";
+import { CaseAiAnalysisEntity } from "../modules/assistant/infrastructure/analysis.entity";
 
 export const getDatabaseConfig = (
   configService: ConfigService,
@@ -21,6 +22,8 @@ export const getDatabaseConfig = (
     PenaltyEntity,
     AppealEntity,
     FraudRuleEntity,
+    // Bản phân tích AI đã lưu (AI tự chạy nền khi khiếu nại được tạo).
+    CaseAiAnalysisEntity,
   ],
   synchronize: configService.get<string>("NODE_ENV") === "development",
   logging: configService.get<string>("NODE_ENV") === "development",

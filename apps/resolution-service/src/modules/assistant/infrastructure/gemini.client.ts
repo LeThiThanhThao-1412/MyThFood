@@ -74,7 +74,10 @@ export class GeminiClient implements AssistantLlmClient {
   }
 
   get enabled(): boolean {
-    return (process.env.AI_ASSISTANT_ENABLED ?? "false").trim().toLowerCase() === "true";
+    return (
+      (process.env.AI_ASSISTANT_ENABLED ?? "false").trim().toLowerCase() ===
+      "true"
+    );
   }
 
   get maxEvidenceImages(): number {
@@ -345,7 +348,10 @@ export class GeminiClient implements AssistantLlmClient {
   }
 
   /** Chuyển lỗi axios thành HTTP exception có thông báo đọc được. */
-  private toHttpException(err: any, triedModels: string[] = [this.model]): Error {
+  private toHttpException(
+    err: any,
+    triedModels: string[] = [this.model],
+  ): Error {
     const status = err?.response?.status;
     const error = err?.response?.data?.error;
     const message = shorten(error?.message ?? err?.message ?? "unknown error");

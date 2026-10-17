@@ -84,102 +84,98 @@ export default function MerchantProfilePage() {
 
   return (
     <MerchantShell contentClassName="max-w-2xl">
-        {status && (
-          <div
-            className={`p-3 rounded-lg text-sm ${
-              status.startsWith("✅")
-                ? "bg-green-50 text-green-700"
-                : "bg-red-50 text-red-600"
-            }`}
-          >
-            {status}
-          </div>
-        )}
-
-        {/* Thông tin tài khoản */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">👤 Hồ sơ tài khoản</h3>
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <span className="w-20 shrink-0 text-sm text-gray-500">
-                Họ tên
-              </span>
-              <span className="font-medium text-gray-800">
-                {user?.fullName || "—"}
-              </span>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="w-20 shrink-0 text-sm text-gray-500">SĐT</span>
-              <span className="font-medium text-gray-800">
-                {user?.phone || "—"}
-              </span>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="w-20 shrink-0 text-sm text-gray-500">Email</span>
-              <span className="font-medium text-gray-800">
-                {user?.email || "—"}
-              </span>
-            </div>
-            <div className="flex items-start gap-3">
-              <span className="w-20 shrink-0 text-sm text-gray-500">
-                Vai trò
-              </span>
-              <span className="font-medium text-gray-800">
-                {(user?.roles || []).map((r) => ROLE_LABELS[r] || r).join(", ")}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Đổi mật khẩu */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h3 className="font-bold text-lg mb-4">🔐 Đổi mật khẩu</h3>
-          <div className="space-y-3">
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              placeholder="Mật khẩu hiện tại"
-              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-            />
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Mật khẩu mới (ít nhất 8 ký tự)"
-              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-            />
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Nhập lại mật khẩu mới"
-              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-            />
-            <p className="text-xs text-gray-400 leading-relaxed">
-              Mật khẩu mới cần tối thiểu 8 ký tự, gồm chữ HOA, chữ thường, số và
-              ký tự đặc biệt (ví dụ: Abc@1234).
-            </p>
-            <button
-              onClick={changePassword}
-              disabled={saving}
-              className="w-full bg-[#1a1a2e] text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-50"
-            >
-              {saving ? "Đang xử lý..." : "Đổi mật khẩu"}
-            </button>
-          </div>
-        </div>
-
-        {/* Đăng xuất */}
-        <button
-          onClick={() => {
-            clearAuth();
-            router.push("/");
-          }}
-          className="w-full bg-white rounded-2xl shadow-sm p-4 text-red-500 font-semibold text-sm hover:bg-red-50"
+      {status && (
+        <div
+          className={`p-3 rounded-lg text-sm ${
+            status.startsWith("✅")
+              ? "bg-green-50 text-green-700"
+              : "bg-red-50 text-red-600"
+          }`}
         >
-          Đăng xuất
-        </button>
+          {status}
+        </div>
+      )}
+
+      {/* Thông tin tài khoản */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">👤 Hồ sơ tài khoản</h3>
+        <div className="space-y-3">
+          <div className="flex items-start gap-3">
+            <span className="w-20 shrink-0 text-sm text-gray-500">Họ tên</span>
+            <span className="font-medium text-gray-800">
+              {user?.fullName || "—"}
+            </span>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="w-20 shrink-0 text-sm text-gray-500">SĐT</span>
+            <span className="font-medium text-gray-800">
+              {user?.phone || "—"}
+            </span>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="w-20 shrink-0 text-sm text-gray-500">Email</span>
+            <span className="font-medium text-gray-800">
+              {user?.email || "—"}
+            </span>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="w-20 shrink-0 text-sm text-gray-500">Vai trò</span>
+            <span className="font-medium text-gray-800">
+              {(user?.roles || []).map((r) => ROLE_LABELS[r] || r).join(", ")}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Đổi mật khẩu */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h3 className="font-bold text-lg mb-4">🔐 Đổi mật khẩu</h3>
+        <div className="space-y-3">
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            placeholder="Mật khẩu hiện tại"
+            className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+          />
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder="Mật khẩu mới (ít nhất 8 ký tự)"
+            className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+          />
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Nhập lại mật khẩu mới"
+            className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+          />
+          <p className="text-xs text-gray-400 leading-relaxed">
+            Mật khẩu mới cần tối thiểu 8 ký tự, gồm chữ HOA, chữ thường, số và
+            ký tự đặc biệt (ví dụ: Abc@1234).
+          </p>
+          <button
+            onClick={changePassword}
+            disabled={saving}
+            className="w-full bg-[#1a1a2e] text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-50"
+          >
+            {saving ? "Đang xử lý..." : "Đổi mật khẩu"}
+          </button>
+        </div>
+      </div>
+
+      {/* Đăng xuất */}
+      <button
+        onClick={() => {
+          clearAuth();
+          router.push("/");
+        }}
+        className="w-full bg-white rounded-2xl shadow-sm p-4 text-red-500 font-semibold text-sm hover:bg-red-50"
+      >
+        Đăng xuất
+      </button>
     </MerchantShell>
   );
 }

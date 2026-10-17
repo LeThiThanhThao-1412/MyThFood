@@ -95,9 +95,7 @@ export class OrderScheduler {
     try {
       const count = await this.merchantComplianceService.evaluateAll();
       if (count > 0) {
-        this.logger.log(
-          `Merchant compliance: escalated ${count} merchant(s)`,
-        );
+        this.logger.log(`Merchant compliance: escalated ${count} merchant(s)`);
       }
     } catch (err: any) {
       this.logger.error(`Merchant compliance evaluation error: ${err.message}`);

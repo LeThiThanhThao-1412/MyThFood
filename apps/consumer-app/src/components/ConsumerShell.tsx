@@ -48,11 +48,7 @@ export default function ConsumerShell({
               )}
               <span className="font-extrabold text-lg truncate">{title}</span>
             </div>
-            <Link
-              href="/cart"
-              className="text-xl shrink-0"
-              title="Giỏ hàng"
-            >
+            <Link href="/cart" className="text-xl shrink-0" title="Giỏ hàng">
               🛒
             </Link>
           </div>

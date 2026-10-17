@@ -84,92 +84,90 @@ export default function MerchantReviewsPage() {
 
   return (
     <MerchantShell contentClassName="max-w-3xl">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
-            ⭐ Đánh giá
-          </h1>
-          <span className="text-sm font-semibold text-[#ff6b35]">
-            ⭐ {average.toFixed(1)} · {reviews.length} đánh giá
-          </span>
-        </div>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-extrabold text-[#1a1a2e]">⭐ Đánh giá</h1>
+        <span className="text-sm font-semibold text-[#ff6b35]">
+          ⭐ {average.toFixed(1)} · {reviews.length} đánh giá
+        </span>
+      </div>
 
-        {reviews.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-sm p-10 text-center">
-            <p className="text-4xl mb-3">📭</p>
-            <p className="text-gray-400">Chưa có đánh giá nào</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {reviews.map((r: any) => (
-              <div key={r.id} className="bg-white rounded-2xl shadow-sm p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-yellow-500">
-                    {"★".repeat(Math.max(0, Math.min(5, r.rating)))}
-                    <span className="text-gray-300">
-                      {"☆".repeat(Math.max(0, 5 - r.rating))}
-                    </span>
+      {reviews.length === 0 ? (
+        <div className="bg-white rounded-2xl shadow-sm p-10 text-center">
+          <p className="text-4xl mb-3">📭</p>
+          <p className="text-gray-400">Chưa có đánh giá nào</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {reviews.map((r: any) => (
+            <div key={r.id} className="bg-white rounded-2xl shadow-sm p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-yellow-500">
+                  {"★".repeat(Math.max(0, Math.min(5, r.rating)))}
+                  <span className="text-gray-300">
+                    {"☆".repeat(Math.max(0, 5 - r.rating))}
                   </span>
-                  <span className="text-xs text-gray-400">
-                    {timeAgo(r.createdAt)}
-                  </span>
-                </div>
-                {r.comment && (
-                  <p className="text-sm text-gray-700">{r.comment}</p>
-                )}
-                {r.tags?.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {r.tags.map((t: string, i: number) => (
-                      <span
-                        key={i}
-                        className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full"
-                      >
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {r.images?.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {r.images.map((img: string, i: number) => (
-                      <img
-                        key={i}
-                        src={img}
-                        alt={`Ảnh đánh giá ${i + 1}`}
-                        className="w-16 h-16 object-cover rounded-lg border border-gray-100"
-                      />
-                    ))}
-                  </div>
-                )}
-                {r.merchantReply ? (
-                  <div className="mt-3 bg-[#fff7ed] rounded-xl p-3 text-sm">
-                    <p className="font-semibold text-[#ff6b35] text-xs mb-1">
-                      🏪 Phản hồi của bạn:
-                    </p>
-                    <p className="text-gray-700">{r.merchantReply}</p>
-                  </div>
-                ) : (
-                  <div className="mt-3 flex gap-2">
-                    <input
-                      value={replyText[r.id] || ""}
-                      onChange={(e) =>
-                        setReplyText((p) => ({ ...p, [r.id]: e.target.value }))
-                      }
-                      placeholder="Phản hồi đánh giá này..."
-                      className="flex-1 border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
-                    />
-                    <button
-                      onClick={() => submitReply(r.id)}
-                      disabled={replying === r.id}
-                      className="bg-[#ff6b35] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-orange-600 transition disabled:opacity-50"
-                    >
-                      Gửi
-                    </button>
-                  </div>
-                )}
+                </span>
+                <span className="text-xs text-gray-400">
+                  {timeAgo(r.createdAt)}
+                </span>
               </div>
-            ))}
-          </div>
-        )}
+              {r.comment && (
+                <p className="text-sm text-gray-700">{r.comment}</p>
+              )}
+              {r.tags?.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {r.tags.map((t: string, i: number) => (
+                    <span
+                      key={i}
+                      className="text-[11px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {r.images?.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {r.images.map((img: string, i: number) => (
+                    <img
+                      key={i}
+                      src={img}
+                      alt={`Ảnh đánh giá ${i + 1}`}
+                      className="w-16 h-16 object-cover rounded-lg border border-gray-100"
+                    />
+                  ))}
+                </div>
+              )}
+              {r.merchantReply ? (
+                <div className="mt-3 bg-[#fff7ed] rounded-xl p-3 text-sm">
+                  <p className="font-semibold text-[#ff6b35] text-xs mb-1">
+                    🏪 Phản hồi của bạn:
+                  </p>
+                  <p className="text-gray-700">{r.merchantReply}</p>
+                </div>
+              ) : (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    value={replyText[r.id] || ""}
+                    onChange={(e) =>
+                      setReplyText((p) => ({ ...p, [r.id]: e.target.value }))
+                    }
+                    placeholder="Phản hồi đánh giá này..."
+                    className="flex-1 border rounded-xl px-3 py-2 text-sm outline-none focus:border-[#ff6b35]"
+                  />
+                  <button
+                    onClick={() => submitReply(r.id)}
+                    disabled={replying === r.id}
+                    className="bg-[#ff6b35] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-orange-600 transition disabled:opacity-50"
+                  >
+                    Gửi
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </MerchantShell>
   );
 }

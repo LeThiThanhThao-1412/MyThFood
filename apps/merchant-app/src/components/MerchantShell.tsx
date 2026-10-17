@@ -27,9 +27,7 @@ export default function MerchantShell({
     (async () => {
       try {
         const res = await merchantApi.list({ take: 200 });
-        const m = (res.items || []).find(
-          (x: any) => x.userId === user?.id,
-        );
+        const m = (res.items || []).find((x: any) => x.userId === user?.id);
         if (!cancelled && m) {
           setInfo({ name: m.name, isOpen: m.isOpen });
         }

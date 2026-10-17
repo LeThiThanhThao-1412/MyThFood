@@ -30,7 +30,10 @@ export class CaseAiAnalysisRepository {
 
     const entity =
       existing ??
-      this.repo.create({ id: randomUUID(), caseId: input.caseId } as Partial<CaseAiAnalysisEntity>);
+      this.repo.create({
+        id: randomUUID(),
+        caseId: input.caseId,
+      } as Partial<CaseAiAnalysisEntity>);
 
     entity.caseNumber = input.caseNumber;
     entity.source = input.source;

@@ -317,190 +317,190 @@ export default function MerchantOrdersPage() {
 
   return (
     <MerchantShell>
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
-            📋 Quản lý đơn hàng
-          </h1>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${status === "connected" ? "bg-green-400" : status === "reconnecting" ? "bg-yellow-400 animate-pulse" : "bg-red-400"}`}
-            />
-            <span className="text-xs text-gray-500">
-              {status === "connected"
-                ? "Trực tuyến"
-                : status === "reconnecting"
-                  ? "Đang kết nối lại"
-                  : "Ngoại tuyến"}
-            </span>
-          </div>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
+          📋 Quản lý đơn hàng
+        </h1>
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`w-2.5 h-2.5 rounded-full ${status === "connected" ? "bg-green-400" : status === "reconnecting" ? "bg-yellow-400 animate-pulse" : "bg-red-400"}`}
+          />
+          <span className="text-xs text-gray-500">
+            {status === "connected"
+              ? "Trực tuyến"
+              : status === "reconnecting"
+                ? "Đang kết nối lại"
+                : "Ngoại tuyến"}
+          </span>
         </div>
-        {/* Tabs */}
-        <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-          {tabs.map((t) => (
+      </div>
+      {/* Tabs */}
+      <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setActiveTab(t.key as any)}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition ${
+              activeTab === t.key
+                ? "bg-[#ff6b35] text-white"
+                : "bg-white text-gray-600 border border-gray-200"
+            }`}
+          >
+            {t.label} ({t.count})
+          </button>
+        ))}
+      </div>
+
+      {/* Orders List */}
+      <div className="space-y-3">
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700 flex items-center justify-between">
+            <span>⚠️ {error}</span>
             <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key as any)}
-              className={`px-4 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition ${
-                activeTab === t.key
-                  ? "bg-[#ff6b35] text-white"
-                  : "bg-white text-gray-600 border border-gray-200"
-              }`}
+              onClick={() => window.location.reload()}
+              className="ml-3 px-3 py-1.5 bg-red-500 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
             >
-              {t.label} ({t.count})
+              Thử lại
             </button>
-          ))}
-        </div>
-
-        {/* Orders List */}
-        <div className="space-y-3">
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700 flex items-center justify-between">
-              <span>⚠️ {error}</span>
-              <button
-                onClick={() => window.location.reload()}
-                className="ml-3 px-3 py-1.5 bg-red-500 text-white rounded-lg text-xs font-semibold whitespace-nowrap"
-              >
-                Thử lại
-              </button>
-            </div>
-          )}
-          {!error && filtered.length === 0 && (
-            <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
-              <p className="text-3xl mb-2">📭</p>
-              <p className="text-gray-400 text-sm">Không có đơn hàng nào</p>
-            </div>
-          )}
-          {filtered.map((o: any) => (
-            <div
-              key={o.id}
-              onClick={() => setSelectedId(o.id)}
-              className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 cursor-pointer hover:shadow-md transition"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <p className="font-semibold text-gray-800">
-                    #{o.id?.slice(0, 8)}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {new Date(o.createdAt).toLocaleString("vi-VN")}
-                    <span
-                      className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                        o.paymentMethod === "CREDIT_CARD"
-                          ? "bg-purple-100 text-purple-700"
-                          : "bg-green-100 text-green-700"
-                      }`}
-                    >
-                      {o.paymentMethod === "CREDIT_CARD" ? "💳 Thẻ" : "💵 COD"}
-                    </span>
-                  </p>
-                </div>
-                <span
-                  className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-                    STATUS_META[o.status]?.cls || STATUS_META.PENDING.cls
-                  }`}
-                >
-                  {STATUS_META[o.status]?.label || o.status}
-                </span>
+          </div>
+        )}
+        {!error && filtered.length === 0 && (
+          <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
+            <p className="text-3xl mb-2">📭</p>
+            <p className="text-gray-400 text-sm">Không có đơn hàng nào</p>
+          </div>
+        )}
+        {filtered.map((o: any) => (
+          <div
+            key={o.id}
+            onClick={() => setSelectedId(o.id)}
+            className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 cursor-pointer hover:shadow-md transition"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <p className="font-semibold text-gray-800">
+                  #{o.id?.slice(0, 8)}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {new Date(o.createdAt).toLocaleString("vi-VN")}
+                  <span
+                    className={`ml-2 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                      o.paymentMethod === "CREDIT_CARD"
+                        ? "bg-purple-100 text-purple-700"
+                        : "bg-green-100 text-green-700"
+                    }`}
+                  >
+                    {o.paymentMethod === "CREDIT_CARD" ? "💳 Thẻ" : "💵 COD"}
+                  </span>
+                </p>
               </div>
+              <span
+                className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+                  STATUS_META[o.status]?.cls || STATUS_META.PENDING.cls
+                }`}
+              >
+                {STATUS_META[o.status]?.label || o.status}
+              </span>
+            </div>
 
-              {/* Rejection reason */}
-              {o.status === "REJECTED" && o.rejectionReason && (
-                <div className="bg-[#ffebee] border border-[#ffcdd2] rounded-lg px-3 py-2 mb-3 text-xs text-[#c62828]">
-                  ⚠️ Lý do: {o.rejectionReason}
-                </div>
-              )}
+            {/* Rejection reason */}
+            {o.status === "REJECTED" && o.rejectionReason && (
+              <div className="bg-[#ffebee] border border-[#ffcdd2] rounded-lg px-3 py-2 mb-3 text-xs text-[#c62828]">
+                ⚠️ Lý do: {o.rejectionReason}
+              </div>
+            )}
 
-              {/* Cancellation reason */}
-              {o.status === "CANCELLED" && o.cancelReason && (
-                <div className="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-2 mb-3 text-xs text-gray-600">
-                  ⚠️ Lý do hủy: {o.cancelReason}
-                </div>
-              )}
+            {/* Cancellation reason */}
+            {o.status === "CANCELLED" && o.cancelReason && (
+              <div className="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-2 mb-3 text-xs text-gray-600">
+                ⚠️ Lý do hủy: {o.cancelReason}
+              </div>
+            )}
 
-              {/* PENDING auto-reject warning */}
-              {o.status === "PENDING" && (
-                <div className="bg-[#fff3e0] border border-[#ffe0b2] rounded-lg px-3 py-2 mb-3 text-xs text-[#e67e22]">
-                  ⏰ Tự động từ chối sau 3 phút nếu không phản hồi
-                </div>
-              )}
+            {/* PENDING auto-reject warning */}
+            {o.status === "PENDING" && (
+              <div className="bg-[#fff3e0] border border-[#ffe0b2] rounded-lg px-3 py-2 mb-3 text-xs text-[#e67e22]">
+                ⏰ Tự động từ chối sau 3 phút nếu không phản hồi
+              </div>
+            )}
 
-              {/* Order items */}
-              <div className="border-t border-b border-gray-100 py-3 my-3">
-                {o.items?.map((item: any, i: number) => (
-                  <div key={i} className="flex justify-between text-sm py-1">
-                    <span className="text-gray-700">
-                      {item.quantity}x {item.name}
-                    </span>
-                    <span className="text-gray-600">
-                      {((item.unitPrice || 0) * item.quantity).toLocaleString(
-                        "vi-VN",
-                      )}
-                      ₫
-                    </span>
-                  </div>
-                ))}
-                <div className="flex justify-between text-sm font-bold mt-2 pt-2 border-t border-gray-100">
-                  <span>Tổng cộng</span>
-                  <span className="text-[#ff6b35]">
-                    {toNum(o.totalAmount).toLocaleString("vi-VN")}₫
+            {/* Order items */}
+            <div className="border-t border-b border-gray-100 py-3 my-3">
+              {o.items?.map((item: any, i: number) => (
+                <div key={i} className="flex justify-between text-sm py-1">
+                  <span className="text-gray-700">
+                    {item.quantity}x {item.name}
+                  </span>
+                  <span className="text-gray-600">
+                    {((item.unitPrice || 0) * item.quantity).toLocaleString(
+                      "vi-VN",
+                    )}
+                    ₫
                   </span>
                 </div>
+              ))}
+              <div className="flex justify-between text-sm font-bold mt-2 pt-2 border-t border-gray-100">
+                <span>Tổng cộng</span>
+                <span className="text-[#ff6b35]">
+                  {toNum(o.totalAmount).toLocaleString("vi-VN")}₫
+                </span>
               </div>
+            </div>
 
-              {/* Delivery info */}
-              <div className="text-xs text-gray-500 mb-3">
-                <p>📍 {o.deliveryAddress}</p>
-                {o.notes && <p className="text-gray-400 mt-1">📝 {o.notes}</p>}
-              </div>
+            {/* Delivery info */}
+            <div className="text-xs text-gray-500 mb-3">
+              <p>📍 {o.deliveryAddress}</p>
+              {o.notes && <p className="text-gray-400 mt-1">📝 {o.notes}</p>}
+            </div>
 
-              {/* Action buttons */}
-              <div className="flex gap-2 flex-wrap">
-                {o.status === "PENDING" && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStatusChange(o.id, "confirm");
-                    }}
-                    className="flex-1 bg-[#ff6b35] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
-                  >
-                    ✅ Xác nhận đơn
-                  </button>
-                )}
-                {o.status === "CONFIRMED" && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStatusChange(o.id, "preparing");
-                    }}
-                    className="flex-1 bg-[#ff6b35] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
-                  >
-                    🍳 Bắt đầu nấu
-                  </button>
-                )}
-                {o.status === "PREPARING" && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStatusChange(o.id, "ready");
-                    }}
-                    className="flex-1 bg-[#2ecc71] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-600 transition"
-                  >
-                    📦 Sẵn sàng giao
-                  </button>
-                )}
+            {/* Action buttons */}
+            <div className="flex gap-2 flex-wrap">
+              {o.status === "PENDING" && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    handlePrintInvoice(o.id);
+                    handleStatusChange(o.id, "confirm");
                   }}
-                  className="px-4 py-2.5 rounded-xl text-sm font-semibold border-2 border-[#ff6b35] text-[#ff6b35] hover:bg-orange-50 transition whitespace-nowrap"
+                  className="flex-1 bg-[#ff6b35] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
                 >
-                  🖨️ In hóa đơn
+                  ✅ Xác nhận đơn
                 </button>
-              </div>
+              )}
+              {o.status === "CONFIRMED" && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStatusChange(o.id, "preparing");
+                  }}
+                  className="flex-1 bg-[#ff6b35] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
+                >
+                  🍳 Bắt đầu nấu
+                </button>
+              )}
+              {o.status === "PREPARING" && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStatusChange(o.id, "ready");
+                  }}
+                  className="flex-1 bg-[#2ecc71] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-600 transition"
+                >
+                  📦 Sẵn sàng giao
+                </button>
+              )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePrintInvoice(o.id);
+                }}
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold border-2 border-[#ff6b35] text-[#ff6b35] hover:bg-orange-50 transition whitespace-nowrap"
+              >
+                🖨️ In hóa đơn
+              </button>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
+      </div>
       <OrderDetailDrawer
         orderId={selectedId}
         onClose={() => setSelectedId(null)}

@@ -37,7 +37,11 @@ export const PRIMARY_CATEGORIES: FoodCategory[] = [
       { key: "com-ga", label: "Cơm gà / Cơm chiên", parentKey: "rice" },
       { key: "com-tron", label: "Cơm trộn / Cơm Hàn Quốc", parentKey: "rice" },
       { key: "xoi", label: "Xôi mặn / Xôi ngọt", parentKey: "rice" },
-      { key: "chao", label: "Cháo lòng / Cháo dinh dưỡng / Cháo hàu", parentKey: "rice" },
+      {
+        key: "chao",
+        label: "Cháo lòng / Cháo dinh dưỡng / Cháo hàu",
+        parentKey: "rice",
+      },
     ],
   },
   {
@@ -53,7 +57,11 @@ export const PRIMARY_CATEGORIES: FoodCategory[] = [
       { key: "mi-quang", label: "Mì Quảng", parentKey: "noodles" },
       { key: "mi-xao", label: "Mì xào", parentKey: "noodles" },
       { key: "mi-ramen", label: "Mì Ramen / Mì Udon", parentKey: "noodles" },
-      { key: "hu-tieu", label: "Hủ tiếu Nam Vang / Hủ tiếu gõ", parentKey: "noodles" },
+      {
+        key: "hu-tieu",
+        label: "Hủ tiếu Nam Vang / Hủ tiếu gõ",
+        parentKey: "noodles",
+      },
       { key: "banh-da-cua", label: "Bánh đa cua", parentKey: "noodles" },
       { key: "banh-canh", label: "Bánh canh", parentKey: "noodles" },
     ],
@@ -66,12 +74,20 @@ export const PRIMARY_CATEGORIES: FoodCategory[] = [
       { key: "tra-sua", label: "Trà sữa trân châu", parentKey: "drinks" },
       { key: "tra-nuong", label: "Trà nướng", parentKey: "drinks" },
       { key: "tra-trai-cay", label: "Trà trái cây", parentKey: "drinks" },
-      { key: "ca-phe", label: "Cà phê (sữa đá, bạc xỉu, espresso, cold brew)", parentKey: "drinks" },
+      {
+        key: "ca-phe",
+        label: "Cà phê (sữa đá, bạc xỉu, espresso, cold brew)",
+        parentKey: "drinks",
+      },
       { key: "sinh-to", label: "Sinh tố", parentKey: "drinks" },
       { key: "nuoc-ep", label: "Nước ép", parentKey: "drinks" },
       { key: "do-uong-dua", label: "Đồ uống dừa", parentKey: "drinks" },
       { key: "rau-ma", label: "Rau má", parentKey: "drinks" },
-      { key: "milk-tea-topping", label: "Milk tea & Topping", parentKey: "drinks" },
+      {
+        key: "milk-tea-topping",
+        label: "Milk tea & Topping",
+        parentKey: "drinks",
+      },
     ],
   },
   {
@@ -82,7 +98,11 @@ export const PRIMARY_CATEGORIES: FoodCategory[] = [
       { key: "banh-mi", label: "Bánh mì Việt Nam", parentKey: "snacks" },
       { key: "banh-kep", label: "Bánh kẹp", parentKey: "snacks" },
       { key: "burger", label: "Burger / Sandwich", parentKey: "snacks" },
-      { key: "an-vat-duong-pho", label: "Ăn vặt đường phố", parentKey: "snacks" },
+      {
+        key: "an-vat-duong-pho",
+        label: "Ăn vặt đường phố",
+        parentKey: "snacks",
+      },
       { key: "ga-ran", label: "Gà rán", parentKey: "snacks" },
       { key: "khoai-tay-chien", label: "Khoai tây chiên", parentKey: "snacks" },
     ],
@@ -121,7 +141,11 @@ export const PRIMARY_CATEGORIES: FoodCategory[] = [
     icon: "🍰",
     label: "Tráng miệng",
     subCategories: [
-      { key: "banh-kem", label: "Bánh kem / Bánh sinh nhật", parentKey: "dessert" },
+      {
+        key: "banh-kem",
+        label: "Bánh kem / Bánh sinh nhật",
+        parentKey: "dessert",
+      },
       { key: "pastry", label: "Pastry", parentKey: "dessert" },
       { key: "che", label: "Chè", parentKey: "dessert" },
       { key: "tau-pho", label: "Tàu phớ", parentKey: "dessert" },
@@ -141,7 +165,11 @@ export const PRIMARY_CATEGORIES: FoodCategory[] = [
       { key: "salad", label: "Salad", parentKey: "healthy" },
       { key: "poke-bowl", label: "Poke Bowl", parentKey: "healthy" },
       { key: "clean-eating", label: "Clean Eating", parentKey: "healthy" },
-      { key: "mon-chay-thuc-duong", label: "Món Chay Thực Dưỡng", parentKey: "healthy" },
+      {
+        key: "mon-chay-thuc-duong",
+        label: "Món Chay Thực Dưỡng",
+        parentKey: "healthy",
+      },
     ],
   },
 ];
@@ -150,9 +178,10 @@ export const PRIMARY_CATEGORIES: FoodCategory[] = [
  * Danh sách phẳng toàn bộ danh mục phụ (secondary) trên tất cả danh mục chính.
  * Dùng cho form đăng ký / cài đặt nhà hàng.
  */
-export const SECONDARY_CATEGORIES: FoodSubCategory[] = PRIMARY_CATEGORIES.flatMap(
-  (p) => p.subCategories.map((s) => ({ ...s, parentKey: p.key })),
-);
+export const SECONDARY_CATEGORIES: FoodSubCategory[] =
+  PRIMARY_CATEGORIES.flatMap((p) =>
+    p.subCategories.map((s) => ({ ...s, parentKey: p.key })),
+  );
 
 /**
  * Danh sách danh mục CHÍNH — dùng cho bộ lọc tìm kiếm của khách hàng
@@ -190,4 +219,3 @@ export function getSecondaryCategoryLabel(key?: string | null): string {
   if (key === OTHER_CATEGORY_KEY) return "Khác";
   return SECONDARY_KEY_INDEX.get(key)?.label ?? key;
 }
-

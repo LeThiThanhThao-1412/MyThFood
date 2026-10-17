@@ -47,7 +47,8 @@ export const AI_SUGGESTION_SCHEMA = {
     evidenceGaps: {
       type: "array",
       items: { type: "string" },
-      description: "Tối đa 3 dữ liệu/bằng chứng còn thiếu để kết luận (nêu mã nguồn).",
+      description:
+        "Tối đa 3 dữ liệu/bằng chứng còn thiếu để kết luận (nêu mã nguồn).",
     },
     riskFlags: {
       type: "array",
@@ -64,12 +65,24 @@ export const AI_SUGGESTION_SCHEMA = {
         properties: {
           type: { type: "string", enum: [...AI_ACTION_TYPES] },
           targetType: { type: "string", enum: [...AI_TARGET_TYPES] },
-          amount: { type: "number", description: "VND, cho FINE/COMPENSATION." },
-          durationDays: { type: "integer", description: "Cho SUSPEND/RESTRICT_ACTIVITY." },
+          amount: {
+            type: "number",
+            description: "VND, cho FINE/COMPENSATION.",
+          },
+          durationDays: {
+            type: "integer",
+            description: "Cho SUSPEND/RESTRICT_ACTIVITY.",
+          },
           reason: { type: "string" },
         },
         required: ["type", "targetType", "reason"],
-        propertyOrdering: ["type", "targetType", "amount", "durationDays", "reason"],
+        propertyOrdering: [
+          "type",
+          "targetType",
+          "amount",
+          "durationDays",
+          "reason",
+        ],
       },
     },
     suggestedResolutionNote: {
@@ -157,7 +170,9 @@ export function compactForPrompt(value: unknown, depth = 0): unknown {
   if (typeof value === "number" || typeof value === "boolean") return value;
   if (Array.isArray(value)) {
     if (depth >= 4) return `[${value.length} phần tử]`;
-    const kept = value.slice(0, MAX_ITEMS).map((v) => compactForPrompt(v, depth + 1));
+    const kept = value
+      .slice(0, MAX_ITEMS)
+      .map((v) => compactForPrompt(v, depth + 1));
     if (value.length > MAX_ITEMS) {
       kept.push(`… và ${value.length - MAX_ITEMS} phần tử nữa`);
     }
@@ -187,7 +202,11 @@ export function buildUserPrompt(context: CaseContextSnapshot): string {
     const status = source.available ? "CÓ" : "KHÔNG CÓ";
     const note = source.detail ? ` — ${source.detail}` : "";
     lines.push(`## ${source.id} · ${source.name}: ${status}${note}`);
-    if (source.available && source.payload !== undefined && source.payload !== null) {
+    if (
+      source.available &&
+      source.payload !== undefined &&
+      source.payload !== null
+    ) {
       lines.push("```json");
       lines.push(JSON.stringify(compactForPrompt(source.payload), null, 2));
       lines.push("```");

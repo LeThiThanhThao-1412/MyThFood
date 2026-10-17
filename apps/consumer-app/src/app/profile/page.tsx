@@ -378,439 +378,436 @@ export default function ProfilePage() {
 
   return (
     <ConsumerShell title="👤 Hồ sơ cá nhân" backHref="/dashboard">
-        {status && (
-          <div
-            className={`p-3 rounded-lg text-sm ${status.startsWith("✅") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}
-          >
-            {status}
-          </div>
-        )}
-
-        {/* Ví khách hàng */}
-        <Link
-          href="/wallet"
-          className="bg-gradient-to-br from-[#ff6b35] to-[#ff8f65] rounded-2xl shadow-sm p-4 flex items-center justify-between text-white"
+      {status && (
+        <div
+          className={`p-3 rounded-lg text-sm ${status.startsWith("✅") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}
         >
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">💰</span>
-            <div>
-              <p className="font-bold">Ví của tôi</p>
-              <p className="text-xs text-white/80">
-                Nạp tiền, thanh toán & lịch sử giao dịch
-              </p>
-            </div>
-          </div>
-          <span className="text-white/80 text-xl">›</span>
-        </Link>
+          {status}
+        </div>
+      )}
 
-        {/* Avatar + basic info */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <div className="flex items-center gap-4 mb-4">
-            {avatar ? (
-              <img
-                src={avatar}
-                alt="avatar"
-                className="w-20 h-20 rounded-full object-cover border-2 border-[#ff6b35]"
-              />
-            ) : (
-              <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center text-3xl">
-                👤
-              </div>
-            )}
-            <button
-              onClick={() => fileRef.current?.click()}
-              disabled={uploading}
-              className="bg-[#ff6b35] text-white text-xs px-3 py-1.5 rounded-lg"
-            >
-              {uploading ? "Đang tải..." : "📷 Đổi ảnh"}
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatarUpload}
-            />
-          </div>
-
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 space-y-2">
-            <p className="text-sm font-semibold text-gray-800">
-              {consumer?.isVerified
-                ? "✅ Đã xác minh danh tính"
-                : "🪪 Xác minh danh tính (để đặt COD đơn lớn)"}
+      {/* Ví khách hàng */}
+      <Link
+        href="/wallet"
+        className="bg-gradient-to-br from-[#ff6b35] to-[#ff8f65] rounded-2xl shadow-sm p-4 flex items-center justify-between text-white"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">💰</span>
+          <div>
+            <p className="font-bold">Ví của tôi</p>
+            <p className="text-xs text-white/80">
+              Nạp tiền, thanh toán & lịch sử giao dịch
             </p>
-            {!consumer?.isVerified && (
-              <>
-                <input
-                  value={idCardNumber}
-                  onChange={(e) => setIdCardNumber(e.target.value)}
-                  placeholder="Số CMND/CCCD"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                />
-                <button
-                  onClick={handleVerify}
-                  className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-[#ff6b35] text-white"
-                >
-                  Xác minh
-                </button>
-              </>
-            )}
-            {verifyMsg && <p className="text-xs text-gray-600">{verifyMsg}</p>}
-          </div>
-
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Họ tên
-              </label>
-              <input
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="w-full border rounded-xl px-4 py-2.5 text-sm focus:border-[#ff6b35] outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Giới tính
-              </label>
-              <select
-                value={gender}
-                onChange={(e) => setGender(e.target.value)}
-                className="w-full border rounded-xl px-4 py-2.5 text-sm focus:border-[#ff6b35] outline-none"
-              >
-                <option value="">— Chọn —</option>
-                <option value="MALE">Nam</option>
-                <option value="FEMALE">Nữ</option>
-                <option value="OTHER">Khác</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Ngày sinh
-              </label>
-              <input
-                type="date"
-                value={dateOfBirth}
-                onChange={(e) => setDateOfBirth(e.target.value)}
-                className="w-full border rounded-xl px-4 py-2.5 text-sm focus:border-[#ff6b35] outline-none"
-              />
-            </div>
-            <button
-              onClick={saveProfile}
-              disabled={saving}
-              className="w-full bg-[#ff6b35] text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50 transition"
-            >
-              {saving ? "Đang lưu..." : "💾 Lưu thay đổi"}
-            </button>
           </div>
         </div>
+        <span className="text-white/80 text-xl">›</span>
+      </Link>
 
-        {/* Vị trí giao hàng hiện tại */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-[#1a1a2e]">
-              📍 Vị trí giao hàng hiện tại
-            </h3>
-            <button
-              onClick={() => setLocationEditorOpen(true)}
-              className="text-sm font-semibold text-[#ff6b35]"
-            >
-              Cập nhật
-            </button>
-          </div>
-          {location ? (
-            <>
-              <p className="text-sm text-gray-700">
-                {location.address || "Vị trí hiện tại"}
-              </p>
-              <p className="text-xs text-gray-400 font-mono mt-0.5">
-                {Number(location.latitude).toFixed(6)},{" "}
-                {Number(location.longitude).toFixed(6)} ·{" "}
-                {location.source === "gps" ? "GPS" : "Tự chọn"}
-              </p>
-            </>
+      {/* Avatar + basic info */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <div className="flex items-center gap-4 mb-4">
+          {avatar ? (
+            <img
+              src={avatar}
+              alt="avatar"
+              className="w-20 h-20 rounded-full object-cover border-2 border-[#ff6b35]"
+            />
           ) : (
-            <p className="text-sm text-gray-400">
-              Chưa có vị trí — bấm “Cập nhật” để chọn bằng GPS hoặc bản đồ.
-            </p>
+            <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center text-3xl">
+              👤
+            </div>
           )}
-          <p className="text-xs text-gray-400 mt-2">
-            Vị trí này dùng để tính khoảng cách, phí giao hàng và gợi ý nhà hàng
-            gần bạn.
-          </p>
-          {/* Hộp thoại chọn vị trí ở chế độ điều khiển (không chặn màn hình) */}
-          <LocationGate
-            open={locationEditorOpen}
-            onClose={() => setLocationEditorOpen(false)}
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="bg-[#ff6b35] text-white text-xs px-3 py-1.5 rounded-lg"
+          >
+            {uploading ? "Đang tải..." : "📷 Đổi ảnh"}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleAvatarUpload}
           />
         </div>
 
-        {/* Addresses */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-[#1a1a2e]">📍 Địa chỉ đã lưu</h3>
-            <button
-              onClick={() => setShowAddAddress(!showAddAddress)}
-              className="text-sm font-semibold text-[#ff6b35]"
-            >
-              {showAddAddress ? "✕ Đóng" : "+ Thêm"}
-            </button>
-          </div>
-
-          {showAddAddress && (
-            <div className="bg-gray-50 rounded-xl p-4 mb-3 space-y-3">
-              <div className="flex gap-2">
-                {(["HOME", "WORK", "OTHER"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setAddrType(t)}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium ${addrType === t ? "bg-[#ff6b35] text-white" : "bg-white text-gray-600 border"}`}
-                  >
-                    {ADDR_TYPE_META[t].icon} {ADDR_TYPE_META[t].label}
-                  </button>
-                ))}
-              </div>
+        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 space-y-2">
+          <p className="text-sm font-semibold text-gray-800">
+            {consumer?.isVerified
+              ? "✅ Đã xác minh danh tính"
+              : "🪪 Xác minh danh tính (để đặt COD đơn lớn)"}
+          </p>
+          {!consumer?.isVerified && (
+            <>
               <input
-                value={addrText}
-                onChange={(e) => setAddrText(e.target.value)}
-                placeholder="Nhập địa chỉ (VD: 456 Lê Lợi, Q.1)"
-                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+                value={idCardNumber}
+                onChange={(e) => setIdCardNumber(e.target.value)}
+                placeholder="Số CMND/CCCD"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
               />
-              {location && (
-                <p className="text-xs text-gray-400">
-                  📍 Vị trí hiện tại: {location.address}
-                </p>
-              )}
               <button
-                onClick={addAddress}
-                disabled={saving}
-                className="w-full bg-[#ff6b35] text-white py-2 rounded-xl font-semibold text-sm"
+                onClick={handleVerify}
+                className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-[#ff6b35] text-white"
               >
-                ✅ Thêm địa chỉ
+                Xác minh
               </button>
-            </div>
+            </>
           )}
-
-          {addresses.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">
-              Chưa có địa chỉ nào
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {addresses.map((a: any) => (
-                <div
-                  key={a.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">
-                      {ADDR_TYPE_META[a.type]?.icon || "📍"}{" "}
-                      {a.label || a.fullAddress}
-                      {a.isDefault && (
-                        <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
-                          Mặc định
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {a.fullAddress}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => applySavedAddress(a)}
-                    title="Dùng làm vị trí giao hàng hiện tại"
-                    className="text-[#ff6b35] hover:text-orange-600 text-sm ml-3"
-                  >
-                    📌
-                  </button>
-                  <button
-                    onClick={() => removeAddress(a.id)}
-                    className="text-red-400 hover:text-red-600 text-sm ml-3"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+          {verifyMsg && <p className="text-xs text-gray-600">{verifyMsg}</p>}
         </div>
 
-        {/* Payment methods */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-[#1a1a2e]">
-              💳 Phương thức thanh toán
-            </h3>
-            <button
-              onClick={() => setShowAddPayment(!showAddPayment)}
-              className="text-sm font-semibold text-[#ff6b35]"
-            >
-              {showAddPayment ? "✕ Đóng" : "+ Thêm"}
-            </button>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Họ tên
+            </label>
+            <input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full border rounded-xl px-4 py-2.5 text-sm focus:border-[#ff6b35] outline-none"
+            />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Giới tính
+            </label>
+            <select
+              value={gender}
+              onChange={(e) => setGender(e.target.value)}
+              className="w-full border rounded-xl px-4 py-2.5 text-sm focus:border-[#ff6b35] outline-none"
+            >
+              <option value="">— Chọn —</option>
+              <option value="MALE">Nam</option>
+              <option value="FEMALE">Nữ</option>
+              <option value="OTHER">Khác</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Ngày sinh
+            </label>
+            <input
+              type="date"
+              value={dateOfBirth}
+              onChange={(e) => setDateOfBirth(e.target.value)}
+              className="w-full border rounded-xl px-4 py-2.5 text-sm focus:border-[#ff6b35] outline-none"
+            />
+          </div>
+          <button
+            onClick={saveProfile}
+            disabled={saving}
+            className="w-full bg-[#ff6b35] text-white py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-600 disabled:opacity-50 transition"
+          >
+            {saving ? "Đang lưu..." : "💾 Lưu thay đổi"}
+          </button>
+        </div>
+      </div>
 
-          {showAddPayment && (
-            <div className="bg-gray-50 rounded-xl p-4 mb-3 space-y-3">
-              <div className="flex gap-2">
-                {(["CREDIT_CARD", "DEBIT_CARD", "E_WALLET"] as const).map(
-                  (t) => (
-                    <button
-                      key={t}
-                      onClick={() => setPmType(t)}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium ${pmType === t ? "bg-[#ff6b35] text-white" : "bg-white text-gray-600 border"}`}
-                    >
-                      {PM_TYPE_META[t].icon} {PM_TYPE_META[t].label}
-                    </button>
-                  ),
-                )}
-              </div>
-
-              {pmType === "E_WALLET" ? (
-                <p className="text-xs text-gray-500">
-                  📱 Ví điện tử MyThFood — dùng số dư ví để thanh toán. Bạn có
-                  thể{" "}
-                  <Link href="/wallet" className="text-[#ff6b35] font-semibold">
-                    nạp tiền vào ví
-                  </Link>
-                  .
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  <input
-                    value={pmCardNumber}
-                    onChange={(e) =>
-                      setPmCardNumber(
-                        e.target.value.replace(/\D/g, "").slice(0, 16),
-                      )
-                    }
-                    placeholder="Số thẻ (16 chữ số)"
-                    className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-                  />
-                  <input
-                    value={pmExpiry}
-                    onChange={(e) => setPmExpiry(e.target.value)}
-                    placeholder="Hết hạn (MM/YY)"
-                    className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-                  />
-                </div>
-              )}
-
-              <button
-                onClick={addPaymentMethod}
-                disabled={saving}
-                className="w-full bg-[#ff6b35] text-white py-2 rounded-xl font-semibold text-sm"
-              >
-                ✅ Thêm phương thức
-              </button>
-            </div>
-          )}
-
-          {paymentMethods.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">
-              Chưa có phương thức thanh toán
+      {/* Vị trí giao hàng hiện tại */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-[#1a1a2e]">
+            📍 Vị trí giao hàng hiện tại
+          </h3>
+          <button
+            onClick={() => setLocationEditorOpen(true)}
+            className="text-sm font-semibold text-[#ff6b35]"
+          >
+            Cập nhật
+          </button>
+        </div>
+        {location ? (
+          <>
+            <p className="text-sm text-gray-700">
+              {location.address || "Vị trí hiện tại"}
             </p>
-          ) : (
-            <div className="space-y-2">
-              {paymentMethods.map((pm: any) => (
-                <div
-                  key={pm.id}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">
-                      {PM_TYPE_META[pm.type]?.icon || "💳"}{" "}
-                      {PM_TYPE_META[pm.type]?.label || pm.type}
-                      {pm.isDefault && (
-                        <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
-                          Mặc định
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {pm.type === "E_WALLET"
-                        ? "MyThFood"
-                        : `${pm.provider || "Thẻ"} •••• ${pm.lastFourDigits}`}
-                    </p>
-                  </div>
-                  {!pm.isDefault && (
-                    <button
-                      onClick={() => setDefaultPaymentMethod(pm.id)}
-                      className="text-xs text-[#ff6b35] hover:text-orange-600 ml-3"
-                    >
-                      Đặt mặc định
-                    </button>
-                  )}
-                  <button
-                    onClick={() => removePaymentMethod(pm.id)}
-                    className="text-red-400 hover:text-red-600 text-sm ml-3"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+            <p className="text-xs text-gray-400 font-mono mt-0.5">
+              {Number(location.latitude).toFixed(6)},{" "}
+              {Number(location.longitude).toFixed(6)} ·{" "}
+              {location.source === "gps" ? "GPS" : "Tự chọn"}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-gray-400">
+            Chưa có vị trí — bấm “Cập nhật” để chọn bằng GPS hoặc bản đồ.
+          </p>
+        )}
+        <p className="text-xs text-gray-400 mt-2">
+          Vị trí này dùng để tính khoảng cách, phí giao hàng và gợi ý nhà hàng
+          gần bạn.
+        </p>
+        {/* Hộp thoại chọn vị trí ở chế độ điều khiển (không chặn màn hình) */}
+        <LocationGate
+          open={locationEditorOpen}
+          onClose={() => setLocationEditorOpen(false)}
+        />
+      </div>
+
+      {/* Addresses */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-[#1a1a2e]">📍 Địa chỉ đã lưu</h3>
+          <button
+            onClick={() => setShowAddAddress(!showAddAddress)}
+            className="text-sm font-semibold text-[#ff6b35]"
+          >
+            {showAddAddress ? "✕ Đóng" : "+ Thêm"}
+          </button>
         </div>
 
-        {/* Change password */}
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-[#1a1a2e]">🔐 Đổi mật khẩu</h3>
-            <button
-              onClick={() => setShowChangePw(!showChangePw)}
-              className="text-sm font-semibold text-[#ff6b35]"
-            >
-              {showChangePw ? "✕ Đóng" : "Đổi"}
-            </button>
-          </div>
-          {showChangePw && (
-            <div className="space-y-3">
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="Mật khẩu hiện tại"
-                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-              />
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Mật khẩu mới (ít nhất 8 ký tự)"
-                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-              />
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Nhập lại mật khẩu mới"
-                className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
-              />
-              <p className="text-xs text-gray-400 leading-relaxed">
-                Mật khẩu mới cần tối thiểu 8 ký tự, gồm chữ HOA, chữ thường, số
-                và ký tự đặc biệt (ví dụ: Abc@1234).
+        {showAddAddress && (
+          <div className="bg-gray-50 rounded-xl p-4 mb-3 space-y-3">
+            <div className="flex gap-2">
+              {(["HOME", "WORK", "OTHER"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setAddrType(t)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium ${addrType === t ? "bg-[#ff6b35] text-white" : "bg-white text-gray-600 border"}`}
+                >
+                  {ADDR_TYPE_META[t].icon} {ADDR_TYPE_META[t].label}
+                </button>
+              ))}
+            </div>
+            <input
+              value={addrText}
+              onChange={(e) => setAddrText(e.target.value)}
+              placeholder="Nhập địa chỉ (VD: 456 Lê Lợi, Q.1)"
+              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+            />
+            {location && (
+              <p className="text-xs text-gray-400">
+                📍 Vị trí hiện tại: {location.address}
               </p>
-              <button
-                onClick={changePassword}
-                disabled={saving}
-                className="w-full bg-[#1a1a2e] text-white py-2.5 rounded-xl font-semibold text-sm"
+            )}
+            <button
+              onClick={addAddress}
+              disabled={saving}
+              className="w-full bg-[#ff6b35] text-white py-2 rounded-xl font-semibold text-sm"
+            >
+              ✅ Thêm địa chỉ
+            </button>
+          </div>
+        )}
+
+        {addresses.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">
+            Chưa có địa chỉ nào
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {addresses.map((a: any) => (
+              <div
+                key={a.id}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
               >
-                Đổi mật khẩu
-              </button>
-            </div>
-          )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">
+                    {ADDR_TYPE_META[a.type]?.icon || "📍"}{" "}
+                    {a.label || a.fullAddress}
+                    {a.isDefault && (
+                      <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
+                        Mặc định
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {a.fullAddress}
+                  </p>
+                </div>
+                <button
+                  onClick={() => applySavedAddress(a)}
+                  title="Dùng làm vị trí giao hàng hiện tại"
+                  className="text-[#ff6b35] hover:text-orange-600 text-sm ml-3"
+                >
+                  📌
+                </button>
+                <button
+                  onClick={() => removeAddress(a.id)}
+                  className="text-red-400 hover:text-red-600 text-sm ml-3"
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Payment methods */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-[#1a1a2e]">
+            💳 Phương thức thanh toán
+          </h3>
+          <button
+            onClick={() => setShowAddPayment(!showAddPayment)}
+            className="text-sm font-semibold text-[#ff6b35]"
+          >
+            {showAddPayment ? "✕ Đóng" : "+ Thêm"}
+          </button>
         </div>
 
-        {/* Logout */}
-        <button
-          onClick={() => {
-            clearAuth();
-            router.push("/");
-          }}
-          className="w-full bg-white text-red-500 py-3 rounded-2xl shadow-sm font-semibold text-sm hover:bg-red-50 transition"
-        >
-          🚪 Đăng xuất
-        </button>
+        {showAddPayment && (
+          <div className="bg-gray-50 rounded-xl p-4 mb-3 space-y-3">
+            <div className="flex gap-2">
+              {(["CREDIT_CARD", "DEBIT_CARD", "E_WALLET"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setPmType(t)}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium ${pmType === t ? "bg-[#ff6b35] text-white" : "bg-white text-gray-600 border"}`}
+                >
+                  {PM_TYPE_META[t].icon} {PM_TYPE_META[t].label}
+                </button>
+              ))}
+            </div>
+
+            {pmType === "E_WALLET" ? (
+              <p className="text-xs text-gray-500">
+                📱 Ví điện tử MyThFood — dùng số dư ví để thanh toán. Bạn có thể{" "}
+                <Link href="/wallet" className="text-[#ff6b35] font-semibold">
+                  nạp tiền vào ví
+                </Link>
+                .
+              </p>
+            ) : (
+              <div className="space-y-2">
+                <input
+                  value={pmCardNumber}
+                  onChange={(e) =>
+                    setPmCardNumber(
+                      e.target.value.replace(/\D/g, "").slice(0, 16),
+                    )
+                  }
+                  placeholder="Số thẻ (16 chữ số)"
+                  className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+                />
+                <input
+                  value={pmExpiry}
+                  onChange={(e) => setPmExpiry(e.target.value)}
+                  placeholder="Hết hạn (MM/YY)"
+                  className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+                />
+              </div>
+            )}
+
+            <button
+              onClick={addPaymentMethod}
+              disabled={saving}
+              className="w-full bg-[#ff6b35] text-white py-2 rounded-xl font-semibold text-sm"
+            >
+              ✅ Thêm phương thức
+            </button>
+          </div>
+        )}
+
+        {paymentMethods.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">
+            Chưa có phương thức thanh toán
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {paymentMethods.map((pm: any) => (
+              <div
+                key={pm.id}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">
+                    {PM_TYPE_META[pm.type]?.icon || "💳"}{" "}
+                    {PM_TYPE_META[pm.type]?.label || pm.type}
+                    {pm.isDefault && (
+                      <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">
+                        Mặc định
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {pm.type === "E_WALLET"
+                      ? "MyThFood"
+                      : `${pm.provider || "Thẻ"} •••• ${pm.lastFourDigits}`}
+                  </p>
+                </div>
+                {!pm.isDefault && (
+                  <button
+                    onClick={() => setDefaultPaymentMethod(pm.id)}
+                    className="text-xs text-[#ff6b35] hover:text-orange-600 ml-3"
+                  >
+                    Đặt mặc định
+                  </button>
+                )}
+                <button
+                  onClick={() => removePaymentMethod(pm.id)}
+                  className="text-red-400 hover:text-red-600 text-sm ml-3"
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Change password */}
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-bold text-[#1a1a2e]">🔐 Đổi mật khẩu</h3>
+          <button
+            onClick={() => setShowChangePw(!showChangePw)}
+            className="text-sm font-semibold text-[#ff6b35]"
+          >
+            {showChangePw ? "✕ Đóng" : "Đổi"}
+          </button>
+        </div>
+        {showChangePw && (
+          <div className="space-y-3">
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="Mật khẩu hiện tại"
+              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+            />
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Mật khẩu mới (ít nhất 8 ký tự)"
+              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+            />
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Nhập lại mật khẩu mới"
+              className="w-full border rounded-xl px-4 py-2.5 text-sm outline-none"
+            />
+            <p className="text-xs text-gray-400 leading-relaxed">
+              Mật khẩu mới cần tối thiểu 8 ký tự, gồm chữ HOA, chữ thường, số và
+              ký tự đặc biệt (ví dụ: Abc@1234).
+            </p>
+            <button
+              onClick={changePassword}
+              disabled={saving}
+              className="w-full bg-[#1a1a2e] text-white py-2.5 rounded-xl font-semibold text-sm"
+            >
+              Đổi mật khẩu
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Logout */}
+      <button
+        onClick={() => {
+          clearAuth();
+          router.push("/");
+        }}
+        className="w-full bg-white text-red-500 py-3 rounded-2xl shadow-sm font-semibold text-sm hover:bg-red-50 transition"
+      >
+        🚪 Đăng xuất
+      </button>
     </ConsumerShell>
   );
 }

@@ -293,281 +293,277 @@ export default function MerchantFlashSalesPage() {
 
   return (
     <MerchantShell>
-        <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
-          🔥 Flash Sale
-        </h1>
+      <h1 className="text-2xl font-extrabold text-[#1a1a2e]">🔥 Flash Sale</h1>
 
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h2 className="font-bold text-lg mb-4">Tạo flash sale mới</h2>
-          <div className="grid sm:grid-cols-3 gap-3 mb-4">
-            <input
-              type="text"
-              value={form.title}
-              onChange={(e) => setSale("title", e.target.value)}
-              placeholder="Tên chiến dịch (VD: Sale giờ trưa)"
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <input
-              type="datetime-local"
-              value={form.startAt}
-              onChange={(e) => setSale("startAt", e.target.value)}
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <input
-              type="datetime-local"
-              value={form.endAt}
-              onChange={(e) => setSale("endAt", e.target.value)}
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-          </div>
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h2 className="font-bold text-lg mb-4">Tạo flash sale mới</h2>
+        <div className="grid sm:grid-cols-3 gap-3 mb-4">
+          <input
+            type="text"
+            value={form.title}
+            onChange={(e) => setSale("title", e.target.value)}
+            placeholder="Tên chiến dịch (VD: Sale giờ trưa)"
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+          <input
+            type="datetime-local"
+            value={form.startAt}
+            onChange={(e) => setSale("startAt", e.target.value)}
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+          <input
+            type="datetime-local"
+            value={form.endAt}
+            onChange={(e) => setSale("endAt", e.target.value)}
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+        </div>
 
-          <p className="text-sm font-semibold text-gray-600 mb-2">
-            Món áp dụng ({rows.length})
+        <p className="text-sm font-semibold text-gray-600 mb-2">
+          Món áp dụng ({rows.length})
+        </p>
+        <div className="space-y-3">
+          {rows.map((r) => {
+            const mi = menuItems.find((m: any) => m.id === r.menuItemId);
+            const salePrice = rowSalePrice(r);
+            return (
+              <div
+                key={r.key}
+                className="border border-gray-100 rounded-xl p-3 grid sm:grid-cols-2 lg:grid-cols-6 gap-2 items-center"
+              >
+                <select
+                  value={r.menuItemId}
+                  onChange={(e) => setRow(r.key, "menuItemId", e.target.value)}
+                  className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35] lg:col-span-2"
+                >
+                  <option value="">Chọn món…</option>
+                  {menuItems.map((m: any) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} — {toNum(m.price).toLocaleString("vi-VN")}đ
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={r.discountType}
+                  onChange={(e) =>
+                    setRow(r.key, "discountType", e.target.value)
+                  }
+                  className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+                >
+                  <option value="PERCENT">Giảm %</option>
+                  <option value="FIXED_PRICE">Giá cố định</option>
+                </select>
+                <input
+                  type="number"
+                  value={r.value}
+                  onChange={(e) => setRow(r.key, "value", e.target.value)}
+                  placeholder={
+                    r.discountType === "PERCENT" ? "% giảm" : "Giá sale"
+                  }
+                  className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+                />
+                <input
+                  type="number"
+                  value={r.totalQuantity}
+                  onChange={(e) =>
+                    setRow(r.key, "totalQuantity", e.target.value)
+                  }
+                  placeholder="Suất bán"
+                  className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+                />
+                <input
+                  type="number"
+                  value={r.limitPerUser}
+                  onChange={(e) =>
+                    setRow(r.key, "limitPerUser", e.target.value)
+                  }
+                  placeholder="Limit/khách"
+                  className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+                />
+                <div className="flex items-center gap-2">
+                  {mi && salePrice != null && (
+                    <span className="text-xs text-gray-500 whitespace-nowrap">
+                      {toNum(mi.price).toLocaleString("vi-VN")}đ →{" "}
+                      <b className="text-[#ff6b35]">
+                        {salePrice.toLocaleString("vi-VN")}đ
+                      </b>
+                    </span>
+                  )}
+                  <button
+                    onClick={() => removeRow(r.key)}
+                    className="text-xs bg-red-50 text-red-600 px-2.5 py-1.5 rounded-lg font-semibold hover:bg-red-100"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={addRow}
+          className="mt-3 text-sm bg-blue-50 text-blue-600 px-4 py-2 rounded-xl font-semibold hover:bg-blue-100"
+        >
+          + Thêm món
+        </button>
+
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            onClick={handleCreate}
+            disabled={creating}
+            className="bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold hover:bg-orange-600 transition disabled:opacity-50"
+          >
+            {creating ? "Đang tạo..." : "Tạo flash sale"}
+          </button>
+          {status && (
+            <p
+              className={`text-sm font-medium ${status.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
+            >
+              {status}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h2 className="font-bold text-lg mb-4">
+          Danh sách flash sale ({sales.length})
+        </h2>
+        {sales.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">
+            Chưa có flash sale nào
           </p>
+        ) : (
           <div className="space-y-3">
-            {rows.map((r) => {
-              const mi = menuItems.find((m: any) => m.id === r.menuItemId);
-              const salePrice = rowSalePrice(r);
+            {sales.map((s: any) => {
+              const items = Array.isArray(s.items) ? s.items : [];
+              const meta = STATUS_META[s.status] ?? STATUS_META.ENDED;
               return (
                 <div
-                  key={r.key}
-                  className="border border-gray-100 rounded-xl p-3 grid sm:grid-cols-2 lg:grid-cols-6 gap-2 items-center"
+                  key={s.id}
+                  className="border border-gray-100 rounded-xl p-4"
                 >
-                  <select
-                    value={r.menuItemId}
-                    onChange={(e) =>
-                      setRow(r.key, "menuItemId", e.target.value)
-                    }
-                    className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35] lg:col-span-2"
-                  >
-                    <option value="">Chọn món…</option>
-                    {menuItems.map((m: any) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name} — {toNum(m.price).toLocaleString("vi-VN")}đ
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={r.discountType}
-                    onChange={(e) =>
-                      setRow(r.key, "discountType", e.target.value)
-                    }
-                    className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-                  >
-                    <option value="PERCENT">Giảm %</option>
-                    <option value="FIXED_PRICE">Giá cố định</option>
-                  </select>
-                  <input
-                    type="number"
-                    value={r.value}
-                    onChange={(e) => setRow(r.key, "value", e.target.value)}
-                    placeholder={
-                      r.discountType === "PERCENT" ? "% giảm" : "Giá sale"
-                    }
-                    className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-                  />
-                  <input
-                    type="number"
-                    value={r.totalQuantity}
-                    onChange={(e) =>
-                      setRow(r.key, "totalQuantity", e.target.value)
-                    }
-                    placeholder="Suất bán"
-                    className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-                  />
-                  <input
-                    type="number"
-                    value={r.limitPerUser}
-                    onChange={(e) =>
-                      setRow(r.key, "limitPerUser", e.target.value)
-                    }
-                    placeholder="Limit/khách"
-                    className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-                  />
-                  <div className="flex items-center gap-2">
-                    {mi && salePrice != null && (
-                      <span className="text-xs text-gray-500 whitespace-nowrap">
-                        {toNum(mi.price).toLocaleString("vi-VN")}đ →{" "}
-                        <b className="text-[#ff6b35]">
-                          {salePrice.toLocaleString("vi-VN")}đ
-                        </b>
+                  <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                    <div>
+                      <p className="font-bold text-gray-800">
+                        {s.title || "Flash Sale"}{" "}
+                        <span className="text-xs font-normal text-gray-400">
+                          ({items.length} món)
+                        </span>
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        🕒 {new Date(s.startAt).toLocaleString("vi-VN")} →{" "}
+                        {new Date(s.endAt).toLocaleString("vi-VN")}
+                        {s.fundedBy === "PLATFORM"
+                          ? " · Platform tài trợ"
+                          : " · Merchant tài trợ"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`text-xs px-2 py-1 rounded-full font-semibold ${meta.cls}`}
+                      >
+                        {meta.label}
                       </span>
-                    )}
-                    <button
-                      onClick={() => removeRow(r.key)}
-                      className="text-xs bg-red-50 text-red-600 px-2.5 py-1.5 rounded-lg font-semibold hover:bg-red-100"
-                    >
-                      ✕
-                    </button>
+                      {s.status === "ACTIVE" && (
+                        <button
+                          onClick={() => handlePause(s)}
+                          className="text-xs bg-purple-50 text-purple-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-purple-100"
+                        >
+                          Tạm dừng
+                        </button>
+                      )}
+                      {s.status === "PAUSED" && (
+                        <button
+                          onClick={() => handleResume(s)}
+                          className="text-xs bg-green-50 text-green-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-green-100"
+                        >
+                          Tiếp tục
+                        </button>
+                      )}
+                      {(s.status === "ACTIVE" ||
+                        s.status === "SCHEDULED" ||
+                        s.status === "PAUSED") && (
+                        <button
+                          onClick={() => handleCancel(s)}
+                          className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-red-100"
+                        >
+                          Hủy
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    {items.map((it: any) => {
+                      const e = stockEditFor(it);
+                      return (
+                        <div
+                          key={it.id}
+                          className="flex items-center justify-between gap-2 text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 flex-wrap"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <span className="truncate font-medium">
+                              {it.menuItemName || "Món"}
+                            </span>
+                            <span className="ml-2 text-xs whitespace-nowrap">
+                              <span className="line-through text-gray-400">
+                                {toNum(it.originalPrice).toLocaleString(
+                                  "vi-VN",
+                                )}
+                                đ
+                              </span>{" "}
+                              →{" "}
+                              <b className="text-[#ff6b35]">
+                                {toNum(it.salePrice).toLocaleString("vi-VN")}đ
+                              </b>{" "}
+                              · Đã bán {it.soldQuantity ?? 0}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              value={e.totalQuantity}
+                              onChange={(ev) =>
+                                setStockEdit(
+                                  it.id,
+                                  "totalQuantity",
+                                  ev.target.value,
+                                )
+                              }
+                              placeholder="Tổng suất"
+                              className="w-20 border rounded-lg px-2 py-1 text-xs outline-none focus:border-[#ff6b35]"
+                            />
+                            <input
+                              type="number"
+                              value={e.limitPerUser}
+                              onChange={(ev) =>
+                                setStockEdit(
+                                  it.id,
+                                  "limitPerUser",
+                                  ev.target.value,
+                                )
+                              }
+                              placeholder="Limit"
+                              className="w-16 border rounded-lg px-2 py-1 text-xs outline-none focus:border-[#ff6b35]"
+                            />
+                            <button
+                              onClick={() => saveStock(s, it)}
+                              className="text-xs bg-green-50 text-green-600 px-2.5 py-1.5 rounded-lg font-semibold hover:bg-green-100"
+                            >
+                              Lưu
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
             })}
           </div>
-
-          <button
-            onClick={addRow}
-            className="mt-3 text-sm bg-blue-50 text-blue-600 px-4 py-2 rounded-xl font-semibold hover:bg-blue-100"
-          >
-            + Thêm món
-          </button>
-
-          <div className="mt-4 flex items-center gap-3">
-            <button
-              onClick={handleCreate}
-              disabled={creating}
-              className="bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold hover:bg-orange-600 transition disabled:opacity-50"
-            >
-              {creating ? "Đang tạo..." : "Tạo flash sale"}
-            </button>
-            {status && (
-              <p
-                className={`text-sm font-medium ${status.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
-              >
-                {status}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h2 className="font-bold text-lg mb-4">
-            Danh sách flash sale ({sales.length})
-          </h2>
-          {sales.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-6">
-              Chưa có flash sale nào
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {sales.map((s: any) => {
-                const items = Array.isArray(s.items) ? s.items : [];
-                const meta = STATUS_META[s.status] ?? STATUS_META.ENDED;
-                return (
-                  <div
-                    key={s.id}
-                    className="border border-gray-100 rounded-xl p-4"
-                  >
-                    <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-                      <div>
-                        <p className="font-bold text-gray-800">
-                          {s.title || "Flash Sale"}{" "}
-                          <span className="text-xs font-normal text-gray-400">
-                            ({items.length} món)
-                          </span>
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          🕒 {new Date(s.startAt).toLocaleString("vi-VN")} →{" "}
-                          {new Date(s.endAt).toLocaleString("vi-VN")}
-                          {s.fundedBy === "PLATFORM"
-                            ? " · Platform tài trợ"
-                            : " · Merchant tài trợ"}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span
-                          className={`text-xs px-2 py-1 rounded-full font-semibold ${meta.cls}`}
-                        >
-                          {meta.label}
-                        </span>
-                        {s.status === "ACTIVE" && (
-                          <button
-                            onClick={() => handlePause(s)}
-                            className="text-xs bg-purple-50 text-purple-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-purple-100"
-                          >
-                            Tạm dừng
-                          </button>
-                        )}
-                        {s.status === "PAUSED" && (
-                          <button
-                            onClick={() => handleResume(s)}
-                            className="text-xs bg-green-50 text-green-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-green-100"
-                          >
-                            Tiếp tục
-                          </button>
-                        )}
-                        {(s.status === "ACTIVE" ||
-                          s.status === "SCHEDULED" ||
-                          s.status === "PAUSED") && (
-                          <button
-                            onClick={() => handleCancel(s)}
-                            className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-red-100"
-                          >
-                            Hủy
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      {items.map((it: any) => {
-                        const e = stockEditFor(it);
-                        return (
-                          <div
-                            key={it.id}
-                            className="flex items-center justify-between gap-2 text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 flex-wrap"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <span className="truncate font-medium">
-                                {it.menuItemName || "Món"}
-                              </span>
-                              <span className="ml-2 text-xs whitespace-nowrap">
-                                <span className="line-through text-gray-400">
-                                  {toNum(it.originalPrice).toLocaleString(
-                                    "vi-VN",
-                                  )}
-                                  đ
-                                </span>{" "}
-                                →{" "}
-                                <b className="text-[#ff6b35]">
-                                  {toNum(it.salePrice).toLocaleString("vi-VN")}đ
-                                </b>{" "}
-                                · Đã bán {it.soldQuantity ?? 0}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                value={e.totalQuantity}
-                                onChange={(ev) =>
-                                  setStockEdit(
-                                    it.id,
-                                    "totalQuantity",
-                                    ev.target.value,
-                                  )
-                                }
-                                placeholder="Tổng suất"
-                                className="w-20 border rounded-lg px-2 py-1 text-xs outline-none focus:border-[#ff6b35]"
-                              />
-                              <input
-                                type="number"
-                                value={e.limitPerUser}
-                                onChange={(ev) =>
-                                  setStockEdit(
-                                    it.id,
-                                    "limitPerUser",
-                                    ev.target.value,
-                                  )
-                                }
-                                placeholder="Limit"
-                                className="w-16 border rounded-lg px-2 py-1 text-xs outline-none focus:border-[#ff6b35]"
-                              />
-                              <button
-                                onClick={() => saveStock(s, it)}
-                                className="text-xs bg-green-50 text-green-600 px-2.5 py-1.5 rounded-lg font-semibold hover:bg-green-100"
-                              >
-                                Lưu
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        )}
+      </div>
     </MerchantShell>
   );
 }

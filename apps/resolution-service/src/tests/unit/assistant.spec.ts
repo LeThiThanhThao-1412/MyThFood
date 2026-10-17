@@ -93,7 +93,12 @@ function makeService(
     saveReview: jest
       .fn()
       .mockImplementation(
-        async (caseId: string, decision: string, by: string, note: string | null) => ({
+        async (
+          caseId: string,
+          decision: string,
+          by: string,
+          note: string | null,
+        ) => ({
           caseId,
           caseNumber: "CASE-2026-000001",
           source: "MANUAL",
@@ -137,7 +142,6 @@ const VALID_RAW = {
       reason: "Giao thất bại nhưng đánh dấu thành công",
     },
     {
-
       type: "SUSPEND",
       targetType: "DRIVER",
       durationDays: 3,
@@ -147,7 +151,6 @@ const VALID_RAW = {
   suggestedResolutionNote: "Chấp nhận khiếu nại, hoàn tiền cho khách.",
   followUpQuestions: ["Tài xế có ảnh bàn giao không?"],
 };
-
 
 describe("AssistantService", () => {
   describe("getHealth", () => {
@@ -196,7 +199,9 @@ describe("AssistantService", () => {
 
       expect(result.sourcesMissing.join(" ")).toContain("D4");
       expect(result.sourcesUsed.join(" ")).toContain("D1");
-      expect(result.warnings.join(" ")).toContain("Thiếu nguồn dữ liệu bắt buộc");
+      expect(result.warnings.join(" ")).toContain(
+        "Thiếu nguồn dữ liệu bắt buộc",
+      );
     });
 
     it("thay enum sai bằng giá trị an toàn và ghi cảnh báo", async () => {
@@ -229,7 +234,12 @@ describe("AssistantService", () => {
         suggestedActions: [
           { type: "BAN", targetType: "MERCHANT", reason: "Không liên quan" },
           { type: "NO_ACTION", targetType: "DRIVER", reason: "Không phạt" },
-          { type: "COMPENSATION", targetType: "CONSUMER", amount: -5, reason: "Hoàn tiền" },
+          {
+            type: "COMPENSATION",
+            targetType: "CONSUMER",
+            amount: -5,
+            reason: "Hoàn tiền",
+          },
         ],
       });
       const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
@@ -240,12 +250,18 @@ describe("AssistantService", () => {
         targetType: "CONSUMER",
         amount: null,
       });
-      expect(result.warnings.join(" ")).toContain("MERCHANT không phải bên tham gia");
+      expect(result.warnings.join(" ")).toContain(
+        "MERCHANT không phải bên tham gia",
+      );
     });
 
     it("bỏ qua ảnh khi skipImages = true", async () => {
       const { service, contextService } = makeService(VALID_RAW);
-      await service.analyzeCase("case-1", { skipImages: true }, ADMIN_USER as any);
+      await service.analyzeCase(
+        "case-1",
+        { skipImages: true },
+        ADMIN_USER as any,
+      );
       expect(contextService.build).toHaveBeenCalledWith("case-1", 0);
     });
 
@@ -300,7 +316,9 @@ describe("AssistantService", () => {
       const { service, gemini, analysisRepo } = makeService(VALID_RAW);
       gemini.hasApiKey = false;
 
-      await expect(service.triggerAutoAnalysis("case-1")).resolves.toBeUndefined();
+      await expect(
+        service.triggerAutoAnalysis("case-1"),
+      ).resolves.toBeUndefined();
       expect(analysisRepo.saveAnalysis).not.toHaveBeenCalled();
     });
 
@@ -316,7 +334,12 @@ describe("AssistantService", () => {
     it("lưu vết admin duyệt gợi ý (ai duyệt, ghi chú gì)", async () => {
       const { service, analysisRepo } = makeService(VALID_RAW);
 
-      await service.reviewAnalysis("case-1", "ACCEPTED", ADMIN_USER as any, " ok ");
+      await service.reviewAnalysis(
+        "case-1",
+        "ACCEPTED",
+        ADMIN_USER as any,
+        " ok ",
+      );
 
       expect(analysisRepo.saveReview).toHaveBeenCalledWith(
         "case-1",
@@ -343,8 +366,14 @@ describe("assistant prompt helpers", () => {
   });
 
   it("lược gọn chuỗi và mảng quá dài", () => {
-    const long = { text: "x".repeat(500), items: Array.from({ length: 30 }, (_, i) => i) };
-    const compacted = compactForPrompt(long) as { text: string; items: unknown[] };
+    const long = {
+      text: "x".repeat(500),
+      items: Array.from({ length: 30 }, (_, i) => i),
+    };
+    const compacted = compactForPrompt(long) as {
+      text: string;
+      items: unknown[];
+    };
     expect(compacted.text.length).toBeLessThan(500);
     expect(compacted.text.endsWith("…")).toBe(true);
     expect(compacted.items).toHaveLength(26);

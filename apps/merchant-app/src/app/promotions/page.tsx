@@ -179,215 +179,213 @@ export default function MerchantPromotionsPage() {
 
   return (
     <MerchantShell>
-        <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
-          🏷️ Khuyến mãi
-        </h1>
+      <h1 className="text-2xl font-extrabold text-[#1a1a2e]">🏷️ Khuyến mãi</h1>
 
-        {stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white rounded-2xl shadow-sm p-4">
-              <p className="text-xs text-gray-400">Tổng mã</p>
-              <p className="text-2xl font-bold text-[#1a1a2e]">
-                {stats.totalPromotions ?? 0}
-              </p>
-            </div>
-            <div className="bg-white rounded-2xl shadow-sm p-4">
-              <p className="text-xs text-gray-400">Đang hoạt động</p>
-              <p className="text-2xl font-bold text-green-600">
-                {stats.activePromotions ?? 0}
-              </p>
-            </div>
-            <div className="bg-white rounded-2xl shadow-sm p-4">
-              <p className="text-xs text-gray-400">Lượt dùng</p>
-              <p className="text-2xl font-bold text-[#1a1a2e]">
-                {stats.totalUsedCount ?? 0}
-              </p>
-            </div>
-            <div className="bg-white rounded-2xl shadow-sm p-4">
-              <p className="text-xs text-gray-400">Đã giảm</p>
-              <p className="text-2xl font-bold text-[#ff6b35]">
-                {toNum(stats.totalDiscount).toLocaleString("vi-VN")}đ
-              </p>
-            </div>
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <p className="text-xs text-gray-400">Tổng mã</p>
+            <p className="text-2xl font-bold text-[#1a1a2e]">
+              {stats.totalPromotions ?? 0}
+            </p>
+          </div>
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <p className="text-xs text-gray-400">Đang hoạt động</p>
+            <p className="text-2xl font-bold text-green-600">
+              {stats.activePromotions ?? 0}
+            </p>
+          </div>
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <p className="text-xs text-gray-400">Lượt dùng</p>
+            <p className="text-2xl font-bold text-[#1a1a2e]">
+              {stats.totalUsedCount ?? 0}
+            </p>
+          </div>
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <p className="text-xs text-gray-400">Đã giảm</p>
+            <p className="text-2xl font-bold text-[#ff6b35]">
+              {toNum(stats.totalDiscount).toLocaleString("vi-VN")}đ
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h2 className="font-bold text-lg mb-4">➕ Tạo mã khuyến mãi</h2>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <input
+            value={form.code}
+            onChange={(e) => set("code", e.target.value)}
+            placeholder="Mã (VD: SALE20)"
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+          <select
+            value={form.target}
+            onChange={(e) => set("target", e.target.value)}
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          >
+            <option value="FOOD">Giảm toàn bộ món ăn</option>
+            <option value="ITEM">Giảm món cụ thể</option>
+            <option value="SHIPPING">Giảm phí ship</option>
+          </select>
+          {form.target === "ITEM" && (
+            <select
+              value={form.menuItemId}
+              onChange={(e) => set("menuItemId", e.target.value)}
+              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+            >
+              <option value="">Chọn món áp dụng...</option>
+              {menuItems.map((mi: any) => (
+                <option key={mi.id} value={mi.id}>
+                  {mi.name} ({Number(mi.price).toLocaleString("vi-VN")}đ)
+                </option>
+              ))}
+            </select>
+          )}
+          <select
+            value={form.type}
+            onChange={(e) => set("type", e.target.value)}
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          >
+            <option value="PERCENT">Phần trăm (%)</option>
+            <option value="FIXED">Số tiền cố định (đ)</option>
+          </select>
+          <input
+            type="number"
+            value={form.value}
+            onChange={(e) => set("value", e.target.value)}
+            placeholder={
+              form.type === "PERCENT"
+                ? "Giá trị % (VD: 20)"
+                : "Số tiền (VD: 20000)"
+            }
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+          <input
+            type="number"
+            value={form.minOrderValue}
+            onChange={(e) => set("minOrderValue", e.target.value)}
+            placeholder="Đơn tối thiểu (đ)"
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+          <input
+            type="number"
+            value={form.maxDiscount}
+            onChange={(e) => set("maxDiscount", e.target.value)}
+            placeholder="Giảm tối đa (đ)"
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+          <input
+            type="datetime-local"
+            value={form.startAt}
+            onChange={(e) => set("startAt", e.target.value)}
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+          <input
+            type="datetime-local"
+            value={form.endAt}
+            onChange={(e) => set("endAt", e.target.value)}
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+          <input
+            type="number"
+            value={form.usageLimit}
+            onChange={(e) => set("usageLimit", e.target.value)}
+            placeholder="Giới hạn lượt dùng"
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+          <input
+            type="number"
+            value={form.usageLimitPerUser}
+            onChange={(e) => set("usageLimitPerUser", e.target.value)}
+            placeholder="Giới hạn / người"
+            className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+          />
+        </div>
+        <button
+          onClick={handleCreate}
+          disabled={creating}
+          className="mt-4 bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold hover:bg-orange-600 transition disabled:opacity-50"
+        >
+          {creating ? "Đang tạo..." : "Tạo mã"}
+        </button>
+        {status && (
+          <p
+            className={`mt-3 text-sm font-medium ${status.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
+          >
+            {status}
+          </p>
+        )}
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm p-5">
+        <h2 className="font-bold text-lg mb-4">
+          Danh sách mã ({promos.length})
+        </h2>
+        {promos.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-6">
+            Chưa có mã khuyến mãi nào
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {promos.map((p: any) => (
+              <div
+                key={p.id}
+                className="border border-gray-100 rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap"
+              >
+                <div className="min-w-0">
+                  <p className="font-bold text-gray-800">
+                    {p.code}{" "}
+                    <span className="text-xs font-normal text-gray-400">
+                      (
+                      {p.target === "SHIPPING"
+                        ? "Giảm ship"
+                        : p.target === "ITEM"
+                          ? `Món: ${p.menuItemName || p.menuItemId || "?"}`
+                          : "Giảm món"}
+                      )
+                    </span>
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {p.type === "PERCENT"
+                      ? `${p.value}%`
+                      : `${toNum(p.value).toLocaleString("vi-VN")}đ`}
+                    {p.minOrderValue != null &&
+                      ` · Đơn tối thiểu ${toNum(p.minOrderValue).toLocaleString("vi-VN")}đ`}
+                    {p.maxDiscount != null &&
+                      ` · Giảm tối đa ${toNum(p.maxDiscount).toLocaleString("vi-VN")}đ`}
+                    {" · "}
+                    {p.usedCount ?? 0} lượt dùng
+                    {" · "}
+                    {p.fundedBy === "PLATFORM"
+                      ? "Platform tài trợ"
+                      : "Merchant tài trợ"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span
+                    className={`text-xs px-2 py-1 rounded-full font-semibold ${p.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}
+                  >
+                    {p.isActive ? "✓ Active" : "Tắt"}
+                  </span>
+                  <button
+                    onClick={() => toggle(p)}
+                    className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-blue-100"
+                  >
+                    {p.isActive ? "Tắt" : "Bật"}
+                  </button>
+                  <button
+                    onClick={() => remove(p)}
+                    className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-red-100"
+                  >
+                    Xóa
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
-
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h2 className="font-bold text-lg mb-4">➕ Tạo mã khuyến mãi</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <input
-              value={form.code}
-              onChange={(e) => set("code", e.target.value)}
-              placeholder="Mã (VD: SALE20)"
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <select
-              value={form.target}
-              onChange={(e) => set("target", e.target.value)}
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            >
-              <option value="FOOD">Giảm toàn bộ món ăn</option>
-              <option value="ITEM">Giảm món cụ thể</option>
-              <option value="SHIPPING">Giảm phí ship</option>
-            </select>
-            {form.target === "ITEM" && (
-              <select
-                value={form.menuItemId}
-                onChange={(e) => set("menuItemId", e.target.value)}
-                className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-              >
-                <option value="">Chọn món áp dụng...</option>
-                {menuItems.map((mi: any) => (
-                  <option key={mi.id} value={mi.id}>
-                    {mi.name} ({Number(mi.price).toLocaleString("vi-VN")}đ)
-                  </option>
-                ))}
-              </select>
-            )}
-            <select
-              value={form.type}
-              onChange={(e) => set("type", e.target.value)}
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            >
-              <option value="PERCENT">Phần trăm (%)</option>
-              <option value="FIXED">Số tiền cố định (đ)</option>
-            </select>
-            <input
-              type="number"
-              value={form.value}
-              onChange={(e) => set("value", e.target.value)}
-              placeholder={
-                form.type === "PERCENT"
-                  ? "Giá trị % (VD: 20)"
-                  : "Số tiền (VD: 20000)"
-              }
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <input
-              type="number"
-              value={form.minOrderValue}
-              onChange={(e) => set("minOrderValue", e.target.value)}
-              placeholder="Đơn tối thiểu (đ)"
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <input
-              type="number"
-              value={form.maxDiscount}
-              onChange={(e) => set("maxDiscount", e.target.value)}
-              placeholder="Giảm tối đa (đ)"
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <input
-              type="datetime-local"
-              value={form.startAt}
-              onChange={(e) => set("startAt", e.target.value)}
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <input
-              type="datetime-local"
-              value={form.endAt}
-              onChange={(e) => set("endAt", e.target.value)}
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <input
-              type="number"
-              value={form.usageLimit}
-              onChange={(e) => set("usageLimit", e.target.value)}
-              placeholder="Giới hạn lượt dùng"
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-            <input
-              type="number"
-              value={form.usageLimitPerUser}
-              onChange={(e) => set("usageLimitPerUser", e.target.value)}
-              placeholder="Giới hạn / người"
-              className="border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
-            />
-          </div>
-          <button
-            onClick={handleCreate}
-            disabled={creating}
-            className="mt-4 bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold hover:bg-orange-600 transition disabled:opacity-50"
-          >
-            {creating ? "Đang tạo..." : "Tạo mã"}
-          </button>
-          {status && (
-            <p
-              className={`mt-3 text-sm font-medium ${status.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
-            >
-              {status}
-            </p>
-          )}
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-sm p-5">
-          <h2 className="font-bold text-lg mb-4">
-            Danh sách mã ({promos.length})
-          </h2>
-          {promos.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-6">
-              Chưa có mã khuyến mãi nào
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {promos.map((p: any) => (
-                <div
-                  key={p.id}
-                  className="border border-gray-100 rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap"
-                >
-                  <div className="min-w-0">
-                    <p className="font-bold text-gray-800">
-                      {p.code}{" "}
-                      <span className="text-xs font-normal text-gray-400">
-                        (
-                        {p.target === "SHIPPING"
-                          ? "Giảm ship"
-                          : p.target === "ITEM"
-                            ? `Món: ${p.menuItemName || p.menuItemId || "?"}`
-                            : "Giảm món"}
-                        )
-                      </span>
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {p.type === "PERCENT"
-                        ? `${p.value}%`
-                        : `${toNum(p.value).toLocaleString("vi-VN")}đ`}
-                      {p.minOrderValue != null &&
-                        ` · Đơn tối thiểu ${toNum(p.minOrderValue).toLocaleString("vi-VN")}đ`}
-                      {p.maxDiscount != null &&
-                        ` · Giảm tối đa ${toNum(p.maxDiscount).toLocaleString("vi-VN")}đ`}
-                      {" · "}
-                      {p.usedCount ?? 0} lượt dùng
-                      {" · "}
-                      {p.fundedBy === "PLATFORM"
-                        ? "Platform tài trợ"
-                        : "Merchant tài trợ"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className={`text-xs px-2 py-1 rounded-full font-semibold ${p.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}
-                    >
-                      {p.isActive ? "✓ Active" : "Tắt"}
-                    </span>
-                    <button
-                      onClick={() => toggle(p)}
-                      className="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-blue-100"
-                    >
-                      {p.isActive ? "Tắt" : "Bật"}
-                    </button>
-                    <button
-                      onClick={() => remove(p)}
-                      className="text-xs bg-red-50 text-red-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-red-100"
-                    >
-                      Xóa
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      </div>
     </MerchantShell>
   );
 }
