@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { CqrsModule } from "@nestjs/cqrs";
+import { ScheduleModule } from "@nestjs/schedule";
 import { AuthModule } from "./modules/auth/auth.module";
 import { MerchantModule } from "./modules/merchant/merchant.module";
 import { HealthController } from "./modules/health/health.controller";
@@ -21,6 +22,7 @@ import { databaseConfig } from "./config/database.config";
         configService.get("database")!,
     }),
     CqrsModule.forRoot(),
+    ScheduleModule.forRoot(),
     AuthModule,
     MerchantModule,
   ],

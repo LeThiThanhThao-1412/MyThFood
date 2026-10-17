@@ -1,4 +1,5 @@
 "use client";
+import ConsumerShell from "@/components/ConsumerShell";
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -376,18 +377,7 @@ export default function ProfilePage() {
   const paymentMethods = consumer?.paymentMethods || [];
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-2xl mx-auto pb-24">
-      <header className="bg-[#1a1a2e] px-4 py-4 text-white sticky top-0 z-50">
-        <div className="flex items-center justify-between">
-          <Link href="/dashboard" className="text-white/60 text-lg">
-            ←
-          </Link>
-          <h1 className="text-lg font-bold">👤 Hồ sơ cá nhân</h1>
-          <div className="w-6" />
-        </div>
-      </header>
-
-      <main className="px-4 py-5 space-y-4">
+    <ConsumerShell title="👤 Hồ sơ cá nhân" backHref="/dashboard">
         {status && (
           <div
             className={`p-3 rounded-lg text-sm ${status.startsWith("✅") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}
@@ -821,7 +811,6 @@ export default function ProfilePage() {
         >
           🚪 Đăng xuất
         </button>
-      </main>
-    </div>
+    </ConsumerShell>
   );
 }

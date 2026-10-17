@@ -10,7 +10,7 @@ import { firstValueFrom } from "rxjs";
 import { Merchant } from "../domain/merchant.aggregate";
 import { MerchantId } from "../domain/merchant-id";
 import { MenuItemId } from "../domain/menu-item-id";
-import { MenuItem } from "../domain/menu-item.entity";
+import { MenuItem, MenuItemAvailabilityStatus } from "../domain/menu-item.entity";
 import { MenuCategory } from "../domain/menu-category.entity";
 import { OperatingHoursProps } from "../domain/operating-hours.vo";
 import { MerchantRepository } from "../infrastructure/merchant.repository";
@@ -26,7 +26,7 @@ import {
   MenuSearchItemDto,
   RecordFlashSalePriceHistoryDto,
 } from "./dtos/merchant.dto";
-import { CreateMenuItemDto, UpdateMenuItemDto } from "./dtos/menu.dto";
+import { CreateMenuItemDto, UpdateMenuItemDto, SetMenuItemAvailabilityDto } from "./dtos/menu.dto";
 import {
   CreateMenuCategoryDto,
   UpdateMenuCategoryDto,
@@ -61,6 +61,7 @@ export class MerchantService {
       longitude: dto.longitude,
       primaryCategory: dto.primaryCategory,
       secondaryCategories: dto.secondaryCategories,
+      otherCategoryDescription: dto.otherCategoryDescription,
     });
 
     if (result.isFailure) {
@@ -95,6 +96,7 @@ export class MerchantService {
       longitude: dto.longitude,
       primaryCategory: dto.primaryCategory,
       secondaryCategories: dto.secondaryCategories,
+      otherCategoryDescription: dto.otherCategoryDescription,
     });
 
     await this.merchantRepository.save(merchant);
@@ -477,9 +479,22 @@ export class MerchantService {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(merchantId),
     );
-    return includeUnavailable
+    let items = includeUnavailable
       ? [...merchant.menuItemList]
       : [...merchant.activeMenuItems];
+
+    // Tắt danh mục → ẩn toàn bộ món thuộc danh mục đó khỏi menu người mua.
+    if (!includeUnavailable) {
+      const disabledIds = await this.menuCategoryRepository.findDisabledIds(
+        merchantId,
+      );
+      if (disabledIds.size > 0) {
+        items = items.filter(
+          (mi) => !mi.itemCategoryId || !disabledIds.has(mi.itemCategoryId),
+        );
+      }
+    }
+    return items;
   }
 
   async getMenuItem(merchantId: string, itemId: string): Promise<MenuItem> {
@@ -529,17 +544,31 @@ export class MerchantService {
     return menuItem;
   }
 
-  async deleteMenuItem(merchantId: string, itemId: string): Promise<void> {
+  async setMenuItemAvailability(
+    merchantId: string,
+    itemId: string,
+    dto: SetMenuItemAvailabilityDto,
+  ): Promise<MenuItem> {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(merchantId),
     );
-    merchant.removeMenuItem(MenuItemId.from(itemId));
+    const menuItem = merchant.setMenuItemAvailability(
+      MenuItemId.from(itemId),
+      dto.status as MenuItemAvailabilityStatus,
+    );
     await this.merchantRepository.save(merchant);
 
     const events = merchant.pullDomainEvents();
     for (const event of events) {
       this.eventBus.publish(event);
     }
+
+    return menuItem;
+  }
+
+  /** Tự mở lại các món "hết hàng trong ngày" đã tới mốc ngày hôm sau. */
+  async reopenDueMenuItems(now: Date): Promise<number> {
+    return this.merchantRepository.reopenDueMenuItems(now);
   }
 
   async toggleMenuItem(merchantId: string, itemId: string): Promise<MenuItem> {
@@ -593,6 +622,7 @@ export class MerchantService {
     }
     if (dto.name !== undefined) category.updateName(dto.name);
     if (dto.sortOrder !== undefined) category.updateSortOrder(dto.sortOrder);
+    if (dto.isActive !== undefined) category.setActive(dto.isActive);
     await this.menuCategoryRepository.save(merchantId, category);
     return category;
   }

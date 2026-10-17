@@ -160,4 +160,66 @@ describe("MenuItem (option groups)", () => {
       expect(item.itemOptionGroups[0]!.type).toBe("TOGGLE");
     });
   });
+
+  describe("availability status", () => {
+    it("defaults to AVAILABLE", () => {
+      const item = MenuItem.create({
+        merchantId,
+        category: "X",
+        name: "Y",
+        price: 10000,
+      });
+      expect(item.available).toBe(true);
+      expect(item.availabilityStatus).toBe("AVAILABLE");
+      expect(item.outOfStockUntil).toBeNull();
+    });
+
+    it("markOutOfStock hides the item", () => {
+      const item = MenuItem.create({
+        merchantId,
+        category: "X",
+        name: "Y",
+        price: 10000,
+      });
+      item.markOutOfStock();
+      expect(item.available).toBe(false);
+      expect(item.availabilityStatus).toBe("OUT_OF_STOCK");
+    });
+
+    it("markOutOfStockToday reopens after the due date", () => {
+      const item = MenuItem.create({
+        merchantId,
+        category: "X",
+        name: "Y",
+        price: 10000,
+      });
+      item.markOutOfStockToday();
+      expect(item.availabilityStatus).toBe("OUT_OF_STOCK_TODAY");
+      expect(item.available).toBe(false);
+
+      const until = item.outOfStockUntil!;
+      expect(until.getTime()).toBeGreaterThan(Date.now());
+
+      expect(item.reopenIfDue(new Date(until.getTime() - 1000))).toBe(false);
+      expect(item.available).toBe(false);
+
+      expect(item.reopenIfDue(new Date(until.getTime() + 1000))).toBe(true);
+      expect(item.availabilityStatus).toBe("AVAILABLE");
+      expect(item.available).toBe(true);
+      expect(item.outOfStockUntil).toBeNull();
+    });
+
+    it("toggleAvailable toggles AVAILABLE <-> OUT_OF_STOCK", () => {
+      const item = MenuItem.create({
+        merchantId,
+        category: "X",
+        name: "Y",
+        price: 10000,
+      });
+      item.toggleAvailable();
+      expect(item.availabilityStatus).toBe("OUT_OF_STOCK");
+      item.toggleAvailable();
+      expect(item.availabilityStatus).toBe("AVAILABLE");
+    });
+  });
 });

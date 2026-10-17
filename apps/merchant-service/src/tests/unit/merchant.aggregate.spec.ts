@@ -328,6 +328,21 @@ describe("Merchant Aggregate", () => {
       expect(menuItem.available).toBe(true);
     });
 
+    it("should set menu item availability status", () => {
+      const menuItem = merchant.addMenuItem({
+        category: "DRINK",
+        name: "Tra Da",
+        price: 5000,
+      });
+
+      merchant.setMenuItemAvailability(menuItem.id, "OUT_OF_STOCK");
+      expect(menuItem.availabilityStatus).toBe("OUT_OF_STOCK");
+      expect(menuItem.available).toBe(false);
+
+      merchant.setMenuItemAvailability(menuItem.id, "AVAILABLE");
+      expect(menuItem.available).toBe(true);
+    });
+
     it("should remove a menu item", () => {
       const menuItem = merchant.addMenuItem({
         category: "DRINK",

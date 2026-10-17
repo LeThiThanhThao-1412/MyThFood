@@ -500,7 +500,7 @@ export default function DriverDashboardPage() {
   return (
     <>
       <LocationGate />
-      <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0 w-full">
+      <div className="min-h-screen bg-[#f0f2f5] flex flex-col w-full">
         {/* ≡≡≡≡≡ HEADER ≡≡≡≡≡ */}
         <header className="bg-[#1a1a2e] px-4 sm:px-6 py-4 text-white w-full">
           <div className="max-w-[1600px] mx-auto w-full">
@@ -846,6 +846,13 @@ export default function DriverDashboardPage() {
           counterpartName={chatCounterpart.name}
           counterpartAvatar={chatCounterpart.avatar}
         />
+
+        <footer className="bg-[#1a1a2e] text-white/60 py-6 mt-auto hidden lg:block">
+          <div className="max-w-[1600px] mx-auto px-4 text-center text-xs">
+            © {new Date().getFullYear()} MyThFood Driver · Nền tảng giao đồ ăn
+            hàng đầu Việt Nam
+          </div>
+        </footer>
 
         {/* ≡≡≡≡≡ MOBILE BOTTOM NAV ≡≡≡≡≡ */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">

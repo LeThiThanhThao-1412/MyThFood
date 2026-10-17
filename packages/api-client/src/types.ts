@@ -154,6 +154,7 @@ export interface Merchant {
   currentOrderCount: number;
   primaryCategory?: string | null;
   secondaryCategories?: string[];
+  otherCategoryDescription?: string | null;
   isOpen?: boolean;
   isOpenNow?: boolean;
   /** Dishes that matched the `search` keyword (only present when searching). */
@@ -223,6 +224,7 @@ export interface CreateMerchantRequest {
   longitude?: number;
   primaryCategory?: string;
   secondaryCategories?: string[];
+  otherCategoryDescription?: string;
 }
 
 export interface MenuCategory {
@@ -230,6 +232,7 @@ export interface MenuCategory {
   merchantId: string;
   name: string;
   sortOrder: number;
+  isActive: boolean;
 }
 
 export interface CreateMenuCategoryRequest {
@@ -240,6 +243,7 @@ export interface CreateMenuCategoryRequest {
 export interface UpdateMenuCategoryRequest {
   name?: string;
   sortOrder?: number;
+  isActive?: boolean;
 }
 
 export type OptionGroupType = "CHOICE" | "MULTI_CHOICE" | "TOGGLE" | "QUANTITY";
@@ -291,6 +295,8 @@ export interface MenuItem {
   originalPrice: number;
   imageUrl?: string | null;
   isAvailable: boolean;
+  availabilityStatus: string;
+  outOfStockUntil: string | null;
   isFeatured: boolean;
   preparationTime: number;
   sortOrder: number;
@@ -320,6 +326,15 @@ export interface UpdateMenuItemRequest {
   preparationTime?: number;
   reason?: string;
   optionGroups?: MenuItemOptionGroup[];
+}
+
+export type MenuItemAvailabilityStatus =
+  | "AVAILABLE"
+  | "OUT_OF_STOCK_TODAY"
+  | "OUT_OF_STOCK";
+
+export interface SetMenuItemAvailabilityRequest {
+  status: MenuItemAvailabilityStatus;
 }
 
 export interface ImportMenuItemRequest {
@@ -1110,3 +1125,137 @@ export interface SendMessageRequest {
   type: ChatMessageType;
   content: string;
 }
+
+// --- Resolution Service: AI Assistant (Gemini) ---
+
+export type AiVerdict = "VALID" | "INVALID" | "INCONCLUSIVE";
+export type AiFaultParty =
+  | "CUSTOMER"
+  | "DRIVER"
+  | "MERCHANT"
+  | "SYSTEM"
+  | "INCONCLUSIVE";
+export type AiSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type AiActionType =
+  | "NO_ACTION"
+  | "WARNING"
+  | "FINE"
+  | "COMPENSATION"
+  | "SUSPEND"
+  | "BAN"
+  | "REPUTATION_DEDUCTION"
+  | "RESTRICT_ACTIVITY";
+export type AiTargetType = "CONSUMER" | "DRIVER" | "MERCHANT";
+
+export interface AiSuggestedAction {
+  type: AiActionType;
+  targetType: AiTargetType;
+  amount: number | null;
+  durationDays: number | null;
+  reason: string;
+}
+
+export interface CaseAiSuggestion {
+  caseId: string;
+  caseNumber: string;
+  generatedAt: string;
+  model: string;
+  summary: string;
+  suggestedVerdict: AiVerdict;
+  suggestedFaultParty: AiFaultParty;
+  suggestedSeverity: AiSeverity;
+  confidence: number;
+  keyFindings: string[];
+  evidenceGaps: string[];
+  riskFlags: string[];
+  suggestedActions: AiSuggestedAction[];
+  suggestedResolutionNote: string;
+  followUpQuestions: string[];
+  /** Yêu cầu bổ sung gửi tài xế/nhà hàng (tối đa 3). */
+  respondentQuestions: string[];
+  sourcesUsed: string[];
+  sourcesMissing: string[];
+  warnings: string[];
+  usage: {
+    promptTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+  };
+}
+
+export interface CaseAiContextSource {
+  id: string;
+  name: string;
+  available: boolean;
+  detail?: string;
+  payload?: unknown;
+}
+
+export interface CaseAiContext {
+  generatedAt: string;
+  case: {
+    id: string;
+    caseNumber: string;
+    type: string;
+    category: string;
+    severity: string;
+    status: string;
+    orderId: string | null;
+    reporterId: string;
+    reporterType: string;
+    respondentId: string;
+    respondentType: string;
+    subject: string;
+    description: string;
+    evidence: string[];
+    respondentResponse: string | null;
+    respondentEvidence: string[];
+    respondentRespondedAt: string | null;
+    createdAt: string | null;
+    responseDeadline: string | null;
+  };
+  sources: CaseAiContextSource[];
+  missingSourceIds: string[];
+  criticalMissingSourceIds: string[];
+  imagesAttached: number;
+  imagesSkipped: string[];
+}
+
+export interface AssistantHealth {
+  /** `glm` hoặc `gemini` (theo AI_PROVIDER). */
+  provider: string;
+  enabled: boolean;
+  hasApiKey: boolean;
+  /** Biến môi trường chứa key của provider đang chọn (vd `GLM_API_KEY`). */
+  apiKeyEnv: string;
+  apiBase: string;
+  model: string;
+  /** Model đọc ảnh bằng chứng (GLM tách riêng model vision). */
+  visionModel?: string | null;
+  maxEvidenceImages: number;
+  sourceCount: number;
+  /** AI có tự phân tích khi có khiếu nại mới hay không. */
+  autoAnalyze: boolean;
+}
+
+export type AiAnalysisSource = "AUTO" | "MANUAL";
+export type AiReviewDecision = "ACCEPTED" | "REJECTED";
+
+/** Vết admin duyệt / bỏ qua gợi ý AI. */
+export interface CaseAiAnalysisReview {
+  decision: AiReviewDecision;
+  by: string;
+  at: string;
+  note: string | null;
+}
+
+/** Bản phân tích AI đã lưu cho một vụ việc. */
+export interface CaseAiAnalysisRecord {
+  caseId: string;
+  caseNumber: string;
+  source: AiAnalysisSource;
+  createdAt: string;
+  suggestion: CaseAiSuggestion;
+  review: CaseAiAnalysisReview | null;
+}
+

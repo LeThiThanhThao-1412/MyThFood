@@ -73,6 +73,9 @@ export class MerchantEntity {
   @Column({ type: "simple-array", nullable: true })
   secondary_categories!: string[];
 
+  @Column({ type: "varchar", length: 500, nullable: true })
+  other_category_description!: string | null;
+
   @Column({ type: "boolean", default: true })
   is_open!: boolean;
 

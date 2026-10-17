@@ -5,9 +5,11 @@ import Link from "next/link";
 import { merchantApi, uploadApi } from "@mythfood/api-client";
 import {
   useAuthStore,
-  FOOD_CATEGORIES as MERCHANT_CATEGORIES,
+  PRIMARY_CATEGORIES,
+  SECONDARY_CATEGORIES,
+  OTHER_CATEGORY_KEY,
 } from "@mythfood/frontend-shared";
-import TopNav from "@/components/TopNav";
+import MerchantShell from "@/components/MerchantShell";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -83,8 +85,9 @@ export default function SettingsPage() {
   const [isOpen, setIsOpen] = useState(true);
 
   // Categories
-  const [primaryCategory, setPrimaryCategory] = useState("pho");
+  const [primaryCategory, setPrimaryCategory] = useState("");
   const [secondaryCategories, setSecondaryCategories] = useState<string[]>([]);
+  const [otherCategoryDescription, setOtherCategoryDescription] = useState("");
 
   // Info & images
   const [info, setInfo] = useState({
@@ -112,6 +115,8 @@ export default function SettingsPage() {
           if (m.primaryCategory) setPrimaryCategory(m.primaryCategory);
           if (m.secondaryCategories)
             setSecondaryCategories(m.secondaryCategories);
+          if (m.otherCategoryDescription)
+            setOtherCategoryDescription(m.otherCategoryDescription);
 
           // Load open/closed status
           if (m.isOpen !== undefined) setIsOpen(m.isOpen);
@@ -226,6 +231,7 @@ export default function SettingsPage() {
       await merchantApi.update(merchant.id, {
         primaryCategory,
         secondaryCategories,
+        otherCategoryDescription: otherCategoryDescription.trim() || undefined,
       });
       setStatus("✅ Đã lưu loại nhà hàng");
     } catch {
@@ -237,7 +243,11 @@ export default function SettingsPage() {
 
   function toggleSecondaryCategory(key: string) {
     setSecondaryCategories((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+      prev.includes(key)
+        ? prev.filter((k) => k !== key)
+        : prev.length >= 3
+          ? prev
+          : [...prev, key],
     );
   }
 
@@ -301,10 +311,7 @@ export default function SettingsPage() {
   if (!merchant) return null;
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0">
-      <TopNav />
-
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-5">
+    <MerchantShell>
         <h1 className="text-2xl font-extrabold text-[#1a1a2e] mb-4">
           ⚙️ Cài đặt nhà hàng
         </h1>
@@ -578,45 +585,61 @@ export default function SettingsPage() {
           <p className="text-sm text-gray-500 mb-3">
             Chọn loại chính để khách hàng dễ tìm thấy bạn
           </p>
-          <div className="grid grid-cols-5 gap-2 mb-4">
-            {MERCHANT_CATEGORIES.map((cat) => (
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {PRIMARY_CATEGORIES.map((cat) => (
               <button
                 key={cat.key}
                 onClick={() => setPrimaryCategory(cat.key)}
-                className={`flex flex-col items-center gap-1 py-2.5 rounded-xl border-2 text-xs font-medium transition ${
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition ${
                   primaryCategory === cat.key
                     ? "border-[#ff6b35] bg-orange-50 text-[#ff6b35]"
                     : "border-gray-200 bg-white text-gray-600 hover:border-orange-200"
                 }`}
               >
                 <span className="text-xl">{cat.icon}</span>
-                <span>{cat.label}</span>
+                <span className="text-left leading-tight">{cat.label}</span>
               </button>
             ))}
           </div>
           <p className="text-sm font-medium text-gray-700 mb-2">
-            Loại phụ (tùy chọn)
+            Loại phụ (1-3 · {secondaryCategories.length}/3)
           </p>
           <div className="flex flex-wrap gap-2 mb-4">
-            {MERCHANT_CATEGORIES.filter((c) => c.key !== primaryCategory).map(
-              (cat) => {
-                const active = secondaryCategories.includes(cat.key);
-                return (
-                  <button
-                    key={cat.key}
-                    onClick={() => toggleSecondaryCategory(cat.key)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
-                      active
-                        ? "bg-[#ff6b35] text-white"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    }`}
-                  >
-                    {cat.icon} {cat.label}
-                  </button>
-                );
-              },
-            )}
+            {SECONDARY_CATEGORIES.map((cat) => {
+              const active = secondaryCategories.includes(cat.key);
+              return (
+                <button
+                  key={cat.key}
+                  onClick={() => toggleSecondaryCategory(cat.key)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                    active
+                      ? "bg-[#ff6b35] text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => toggleSecondaryCategory(OTHER_CATEGORY_KEY)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                secondaryCategories.includes(OTHER_CATEGORY_KEY)
+                  ? "bg-[#ff6b35] text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              ➕ Khác
+            </button>
           </div>
+          {secondaryCategories.includes(OTHER_CATEGORY_KEY) && (
+            <input
+              value={otherCategoryDescription}
+              onChange={(e) => setOtherCategoryDescription(e.target.value)}
+              placeholder="Mô tả món đặc biệt của quán (để admin duyệt)"
+              className="mb-4 w-full rounded-lg border px-4 py-2.5 text-sm focus:border-orange-400 outline-none"
+            />
+          )}
           <button
             onClick={saveCategories}
             disabled={saving}
@@ -672,7 +695,6 @@ export default function SettingsPage() {
             </ul>
           </div>
         </div>
-      </main>
-    </div>
+    </MerchantShell>
   );
 }

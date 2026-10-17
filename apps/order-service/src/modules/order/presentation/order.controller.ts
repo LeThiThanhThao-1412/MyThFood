@@ -20,6 +20,7 @@ import { Roles, RolesGuard, Idempotency } from "@mythfood/common";
 import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { IdempotencyInterceptor } from "../../cache/idempotency.interceptor";
 import { OrderService } from "../application/order.service";
+import { MerchantComplianceService } from "../application/merchant-compliance.service";
 import {
   PlaceOrderDto,
   UpdateOrderDto,
@@ -34,7 +35,10 @@ import { Order } from "../domain/order.aggregate";
 @Controller("orders")
 @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
 export class OrderController {
-  constructor(private readonly orderService: OrderService) {}
+  constructor(
+    private readonly orderService: OrderService,
+    private readonly merchantComplianceService: MerchantComplianceService,
+  ) {}
 
   // ===================== Order Placement =====================
 
@@ -268,6 +272,15 @@ export class OrderController {
     return this.orderService.getTopMenuItems(limit);
   }
 
+  // ===================== Merchant compliance (tỉ lệ từ chối/không phản hồi) =====================
+
+  @Get("stats/merchant-compliance")
+  @Roles("ADMIN")
+  async getMerchantCompliance(@Query("days") days?: string): Promise<any> {
+    const windowDays = days ? parseInt(days, 10) : undefined;
+    return this.merchantComplianceService.getComplianceView(windowDays);
+  }
+
   // ===================== Merchant Stats (B7) =====================
 
   @Get("stats/merchant/:merchantId")
@@ -342,6 +355,7 @@ export class OrderController {
       driverId: order.orderDriverId,
       cancelReason: order.orderCancelReason,
       rejectionReason: order.orderRejectionReason,
+      rejectionSource: order.orderRejectionSource,
       paymentMethod: order.orderPaymentMethod,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,

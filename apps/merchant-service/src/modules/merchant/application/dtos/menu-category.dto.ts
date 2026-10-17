@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsNumber,
+  IsBoolean,
   Min,
 } from "class-validator";
 import { Type } from "class-transformer";
@@ -30,6 +31,11 @@ export class UpdateMenuCategoryDto {
   @Min(0)
   @Type(() => Number)
   sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  isActive?: boolean;
 }
 
 export class MenuCategoryResponseDto {
@@ -37,4 +43,5 @@ export class MenuCategoryResponseDto {
   merchantId!: string;
   name!: string;
   sortOrder!: number;
+  isActive!: boolean;
 }

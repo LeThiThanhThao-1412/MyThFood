@@ -61,6 +61,12 @@ export class MenuItemEntity {
   @Column({ type: "boolean", default: true })
   is_available!: boolean;
 
+  @Column({ type: "varchar", length: 30, default: "AVAILABLE" })
+  availability_status!: string;
+
+  @Column({ type: "timestamptz", nullable: true })
+  out_of_stock_until!: Date | null;
+
   @Column({ type: "boolean", default: false })
   is_featured!: boolean;
 

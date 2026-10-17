@@ -31,6 +31,7 @@ export class OrderMapper {
     entity.driver_id = order.orderDriverId;
     entity.cancel_reason = order.orderCancelReason;
     entity.rejection_reason = order.orderRejectionReason;
+    entity.rejection_source = order.orderRejectionSource;
     entity.payment_method = order.orderPaymentMethod;
     return entity;
   }
@@ -98,7 +99,10 @@ export class OrderMapper {
       driverId: orderEntity.driver_id,
       cancelReason: orderEntity.cancel_reason,
       rejectionReason: orderEntity.rejection_reason,
+      rejectionSource: orderEntity.rejection_source,
       paymentMethod: orderEntity.payment_method || "CASH",
+      createdAt: orderEntity.created_at,
+      updatedAt: orderEntity.updated_at,
     });
   }
 }

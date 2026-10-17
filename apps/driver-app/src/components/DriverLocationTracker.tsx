@@ -18,6 +18,10 @@ import {
 //   2. Gửi PATCH /drivers/:id/location → backend lưu vào bảng lịch sử
 //      vị trí (driver_location_history) + cập nhật currentLat/Lng.
 //   3. Đồng bộ vào useLocationStore để bản đồ/UI đi theo thời gian thực.
+//
+// Tài xế vừa bật ONLINE: gửi vị trí NGAY (không chờ tick kế tiếp) để backend
+// luôn có nhịp tim — tránh bị cơ chế auto-offline (quét mỗi 15 giây) chuyển
+// sang OFFLINE ngay sau khi vừa bật Online.
 // ============================================================================
 
 const TRACK_INTERVAL_MS = 5000; // ghi vị trí mỗi 5 giây
@@ -32,22 +36,15 @@ export default function DriverLocationTracker() {
   const trackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const statusTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sendingRef = useRef(false);
+  // Trạng thái ONLINE ở lần đọc gần nhất → phát hiện đúng thời điểm tài xế vừa
+  // bật ONLINE để gửi ngay nhịp tim đầu tiên (không chờ tới tick kế tiếp).
+  const wasOnlineRef = useRef(false);
 
   useEffect(() => {
     if (!isAuthenticated || !user?.id) return;
     if (!canAccessApp(user?.roles, "DRIVER")) return;
 
     let cancelled = false;
-
-    const refreshDriver = async () => {
-      try {
-        const res = await driverApi.getByUserId(user.id);
-        const d = (res as any)?.data ?? res;
-        if (!cancelled) driverRef.current = d;
-      } catch {
-        // Chưa có hồ sơ tài xế / lỗi mạng → bỏ qua, tick sau sẽ thử lại.
-      }
-    };
 
     const sendLocation = () => {
       const d = driverRef.current;
@@ -81,6 +78,23 @@ export default function DriverLocationTracker() {
       );
     };
 
+    const refreshDriver = async () => {
+      try {
+        const res = await driverApi.getByUserId(user.id);
+        const d = (res as any)?.data ?? res;
+        if (cancelled) return;
+        const isOnline = d?.onlineStatus === "ONLINE";
+        const justWentOnline = isOnline && !wasOnlineRef.current;
+        driverRef.current = d;
+        wasOnlineRef.current = isOnline;
+        // Vừa bật ONLINE → gửi ngay nhịp tim đầu tiên để backend không chuyển
+        // tài xế sang OFFLINE do chưa nhận được vị trí nào (auto-offline sweep).
+        if (justWentOnline) sendLocation();
+      } catch {
+        // Chưa có hồ sơ tài xế / lỗi mạng → bỏ qua, tick sau sẽ thử lại.
+      }
+    };
+
     // Nạp hồ sơ tài xế lần đầu rồi bắt đầu vòng lặp ghi vị trí.
     refreshDriver().then(() => {
       if (cancelled) return;
@@ -96,6 +110,7 @@ export default function DriverLocationTracker() {
       if (trackTimerRef.current) clearInterval(trackTimerRef.current);
       if (statusTimerRef.current) clearInterval(statusTimerRef.current);
       sendingRef.current = false;
+      wasOnlineRef.current = false;
     };
   }, [isAuthenticated, user?.id, setLocation]);
 

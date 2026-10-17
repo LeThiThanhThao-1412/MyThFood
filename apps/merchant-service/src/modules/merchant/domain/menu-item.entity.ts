@@ -12,6 +12,17 @@ export type MenuItemOptionGroupType =
   | "TOGGLE"
   | "QUANTITY";
 
+/**
+ * Trạng thái bán của món (thay cho việc xóa món):
+ * - AVAILABLE: đang bán.
+ * - OUT_OF_STOCK_TODAY: hết hàng trong ngày, tự mở lại vào ngày hôm sau.
+ * - OUT_OF_STOCK: hết hàng vô thời hạn / tắt món, ẩn cho tới khi bật lại thủ công.
+ */
+export type MenuItemAvailabilityStatus =
+  | "AVAILABLE"
+  | "OUT_OF_STOCK_TODAY"
+  | "OUT_OF_STOCK";
+
 export interface MenuItemOption {
   id: string;
   name: string;
@@ -41,7 +52,8 @@ export interface MenuItemProps {
   price: number;
   originalPrice: number | null;
   imageUrl: string | null;
-  isAvailable: boolean;
+  availabilityStatus: MenuItemAvailabilityStatus;
+  outOfStockUntil: Date | null;
   isFeatured: boolean;
   preparationTime: number | null;
   sortOrder: number;
@@ -57,7 +69,8 @@ export class MenuItem extends DomainEntity<MenuItemId> {
   private price: number;
   private originalPrice: number | null;
   private imageUrl: string | null;
-  private isAvailable: boolean;
+  private _availabilityStatus: MenuItemAvailabilityStatus;
+  private _outOfStockUntil: Date | null;
   private isFeatured: boolean;
   private preparationTime: number | null;
   private sortOrder: number;
@@ -73,7 +86,8 @@ export class MenuItem extends DomainEntity<MenuItemId> {
     this.price = props.price;
     this.originalPrice = props.originalPrice;
     this.imageUrl = props.imageUrl;
-    this.isAvailable = props.isAvailable;
+    this._availabilityStatus = props.availabilityStatus ?? "AVAILABLE";
+    this._outOfStockUntil = props.outOfStockUntil ?? null;
     this.isFeatured = props.isFeatured;
     this.preparationTime = props.preparationTime;
     this.sortOrder = props.sortOrder;
@@ -89,7 +103,7 @@ export class MenuItem extends DomainEntity<MenuItemId> {
     price: number;
     originalPrice?: number;
     imageUrl?: string;
-    isAvailable?: boolean;
+    availabilityStatus?: MenuItemAvailabilityStatus;
     isFeatured?: boolean;
     preparationTime?: number;
     sortOrder?: number;
@@ -104,7 +118,8 @@ export class MenuItem extends DomainEntity<MenuItemId> {
       price: props.price,
       originalPrice: props.originalPrice ?? null,
       imageUrl: props.imageUrl ?? null,
-      isAvailable: props.isAvailable ?? true,
+      availabilityStatus: props.availabilityStatus ?? "AVAILABLE",
+      outOfStockUntil: null,
       isFeatured: props.isFeatured ?? false,
       preparationTime: props.preparationTime ?? null,
       sortOrder: props.sortOrder ?? 0,
@@ -167,24 +182,74 @@ export class MenuItem extends DomainEntity<MenuItemId> {
   }
 
   /**
-   * Toggle availability.
+   * Đặt trạng thái bán (thay cho việc xóa món).
    */
-  public toggleAvailable(): void {
-    this.isAvailable = !this.isAvailable;
+  public setAvailabilityStatus(
+    status: MenuItemAvailabilityStatus,
+    outOfStockUntil: Date | null = null,
+  ): void {
+    this._availabilityStatus = status;
+    this._outOfStockUntil = outOfStockUntil;
   }
 
   /**
-   * Mark as unavailable.
+   * Hết hàng trong ngày → tự mở lại vào nửa đêm nay (đầu ngày mai).
    */
-  public markUnavailable(): void {
-    this.isAvailable = false;
+  public markOutOfStockToday(): void {
+    const now = new Date();
+    const tomorrow = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+      0,
+      0,
+      0,
+      0,
+    );
+    this.setAvailabilityStatus("OUT_OF_STOCK_TODAY", tomorrow);
   }
 
   /**
-   * Mark as available.
+   * Hết hàng vô thời hạn / tắt món → ẩn cho tới khi bật lại thủ công.
+   */
+  public markOutOfStock(): void {
+    this.setAvailabilityStatus("OUT_OF_STOCK", null);
+  }
+
+  /**
+   * Bật lại món (đang bán).
    */
   public markAvailable(): void {
-    this.isAvailable = true;
+    this.setAvailabilityStatus("AVAILABLE", null);
+  }
+
+  /**
+   * Toggle: AVAILABLE <-> OUT_OF_STOCK (giữ tương thích cũ).
+   */
+  public toggleAvailable(): void {
+    if (this.available) {
+      this.markOutOfStock();
+    } else {
+      this.markAvailable();
+    }
+  }
+
+  /**
+   * Tự mở lại món "hết hàng trong ngày" khi đã qua mốc hôm sau.
+   * Trả về true nếu có món được mở lại.
+   */
+  public reopenIfDue(now: Date): boolean {
+    if (
+      this._availabilityStatus !== "OUT_OF_STOCK_TODAY" ||
+      !this._outOfStockUntil
+    ) {
+      return false;
+    }
+    if (this._outOfStockUntil.getTime() > now.getTime()) {
+      return false;
+    }
+    this.setAvailabilityStatus("AVAILABLE", null);
+    return true;
   }
 
   // ===================== Getters =====================
@@ -226,7 +291,15 @@ export class MenuItem extends DomainEntity<MenuItemId> {
   }
 
   get available(): boolean {
-    return this.isAvailable;
+    return this._availabilityStatus === "AVAILABLE";
+  }
+
+  get availabilityStatus(): MenuItemAvailabilityStatus {
+    return this._availabilityStatus;
+  }
+
+  get outOfStockUntil(): Date | null {
+    return this._outOfStockUntil;
   }
 
   get featured(): boolean {

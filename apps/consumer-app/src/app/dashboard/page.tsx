@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import CategoryScroller from "@/components/CategoryScroller";
 import { merchantApi, orderApi, promotionApi } from "@mythfood/api-client";
 import {
   useAuthStore,
@@ -388,10 +389,10 @@ export default function DashboardPage() {
   return (
     <>
       <LocationGate />
-      <div className="min-h-screen bg-[#f0f2f5]">
+      <div className="min-h-screen bg-[#f0f2f5] flex flex-col">
         {/* ===== TOP NAVBAR ===== */}
         <header className="bg-white shadow-sm sticky top-0 z-50">
-          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="max-w-[1920px] mx-auto px-6">
             <div className="flex items-center justify-between h-16 gap-4">
               {/* Logo */}
               <Link
@@ -523,7 +524,10 @@ export default function DashboardPage() {
         </header>
 
         {/* ===== MAIN CONTENT ===== */}
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* w-full: là flex item của cột flex-col — nếu để bề rộng auto, fit-content
+            của dải danh mục / flash sale (shrink-0) sẽ kéo cả trang rộng hơn
+            viewport và gây kéo ngang. */}
+        <div className="w-full max-w-[1920px] mx-auto px-6 py-6">
           {/* Mobile search */}
           <form
             onSubmit={(e) => {
@@ -597,22 +601,24 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-[#1a1a2e]">🍽️ Danh mục</h2>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+            <CategoryScroller gapClassName="gap-5">
               {FOOD_CATEGORIES.map((cat) => (
                 <div
                   key={cat.key}
                   onClick={() =>
                     router.push(`/restaurants?category=${cat.key}`)
                   }
-                  className="bg-[#fafafa] rounded-2xl p-4 text-center cursor-pointer hover:bg-[#fff7ed] hover:-translate-y-0.5 transition-all border border-gray-100"
+                  className="group shrink-0 w-[110px] xl:flex-1 xl:max-w-[160px] flex flex-col items-center gap-2 cursor-pointer"
                 >
-                  <div className="text-2xl sm:text-3xl mb-2">{cat.icon}</div>
-                  <div className="text-xs sm:text-sm font-semibold text-gray-700">
+                  <div className="w-[90px] h-[90px] rounded-full bg-[#F5F5F5] group-hover:bg-[#fff7ed] flex items-center justify-center text-[70px] leading-none transition-all group-hover:-translate-y-0.5">
+                    {cat.icon}
+                  </div>
+                  <div className="text-[14px] font-medium text-gray-700 text-center leading-snug line-clamp-2">
                     {cat.label}
                   </div>
                 </div>
               ))}
-            </div>
+            </CategoryScroller>
           </div>
 
           {/* ===== FLASH SALE ===== */}
@@ -1154,6 +1160,13 @@ export default function DashboardPage() {
 
         {/* Mini floating card theo dõi đơn đang giao */}
         <FloatingOrderCard order={activeOrder} />
+
+        <footer className="bg-[#1a1a2e] text-white/60 py-6 mt-auto hidden lg:block">
+          <div className="max-w-[1920px] mx-auto px-6 text-center text-xs">
+            © {new Date().getFullYear()} MyThFood · Nền tảng giao đồ ăn hàng đầu
+            Việt Nam
+          </div>
+        </footer>
 
         {/* ===== MOBILE BOTTOM NAV ===== */}
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">

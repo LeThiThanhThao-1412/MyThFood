@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuthStore } from "@mythfood/frontend-shared";
-import TopNav from "@/components/TopNav";
+import MerchantShell from "@/components/MerchantShell";
 import { merchantApi, orderApi, walletApi } from "@mythfood/api-client";
 
 function toNum(v: unknown): number {
@@ -83,10 +83,7 @@ export default function MerchantWalletPage() {
   }, 0);
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0">
-      <TopNav />
-
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-5">
+    <MerchantShell>
         <h1 className="text-2xl font-extrabold text-[#1a1a2e] mb-4">
           💰 Ví doanh thu
         </h1>
@@ -246,7 +243,6 @@ export default function MerchantWalletPage() {
             })}
           </div>
         </div>
-      </main>
-    </div>
+    </MerchantShell>
   );
 }

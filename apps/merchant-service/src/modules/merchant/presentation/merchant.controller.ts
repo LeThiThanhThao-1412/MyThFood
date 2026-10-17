@@ -32,6 +32,7 @@ import {
   CreateMenuItemDto,
   UpdateMenuItemDto,
   MenuItemResponseDto,
+  SetMenuItemAvailabilityDto,
 } from "../application/dtos/menu.dto";
 import {
   CreateMenuCategoryDto,
@@ -259,14 +260,19 @@ export class MerchantController {
     return this.toMenuItemResponse(menuItem);
   }
 
-  @Delete(":id/menu/:itemId")
+  @Patch(":id/menu/:itemId/availability")
   @Roles("MERCHANT_OWNER", "ADMIN")
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteMenuItem(
+  async setMenuItemAvailability(
     @Param("id") id: string,
     @Param("itemId") itemId: string,
-  ): Promise<void> {
-    await this.merchantService.deleteMenuItem(id, itemId);
+    @Body() dto: SetMenuItemAvailabilityDto,
+  ): Promise<MenuItemResponseDto> {
+    const menuItem = await this.merchantService.setMenuItemAvailability(
+      id,
+      itemId,
+      dto,
+    );
+    return this.toMenuItemResponse(menuItem);
   }
 
   @Patch(":id/menu/:itemId/available")
@@ -532,6 +538,7 @@ export class MerchantController {
       currentOrderCount: merchant.merchantCurrentOrderCount,
       primaryCategory: merchant.merchantPrimaryCategory,
       secondaryCategories: merchant.merchantSecondaryCategories,
+      otherCategoryDescription: merchant.merchantOtherCategoryDescription,
       isOpen: merchant.merchantIsOpen,
       isOpenNow: merchant.isOpen(),
       matchedMenuItems,
@@ -552,6 +559,8 @@ export class MerchantController {
       originalPrice: menuItem.itemOriginalPrice,
       imageUrl: menuItem.itemImageUrl,
       isAvailable: menuItem.available,
+      availabilityStatus: menuItem.availabilityStatus,
+      outOfStockUntil: menuItem.outOfStockUntil,
       isFeatured: menuItem.featured,
       preparationTime: menuItem.prepTime,
       sortOrder: menuItem.order,
@@ -569,6 +578,7 @@ export class MerchantController {
       merchantId: category.merchantId,
       name: category.name,
       sortOrder: category.sortOrder,
+      isActive: category.active,
     };
   }
 }

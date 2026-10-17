@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import DriverShell from "@/components/DriverShell";
 import {
   driverApi,
   orderApi,
@@ -284,46 +285,31 @@ export default function DriverLocationPage() {
   const driverId = driver?.id || "";
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0 w-full">
-      {/* Header */}
-      <header className="bg-[#1a1a2e] px-4 sm:px-6 py-3 text-white">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <Link href="/dashboard" className="text-white/60 text-lg">
-            ←
-          </Link>
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold">🗺️ Bản đồ</h1>
-            {/* COD badge - info only */}
-            {codEligible ? (
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-green-500/20 text-green-300">
-                ✅ Có thể nhận COD
-              </span>
-            ) : (
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-yellow-500/20 text-yellow-300">
-                ⚠️ Chỉ nhận được đơn thẻ (COD cần 2tr)
-              </span>
-            )}
-            {/* Online/Offline toggle */}
-            <button
-              onClick={toggleOnline}
-              disabled={togglingOnline}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition ${isOnline ? "bg-green-500 text-white" : "bg-gray-600 text-gray-300"}`}
-            >
-              {togglingOnline ? "..." : isOnline ? "🟢 ONLINE" : "⚫ OFFLINE"}
-            </button>
-          </div>
-          {/* Info icon */}
-          <button
-            onClick={() => setShowMechanism(!showMechanism)}
-            className="text-white/60 w-6 text-center text-lg"
-            title="Dispatch Info"
-          >
-            ℹ️
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-4 space-y-4 w-full">
+    <DriverShell title="🗺️ Bản đồ" backHref="/dashboard">
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <span
+          className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+            codEligible
+              ? "bg-green-100 text-green-700"
+              : "bg-yellow-100 text-yellow-700"
+          }`}
+        >
+          {codEligible
+            ? "✅ Có thể nhận COD"
+            : "⚠️ Chỉ nhận được đơn thẻ (COD cần 2tr)"}
+        </span>
+        <button
+          onClick={toggleOnline}
+          disabled={togglingOnline}
+          className={`px-3 py-1 rounded-full text-xs font-bold transition ${
+            isOnline
+              ? "bg-green-500 text-white"
+              : "bg-gray-600 text-gray-300"
+          }`}
+        >
+          {togglingOnline ? "..." : isOnline ? "🟢 ONLINE" : "⚫ OFFLINE"}
+        </button>
+      </div>
         {/* Search Input */}
         <div className="relative" ref={suggestionRef}>
           <div className="relative">
@@ -540,48 +526,7 @@ export default function DriverLocationPage() {
             </div>
           )}
         </div>
-      </main>
 
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[420px] bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">
-        <Link
-          href="/dashboard"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">🏠</span>
-          <span>Trang chủ</span>
-        </Link>
-        <Link
-          href="/orders"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">📦</span>
-          <span>Đơn hàng</span>
-        </Link>
-        <Link
-          href="/location"
-          className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline"
-        >
-          <span className="text-[22px]">🗺️</span>
-          <span>Bản đồ</span>
-        </Link>
-        <Link
-          href="/wallet"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">💰</span>
-          <span>Ví</span>
-        </Link>
-        <button
-          onClick={() => {
-            clearAuth();
-            router.push("/");
-          }}
-          className="flex flex-col items-center text-[10px] text-gray-400 bg-transparent border-none font-sans cursor-pointer"
-        >
-          <span className="text-[22px]">👤</span>
-          <span>Tài khoản</span>
-        </button>
-      </nav>
-    </div>
+    </DriverShell>
   );
 }

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { resolutionApi, walletApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import AdminShell from "../../components/AdminShell";
+import CaseAiAssistant from "../../components/CaseAiAssistant";
 
 const CASE_STATUS_BADGE: Record<string, string> = {
   OPEN: "bg-gray-100 text-gray-600",
@@ -866,6 +867,8 @@ export default function AdminCasesPage() {
                       Leo thang
                     </button>
                   </div>
+
+                  {selected && <CaseAiAssistant caseId={selected.id} />}
 
                   <div className="space-y-2 border-t border-gray-100 pt-3">
                     <p className="text-xs font-semibold text-gray-400 uppercase">

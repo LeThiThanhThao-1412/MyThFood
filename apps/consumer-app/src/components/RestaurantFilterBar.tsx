@@ -1,5 +1,6 @@
 "use client";
 import { FOOD_CATEGORIES } from "@mythfood/frontend-shared";
+import CategoryScroller from "./CategoryScroller";
 
 /**
  * Sort options for the restaurant list.
@@ -189,7 +190,7 @@ export default function RestaurantFilterBar({
       </div>
 
       {/* ===== Row 2: categories (multi-select) ===== */}
-      <div className="flex gap-2 overflow-x-auto hide-scrollbar pb-1 items-center">
+      <CategoryScroller>
         <button
           type="button"
           onClick={() => onToggleCategory("")}
@@ -221,7 +222,7 @@ export default function RestaurantFilterBar({
             </button>
           );
         })}
-      </div>
+      </CategoryScroller>
     </div>
   );
 }

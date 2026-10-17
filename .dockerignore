@@ -1,0 +1,40 @@
+# Node / package managers
+node_modules
+**/node_modules
+.pnpm-store
+
+# Build output
+dist
+**/dist
+build
+**/build
+.turbo
+coverage
+*.tsbuildinfo
+**/*.tsbuildinfo
+.next
+**/.next
+
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs / scratch
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+
+# CI / tooling not needed at image build time
+.github
+.husky
+docs
+test
+**/test

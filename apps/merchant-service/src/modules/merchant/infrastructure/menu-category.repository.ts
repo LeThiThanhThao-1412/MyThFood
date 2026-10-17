@@ -22,6 +22,7 @@ export class MenuCategoryRepository {
         merchantId: e.merchant_id,
         name: e.name,
         sortOrder: e.sort_order,
+        isActive: e.is_active !== false,
       }),
     );
   }
@@ -36,6 +37,7 @@ export class MenuCategoryRepository {
       merchantId: e.merchant_id,
       name: e.name,
       sortOrder: e.sort_order,
+      isActive: e.is_active !== false,
     });
   }
 
@@ -45,10 +47,20 @@ export class MenuCategoryRepository {
     entity.merchant_id = merchantId;
     entity.name = category.name;
     entity.sort_order = category.sortOrder;
+    entity.is_active = category.active;
     await this.repo.save(entity);
   }
 
   async delete(merchantId: string, id: string): Promise<void> {
     await this.repo.softDelete({ id, merchant_id: merchantId });
+  }
+
+  /** Danh sách id các danh mục đang bị tắt (ẩn khỏi menu người mua). */
+  async findDisabledIds(merchantId: string): Promise<Set<string>> {
+    const rows = await this.repo.find({
+      where: { merchant_id: merchantId, is_active: false },
+      select: ["id"],
+    });
+    return new Set(rows.map((r) => r.id));
   }
 }

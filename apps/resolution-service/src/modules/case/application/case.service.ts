@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   forwardRef,
 } from "@nestjs/common";
 import {
@@ -22,6 +23,7 @@ import {
   Verdict,
 } from "../domain/case.enums";
 import { IntegrationService } from "../../integration/integration.service";
+import { AssistantService } from "../../assistant/application/assistant.service";
 import {
   ActorIdDto,
   AddEvidenceDto,
@@ -40,11 +42,20 @@ export interface AuthUser {
 export class CaseService {
   private readonly logger = new Logger(CaseService.name);
 
+  /** Tránh log lặp lại khi AssistantService không được cắm vào. */
+  private warnedMissingAssistant = false;
+
   constructor(
     private readonly repo: CaseRepository,
     private readonly integration: IntegrationService,
     @Inject(forwardRef(() => PenaltyService))
     private readonly penaltyService: PenaltyService,
+    // `@Optional()`: nếu vì lý do nào đó module assistant không sẵn sàng thì
+    // resolution-service vẫn khởi động và tạo khiếu nại bình thường (chỉ mất
+    // phần tự phân tích AI).
+    @Optional()
+    @Inject(forwardRef(() => AssistantService))
+    private readonly assistant?: AssistantService,
   ) {}
 
   private mapRoleToActorType(roles: string[]): ActorType {
@@ -143,6 +154,18 @@ export class CaseService {
       "Bạn có khiếu nại mới",
       `${dto.subject} — hãy cung cấp bằng chứng trong 48h.`,
     );
+
+    // Trợ lý AI phân tích **nền** ngay khi khiếu nại được tạo: admin mở vụ việc
+    // là có sẵn gợi ý để đọc & duyệt, không phải bấm rồi chờ 1-2 phút.
+    // Không `await`: response tạo khiếu nại không được chậm vì model AI.
+    if (this.assistant) {
+      void this.assistant.triggerAutoAnalysis(id);
+    } else if (!this.warnedMissingAssistant) {
+      this.warnedMissingAssistant = true;
+      this.logger.warn(
+        "Không tìm thấy AssistantService — bỏ qua tự phân tích AI cho các khiếu nại mới.",
+      );
+    }
 
     return this.getEntityOrFail(id);
   }

@@ -10,6 +10,7 @@ export class MenuCategory {
     public readonly merchantId: string,
     private _name: string,
     private _sortOrder: number,
+    private _isActive: boolean,
   ) {}
 
   public static create(props: {
@@ -28,6 +29,7 @@ export class MenuCategory {
       props.merchantId,
       name,
       props.sortOrder ?? 0,
+      true,
     );
   }
 
@@ -36,12 +38,14 @@ export class MenuCategory {
     merchantId: string;
     name: string;
     sortOrder: number;
+    isActive?: boolean;
   }): MenuCategory {
     return new MenuCategory(
       props.id,
       props.merchantId,
       props.name,
       props.sortOrder,
+      props.isActive ?? true,
     );
   }
 
@@ -62,11 +66,19 @@ export class MenuCategory {
     this._sortOrder = sortOrder;
   }
 
+  public setActive(active: boolean): void {
+    this._isActive = active;
+  }
+
   get name(): string {
     return this._name;
   }
 
   get sortOrder(): number {
     return this._sortOrder;
+  }
+
+  get active(): boolean {
+    return this._isActive;
   }
 }

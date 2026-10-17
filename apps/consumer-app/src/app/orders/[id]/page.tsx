@@ -1,4 +1,5 @@
 "use client";
+import ConsumerShell from "@/components/ConsumerShell";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -661,24 +662,10 @@ export default function OrderDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] lg:max-w-3xl mx-auto relative pb-24">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="px-4 h-16 flex items-center justify-between">
-          <Link
-            href="/dashboard"
-            className="text-gray-400 hover:text-[#ff6b35] text-lg transition"
-          >
-            ←
-          </Link>
-          <h1 className="text-lg font-bold text-[#1a1a2e]">
-            Đơn #{order.id?.slice(0, 8)}
-          </h1>
-          <div className="w-6" />
-        </div>
-      </header>
-
-      <main className="px-4 py-6 space-y-5">
+    <ConsumerShell
+      title={`Đơn #${order.id?.slice(0, 8)}`}
+      backHref="/dashboard"
+    >
         {/* Status Banner */}
         <div
           className={`rounded-2xl p-6 text-center border ${STATUS_COLORS[order.status] || STATUS_COLORS.PENDING}`}
@@ -1291,8 +1278,6 @@ export default function OrderDetailPage() {
             {cancelStatus}
           </p>
         )}
-      </main>
-
       <ChatDrawer
         open={chatOpen}
         onClose={() => setChatOpen(false)}
@@ -1413,44 +1398,6 @@ export default function OrderDetailPage() {
         </div>
       )}
 
-      {/* Bottom nav */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full lg:max-w-3xl bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">
-        <Link
-          href="/dashboard"
-          className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline"
-        >
-          <span className="text-[22px]">🏠</span>
-          <span>Trang chủ</span>
-        </Link>
-        <Link
-          href="/restaurants"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">🔍</span>
-          <span>Tìm kiếm</span>
-        </Link>
-        <Link
-          href="/cart"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">🛒</span>
-          <span>Giỏ hàng</span>
-        </Link>
-        <Link
-          href="/orders"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">📦</span>
-          <span>Đơn hàng</span>
-        </Link>
-        <Link
-          href="/dashboard"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">👤</span>
-          <span>Tài khoản</span>
-        </Link>
-      </nav>
-    </div>
+    </ConsumerShell>
   );
 }

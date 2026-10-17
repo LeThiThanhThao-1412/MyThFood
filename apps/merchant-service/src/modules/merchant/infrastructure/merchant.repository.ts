@@ -85,6 +85,24 @@ export class MerchantRepository implements IRepository<Merchant, MerchantId> {
     await this.documentRepo.save(docEntities);
   }
 
+  /** Tự mở lại các món "hết hàng trong ngày" đã tới mốc. Trả về số món đã mở. */
+  async reopenDueMenuItems(now: Date): Promise<number> {
+    const res = await this.menuItemRepo
+      .createQueryBuilder()
+      .update()
+      .set({
+        availability_status: "AVAILABLE",
+        is_available: true,
+        out_of_stock_until: null,
+      })
+      .where("availability_status = :status", { status: "OUT_OF_STOCK_TODAY" })
+      .andWhere("out_of_stock_until IS NOT NULL")
+      .andWhere("out_of_stock_until <= :now", { now })
+      .andWhere("deleted_at IS NULL")
+      .execute();
+    return res.affected ?? 0;
+  }
+
   async findById(id: MerchantId): Promise<Merchant | null> {
     const entity = await this.repository.findOne({
       where: { id: id.toString() },

@@ -18,10 +18,17 @@ export { useFavoriteDishesStore } from "./stores/favorite-dishes.store";
 // Constants
 export {
   FOOD_CATEGORIES,
+  PRIMARY_CATEGORIES,
+  SECONDARY_CATEGORIES,
   ALL_CATEGORY,
+  OTHER_CATEGORY_KEY,
   getFoodCategoryLabel,
+  getSecondaryCategoryLabel,
 } from "./constants/food-categories";
-export type { FoodCategory } from "./constants/food-categories";
+export type {
+  FoodCategory,
+  FoodSubCategory,
+} from "./constants/food-categories";
 
 // Utils
 export { haversineKm, formatDistance } from "./utils/distance";

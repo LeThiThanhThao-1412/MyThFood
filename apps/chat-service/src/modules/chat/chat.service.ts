@@ -68,6 +68,20 @@ export class ChatService {
     return this.repo.findMessagesByConversation(conversation.id);
   }
 
+  /**
+   * Tra tin nhắn theo `orderId` thay vì `conversationId`.
+   *
+   * Dùng cho các luồng hậu kiểm (resolution-service / admin) — nơi chỉ có
+   * orderId của đơn bị khiếu nại và không phải thành viên hội thoại.
+   * Trả về mảng rỗng nếu đơn chưa từng có hội thoại (khách & tài xế không chat).
+   */
+  async getMessagesByOrderId(orderId: string): Promise<ChatMessageEntity[]> {
+    if (!orderId) return [];
+    const conversation = await this.repo.findConversationByOrderId(orderId);
+    if (!conversation) return [];
+    return this.repo.findMessagesByConversation(conversation.id);
+  }
+
   async sendMessage(
     conversationId: string,
     senderId: string,

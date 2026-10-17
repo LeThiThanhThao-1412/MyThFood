@@ -127,7 +127,7 @@ export default function AdminShell({
             </button>
           </div>
         </div>
-        <nav className="max-w-[1400px] mx-auto px-2 pb-2 flex gap-1 overflow-x-auto">
+        <nav className="max-w-[1400px] mx-auto px-2 pt-2 pb-2 flex gap-1 overflow-x-auto">
           {ADMIN_NAV.map((n) => {
             const count = badgeFor(n.href);
             return (

@@ -7,7 +7,7 @@ import {
   MerchantStatus,
   CapacityStatus,
 } from "../domain/merchant.aggregate";
-import { MenuItem } from "../domain/menu-item.entity";
+import { MenuItem, MenuItemAvailabilityStatus } from "../domain/menu-item.entity";
 import { OperatingHours } from "../domain/operating-hours.vo";
 import {
   MerchantDocument,
@@ -71,6 +71,7 @@ export class MerchantMapper {
       currentOrderCount: entity.current_order_count ?? 0,
       primaryCategory: entity.primary_category ?? null,
       secondaryCategories: entity.secondary_categories ?? [],
+      otherCategoryDescription: entity.other_category_description ?? null,
       isOpen: entity.is_open !== false,
     });
   }
@@ -100,6 +101,7 @@ export class MerchantMapper {
     entity.current_order_count = merchant.merchantCurrentOrderCount;
     entity.primary_category = merchant.merchantPrimaryCategory;
     entity.secondary_categories = merchant.merchantSecondaryCategories;
+    entity.other_category_description = merchant.merchantOtherCategoryDescription;
     entity.is_open = merchant.merchantIsOpen;
     return entity;
   }
@@ -117,6 +119,8 @@ export class MerchantMapper {
       entity.original_price = mi.itemOriginalPrice;
       entity.image_url = mi.itemImageUrl;
       entity.is_available = mi.available;
+      entity.availability_status = mi.availabilityStatus;
+      entity.out_of_stock_until = mi.outOfStockUntil;
       entity.is_featured = mi.featured;
       entity.preparation_time = mi.prepTime;
       entity.sort_order = mi.order;
@@ -171,7 +175,9 @@ export class MerchantMapper {
         ? Number(entity.original_price)
         : null,
       imageUrl: entity.image_url,
-      isAvailable: entity.is_available,
+      availabilityStatus: (entity.availability_status ??
+        (entity.is_available ? "AVAILABLE" : "OUT_OF_STOCK")) as MenuItemAvailabilityStatus,
+      outOfStockUntil: entity.out_of_stock_until ?? null,
       isFeatured: entity.is_featured,
       preparationTime: entity.preparation_time,
       sortOrder: entity.sort_order,

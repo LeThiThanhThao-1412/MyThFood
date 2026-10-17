@@ -125,6 +125,72 @@ describe("Driver Aggregate", () => {
     });
   });
 
+  describe("driverLastHeartbeatAt (auto-offline heartbeat)", () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("should be null when the driver has no session and never sent GPS", () => {
+      const driver = Driver.create(createProps);
+
+      expect(driver.driverLastHeartbeatAt).toBeNull();
+    });
+
+    it("should count the moment a driver just went online as a heartbeat", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.activate();
+
+      jest.useFakeTimers().setSystemTime(new Date("2026-01-01T10:00:00.000Z"));
+      driver.goOnline();
+
+      // Chưa gửi GPS lần nào nhưng vẫn phải có nhịp tim = thời điểm vừa online
+      // → không bị auto-offline ngay sau khi bật Online.
+      expect(driver.driverLastLocationUpdateAt).toBeNull();
+      expect(driver.driverLastHeartbeatAt?.toISOString()).toBe(
+        "2026-01-01T10:00:00.000Z",
+      );
+    });
+
+    it("should use the latest GPS update when it is newer than the online time", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.activate();
+
+      jest.useFakeTimers().setSystemTime(new Date("2026-01-01T10:00:00.000Z"));
+      driver.goOnline();
+
+      jest.setSystemTime(new Date("2026-01-01T10:00:05.000Z"));
+      driver.updateLocation(10.775, 106.7);
+
+      expect(driver.driverLastHeartbeatAt?.toISOString()).toBe(
+        "2026-01-01T10:00:05.000Z",
+      );
+    });
+
+    it("should keep the online time when the last GPS update is from a previous session", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.activate();
+
+      // Phiên trước: online + gửi GPS lúc 10:00.
+      jest.useFakeTimers().setSystemTime(new Date("2026-01-01T10:00:00.000Z"));
+      driver.goOnline();
+      jest.setSystemTime(new Date("2026-01-01T10:00:10.000Z"));
+      driver.updateLocation(10.775, 106.7);
+      driver.goOffline();
+
+      // Phiên mới: vừa bật lại ONLINE lúc 11:00, chưa gửi GPS mới.
+      jest.setSystemTime(new Date("2026-01-01T11:00:00.000Z"));
+      driver.goOnline();
+
+      // Nhịp tim phải là 11:00 (mốc vừa online), không phải 10:00:10 của phiên cũ.
+      expect(driver.driverLastHeartbeatAt?.toISOString()).toBe(
+        "2026-01-01T11:00:00.000Z",
+      );
+    });
+  });
+
   describe("goHome", () => {
     it("should allow go-home up to 2 times per day", () => {
       const driver = Driver.create(createProps);

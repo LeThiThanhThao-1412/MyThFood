@@ -8,7 +8,7 @@ import {
   type PriceHistoryStatus,
 } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
-import TopNav from "@/components/TopNav";
+import MerchantShell from "@/components/MerchantShell";
 
 function toNum(v: unknown): number {
   if (typeof v === "number") return v;
@@ -166,9 +166,7 @@ export default function MerchantPriceHistoryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0">
-      <TopNav merchantName={merchant?.name} isOpen={merchant?.isOpen} />
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-5">
+    <MerchantShell>
         <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
           📉 Lịch sử biến động giá
         </h1>
@@ -539,7 +537,6 @@ export default function MerchantPriceHistoryPage() {
             </div>
           </div>
         )}
-      </main>
-    </div>
+    </MerchantShell>
   );
 }

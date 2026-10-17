@@ -594,6 +594,30 @@ export class Driver extends AggregateRoot<DriverId> {
   get driverLastLocationUpdateAt(): Date | null {
     return this._lastLocationUpdateAt;
   }
+
+  /**
+   * Mốc "nhịp tim" (dấu hiệu tài xế còn kết nối) gần nhất, dùng cho cơ chế
+   * tự động chuyển OFFLINE khi tài xế đóng tab / mất mạng.
+   *
+   * Nhịp tim = giá trị MỚI NHẤT trong:
+   *  - `_lastLocationUpdateAt`: lần cuối app tài xế gửi vị trí GPS (chu kỳ 5s).
+   *  - `_currentSessionStartAt`: thời điểm tài xế vừa bật ONLINE.
+   *
+   * Việc tính cả thời điểm bật ONLINE đảm bảo tài xế vừa bật ONLINE luôn có trọn
+   * một khoảng ân hạn để app gửi vị trí đầu tiên — tránh việc vừa online đã bị
+   * quét và chuyển OFFLINE (do `lastLocationUpdateAt` còn null hoặc là mốc cũ
+   * của phiên làm việc trước).
+   *
+   * Trả về `null` khi chưa có mốc nào (thiếu dữ liệu) → không kết luận mất kết nối.
+   */
+  get driverLastHeartbeatAt(): Date | null {
+    const timestamps = [this._lastLocationUpdateAt, this._currentSessionStartAt]
+      .filter((value): value is Date => value instanceof Date)
+      .map((value) => value.getTime());
+
+    if (timestamps.length === 0) return null;
+    return new Date(Math.max(...timestamps));
+  }
   get driverTotalDrivingMinutesToday(): number {
     return this._totalDrivingMinutesToday;
   }

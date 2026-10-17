@@ -94,4 +94,29 @@ test.describe("Consumer App - Browse Restaurants", () => {
     await expect(page.getByText(/Tìm kiếm gần đây/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /phở bò/i })).toBeVisible();
   });
+
+  /**
+   * Regression: dải chips danh mục trong `RestaurantFilterBar` dùng
+   * `whitespace-nowrap` + `shrink-0` nên có min-content rất lớn. Khi wrapper
+   * (thẻ `<main>`) là flex item của cột `flex flex-col` mà không được giới hạn
+   * bề rộng, cả trang sẽ rộng hơn viewport ⇒ người dùng kéo ngang được.
+   * Fix: `w-full` trên `<main>` của `restaurants/page.tsx`.
+   */
+  test("should not overflow horizontally at common viewport widths", async ({
+    page,
+  }) => {
+    for (const width of [1920, 1366, 1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("http://localhost:4001/restaurants");
+      await page.waitForLoadState("networkidle");
+
+      const metrics = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+
+      // Cho phép lệch 1px do làm tròn pixel.
+      expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+    }
+  });
 });

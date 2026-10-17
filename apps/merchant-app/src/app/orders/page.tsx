@@ -7,7 +7,7 @@ import { merchantApi, orderApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import { useMerchantSocket } from "@/components/SocketProvider";
 import OrderDetailDrawer from "@/components/OrderDetailDrawer";
-import TopNav from "@/components/TopNav";
+import MerchantShell from "@/components/MerchantShell";
 
 function toNum(v: unknown): number {
   if (typeof v === "number") return v;
@@ -316,10 +316,7 @@ export default function MerchantOrdersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0 w-full">
-      <TopNav />
-
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
+    <MerchantShell>
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
             📋 Quản lý đơn hàng
@@ -504,12 +501,10 @@ export default function MerchantOrdersPage() {
             </div>
           ))}
         </div>
-      </main>
-
       <OrderDetailDrawer
         orderId={selectedId}
         onClose={() => setSelectedId(null)}
       />
-    </div>
+    </MerchantShell>
   );
 }

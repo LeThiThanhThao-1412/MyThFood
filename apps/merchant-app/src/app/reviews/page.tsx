@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore, canAccessApp } from "@mythfood/frontend-shared";
-import TopNav from "@/components/TopNav";
+import MerchantShell from "@/components/MerchantShell";
 import { merchantApi, reviewApi } from "@mythfood/api-client";
 
 function timeAgo(dateStr: string): string {
@@ -83,9 +83,7 @@ export default function MerchantReviewsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0">
-      <TopNav merchantName={merchant?.name} isOpen={merchant?.isOpen} />
-      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+    <MerchantShell contentClassName="max-w-3xl">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
             ⭐ Đánh giá
@@ -172,7 +170,6 @@ export default function MerchantReviewsPage() {
             ))}
           </div>
         )}
-      </main>
-    </div>
+    </MerchantShell>
   );
 }

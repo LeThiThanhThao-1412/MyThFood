@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
-import TopNav from "@/components/TopNav";
+import MerchantShell from "@/components/MerchantShell";
 
 const ROLE_LABELS: Record<string, string> = {
   CONSUMER: "Khách hàng",
@@ -83,9 +83,7 @@ export default function MerchantProfilePage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
-      <TopNav />
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-4">
+    <MerchantShell contentClassName="max-w-2xl">
         {status && (
           <div
             className={`p-3 rounded-lg text-sm ${
@@ -182,7 +180,6 @@ export default function MerchantProfilePage() {
         >
           Đăng xuất
         </button>
-      </main>
-    </div>
+    </MerchantShell>
   );
 }

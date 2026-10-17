@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import {
   resolutionApi,
   uploadApi,
@@ -12,6 +11,7 @@ import {
   consumerApi,
 } from "@mythfood/api-client";
 import { useAuthStore, canAccessApp } from "@mythfood/frontend-shared";
+import MerchantShell from "@/components/MerchantShell";
 
 const STATUS_BADGE: Record<string, string> = {
   OPEN: "bg-gray-100 text-gray-600",
@@ -408,28 +408,20 @@ export default function ComplaintsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-3xl mx-auto pb-24">
-      <header className="bg-white shadow-sm px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push("/")}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            ←
-          </button>
-          <h1 className="text-lg font-bold text-[#1a1a2e]">
-            🛡️ Trợ giúp & Khiếu nại
-          </h1>
-        </div>
+    <MerchantShell contentClassName="max-w-3xl">
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
+          🛡️ Trợ giúp & Khiếu nại
+        </h1>
         <button
           onClick={() => setShowForm(!showForm)}
           className="px-4 py-2 rounded-xl text-sm font-semibold bg-[#ff6b35] text-white hover:bg-[#e85a26]"
         >
           + Khiếu nại
         </button>
-      </header>
+      </div>
 
-      <div className="px-4 py-4 space-y-4">
+      <div className="space-y-4">
         {msg && (
           <div className="bg-white rounded-2xl shadow-sm px-4 py-3 text-sm font-medium">
             {msg}
@@ -870,36 +862,6 @@ export default function ComplaintsPage() {
         </div>
       )}
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 z-[100]">
-        <Link
-          href="/"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">🏠</span>
-          <span>Trang chủ</span>
-        </Link>
-        <Link
-          href="/orders"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">📦</span>
-          <span>Đơn hàng</span>
-        </Link>
-        <Link
-          href="/complaints"
-          className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline"
-        >
-          <span className="text-[22px]">🛡️</span>
-          <span>Khiếu nại</span>
-        </Link>
-        <Link
-          href="/profile"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">👤</span>
-          <span>Tôi</span>
-        </Link>
-      </nav>
-    </div>
+    </MerchantShell>
   );
 }

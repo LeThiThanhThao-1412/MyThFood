@@ -179,6 +179,17 @@ describe("Order Aggregate", () => {
       expect(order.orderRejectionReason).toBe("Closed for the day");
     });
 
+    it("should mark merchant rejection source by default", () => {
+      order.reject("Closed for the day");
+      expect(order.orderRejectionSource).toBe("MERCHANT");
+    });
+
+    it("should mark no-response rejection source", () => {
+      order.rejectNoResponse("Không phản hồi");
+      expect(order.orderStatus).toBe("REJECTED");
+      expect(order.orderRejectionSource).toBe("NO_RESPONSE");
+    });
+
     it("should not allow invalid transitions", () => {
       expect(() => order.markDelivered()).toThrow(
         "Cannot transition order from PENDING to DELIVERED",
@@ -328,6 +339,41 @@ describe("Order Aggregate", () => {
       expect(rehydrated.id.equals(original.id)).toBe(true);
       expect(rehydrated.orderStatus).toBe("PENDING");
       expect(rehydrated.pullDomainEvents()).toHaveLength(0); // No events on rehydrate
+    });
+
+    it("should preserve createdAt/updatedAt from persistence", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const original = result.value;
+
+      const createdAt = new Date("2024-01-02T03:04:05.000Z");
+      const updatedAt = new Date("2024-01-02T04:05:06.000Z");
+
+      const rehydrated = Order.rehydrate(original.id, {
+        consumerId: original.orderConsumerId,
+        merchantId: original.orderMerchantId,
+        orderType: original.orderTypeValue,
+        status: original.orderStatus,
+        items: [...original.orderItems],
+        subtotal: original.orderSubtotal,
+        deliveryFee: original.orderDeliveryFee,
+        serviceFee: original.orderServiceFee,
+        discount: original.orderDiscount,
+        totalAmount: original.orderTotalAmount,
+        deliveryAddress: original.orderDeliveryAddress,
+        deliveryLatitude: original.orderDeliveryLatitude,
+        deliveryLongitude: original.orderDeliveryLongitude,
+        estimatedDeliveryTime: original.orderEstimatedDeliveryTime,
+        notes: original.orderNotes,
+        driverId: original.orderDriverId,
+        cancelReason: original.orderCancelReason,
+        rejectionReason: original.orderRejectionReason,
+        paymentMethod: original.orderPaymentMethod,
+        createdAt,
+        updatedAt,
+      });
+
+      expect(rehydrated.createdAt).toEqual(createdAt);
+      expect(rehydrated.updatedAt).toEqual(updatedAt);
     });
   });
 });

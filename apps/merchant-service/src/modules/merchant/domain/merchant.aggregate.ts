@@ -6,7 +6,7 @@ import {
 } from "@mythfood/shared-kernel";
 import { MerchantId } from "./merchant-id";
 import { MerchantRegisteredEvent } from "./events/merchant-registered.event";
-import { MenuItem, MenuItemOptionGroup } from "./menu-item.entity";
+import { MenuItem, MenuItemOptionGroup, MenuItemAvailabilityStatus } from "./menu-item.entity";
 import { MenuItemId } from "./menu-item-id";
 import { OperatingHours, OperatingHoursProps } from "./operating-hours.vo";
 import { MerchantDocument } from "./merchant-document.entity";
@@ -44,6 +44,7 @@ export interface MerchantProps {
   currentOrderCount: number;
   primaryCategory: string | null;
   secondaryCategories: string[];
+  otherCategoryDescription?: string | null;
   isOpen: boolean;
 }
 
@@ -70,6 +71,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
   private currentOrderCount: number;
   private primaryCategory: string | null;
   private secondaryCategories: string[];
+  private otherCategoryDescription: string | null;
   private isOpenFlag: boolean;
 
   private constructor(id: MerchantId, props: MerchantProps) {
@@ -96,6 +98,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
     this.currentOrderCount = props.currentOrderCount;
     this.primaryCategory = props.primaryCategory;
     this.secondaryCategories = props.secondaryCategories;
+    this.otherCategoryDescription = props.otherCategoryDescription ?? null;
     this.isOpenFlag = props.isOpen;
   }
 
@@ -116,6 +119,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
     capacityConfig?: CapacityConfig;
     primaryCategory?: string;
     secondaryCategories?: string[];
+    otherCategoryDescription?: string;
   }): Result<Merchant, DomainError> {
     if (!props.name || props.name.trim().length === 0) {
       return Result.fail(
@@ -162,6 +166,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
       currentOrderCount: 0,
       primaryCategory: props.primaryCategory ?? null,
       secondaryCategories: (props.secondaryCategories ?? []).slice(0, 3),
+      otherCategoryDescription: props.otherCategoryDescription ?? null,
       isOpen: true,
     });
 
@@ -204,6 +209,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
     longitude?: number;
     primaryCategory?: string;
     secondaryCategories?: string[];
+    otherCategoryDescription?: string | null;
   }): void {
     if (props.name !== undefined) {
       if (!props.name.trim()) {
@@ -236,6 +242,9 @@ export class Merchant extends AggregateRoot<MerchantId> {
     }
     if (props.secondaryCategories !== undefined) {
       this.secondaryCategories = (props.secondaryCategories || []).slice(0, 3);
+    }
+    if (props.otherCategoryDescription !== undefined) {
+      this.otherCategoryDescription = props.otherCategoryDescription || null;
     }
     this.markUpdated();
   }
@@ -415,6 +424,45 @@ export class Merchant extends AggregateRoot<MerchantId> {
   public toggleMenuItem(menuItemId: MenuItemId): MenuItem {
     const menuItem = this.findMenuItemOrThrow(menuItemId);
     menuItem.toggleAvailable();
+
+    this.addDomainEvent(
+      new MenuUpdatedEvent(this.id, {
+        merchantId: this.id.toString(),
+        menuItemId: menuItemId.toString(),
+        name: menuItem.itemName,
+        price: menuItem.itemPrice,
+        isAvailable: menuItem.available,
+        action: "TOGGLED",
+      }),
+    );
+
+    this.markUpdated();
+    return menuItem;
+  }
+
+  /**
+   * Đặt trạng thái bán của món (thay cho việc xóa món).
+   */
+  public setMenuItemAvailability(
+    menuItemId: MenuItemId,
+    status: MenuItemAvailabilityStatus,
+  ): MenuItem {
+    const menuItem = this.findMenuItemOrThrow(menuItemId);
+    switch (status) {
+      case "AVAILABLE":
+        menuItem.markAvailable();
+        break;
+      case "OUT_OF_STOCK_TODAY":
+        menuItem.markOutOfStockToday();
+        break;
+      case "OUT_OF_STOCK":
+        menuItem.markOutOfStock();
+        break;
+      default:
+        throw new BusinessRuleViolationError(
+          `Invalid availability status: ${status}`,
+        );
+    }
 
     this.addDomainEvent(
       new MenuUpdatedEvent(this.id, {
@@ -697,6 +745,10 @@ export class Merchant extends AggregateRoot<MerchantId> {
 
   get merchantSecondaryCategories(): string[] {
     return [...this.secondaryCategories];
+  }
+
+  get merchantOtherCategoryDescription(): string | null {
+    return this.otherCategoryDescription;
   }
 
   public isApproved(): boolean {

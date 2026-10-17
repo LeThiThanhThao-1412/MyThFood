@@ -647,7 +647,11 @@ export class OrderService {
     if (!dto.reason) {
       throw new Error("Rejection reason is required");
     }
-    order.reject(dto.reason);
+    if (dto.noResponse) {
+      order.rejectNoResponse(dto.reason);
+    } else {
+      order.reject(dto.reason);
+    }
     await this.orderRepository.save(order);
 
     // Hoàn stock + lượt flash sale (nếu có) — idempotent.

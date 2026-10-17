@@ -93,6 +93,9 @@ export class OrderEntity {
   @Column("text", { name: "rejection_reason", nullable: true })
   rejection_reason!: string | null;
 
+  @Column("varchar", { length: 30, name: "rejection_source", nullable: true })
+  rejection_source!: string | null;
+
   @Column("varchar", { length: 20, name: "payment_method", default: "CASH" })
   payment_method!: string;
 

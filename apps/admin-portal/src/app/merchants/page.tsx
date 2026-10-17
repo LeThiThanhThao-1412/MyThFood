@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { merchantApi } from "@mythfood/api-client";
-import { useAuthStore } from "@mythfood/frontend-shared";
+import { useAuthStore, getFoodCategoryLabel } from "@mythfood/frontend-shared";
 import AdminShell from "../../components/AdminShell";
 
 const BADGE: Record<string, string> = {
@@ -119,7 +119,7 @@ export default function AdminMerchantsPage() {
                     <td className="px-4 py-3">
                       <p className="font-semibold text-gray-800">{m.name}</p>
                       <p className="text-xs text-gray-400">
-                        {m.primaryCategory || ""}
+                        {getFoodCategoryLabel(m.primaryCategory)}
                       </p>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500 hidden md:table-cell">

@@ -5,7 +5,9 @@ import dynamic from "next/dynamic";
 import { authApi, merchantApi } from "@mythfood/api-client";
 import {
   useAuth,
-  FOOD_CATEGORIES as MERCHANT_CATEGORIES,
+  PRIMARY_CATEGORIES,
+  SECONDARY_CATEGORIES,
+  OTHER_CATEGORY_KEY,
   searchAddress,
 } from "@mythfood/frontend-shared";
 
@@ -42,8 +44,9 @@ export default function MerchantRegisterPage() {
     description: "",
     latitude: 10.775,
     longitude: 106.7,
-    primaryCategory: "pho",
+    primaryCategory: "",
     secondaryCategories: [] as string[],
+    otherCategoryDescription: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -114,6 +117,24 @@ export default function MerchantRegisterPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
+    if (!merchant.primaryCategory) {
+      setError("Vui lòng chọn danh mục chính");
+      setLoading(false);
+      return;
+    }
+    if (merchant.secondaryCategories.length < 1) {
+      setError("Vui lòng chọn ít nhất 1 danh mục phụ");
+      setLoading(false);
+      return;
+    }
+    if (
+      merchant.secondaryCategories.includes(OTHER_CATEGORY_KEY) &&
+      !merchant.otherCategoryDescription.trim()
+    ) {
+      setError("Vui lòng mô tả món đặc biệt khi chọn 'Khác'");
+      setLoading(false);
+      return;
+    }
     try {
       await merchantApi.create({
         userId,
@@ -125,6 +146,7 @@ export default function MerchantRegisterPage() {
         longitude: merchant.longitude,
         primaryCategory: merchant.primaryCategory,
         secondaryCategories: merchant.secondaryCategories,
+        otherCategoryDescription: merchant.otherCategoryDescription.trim() || undefined,
       });
       setStep("done");
     } catch (err: unknown) {
@@ -139,7 +161,9 @@ export default function MerchantRegisterPage() {
       const current = prev.secondaryCategories;
       const next = current.includes(key)
         ? current.filter((k) => k !== key)
-        : [...current, key];
+        : current.length >= 3
+          ? current
+          : [...current, key];
       return { ...prev, secondaryCategories: next };
     });
   }
@@ -394,13 +418,14 @@ export default function MerchantRegisterPage() {
                 />
               </div>
 
-              {/* Category selector */}
+              {/* Primary category */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  🍽️ Loại nhà hàng
+                  🍽️ Danh mục chính <span className="text-red-500">*</span>{" "}
+                  <span className="text-gray-400">(chọn 1)</span>
                 </label>
-                <div className="grid grid-cols-5 gap-2">
-                  {MERCHANT_CATEGORIES.map((cat) => (
+                <div className="grid grid-cols-2 gap-2">
+                  {PRIMARY_CATEGORIES.map((cat) => (
                     <button
                       key={cat.key}
                       type="button"
@@ -410,14 +435,14 @@ export default function MerchantRegisterPage() {
                           primaryCategory: cat.key,
                         }))
                       }
-                      className={`flex flex-col items-center gap-1 py-2.5 rounded-xl border-2 text-xs font-medium transition ${
+                      className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 text-sm font-medium transition ${
                         merchant.primaryCategory === cat.key
                           ? "border-blue-500 bg-blue-50 text-blue-700"
                           : "border-gray-200 bg-white text-gray-600 hover:border-blue-200"
                       }`}
                     >
                       <span className="text-xl">{cat.icon}</span>
-                      <span>{cat.label}</span>
+                      <span className="text-left leading-tight">{cat.label}</span>
                     </button>
                   ))}
                 </div>
@@ -426,12 +451,13 @@ export default function MerchantRegisterPage() {
               {/* Secondary categories */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Thêm loại phụ (tùy chọn)
+                  Danh mục phụ <span className="text-red-500">*</span>{" "}
+                  <span className="text-gray-400">
+                    (chọn 1-3 · {merchant.secondaryCategories.length}/3)
+                  </span>
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {MERCHANT_CATEGORIES.filter(
-                    (c) => c.key !== merchant.primaryCategory,
-                  ).map((cat) => {
+                  {SECONDARY_CATEGORIES.map((cat) => {
                     const active = merchant.secondaryCategories.includes(
                       cat.key,
                     );
@@ -446,11 +472,35 @@ export default function MerchantRegisterPage() {
                             : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                         }`}
                       >
-                        {cat.icon} {cat.label}
+                        {cat.label}
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    onClick={() => toggleSecondaryCategory(OTHER_CATEGORY_KEY)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                      merchant.secondaryCategories.includes(OTHER_CATEGORY_KEY)
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    ➕ Khác
+                  </button>
                 </div>
+                {merchant.secondaryCategories.includes(OTHER_CATEGORY_KEY) && (
+                  <input
+                    value={merchant.otherCategoryDescription}
+                    onChange={(e) =>
+                      setMerchant((prev) => ({
+                        ...prev,
+                        otherCategoryDescription: e.target.value,
+                      }))
+                    }
+                    placeholder="Mô tả món đặc biệt của quán (để admin duyệt)"
+                    className="mt-2 w-full rounded-lg border px-4 py-2.5 text-sm focus:border-blue-500 outline-none"
+                  />
+                )}
               </div>
 
               <button

@@ -13,6 +13,7 @@ import { PriceHistoryEntity } from "./infrastructure/price-history.entity";
 import { PriceAlertEntity } from "./infrastructure/price-alert.entity";
 import { PriceHistoryRepository } from "./infrastructure/price-history.repository";
 import { MenuUpdatedEventHandler } from "./application/menu-updated.handler";
+import { MenuScheduler } from "./application/menu.scheduler";
 import { MenuCategoryEntity } from "./infrastructure/menu-category.entity";
 import { MenuCategoryRepository } from "./infrastructure/menu-category.repository";
 import { AuthModule } from "../auth/auth.module";
@@ -39,6 +40,7 @@ import { AuthModule } from "../auth/auth.module";
     MenuCategoryRepository,
     PriceHistoryRepository,
     MenuUpdatedEventHandler,
+    MenuScheduler,
   ],
   exports: [MerchantService],
 })

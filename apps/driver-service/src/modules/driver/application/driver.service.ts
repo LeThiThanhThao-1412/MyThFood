@@ -12,7 +12,7 @@ import {
   DriverLocationHistoryRepository,
   DriverLocationPoint,
 } from "../infrastructure/driver-location-history.repository";
-import { Driver } from "../domain/driver.aggregate";
+import { Driver, DriverOnlineStatus } from "../domain/driver.aggregate";
 import { DriverId } from "../domain/driver-id";
 import {
   CreateDriverDto,
@@ -48,6 +48,10 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
     // Heartbeat: app tài xế gửi vị trí mỗi 5 giây (đóng vai trò "nhịp tim").
     // Nếu quá OFFLINE_TIMEOUT_MS không có vị trí mới (tài xế đóng tab / mất mạng),
     // tự chuyển tài xế sang OFFLINE để không còn nhận đơn.
+    //
+    // Lưu ý: tài xế VỪA bật ONLINE luôn được tính là có nhịp tim mới (xem
+    // `Driver.driverLastHeartbeatAt`), nên có trọn OFFLINE_TIMEOUT_MS để app gửi
+    // vị trí đầu tiên — không bị auto-offline ngay sau khi vừa bật Online.
     this.sweepInterval = setInterval(() => {
       this.sweepStaleOnlineDrivers().catch((err) =>
         this.logger.warn(
@@ -405,6 +409,10 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
    * Quét tài xế đang ONLINE nhưng không gửi vị trí (heartbeat) trong
    * `OFFLINE_TIMEOUT_MS` → coi như đã đóng tab/mất mạng và chuyển OFFLINE.
    * Trả về số tài xế đã được chuyển offline.
+   *
+   * Nhịp tim gần nhất = mốc mới nhất giữa lần gửi GPS cuối và thời điểm vừa bật
+   * ONLINE (`Driver.driverLastHeartbeatAt`), nên tài xế vừa online không bị
+   * chuyển OFFLINE trước khi kịp gửi vị trí đầu tiên.
    */
   async sweepStaleOnlineDrivers(): Promise<number> {
     const cutoff = new Date(Date.now() - DriverService.OFFLINE_TIMEOUT_MS);
@@ -413,6 +421,16 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
 
     let count = 0;
     for (const driver of staleDrivers) {
+      // Guard an toàn kép: chỉ offline tài xế thực sự đang ONLINE và đã hết
+      // khoảng ân hạn kể từ nhịp tim cuối cùng.
+      if (driver.driverOnlineStatus !== DriverOnlineStatus.ONLINE) {
+        continue;
+      }
+      const lastHeartbeat = driver.driverLastHeartbeatAt;
+      if (lastHeartbeat == null || lastHeartbeat.getTime() >= cutoff.getTime()) {
+        continue;
+      }
+
       try {
         driver.goOffline();
         await this.driverRepo.save(driver);

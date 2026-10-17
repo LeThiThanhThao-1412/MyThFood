@@ -82,6 +82,10 @@ export class RegisterMerchantDto {
   @IsOptional()
   @IsString({ each: true })
   secondaryCategories?: string[];
+
+  @IsOptional()
+  @IsString()
+  otherCategoryDescription?: string;
 }
 
 // ===================== Update Merchant =====================
@@ -136,6 +140,10 @@ export class UpdateMerchantDto {
   @IsOptional()
   @IsString({ each: true })
   secondaryCategories?: string[];
+
+  @IsOptional()
+  @IsString()
+  otherCategoryDescription?: string;
 }
 
 // ===================== Query Merchants =====================
@@ -291,6 +299,7 @@ export class MerchantResponseDto {
   currentOrderCount!: number;
   primaryCategory!: string | null;
   secondaryCategories!: string[];
+  otherCategoryDescription!: string | null;
   isOpen!: boolean;
   isOpenNow!: boolean;
   matchedMenuItems?: MatchedMenuItemDto[];

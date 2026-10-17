@@ -18,6 +18,7 @@ import type {
 } from "@stripe/stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import DriverShell from "@/components/DriverShell";
 import { driverApi, orderApi, walletApi } from "@mythfood/api-client";
 
 const MIN_COD_BALANCE = 2_000_000;
@@ -265,18 +266,7 @@ export default function DriverWalletPage() {
   const driverId = driver?.id || user?.id || "";
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0">
-      <header className="bg-[#1a1a2e] px-4 sm:px-6 py-4 text-white">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <Link href="/dashboard" className="text-white/60 text-lg">
-            ←
-          </Link>
-          <h1 className="text-lg font-bold">💰 Ví của tôi</h1>
-          <div className="w-6" />
-        </div>
-      </header>
-
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-5">
+    <DriverShell title="💰 Ví của tôi" backHref="/dashboard">
         {/* ─── Balance Card ─── */}
         <div className="bg-gradient-to-br from-[#1a1a2e] to-[#2d2d44] rounded-2xl p-6 text-white">
           <p className="text-sm text-white/60">Số dư ví</p>
@@ -605,48 +595,6 @@ export default function DriverWalletPage() {
             })}
           </div>
         </div>
-      </main>
-
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">
-        <Link
-          href="/dashboard"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">🏠</span>
-          <span>Trang chủ</span>
-        </Link>
-        <Link
-          href="/orders"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">📦</span>
-          <span>Đơn hàng</span>
-        </Link>
-        <Link
-          href="/location"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">🗺️</span>
-          <span>Bản đồ</span>
-        </Link>
-        <Link
-          href="/wallet"
-          className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline"
-        >
-          <span className="text-[22px]">💰</span>
-          <span>Ví</span>
-        </Link>
-        <button
-          onClick={() => {
-            clearAuth();
-            router.push("/");
-          }}
-          className="flex flex-col items-center text-[10px] text-gray-400 bg-transparent border-none font-sans cursor-pointer"
-        >
-          <span className="text-[22px]">👤</span>
-          <span>Tài khoản</span>
-        </button>
-      </nav>
-    </div>
+    </DriverShell>
   );
 }

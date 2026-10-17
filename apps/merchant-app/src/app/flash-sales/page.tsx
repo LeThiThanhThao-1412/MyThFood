@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore, canAccessApp } from "@mythfood/frontend-shared";
-import TopNav from "@/components/TopNav";
+import MerchantShell from "@/components/MerchantShell";
 import { merchantApi, promotionApi } from "@mythfood/api-client";
 
 function toNum(v: unknown): number {
@@ -292,9 +292,7 @@ export default function MerchantFlashSalesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0">
-      <TopNav merchantName={merchant?.name} isOpen={merchant?.isOpen} />
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-5">
+    <MerchantShell>
         <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
           🔥 Flash Sale
         </h1>
@@ -570,7 +568,6 @@ export default function MerchantFlashSalesPage() {
             </div>
           )}
         </div>
-      </main>
-    </div>
+    </MerchantShell>
   );
 }

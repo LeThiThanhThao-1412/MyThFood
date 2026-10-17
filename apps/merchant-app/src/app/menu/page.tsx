@@ -11,7 +11,7 @@ import {
   type MenuCategory,
 } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
-import TopNav from "@/components/TopNav";
+import MerchantShell from "@/components/MerchantShell";
 import OptionGroupEditor from "@/components/OptionGroupEditor";
 import { parseMenuFile, downloadMenuTemplate } from "@/lib/menu-import";
 
@@ -160,20 +160,14 @@ export default function MenuPage() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!merchant || !confirm("Xac nhan xoa mon nay?")) return;
-    try {
-      await merchantApi.deleteMenuItem(merchant.id, id);
-      setMenuItems(menuItems.filter((i) => i.id !== id));
-    } catch (e: any) {
-      alert("Lỗi xóa: " + (e?.message || ""));
-    }
-  }
-
-  async function handleToggle(item: any) {
+  async function handleSetStatus(item: any, status: string) {
     if (!merchant) return;
     try {
-      const updated = await merchantApi.toggleMenuItem(merchant.id, item.id);
+      const updated = await merchantApi.setMenuItemAvailability(
+        merchant.id,
+        item.id,
+        { status: status as any },
+      );
       setMenuItems(menuItems.map((i) => (i.id === item.id ? updated : i)));
     } catch (e: any) {
       alert("Lỗi: " + (e?.message || ""));
@@ -217,6 +211,20 @@ export default function MenuPage() {
       setCategories(categories.filter((c) => c.id !== catId));
     } catch (e: any) {
       alert("Lỗi xóa danh mục: " + (e?.message || ""));
+    }
+  }
+
+  async function handleToggleCategory(cat: any) {
+    if (!merchant) return;
+    try {
+      const updated = await merchantApi.updateMenuCategory(
+        merchant.id,
+        cat.id,
+        { isActive: !cat.isActive },
+      );
+      setCategories(categories.map((c) => (c.id === cat.id ? updated : c)));
+    } catch (e: any) {
+      alert("Lỗi: " + (e?.message || ""));
     }
   }
 
@@ -283,10 +291,7 @@ export default function MenuPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0 w-full">
-      <TopNav />
-
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-4">
+    <MerchantShell>
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
             🍽️ Quản lý thực đơn
@@ -390,9 +395,21 @@ export default function MenuPage() {
             {categories.map((c) => (
               <span
                 key={c.id}
-                className="inline-flex items-center gap-1.5 bg-[#fff7ed] border border-orange-100 text-[#ff6b35] text-xs font-medium rounded-full px-3 py-1.5"
+                className={`inline-flex items-center gap-1.5 bg-[#fff7ed] border border-orange-100 text-[#ff6b35] text-xs font-medium rounded-full px-3 py-1.5 ${
+                  c.isActive === false ? "opacity-50" : ""
+                }`}
               >
                 {c.name}
+                {c.isActive === false && (
+                  <span className="text-gray-400">(tắt)</span>
+                )}
+                <button
+                  onClick={() => handleToggleCategory(c)}
+                  className="text-gray-400 hover:text-amber-500"
+                  title={c.isActive === false ? "Bật danh mục" : "Tắt danh mục"}
+                >
+                  {c.isActive === false ? "👁️" : "🚫"}
+                </button>
                 <button
                   onClick={() => handleRenameCategory(c)}
                   className="text-gray-400 hover:text-blue-500"
@@ -585,24 +602,24 @@ export default function MenuPage() {
                   >
                     Sửa
                   </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="text-xs bg-red-100 text-red-500 px-2 py-1 rounded hover:bg-red-200 transition"
+                  <select
+                    value={
+                      item.availabilityStatus ||
+                      (item.isAvailable ? "AVAILABLE" : "OUT_OF_STOCK")
+                    }
+                    onChange={(e) => handleSetStatus(item, e.target.value)}
+                    className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                    title="Trạng thái bán"
                   >
-                    Xóa
-                  </button>
-                  <button
-                    onClick={() => handleToggle(item)}
-                    className={`text-xs px-2 py-1 rounded transition ${item.isAvailable ? "bg-green-100 text-green-600 hover:bg-green-200" : "bg-gray-200 text-gray-500 hover:bg-gray-300"}`}
-                  >
-                    {item.isAvailable ? "Đang bán" : "Hết món"}
-                  </button>
+                    <option value="AVAILABLE">Đang bán</option>
+                    <option value="OUT_OF_STOCK_TODAY">Hết hôm nay</option>
+                    <option value="OUT_OF_STOCK">Hết vô thời hạn</option>
+                  </select>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </main>
-    </div>
+    </MerchantShell>
   );
 }

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { merchantApi, orderApi } from "@mythfood/api-client";
 import { useAuthStore, canAccessApp } from "@mythfood/frontend-shared";
-import TopNav from "@/components/TopNav";
+import MerchantShell from "@/components/MerchantShell";
 import OrderDetailDrawer from "@/components/OrderDetailDrawer";
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -185,24 +185,7 @@ export default function MerchantDashboardPage() {
   // ─── Pending approval ─────────────────────────────────────
   if (merchant.status === "PENDING") {
     return (
-      <div className="min-h-screen bg-[#f0f2f5]">
-        <header className="bg-white shadow-sm px-4 py-4">
-          <div className="max-w-6xl mx-auto flex items-center justify-between">
-            <div className="text-xl font-extrabold">
-              MyTh<span className="text-[#ff6b35]">Food</span>
-            </div>
-            <button
-              onClick={() => {
-                clearAuth();
-                router.push("/");
-              }}
-              className="text-sm text-gray-400 hover:text-red-500 transition"
-            >
-              Đăng xuất
-            </button>
-          </div>
-        </header>
-        <main className="max-w-2xl mx-auto px-4 py-16">
+      <MerchantShell contentClassName="max-w-2xl">
           <div className="bg-white rounded-2xl shadow-sm p-10 text-center">
             <div className="text-6xl mb-6">⏳</div>
             <h2 className="text-2xl font-bold text-[#e67e22] mb-3">
@@ -232,16 +215,13 @@ export default function MerchantDashboardPage() {
               </div>
             </div>
           </div>
-        </main>
-      </div>
+      </MerchantShell>
     );
   }
 
   // ═══════════════ APPROVED DASHBOARD ═══════════════════════
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
-      <TopNav merchantName={merchant.name} isOpen={merchant.isOpen} />
-      <main className="w-full max-w-[1600px] mx-auto">
+    <MerchantShell>
         {/* ─── TOP BAR ─── */}
         <header className="bg-white rounded-2xl shadow-sm mx-4 mt-5 px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -724,11 +704,10 @@ export default function MerchantDashboardPage() {
             </div>
           )}
         </div>
-      </main>
       <OrderDetailDrawer
         orderId={selectedId}
         onClose={() => setSelectedId(null)}
       />
-    </div>
+    </MerchantShell>
   );
 }

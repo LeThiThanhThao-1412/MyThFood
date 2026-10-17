@@ -62,6 +62,19 @@ export class ChatController {
     };
   }
 
+  /**
+   * Admin / service nội bộ đọc tin nhắn của một đơn hàng bằng `orderId`.
+   * Khai báo trước các route `:id` để không bị nuốt bởi `conversations/:id/...`.
+   */
+  @Get("conversations/order/:orderId/messages")
+  @Roles("CONSUMER", "DRIVER", "ADMIN")
+  async getMessagesByOrder(@Param("orderId") orderId: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.chatService.getMessagesByOrderId(orderId),
+    };
+  }
+
   @Post("conversations/:id/messages")
   @Roles("CONSUMER", "DRIVER", "ADMIN")
   @HttpCode(HttpStatus.CREATED)

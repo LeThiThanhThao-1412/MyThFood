@@ -21,6 +21,9 @@ export class MenuCategoryEntity {
   @Column({ type: "integer", default: 0 })
   sort_order!: number;
 
+  @Column({ type: "boolean", default: true })
+  is_active!: boolean;
+
   @CreateDateColumn({ type: "timestamptz" })
   created_at!: Date;
 

@@ -885,10 +885,10 @@ function CheckoutContent() {
 
   // ─── MAIN CHECKOUT FORM ───────────────────────────
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
+    <div className="min-h-screen bg-[#f0f2f5] flex flex-col">
       {/* Navbar */}
       <header className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+        <div className="max-w-[1280px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Link
               href="/cart"
@@ -917,7 +917,7 @@ function CheckoutContent() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-[1280px] mx-auto px-6 py-6">
         <div className="grid lg:grid-cols-3 gap-6">
           {/* LEFT */}
           <div className="lg:col-span-2 space-y-6">
@@ -1589,6 +1589,13 @@ function CheckoutContent() {
         </div>
         <div className="h-6" />
       </main>
+
+      <footer className="bg-[#1a1a2e] text-white/60 py-6 mt-auto hidden lg:block">
+        <div className="max-w-[1280px] mx-auto px-6 text-center text-xs">
+          © {new Date().getFullYear()} MyThFood · Nền tảng giao đồ ăn hàng đầu
+          Việt Nam
+        </div>
+      </footer>
 
       {/* Bottom nav */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">

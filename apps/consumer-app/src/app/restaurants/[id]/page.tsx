@@ -251,11 +251,11 @@ export default function RestaurantDetailPage() {
     return (
       <div className="min-h-screen bg-[#f0f2f5]">
         <header className="bg-white shadow-sm sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center">
+          <div className="max-w-[1920px] mx-auto px-6 h-16 flex items-center">
             <div className="h-5 bg-gray-200 rounded w-48 animate-pulse" />
           </div>
         </header>
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="max-w-[1920px] mx-auto px-6 py-6">
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6 animate-pulse">
             <div className="h-7 bg-gray-200 rounded w-1/3 mb-3" />
             <div className="h-4 bg-gray-200 rounded w-1/2 mb-2" />
@@ -298,10 +298,10 @@ export default function RestaurantDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
+    <div className="min-h-screen bg-[#f0f2f5] flex flex-col">
       {/* ===== TOP NAVBAR ===== */}
       <header className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1920px] mx-auto px-6">
           <div className="flex items-center justify-between h-16 gap-4">
             {/* Left: Back + Restaurant name */}
             <div className="flex items-center gap-3 min-w-0">
@@ -360,7 +360,9 @@ export default function RestaurantDetailPage() {
       </header>
 
       {/* ===== MAIN ===== */}
-      <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* w-full: tránh flex item (cột flex-col) bị tính bề rộng theo fit-content
+          của dải tab danh mục thực đơn / giá tiền (whitespace-nowrap). */}
+      <main className="w-full max-w-[1920px] mx-auto px-6 py-6">
         {/* Restaurant Info Card */}
         <div
           className={`rounded-2xl p-6 sm:p-8 text-white shadow-lg mb-6 relative overflow-hidden ${merchant.coverImageUrl ? "" : "bg-gradient-to-br from-[#f093fb] to-[#f5576c]"}`}
@@ -732,6 +734,13 @@ export default function RestaurantDetailPage() {
 
       {/* Cart drawer */}
       <CartDrawer open={cartOpen} onClose={() => setCartOpen(false)} />
+
+      <footer className="bg-[#1a1a2e] text-white/60 py-6 mt-auto hidden lg:block">
+        <div className="max-w-[1920px] mx-auto px-6 text-center text-xs">
+          © {new Date().getFullYear()} MyThFood · Nền tảng giao đồ ăn hàng đầu
+          Việt Nam
+        </div>
+      </footer>
 
       {/* ===== MOBILE BOTTOM NAV ===== */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">

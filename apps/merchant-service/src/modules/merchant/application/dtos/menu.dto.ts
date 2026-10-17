@@ -172,6 +172,11 @@ export class UpdateMenuItemDto {
   optionGroups?: MenuItemOptionGroupDto[];
 }
 
+export class SetMenuItemAvailabilityDto {
+  @IsIn(["AVAILABLE", "OUT_OF_STOCK_TODAY", "OUT_OF_STOCK"])
+  status!: string;
+}
+
 export class MenuItemResponseDto {
   id!: string;
   merchantId!: string;
@@ -183,6 +188,8 @@ export class MenuItemResponseDto {
   originalPrice!: number | null;
   imageUrl!: string | null;
   isAvailable!: boolean;
+  availabilityStatus!: string;
+  outOfStockUntil!: Date | null;
   isFeatured!: boolean;
   preparationTime!: number | null;
   sortOrder!: number;

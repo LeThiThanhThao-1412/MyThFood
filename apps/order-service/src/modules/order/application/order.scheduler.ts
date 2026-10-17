@@ -2,6 +2,7 @@
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { OrderRepository } from "../infrastructure/order.repository";
 import { OrderService } from "./order.service";
+import { MerchantComplianceService } from "./merchant-compliance.service";
 
 @Injectable()
 export class OrderScheduler {
@@ -10,6 +11,7 @@ export class OrderScheduler {
   constructor(
     private readonly orderRepository: OrderRepository,
     private readonly orderService: OrderService,
+    private readonly merchantComplianceService: MerchantComplianceService,
   ) {}
 
   /** Thời gian chờ merchant xác nhận (mặc định 15 phút, cấu hình qua env). */
@@ -37,6 +39,7 @@ export class OrderScheduler {
         try {
           await this.orderService.reject(order.id.toString(), {
             reason: `Nhà hàng không phản hồi trong ${this.merchantResponseTimeoutMinutes} phút`,
+            noResponse: true,
           });
           this.logger.log(`Auto-rejected order ${order.id.toString()}`);
         } catch (err: any) {
@@ -80,6 +83,24 @@ export class OrderScheduler {
       }
     } catch (err: any) {
       this.logger.error(`Scheduler error: ${err.message}`);
+    }
+  }
+
+  /**
+   * Đánh giá tỉ lệ từ chối + không phản hồi của nhà hàng (cửa sổ 30 ngày)
+   * và tự động leo thang hình phạt: WARNING -> FINE -> SUSPEND.
+   */
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async evaluateMerchantCompliance() {
+    try {
+      const count = await this.merchantComplianceService.evaluateAll();
+      if (count > 0) {
+        this.logger.log(
+          `Merchant compliance: escalated ${count} merchant(s)`,
+        );
+      }
+    } catch (err: any) {
+      this.logger.error(`Merchant compliance evaluation error: ${err.message}`);
     }
   }
 }

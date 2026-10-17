@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { authApi, driverApi, uploadApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import DriverShell from "@/components/DriverShell";
 
 const ROLE_LABELS: Record<string, string> = {
   CONSUMER: "Khách hàng",
@@ -160,18 +161,7 @@ export default function DriverProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-2xl mx-auto pb-24">
-      <header className="bg-[#1a1a2e] px-4 py-4 text-white sticky top-0 z-50">
-        <div className="flex items-center justify-between">
-          <Link href="/dashboard" className="text-white/60 text-lg">
-            ←
-          </Link>
-          <h1 className="text-lg font-bold">👤 Hồ sơ tài xế</h1>
-          <div className="w-6" />
-        </div>
-      </header>
-
-      <main className="px-4 py-5 space-y-4">
+    <DriverShell title="👤 Hồ sơ tài xế" backHref="/dashboard" contentClassName="max-w-2xl">
         {status && (
           <div
             className={`p-3 rounded-lg text-sm ${
@@ -367,25 +357,6 @@ export default function DriverProfilePage() {
         >
           Đăng xuất
         </button>
-      </main>
-
-      {/* Bottom nav */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">
-        <Link
-          href="/dashboard"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">🏠</span>
-          <span>Trang chủ</span>
-        </Link>
-        <Link
-          href="/profile"
-          className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline"
-        >
-          <span className="text-[22px]">👤</span>
-          <span>Tài khoản</span>
-        </Link>
-      </nav>
-    </div>
+    </DriverShell>
   );
 }

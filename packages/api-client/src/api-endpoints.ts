@@ -23,6 +23,7 @@ import type {
   CreateMenuItemRequest,
   MenuItem,
   UpdateMenuItemRequest,
+  SetMenuItemAvailabilityRequest,
   BulkImportMenuRequest,
   MenuImportResult,
   MenuCategory,
@@ -86,6 +87,10 @@ import type {
   ChatConversation,
   GetOrCreateConversationRequest,
   SendMessageRequest,
+  AssistantHealth,
+  CaseAiAnalysisRecord,
+  CaseAiContext,
+  CaseAiSuggestion,
 } from "./types";
 
 // Service port constants
@@ -311,6 +316,7 @@ export const merchantApi = {
       coverImageUrl?: string;
       primaryCategory?: string;
       secondaryCategories?: string[];
+      otherCategoryDescription?: string;
     },
   ) => httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${id}`, body),
 
@@ -383,10 +389,15 @@ export const merchantApi = {
       `/merchants/${merchantId}/menu/${itemId}/available`,
     ),
 
-  deleteMenuItem: (merchantId: string, itemId: string) =>
-    httpClient.delete<void>(
+  setMenuItemAvailability: (
+    merchantId: string,
+    itemId: string,
+    body: SetMenuItemAvailabilityRequest,
+  ) =>
+    httpClient.patch<MenuItem>(
       PORTS.MERCHANT,
-      `/merchants/${merchantId}/menu/${itemId}`,
+      `/merchants/${merchantId}/menu/${itemId}/availability`,
+      body,
     ),
 
   getMenuCategories: (merchantId: string) =>
@@ -1723,6 +1734,13 @@ export const chatApi = {
       "/chat/conversations/mark-delivered",
       { orderId },
     ),
+
+  /** Dùng cho admin / resolution-service: đọc tin nhắn chỉ bằng orderId. */
+  getMessagesByOrder: (orderId: string) =>
+    httpClient.get<{ statusCode: number; data: ChatMessage[] }>(
+      PORTS.CHAT,
+      `/chat/conversations/order/${orderId}/messages`,
+    ),
 };
 
 // ============================================================================
@@ -1934,5 +1952,46 @@ export const resolutionApi = {
     httpClient.post<{ statusCode: number; data: any }>(
       PORTS.RESOLUTION,
       "/fraud/detect",
+    ),
+
+  // ─── AI Assistant (Gemini) ────────────────────────────────────────────
+  assistantHealth: () =>
+    httpClient.get<{ statusCode: number; data: AssistantHealth }>(
+      PORTS.RESOLUTION,
+      "/assistant/health",
+    ),
+
+  getCaseAiContext: (caseId: string) =>
+    httpClient.get<{ statusCode: number; data: CaseAiContext }>(
+      PORTS.RESOLUTION,
+      `/assistant/cases/${caseId}/context`,
+    ),
+
+  /** Bản phân tích AI đã lưu (AI tự chạy nền khi khiếu nại được tạo). */
+  getCaseAiAnalysis: (caseId: string) =>
+    httpClient.get<{ statusCode: number; data: CaseAiAnalysisRecord | null }>(
+      PORTS.RESOLUTION,
+      `/assistant/cases/${caseId}/analysis`,
+    ),
+
+  analyzeCase: (
+    caseId: string,
+    body?: { skipImages?: boolean; maxImages?: number },
+  ) =>
+    httpClient.post<{ statusCode: number; data: CaseAiSuggestion }>(
+      PORTS.RESOLUTION,
+      `/assistant/cases/${caseId}/analyze`,
+      body ?? {},
+    ),
+
+  /** Admin duyệt / bỏ qua gợi ý AI của vụ việc. */
+  reviewCaseAiAnalysis: (
+    caseId: string,
+    body: { decision: "ACCEPTED" | "REJECTED"; note?: string },
+  ) =>
+    httpClient.post<{ statusCode: number; data: CaseAiAnalysisRecord | null }>(
+      PORTS.RESOLUTION,
+      `/assistant/cases/${caseId}/analysis/review`,
+      body,
     ),
 };

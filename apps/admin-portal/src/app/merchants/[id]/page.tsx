@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { merchantApi } from "@mythfood/api-client";
-import { useAuthStore } from "@mythfood/frontend-shared";
+import { useAuthStore, getFoodCategoryLabel, getSecondaryCategoryLabel } from "@mythfood/frontend-shared";
 import { formatDateTime, formatVnd, toNum } from "../../../lib/format";
 import AdminShell from "../../../components/AdminShell";
 
@@ -118,13 +118,23 @@ export default function AdminMerchantDetailPage() {
               label="Danh mục"
               value={
                 [
-                  merchant.primaryCategory,
-                  ...(merchant.secondaryCategories || []),
+                  merchant.primaryCategory
+                    ? getFoodCategoryLabel(merchant.primaryCategory)
+                    : "",
+                  ...(merchant.secondaryCategories || []).map((k) =>
+                    getSecondaryCategoryLabel(k),
+                  ),
                 ]
                   .filter(Boolean)
                   .join(", ") || "—"
               }
             />
+            {merchant.otherCategoryDescription && (
+              <Info
+                label="Mô tả 'Khác'"
+                value={merchant.otherCategoryDescription}
+              />
+            )}
             <Info
               label="Đánh giá"
               value={`${merchant.rating ?? 0} ⭐ (${merchant.totalRatings ?? 0})`}

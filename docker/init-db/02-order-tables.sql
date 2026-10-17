@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS orders (
   driver_id UUID,
   cancel_reason TEXT,
   rejection_reason TEXT,
+  rejection_source VARCHAR(30),
   payment_method VARCHAR(20) DEFAULT 'CASH',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -61,3 +62,27 @@ CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
 
 -- Grant privileges
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO mythfood;
+
+-- ============================================================================
+-- Merchant compliance: trạng thái bậc phạt + nhật ký hình phạt (tự động xử lý
+-- nhà hàng có tỉ lệ từ chối / không phản hồi đơn cao).
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS merchant_compliance_states (
+  merchant_id UUID PRIMARY KEY,
+  penalty_level INTEGER NOT NULL DEFAULT 0,
+  last_penalty_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS merchant_compliance_penalties (
+  id UUID PRIMARY KEY,
+  merchant_id UUID NOT NULL,
+  level INTEGER NOT NULL,
+  type VARCHAR(20) NOT NULL,
+  amount NUMERIC(12, 2),
+  reason TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_merchant_compliance_penalties_merchant
+  ON merchant_compliance_penalties (merchant_id, created_at DESC);

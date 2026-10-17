@@ -78,7 +78,10 @@ export interface OrderProps {
   driverId: string | null;
   cancelReason: string | null;
   rejectionReason: string | null;
+  rejectionSource?: string | null;
   paymentMethod: string;
+  createdAt?: Date | null;
+  updatedAt?: Date | null;
 }
 
 /** Valid status transitions for the order state machine */
@@ -116,10 +119,11 @@ export class Order extends AggregateRoot<OrderId> {
   private driverId: string | null;
   private cancelReason: string | null;
   private rejectionReason: string | null;
+  private rejectionSource: string | null;
   private paymentMethod: string;
 
   private constructor(id: OrderId, props: OrderProps) {
-    super(id);
+    super(id, props.createdAt ?? undefined, props.updatedAt ?? undefined);
     this.consumerId = props.consumerId;
     this.userId = props.userId ?? null;
     this.merchantId = props.merchantId;
@@ -140,6 +144,7 @@ export class Order extends AggregateRoot<OrderId> {
     this.driverId = props.driverId;
     this.cancelReason = props.cancelReason;
     this.rejectionReason = props.rejectionReason;
+    this.rejectionSource = props.rejectionSource ?? null;
     this.paymentMethod = props.paymentMethod || "CASH";
   }
 
@@ -410,9 +415,21 @@ export class Order extends AggregateRoot<OrderId> {
    * Merchant rejects the order.
    */
   public reject(reason: string): void {
+    this.rejectWithSource(reason, "MERCHANT");
+  }
+
+  /**
+   * Nhà hàng không phản hồi trong khoảng thời gian chờ → hệ thống tự từ chối.
+   */
+  public rejectNoResponse(reason: string): void {
+    this.rejectWithSource(reason, "NO_RESPONSE");
+  }
+
+  private rejectWithSource(reason: string, source: string): void {
     if (!reason || reason.trim().length === 0) {
       throw new BusinessRuleViolationError("Rejection reason is required");
     }
+    this.rejectionSource = source;
     this.transitionTo("REJECTED", reason);
   }
 
@@ -571,6 +588,10 @@ export class Order extends AggregateRoot<OrderId> {
 
   get orderRejectionReason(): string | null {
     return this.rejectionReason;
+  }
+
+  get orderRejectionSource(): string | null {
+    return this.rejectionSource;
   }
 
   get orderPaymentMethod(): string {

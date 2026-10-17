@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository as TypeOrmRepo, IsNull, LessThan } from "typeorm";
+import { Repository as TypeOrmRepo, IsNull } from "typeorm";
 import { IRepository, EntityNotFoundError } from "@mythfood/shared-kernel";
 import {
   Driver,
@@ -98,23 +98,30 @@ export class DriverRepository implements IRepository<Driver, DriverId> {
   }
 
   /**
-   * Tìm tài xế đang ONLINE nhưng không gửi vị trí từ trước `cutoff`
-   * (hoặc chưa bao giờ gửi vị trí) — dùng cho auto-offline khi mất heartbeat.
+   * Tìm tài xế đang ONLINE nhưng đã "mất nhịp tim" từ trước `cutoff`
+   * — dùng cho cơ chế auto-offline khi tài xế đóng tab / mất mạng.
+   *
+   * Nhịp tim được tính bằng `driverLastHeartbeatAt` (mốc mới nhất giữa lần gửi
+   * GPS gần nhất và thời điểm vừa bật ONLINE). Nhờ đó:
+   *  - Tài xế **vừa bật ONLINE** luôn có trọn khoảng ân hạn (`cutoff`) để app
+   *    gửi vị trí đầu tiên → không bị chuyển OFFLINE ngay sau khi vừa online.
+   *  - Tài xế đã bật ONLINE từ lâu mà không gửi vị trí (đóng tab/mất mạng) thì
+   *    vẫn được chuyển OFFLINE đúng như thiết kế.
    */
   async findOnlineWithStaleLocation(cutoff: Date): Promise<Driver[]> {
     const entities = await this.repository.find({
-      where: [
-        {
-          onlineStatus: DriverOnlineStatus.ONLINE,
-          lastLocationUpdateAt: IsNull(),
-        },
-        {
-          onlineStatus: DriverOnlineStatus.ONLINE,
-          lastLocationUpdateAt: LessThan(cutoff),
-        },
-      ],
+      where: { onlineStatus: DriverOnlineStatus.ONLINE },
     });
-    return entities.map((e) => this.mapper.toDomain(e));
+
+    const cutoffMs = cutoff.getTime();
+    return entities
+      .map((entity) => this.mapper.toDomain(entity))
+      .filter((driver) => {
+        const heartbeat = driver.driverLastHeartbeatAt;
+        // Thiếu mốc nhịp tim → không đủ dữ liệu để kết luận mất kết nối (an toàn).
+        if (!heartbeat) return false;
+        return heartbeat.getTime() < cutoffMs;
+      });
   }
 
   async count(filter?: DriverFilter): Promise<number> {

@@ -166,6 +166,50 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     return Promise.all(expired.map((e) => this.loadRelatedAndMap(e)));
   }
 
+  /**
+   * Thống kê tỉ lệ từ chối / không phản hồi theo nhà hàng trong cửa sổ đánh giá.
+   * total = mọi đơn trong cửa sổ; rejected/noResponse = đơn REJECTED theo nguồn.
+   */
+  async getMerchantComplianceStats(
+    since: Date,
+  ): Promise<
+    Array<{
+      merchantId: string;
+      total: number;
+      rejected: number;
+      noResponse: number;
+    }>
+  > {
+    const rows: Array<{
+      merchantId: string;
+      total: string | number;
+      rejected: string | number;
+      noResponse: string | number;
+    }> = await this.repository.query(
+      `SELECT
+         o.merchant_id AS "merchantId",
+         COUNT(*)::int AS "total",
+         COUNT(*) FILTER (
+           WHERE o.status = 'REJECTED' AND o.rejection_source = 'MERCHANT'
+         )::int AS "rejected",
+         COUNT(*) FILTER (
+           WHERE o.status = 'REJECTED' AND o.rejection_source = 'NO_RESPONSE'
+         )::int AS "noResponse"
+       FROM orders o
+       WHERE o.deleted_at IS NULL AND o.created_at >= $1
+       GROUP BY o.merchant_id
+       ORDER BY "merchantId"`,
+      [since],
+    );
+
+    return rows.map((r) => ({
+      merchantId: r.merchantId,
+      total: Number(r.total),
+      rejected: Number(r.rejected),
+      noResponse: Number(r.noResponse),
+    }));
+  }
+
   async getDailyStats(options?: {
     startDate?: string;
     endDate?: string;

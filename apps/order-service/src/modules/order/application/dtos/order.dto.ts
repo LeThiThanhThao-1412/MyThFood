@@ -12,6 +12,7 @@ import {
   ArrayMinSize,
   IsInt,
   IsIn,
+  IsBoolean,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -202,6 +203,10 @@ export class StatusTransitionDto {
   @IsUUID("4")
   @IsOptional()
   driverId?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  noResponse?: boolean;
 }
 
 export class OrderQueryDto {
@@ -247,6 +252,7 @@ export class OrderResponseDto {
   driverId!: string | null;
   cancelReason!: string | null;
   rejectionReason!: string | null;
+  rejectionSource!: string | null;
   paymentMethod!: string;
   createdAt!: Date;
   updatedAt!: Date;

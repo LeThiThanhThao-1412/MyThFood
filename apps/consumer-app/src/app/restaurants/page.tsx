@@ -271,10 +271,10 @@ export default function RestaurantsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
+    <div className="min-h-screen bg-[#f0f2f5] flex flex-col">
       {/* ===== TOP NAVBAR ===== */}
       <header className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1920px] mx-auto px-6">
           <div className="flex items-center justify-between h-16 gap-4">
             {/* Left: Back + Logo */}
             <div className="flex items-center gap-3">
@@ -377,7 +377,10 @@ export default function RestaurantsPage() {
       </header>
 
       {/* ===== MAIN ===== */}
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* w-full: main là flex item của cột flex-col, "mx-auto" khiến bề rộng auto
+          bị tính theo fit-content của nội dung ⇒ dải chips danh mục
+          (whitespace-nowrap) kéo trang rộng quá viewport và kéo ngang được. */}
+      <main className="w-full max-w-[1920px] mx-auto px-6 py-6">
         {/* Page title + count */}
         <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
           <div>
@@ -455,7 +458,7 @@ export default function RestaurantsPage() {
 
         {/* Content */}
         {loading ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-5">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div
                 key={i}
@@ -507,7 +510,7 @@ export default function RestaurantsPage() {
             </div>
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-5">
             {displayedMerchants.map((m: any, idx: number) => (
               <div
                 key={m.id}
@@ -637,6 +640,13 @@ export default function RestaurantsPage() {
           </div>
         )}
       </main>
+
+      <footer className="bg-[#1a1a2e] text-white/60 py-6 mt-auto hidden lg:block">
+        <div className="max-w-[1920px] mx-auto px-6 text-center text-xs">
+          © {new Date().getFullYear()} MyThFood · Nền tảng giao đồ ăn hàng đầu
+          Việt Nam
+        </div>
+      </footer>
 
       {/* ===== MOBILE BOTTOM NAV ===== */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">

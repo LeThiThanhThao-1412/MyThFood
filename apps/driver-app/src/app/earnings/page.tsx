@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { driverApi, orderApi } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
+import DriverShell from "@/components/DriverShell";
 import {
   ResponsiveContainer,
   BarChart,
@@ -154,18 +155,7 @@ export default function DriverEarningsPage() {
   const chartData = buildChartData(deliveredOrders, period);
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[1400px] mx-auto pb-20 lg:pb-0 w-full">
-      <header className="bg-[#1a1a2e] px-4 sm:px-6 py-4 text-white">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <Link href="/dashboard" className="text-white/60 text-lg">
-            ←
-          </Link>
-          <h1 className="text-lg font-bold">💰 Thu nhập</h1>
-          <div className="w-6" />
-        </div>
-      </header>
-
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 space-y-5 w-full">
+    <DriverShell title="💰 Thu nhập" backHref="/dashboard">
         {/* Summary Card */}
         <div className="bg-gradient-to-br from-[#2ecc71] to-[#27ae60] rounded-2xl p-6 text-white">
           <p className="text-sm text-white/80">Tổng thu nhập (80% phí ship)</p>
@@ -327,48 +317,6 @@ export default function DriverEarningsPage() {
             <span className="text-[#ff6b35] text-xl">→</span>
           </div>
         </Link>
-      </main>
-
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[420px] bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">
-        <Link
-          href="/dashboard"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">Home</span>
-          <span>Home</span>
-        </Link>
-        <Link
-          href="/orders"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">Orders</span>
-          <span>Orders</span>
-        </Link>
-        <Link
-          href="/location"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">Map</span>
-          <span>Map</span>
-        </Link>
-        <Link
-          href="/wallet"
-          className="flex flex-col items-center text-[10px] text-gray-400 no-underline"
-        >
-          <span className="text-[22px]">Wallet</span>
-          <span>Wallet</span>
-        </Link>
-        <button
-          onClick={() => {
-            clearAuth();
-            router.push("/");
-          }}
-          className="flex flex-col items-center text-[10px] text-gray-400 bg-transparent border-none font-sans cursor-pointer"
-        >
-          <span className="text-[22px]">Account</span>
-          <span>Account</span>
-        </button>
-      </nav>
-    </div>
+    </DriverShell>
   );
 }
