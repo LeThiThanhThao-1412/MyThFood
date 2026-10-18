@@ -69,7 +69,8 @@ export class DispatchRepository {
 
     const entities = await this.repo.find({
       where,
-      order: { createdAt: "DESC" },
+      // Đơn ưu tiên luôn đứng đầu danh sách điều phối.
+      order: { priorityRank: "DESC", createdAt: "DESC" },
       skip: filter?.skip,
       take: filter?.take,
     });
@@ -82,20 +83,41 @@ export class DispatchRepository {
       .where("d.status NOT IN (:...terminalStatuses)", {
         terminalStatuses: ["DELIVERED", "EXPIRED", "CANCELLED"],
       })
-      .orderBy("d.createdAt", "DESC")
+      .orderBy("d.priorityRank", "DESC")
+      .addOrderBy("d.createdAt", "DESC")
       .getMany();
     return entities.map(DispatchMapper.toDomain);
   }
 
   async findMatchingDispatches(): Promise<Dispatch[]> {
+    // Hàng đợi điều phối: PRIORITY trước, sau đó đơn cũ nhất trước (FIFO).
     const entities = await this.repo.find({
       where: { status: "MATCHING" },
-      order: { createdAt: "ASC" },
+      order: { priorityRank: "DESC", createdAt: "ASC" },
     });
     return entities.map(DispatchMapper.toDomain);
   }
 
   /** Danh sách orderId mà tài xế đã từ chối (Case 4) — để driver-app ẩn triệt để. */
+  /** Các dispatch tài xế đang giữ (dùng cho gộp đơn SAVER + lộ trình). */
+  async findActiveByDriverId(driverId: string): Promise<Dispatch[]> {
+    const entities = await this.repo
+      .createQueryBuilder("d")
+      .where("d.driverId = :driverId", { driverId })
+      .andWhere("d.status NOT IN (:...terminalStatuses)", {
+        terminalStatuses: [
+          "DELIVERED",
+          "DELIVERY_FAILED",
+          "EXPIRED",
+          "CANCELLED",
+        ],
+      })
+      .orderBy("d.routeSequence", "ASC", "NULLS LAST")
+      .addOrderBy("d.createdAt", "ASC")
+      .getMany();
+    return entities.map(DispatchMapper.toDomain);
+  }
+
   async findDeclinedOrderIdsByDriver(driverId: string): Promise<string[]> {
     const rows = await this.repo
       .createQueryBuilder("d")
@@ -146,12 +168,15 @@ export class DispatchRepository {
     lat: number,
     lng: number,
     radiusKm: number,
+    includeStackable = false,
   ): Promise<
     {
       driverId: string;
       distanceKm: number;
       latitude: number;
       longitude: number;
+      activeOrderIds: string[];
+      maxConcurrentOrders: number;
     }[]
   > {
     // Lấy danh sách tài xế khả dụng từ driver-service (HTTP) — không query xuyên DB
@@ -160,9 +185,11 @@ export class DispatchRepository {
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
 
     try {
-      const res = await fetch(`${driverUrl}/api/v1/drivers/available/list`, {
-        headers: { "x-service-key": serviceKey },
-      });
+      const query = includeStackable ? "?includeStackable=true" : "";
+      const res = await fetch(
+        `${driverUrl}/api/v1/drivers/available/list${query}`,
+        { headers: { "x-service-key": serviceKey } },
+      );
       if (!res.ok) return [];
       const json: any = await res.json();
       const drivers: any[] = json?.data ?? json ?? [];
@@ -172,13 +199,29 @@ export class DispatchRepository {
         distanceKm: number;
         latitude: number;
         longitude: number;
+        activeOrderIds: string[];
+        maxConcurrentOrders: number;
       }[] = [];
       for (const d of drivers) {
         const dLat = Number(d.currentLatitude);
         const dLng = Number(d.currentLongitude);
         if (dLat == null || dLng == null || isNaN(dLat) || isNaN(dLng))
           continue;
-        if (d.currentOrderId) continue; // đã lọc ở driver-service, kiểm tra lại cho chắc
+
+        const activeOrderIds: string[] = Array.isArray(d.currentOrderIds)
+          ? d.currentOrderIds
+          : d.currentOrderId
+            ? [d.currentOrderId]
+            : [];
+        const maxConcurrentOrders = Math.max(
+          1,
+          Number(d.maxConcurrentOrders ?? 1),
+        );
+
+        // FAST/PRIORITY chỉ gán tài xế đang rảnh hoàn toàn.
+        if (!includeStackable && activeOrderIds.length > 0) continue;
+        if (activeOrderIds.length >= maxConcurrentOrders) continue;
+
         const distanceKm = this._haversine(lat, lng, dLat, dLng);
         if (radiusKm < 9999 && distanceKm > radiusKm) continue;
         results.push({
@@ -186,6 +229,8 @@ export class DispatchRepository {
           distanceKm,
           latitude: dLat,
           longitude: dLng,
+          activeOrderIds,
+          maxConcurrentOrders,
         });
       }
       results.sort((a, b) => a.distanceKm - b.distanceKm);
@@ -193,6 +238,31 @@ export class DispatchRepository {
     } catch {
       return [];
     }
+  }
+
+  /** Thống kê gộp đơn SAVER (Phase 3 - admin báo cáo). */
+  async getStackingStats(since: Date): Promise<{
+    batches: number;
+    stackedDispatches: number;
+    totalDispatches: number;
+    avgRouteSequence: number;
+  }> {
+    const raw = await this.repo.query(
+      `SELECT COUNT(DISTINCT "batchId")::int AS "batches",
+              COUNT(*) FILTER (WHERE "batchId" IS NOT NULL)::int AS "stackedDispatches",
+              COUNT(*)::int AS "totalDispatches",
+              COALESCE(AVG("routeSequence"), 0)::float AS "avgRouteSequence"
+       FROM dispatches
+       WHERE "createdAt" >= $1`,
+      [since],
+    );
+    const row = raw[0] ?? {};
+    return {
+      batches: Number(row.batches ?? 0),
+      stackedDispatches: Number(row.stackedDispatches ?? 0),
+      totalDispatches: Number(row.totalDispatches ?? 0),
+      avgRouteSequence: Number(row.avgRouteSequence ?? 0),
+    };
   }
 
   private _haversine(

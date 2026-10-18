@@ -8,6 +8,7 @@ import {
   Min,
   Max,
   IsIn,
+  IsDateString,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { DispatchDeclineReason } from "../../domain/dispatch.aggregate";
@@ -39,6 +40,37 @@ export class CreateDispatchDto {
   @IsNumber()
   @Type(() => Number)
   merchantLongitude?: number;
+
+  /** Phương thức giao hàng: SAVER | FAST | PRIORITY (mặc định FAST). */
+  @IsOptional()
+  @IsIn(["SAVER", "FAST", "PRIORITY"])
+  deliveryOption?: string;
+
+  /** Thời điểm cam kết giao hàng do order-service tính. */
+  @IsOptional()
+  @IsDateString()
+  promisedDeliveryAt?: string;
+
+  /** Số đơn tối đa được gộp (SAVER = 3). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  maxStackedOrders?: number;
+
+  /** Timeout chờ tài xế nhận đơn (giây). */
+  @IsOptional()
+  @IsInt()
+  @Min(30)
+  @Max(3600)
+  dispatchTimeoutSeconds?: number;
+
+  /** Timeout chờ tài xế phản hồi khi đã được gán (giây). */
+  @IsOptional()
+  @IsInt()
+  @Min(10)
+  @Max(600)
+  driverResponseTimeoutSeconds?: number;
 }
 
 export class UpdateDispatchNotesDto {

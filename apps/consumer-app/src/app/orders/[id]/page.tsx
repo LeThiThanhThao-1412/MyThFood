@@ -19,6 +19,7 @@ import {
   fetchRoute,
   ChatDrawer,
   useChatUnread,
+  deliveryOptionMeta,
 } from "@mythfood/frontend-shared";
 import type { RouteInfo } from "@mythfood/frontend-shared";
 import { reorderOrder } from "@/lib/reorder";
@@ -1089,7 +1090,17 @@ export default function OrderDetailPage() {
             </span>
           </div>
           <div className="flex justify-between text-gray-600">
-            <span>Phí giao hàng</span>
+            <span>
+              Phí giao hàng
+              {order.deliveryOption && order.deliveryOption !== "FAST" && (
+                <span
+                  className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${deliveryOptionMeta(order.deliveryOption).badgeClass}`}
+                >
+                  {deliveryOptionMeta(order.deliveryOption).icon}{" "}
+                  {deliveryOptionMeta(order.deliveryOption).label}
+                </span>
+              )}
+            </span>
             <span className="font-medium">
               {toNum(order.deliveryFee).toLocaleString("vi-VN")}₫
             </span>

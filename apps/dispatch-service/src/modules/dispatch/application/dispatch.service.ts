@@ -14,6 +14,17 @@ import {
   DispatchStatus,
 } from "../domain/dispatch.aggregate";
 import { DispatchId } from "../domain/dispatch-id";
+import {
+  dispatchTimeoutSeconds,
+  driverResponseTimeoutSeconds,
+  normalizeDeliveryOption,
+} from "../domain/delivery-option";
+import {
+  RouteStopInput,
+  isRouteCompatible,
+  planRoute,
+} from "../domain/route-planner";
+import { randomUUID } from "node:crypto";
 import { MatchingEngineService } from "./matching-engine.service";
 import {
   CreateDispatchDto,
@@ -39,23 +50,14 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
   private timeoutInterval: ReturnType<typeof setInterval> | null = null;
   private expireInterval: ReturnType<typeof setInterval> | null = null;
 
-  private static readonly DRIVER_RESPONSE_TIMEOUT_MS = 60_000;
-
-  /** Thời gian chờ tối đa để tìm tài xế (mặc định 5 phút, cấu hình qua env). */
-  private static get MATCHING_TIMEOUT_MS(): number {
-    const seconds = Number(
-      process.env.DISPATCH_MATCHING_TIMEOUT_SECONDS || 300,
-    );
-    return (Number.isFinite(seconds) && seconds > 0 ? seconds : 300) * 1000;
-  }
-
   constructor(
     private readonly dispatchRepo: DispatchRepository,
     private readonly matchingEngine: MatchingEngineService,
   ) {}
 
   onModuleInit(): void {
-    // Re-match dispatches where the assigned driver didn't respond within 1 minute.
+    // Re-match dispatches where the assigned driver didn't respond in time
+    // (timeout theo phương thức: PRIORITY 30s, FAST 60s, SAVER 90s).
     this.timeoutInterval = setInterval(() => {
       this.handleDriverNoResponse().catch((err) =>
         this.logger.warn(`Driver no-response sweep failed: ${err.message}`),
@@ -80,20 +82,27 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Finds DRIVER_ASSIGNED dispatches older than 1 minute and re-matches them
-   * (the current driver is treated as having declined silently).
+   * Finds DRIVER_ASSIGNED dispatches older than their per-option timeout and
+   * re-matches them (the current driver is treated as having declined silently).
    */
   async handleDriverNoResponse(): Promise<void> {
-    const cutoff = new Date(
-      Date.now() - DispatchService.DRIVER_RESPONSE_TIMEOUT_MS,
-    );
+    // Lấy các dispatch đã gán quá 30 giây (ngưỡng nhỏ nhất) rồi lọc theo
+    // timeout riêng của từng phương thức: PRIORITY 30s, FAST 60s, SAVER 90s.
+    // Ngưỡng nhỏ nhất có thể cấu hình cho tài xế phản hồi là 10 giây.
+    const cutoff = new Date(Date.now() - 10_000);
     const assigned = await this.dispatchRepo.findAssignedOlderThan(cutoff);
+    const now = Date.now();
+
     for (const dispatch of assigned) {
+      const timeoutSeconds = dispatch.dispatchDriverResponseTimeoutSeconds;
+      const updatedAgo = now - (dispatch.updatedAt?.getTime() ?? now);
+      if (updatedAgo < timeoutSeconds * 1000) continue;
+
       try {
         await this.driverDecline(dispatch.id.value, {
           driverId: dispatch.dispatchDriverId || "",
           reason: DispatchDeclineReason.OTHER,
-          detail: "Không phản hồi trong 1 phút",
+          detail: `Không phản hồi trong ${timeoutSeconds} giây`,
         });
         this.logger.log(
           `Driver ${dispatch.dispatchDriverId} timed out on dispatch ${dispatch.id.value} - re-matching`,
@@ -115,6 +124,16 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         "Dispatch already exists for this order",
       );
     }
+    const deliveryOption = normalizeDeliveryOption(dto.deliveryOption);
+    const dispatchTimeout =
+      dto.dispatchTimeoutSeconds ?? dispatchTimeoutSeconds(deliveryOption);
+    const driverResponseTimeout =
+      dto.driverResponseTimeoutSeconds ??
+      driverResponseTimeoutSeconds(deliveryOption);
+    const maxStackedOrders =
+      dto.maxStackedOrders ?? (deliveryOption === "SAVER" ? 3 : 1);
+    const timeoutMs = dispatchTimeout * 1000;
+
     const dispatch = Dispatch.create({
       orderId: dto.orderId,
       merchantId: dto.merchantId,
@@ -123,7 +142,14 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       deliveryLongitude: dto.deliveryLongitude,
       merchantLatitude: dto.merchantLatitude,
       merchantLongitude: dto.merchantLongitude,
-      expiresAt: new Date(Date.now() + DispatchService.MATCHING_TIMEOUT_MS),
+      expiresAt: new Date(Date.now() + timeoutMs),
+      deliveryOption,
+      promisedDeliveryAt: dto.promisedDeliveryAt
+        ? new Date(dto.promisedDeliveryAt)
+        : null,
+      maxStackedOrders,
+      dispatchTimeoutSeconds: dispatchTimeout,
+      driverResponseTimeoutSeconds: driverResponseTimeout,
     });
     await this.dispatchRepo.save(dispatch);
 
@@ -351,11 +377,11 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    // Case 5: tài xế đang bận (có đơn dở dang / bị tạm khóa) thì không cho nhận.
-    const available = await this.checkDriverAvailable(driverId);
+    // Case 5: tài xế đang bận / bị khóa / hết slot gộp thì không cho nhận.
+    const available = await this.checkDriverAvailability(driverId, dispatch);
     if (!available) {
       throw new BusinessRuleViolationError(
-        "Tài xế đang có đơn khác hoặc bị tạm khóa nhận đơn",
+        "Tài xế đang có đơn khác, hết slot gộp hoặc bị tạm khóa nhận đơn",
       );
     }
 
@@ -365,8 +391,15 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException("Đơn đã được tài xế khác nhận");
     }
 
-    // Đánh dấu tài xế bận ngay lập tức.
-    await this.markDriverBusy(driverId, dispatch.dispatchOrderId);
+    // Đánh dấu tài xế bận / thêm đơn vào danh sách đang giữ.
+    await this.markDriverBusy(
+      driverId,
+      dispatch.dispatchOrderId,
+      dispatch.dispatchMaxStackedOrders,
+    );
+
+    // SAVER: gán lô + xếp lại thứ tự điểm dừng cho cả lộ trình.
+    await this.refreshDriverRoute(driverId);
 
     // Báo order-service gán tài xế cho đơn để đơn biết "đã có tài xế"
     // (tránh bị hủy nhầm do hết thời gian chờ tài xế).
@@ -392,7 +425,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
 
     if (driverId) {
       await this.penalizeDriver(driverId);
-      await this.releaseDriver(driverId);
+      await this.releaseDriver(driverId, dispatch.dispatchOrderId);
+      await this.refreshDriverRoute(driverId);
     }
 
     // Báo order-service ghi lý do vào lịch sử + thông báo khách hàng.
@@ -444,7 +478,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
 
     const driverId = dispatch.dispatchDriverId;
     if (driverId) {
-      await this.releaseDriver(driverId);
+      await this.releaseDriver(driverId, dispatch.dispatchOrderId);
+      await this.refreshDriverRoute(driverId);
     }
 
     return dispatch;
@@ -527,6 +562,13 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     );
     dispatch.markDelivered();
     await this.dispatchRepo.save(dispatch);
+
+    // Ghi nhận hoàn thành đúng đơn (hỗ trợ SAVER stacking) + xếp lại lộ trình.
+    const driverId = dispatch.dispatchDriverId;
+    if (driverId) {
+      await this.completeDriverOrder(driverId, dispatch.dispatchOrderId);
+      await this.refreshDriverRoute(driverId);
+    }
     return dispatch;
   }
 
@@ -544,8 +586,14 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const dispatch = await this.dispatchRepo.findByIdOrFail(
       DispatchId.from(id),
     );
+    const driverId = dispatch.dispatchDriverId;
     dispatch.cancel(dto.reason);
     await this.dispatchRepo.save(dispatch);
+
+    if (driverId) {
+      await this.releaseDriver(driverId, dispatch.dispatchOrderId);
+      await this.refreshDriverRoute(driverId);
+    }
     return dispatch;
   }
 
@@ -605,30 +653,113 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async checkDriverAvailable(driverId: string): Promise<boolean> {
+  /** Lấy dữ liệu tài xế từ driver-service (server-to-server). */
+  private async fetchDriver(driverId: string): Promise<any | null> {
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
     try {
       const res = await fetch(
         `${DRIVER_SERVICE_URL}/api/v1/drivers/${driverId}`,
         { headers: { "x-service-key": serviceKey } },
       );
-      if (!res.ok) return false;
+      if (!res.ok) return null;
       const json: any = await res.json();
-      const d = json?.data ?? json;
-      return (
-        d?.status === "ACTIVE" &&
-        d?.onlineStatus === "ONLINE" &&
-        !d?.currentOrderId &&
-        !d?.isBlocked
-      );
+      return json?.data ?? json;
     } catch {
+      return null;
+    }
+  }
+
+  private activeOrderIdsOf(driver: any): string[] {
+    if (
+      Array.isArray(driver?.currentOrderIds) &&
+      driver.currentOrderIds.length > 0
+    ) {
+      return driver.currentOrderIds;
+    }
+    return driver?.currentOrderId ? [driver.currentOrderId] : [];
+  }
+
+  private saverStackRadiusKm(): number {
+    const value = Number(process.env.SAVER_STACK_RADIUS_KM || 3);
+    return Number.isFinite(value) && value > 0 ? value : 3;
+  }
+
+  private toRouteStop(dispatch: Dispatch): RouteStopInput {
+    return {
+      orderId: dispatch.dispatchOrderId,
+      merchantLatitude: dispatch.dispatchMerchantLatitude,
+      merchantLongitude: dispatch.dispatchMerchantLongitude,
+      deliveryLatitude: dispatch.dispatchDeliveryLatitude,
+      deliveryLongitude: dispatch.dispatchDeliveryLongitude,
+      status: dispatch.dispatchStatus,
+      priorityRank: dispatch.dispatchPriorityRank,
+    };
+  }
+
+  /**
+   * Kiểm tra tài xế có được nhận dispatch này không:
+   * - FAST/PRIORITY: phải đang rảnh hoàn toàn.
+   * - SAVER: được gộp nếu còn slot, các đơn đang giữ đều SAVER và điểm giao
+   *   mới nằm trong hành lang lộ trình hiện tại.
+   */
+  private async checkDriverAvailability(
+    driverId: string,
+    dispatch: Dispatch,
+  ): Promise<boolean> {
+    const driver = await this.fetchDriver(driverId);
+    if (!driver) return false;
+
+    if (driver.status !== "ACTIVE" || driver.onlineStatus !== "ONLINE") {
       return false;
     }
+    if (driver.fatigueLevel === "CRITICAL") return false;
+    if (
+      driver.acceptBlockedUntil &&
+      new Date(driver.acceptBlockedUntil).getTime() > Date.now()
+    ) {
+      return false;
+    }
+
+    const activeOrderIds = this.activeOrderIdsOf(driver);
+    const maxConcurrent = Math.max(
+      1,
+      Number(dispatch.dispatchMaxStackedOrders) || 1,
+    );
+
+    if (dispatch.dispatchDeliveryOption !== "SAVER") {
+      return activeOrderIds.length === 0;
+    }
+
+    if (activeOrderIds.length >= maxConcurrent) return false;
+    if (activeOrderIds.length === 0) return true;
+
+    const activeDispatches =
+      await this.dispatchRepo.findActiveByDriverId(driverId);
+    if (activeDispatches.some((d) => d.dispatchDeliveryOption !== "SAVER")) {
+      return false;
+    }
+
+    const stops = activeDispatches
+      .filter((d) => d.dispatchOrderId !== dispatch.dispatchOrderId)
+      .map((d) => this.toRouteStop(d));
+    if (stops.length === 0) return true;
+
+    return isRouteCompatible(
+      Number(driver.currentLatitude ?? dispatch.dispatchMerchantLatitude),
+      Number(driver.currentLongitude ?? dispatch.dispatchMerchantLongitude),
+      stops,
+      {
+        deliveryLatitude: dispatch.dispatchDeliveryLatitude,
+        deliveryLongitude: dispatch.dispatchDeliveryLongitude,
+      },
+      this.saverStackRadiusKm(),
+    );
   }
 
   private async markDriverBusy(
     driverId: string,
     orderId: string,
+    maxConcurrentOrders = 1,
   ): Promise<void> {
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
     try {
@@ -640,7 +771,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
             "Content-Type": "application/json",
             "x-service-key": serviceKey,
           },
-          body: JSON.stringify({ orderId }),
+          body: JSON.stringify({ orderId, maxConcurrentOrders }),
         },
       );
     } catch (err: any) {
@@ -648,19 +779,201 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async releaseDriver(driverId: string): Promise<void> {
+  /** Đánh dấu hoàn thành đúng 1 đơn của tài xế (SAVER stacking). */
+  private async completeDriverOrder(
+    driverId: string,
+    orderId: string,
+  ): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      await fetch(
+        `${DRIVER_SERVICE_URL}/api/v1/drivers/${driverId}/complete-order`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-service-key": serviceKey,
+          },
+          body: JSON.stringify({ orderId }),
+        },
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `completeDriverOrder failed for ${driverId}: ${err.message}`,
+      );
+    }
+  }
+
+  /** Giải phóng 1 đơn (hoặc toàn bộ nếu không truyền orderId). */
+  private async releaseDriver(
+    driverId: string,
+    orderId?: string,
+  ): Promise<void> {
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
     try {
       await fetch(
         `${DRIVER_SERVICE_URL}/api/v1/drivers/${driverId}/release-order`,
         {
           method: "PATCH",
-          headers: { "x-service-key": serviceKey },
+          headers: {
+            "Content-Type": "application/json",
+            "x-service-key": serviceKey,
+          },
+          body: JSON.stringify(orderId ? { orderId } : {}),
         },
       );
     } catch (err: any) {
       this.logger.warn(`releaseDriver failed for ${driverId}: ${err.message}`);
     }
+  }
+
+  private async getDriverLocation(
+    driverId: string,
+  ): Promise<{ lat: number; lng: number } | null> {
+    const driver = await this.fetchDriver(driverId);
+    const lat = Number(driver?.currentLatitude);
+    const lng = Number(driver?.currentLongitude);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+    return { lat, lng };
+  }
+
+  /**
+   * Tính lại lô + thứ tự điểm dừng cho toàn bộ đơn tài xế đang giữ.
+   * - >=2 đơn SAVER → dùng chung batchId + sequence nearest-neighbor.
+   * - Còn 0–1 đơn → xóa batch.
+   */
+  async refreshDriverRoute(driverId: string): Promise<{
+    batchId: string | null;
+    stops: ReturnType<typeof planRoute>;
+  }> {
+    const active = await this.dispatchRepo.findActiveByDriverId(driverId);
+    if (active.length === 0) {
+      return { batchId: null, stops: [] };
+    }
+
+    const location = await this.getDriverLocation(driverId);
+    const startLat = location?.lat ?? active[0]!.dispatchMerchantLatitude;
+    const startLng = location?.lng ?? active[0]!.dispatchMerchantLongitude;
+    const planned = planRoute(
+      startLat,
+      startLng,
+      active.map((d) => this.toRouteStop(d)),
+    );
+
+    const allSaver = active.every((d) => d.dispatchDeliveryOption === "SAVER");
+    if (active.length < 2 || !allSaver) {
+      for (const dispatch of active) {
+        if (
+          dispatch.dispatchBatchId != null ||
+          dispatch.dispatchRouteSequence != null
+        ) {
+          dispatch.clearBatch();
+          await this.dispatchRepo.save(dispatch);
+        }
+      }
+      return { batchId: null, stops: planned };
+    }
+
+    const batchId =
+      active.find((d) => d.dispatchBatchId)?.dispatchBatchId ?? randomUUID();
+
+    for (const stop of planned) {
+      const dispatch = active.find((d) => d.dispatchOrderId === stop.orderId);
+      if (!dispatch) continue;
+      dispatch.assignBatch(batchId, stop.sequence);
+      await this.dispatchRepo.save(dispatch);
+    }
+
+    return { batchId, stops: planned };
+  }
+
+  /** Lộ trình gộp đơn hiện tại của tài xế (driver-app). */
+  async getDriverRoute(driverId: string): Promise<{
+    driverId: string;
+    batchId: string | null;
+    maxStackedOrders: number;
+    stops: Array<{
+      orderId: string;
+      sequence: number;
+      status: string;
+      merchantLatitude: number;
+      merchantLongitude: number;
+      deliveryLatitude: number;
+      deliveryLongitude: number;
+      pickupDone: boolean;
+      deliveryDone: boolean;
+    }>;
+  }> {
+    const active = await this.dispatchRepo.findActiveByDriverId(driverId);
+    if (active.length === 0) {
+      return {
+        driverId,
+        batchId: null,
+        maxStackedOrders: 1,
+        stops: [],
+      };
+    }
+
+    const location = await this.getDriverLocation(driverId);
+    const startLat = location?.lat ?? active[0]!.dispatchMerchantLatitude;
+    const startLng = location?.lng ?? active[0]!.dispatchMerchantLongitude;
+    const planned = planRoute(
+      startLat,
+      startLng,
+      active.map((d) => this.toRouteStop(d)),
+    );
+
+    return {
+      driverId,
+      batchId: active[0]!.dispatchBatchId,
+      maxStackedOrders: active[0]!.dispatchMaxStackedOrders,
+      stops: planned.map((stop) => ({
+        ...stop,
+        status:
+          active.find((d) => d.dispatchOrderId === stop.orderId)
+            ?.dispatchStatus ?? stop.status,
+      })),
+    };
+  }
+
+  /** Thống kê gộp đơn SAVER trong N ngày gần nhất. */
+  async getStackingStats(days = 30): Promise<{
+    days: number;
+    batches: number;
+    stackedDispatches: number;
+    totalDispatches: number;
+    avgRouteSequence: number;
+  }> {
+    const safeDays = Math.min(365, Math.max(1, Number(days) || 30));
+    const since = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000);
+    const stats = await this.dispatchRepo.getStackingStats(since);
+    return { days: safeDays, ...stats };
+  }
+
+  /** Lộ trình của một dispatch (dùng cho trang giao hàng). */
+  async getDispatchRoute(id: string): Promise<any> {
+    const dispatch = await this.dispatchRepo.findByIdOrFail(
+      DispatchId.from(id),
+    );
+    const driverId = dispatch.dispatchDriverId;
+    if (!driverId) {
+      return {
+        dispatchId: id,
+        batchId: null,
+        maxStackedOrders: dispatch.dispatchMaxStackedOrders,
+        stops: [
+          {
+            ...this.toRouteStop(dispatch),
+            sequence: 1,
+            pickupDone: false,
+            deliveryDone: false,
+          },
+        ],
+      };
+    }
+
+    const route = await this.getDriverRoute(driverId);
+    return { dispatchId: id, ...route };
   }
 
   private async penalizeDriver(driverId: string): Promise<void> {
@@ -739,10 +1052,11 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       const expiresAt = dispatch.dispatchExpiresAt;
       const createdAgo =
         now.getTime() - (dispatch.createdAt?.getTime() ?? now.getTime());
-      // Fallback theo createdAt cho các dispatch cũ (chưa có expiresAt).
+      // Fallback theo createdAt cho các dispatch cũ (chưa có expiresAt),
+      // dùng timeout theo phương thức (PRIORITY 3', FAST 5', SAVER 10').
+      const timeoutMs = dispatch.dispatchTimeoutSeconds * 1000;
       const isExpired =
-        (expiresAt != null && expiresAt < now) ||
-        createdAgo > DispatchService.MATCHING_TIMEOUT_MS;
+        (expiresAt != null && expiresAt < now) || createdAgo > timeoutMs;
 
       if (isExpired && dispatch.isActive) {
         dispatch.expire();

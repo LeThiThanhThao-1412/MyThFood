@@ -105,6 +105,73 @@ export function calculateShippingFeeSync(distanceKm: number): number {
   return Math.max(MIN_FEE, Math.min(MAX_FEE, afterRush));
 }
 
+// ─── Phương thức giao hàng (fallback khi không gọi được /shipping/quote) ───
+
+export type DeliveryOption = "SAVER" | "FAST" | "PRIORITY";
+
+interface OptionPolicy {
+  factor: number;
+  surcharge: number;
+  minFee: number;
+  maxFee: number;
+  prepMinutes: number;
+  etaBufferMinutes: number;
+}
+
+const OPTION_POLICY: Record<DeliveryOption, OptionPolicy> = {
+  SAVER: {
+    factor: 0.8,
+    surcharge: 0,
+    minFee: MIN_FEE,
+    maxFee: MAX_FEE,
+    prepMinutes: 15,
+    etaBufferMinutes: 20,
+  },
+  FAST: {
+    factor: 1,
+    surcharge: 0,
+    minFee: MIN_FEE,
+    maxFee: MAX_FEE,
+    prepMinutes: 15,
+    etaBufferMinutes: 5,
+  },
+  PRIORITY: {
+    factor: 1.3,
+    surcharge: 10000,
+    minFee: MIN_FEE,
+    maxFee: 120000,
+    prepMinutes: 15,
+    etaBufferMinutes: 0,
+  },
+};
+
+/** Áp dụng hệ số phương thức lên phí FAST (cùng công thức với backend). */
+export function applyDeliveryOptionFee(
+  baseFee: number,
+  option: DeliveryOption,
+): number {
+  const policy = OPTION_POLICY[option] ?? OPTION_POLICY.FAST;
+  const base = Math.max(0, Math.round(Number(baseFee) || 0));
+  if (option === "FAST") {
+    return Math.max(policy.minFee, Math.min(policy.maxFee, base));
+  }
+  const adjusted = Math.round(base * policy.factor) + policy.surcharge;
+  return Math.max(policy.minFee, Math.min(policy.maxFee, adjusted));
+}
+
+/** ETA ước tính (phút) — dùng khi quote từ server không khả dụng. */
+export function estimateDeliveryOptionEta(
+  distanceKm: number,
+  option: DeliveryOption,
+): number {
+  const policy = OPTION_POLICY[option] ?? OPTION_POLICY.FAST;
+  const km = Number.isFinite(distanceKm) && distanceKm > 0 ? distanceKm : 6;
+  return Math.max(
+    10,
+    Math.round(policy.prepMinutes + (km / 20) * 60 + policy.etaBufferMinutes),
+  );
+}
+
 export async function calculateShippingFee(
   originLat: number,
   originLng: number,

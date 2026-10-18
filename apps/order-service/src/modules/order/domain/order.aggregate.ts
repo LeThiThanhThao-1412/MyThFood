@@ -5,6 +5,14 @@ import {
   BusinessRuleViolationError,
 } from "@mythfood/shared-kernel";
 import { OrderId } from "./order-id";
+import {
+  DEFAULT_DELIVERY_OPTION,
+  DeliveryOption,
+  computePromisedDeliveryAt,
+  deliveryOptionLabel,
+  normalizeDeliveryOption,
+  priorityRankOf,
+} from "./delivery-option";
 import { OrderPlacedEvent } from "./events/order-placed.event";
 import { OrderStatusChangedEvent } from "./events/order-status-changed.event";
 import { OrderItemsChangedEvent } from "./events/order-items-changed.event";
@@ -76,6 +84,14 @@ export interface OrderProps {
   deliveryLatitude: number | null;
   deliveryLongitude: number | null;
   estimatedDeliveryTime: Date | null;
+  /** Phương thức giao hàng khách chọn (mặc định FAST). */
+  deliveryOption?: DeliveryOption;
+  /** Phụ thu (dương) hoặc giảm giá (âm) so với phí FAST — chỉ để báo cáo. */
+  deliveryOptionFee?: number;
+  /** Thứ tự ưu tiên của đơn (SAVER 0, FAST 1, PRIORITY 2). */
+  priorityRank?: number;
+  /** Thời điểm cam kết giao hàng (dùng cảnh báo trễ / SLA). */
+  promisedDeliveryAt?: Date | null;
   notes: string | null;
   driverId: string | null;
   /**
@@ -127,6 +143,10 @@ export class Order extends AggregateRoot<OrderId> {
   private deliveryLatitude: number | null;
   private deliveryLongitude: number | null;
   private estimatedDeliveryTime: Date | null;
+  private deliveryOption: DeliveryOption;
+  private deliveryOptionFee: number;
+  private priorityRank: number;
+  private promisedDeliveryAt: Date | null;
   private notes: string | null;
   private driverId: string | null;
   private deliveryProofPhotoUrl: string | null;
@@ -154,6 +174,18 @@ export class Order extends AggregateRoot<OrderId> {
     this.deliveryLatitude = props.deliveryLatitude;
     this.deliveryLongitude = props.deliveryLongitude;
     this.estimatedDeliveryTime = props.estimatedDeliveryTime;
+    const deliveryOption =
+      props.orderType === "PICKUP"
+        ? DEFAULT_DELIVERY_OPTION
+        : normalizeDeliveryOption(props.deliveryOption);
+    this.deliveryOption = deliveryOption;
+    this.deliveryOptionFee =
+      props.orderType === "PICKUP" ? 0 : Number(props.deliveryOptionFee ?? 0);
+    this.priorityRank =
+      props.orderType === "PICKUP"
+        ? priorityRankOf(DEFAULT_DELIVERY_OPTION)
+        : priorityRankOf(deliveryOption);
+    this.promisedDeliveryAt = props.promisedDeliveryAt ?? null;
     this.notes = props.notes;
     this.driverId = props.driverId;
     this.deliveryProofPhotoUrl = props.deliveryProofPhotoUrl ?? null;
@@ -194,6 +226,9 @@ export class Order extends AggregateRoot<OrderId> {
     discount?: number;
     discountFundedBy?: string;
     estimatedDeliveryTime?: Date;
+    deliveryOption?: DeliveryOption;
+    deliveryOptionFee?: number;
+    promisedDeliveryAt?: Date | null;
     notes?: string;
     paymentMethod?: string;
   }): Result<Order, DomainError> {
@@ -262,6 +297,17 @@ export class Order extends AggregateRoot<OrderId> {
     const discount = props.discount ?? 0;
     const totalAmount = subtotal + deliveryFee + serviceFee - discount;
 
+    // PICKUP không áp dụng phương thức giao hàng / phụ thu.
+    const deliveryOption =
+      props.orderType === "PICKUP"
+        ? DEFAULT_DELIVERY_OPTION
+        : normalizeDeliveryOption(props.deliveryOption);
+    const promisedDeliveryAt =
+      props.orderType === "PICKUP"
+        ? null
+        : (props.promisedDeliveryAt ??
+          computePromisedDeliveryAt(new Date(), null, deliveryOption));
+
     if (totalAmount < 0) {
       return Result.fail(
         new BusinessRuleViolationError("Total amount cannot be negative"),
@@ -287,6 +333,13 @@ export class Order extends AggregateRoot<OrderId> {
         deliveryLatitude: props.deliveryLatitude ?? null,
         deliveryLongitude: props.deliveryLongitude ?? null,
         estimatedDeliveryTime: props.estimatedDeliveryTime ?? null,
+        deliveryOption,
+        deliveryOptionFee:
+          props.orderType === "PICKUP"
+            ? 0
+            : Number(props.deliveryOptionFee ?? 0),
+        priorityRank: priorityRankOf(deliveryOption),
+        promisedDeliveryAt,
         notes: props.notes ?? null,
         driverId: null,
         cancelReason: null,
@@ -698,6 +751,26 @@ export class Order extends AggregateRoot<OrderId> {
 
   get orderEstimatedDeliveryTime(): Date | null {
     return this.estimatedDeliveryTime;
+  }
+
+  get orderDeliveryOption(): DeliveryOption {
+    return this.deliveryOption;
+  }
+
+  get orderDeliveryOptionLabel(): string {
+    return deliveryOptionLabel(this.deliveryOption);
+  }
+
+  get orderDeliveryOptionFee(): number {
+    return this.deliveryOptionFee;
+  }
+
+  get orderPriorityRank(): number {
+    return this.priorityRank;
+  }
+
+  get orderPromisedDeliveryAt(): Date | null {
+    return this.promisedDeliveryAt;
   }
 
   get orderNotes(): string | null {

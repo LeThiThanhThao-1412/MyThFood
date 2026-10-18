@@ -8,7 +8,7 @@ import {
   uploadApi,
   merchantApi,
 } from "@mythfood/api-client";
-import { Drawer } from "@mythfood/frontend-shared";
+import { Drawer, deliveryOptionMeta } from "@mythfood/frontend-shared";
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: "⏳ Chờ xác nhận",
@@ -256,7 +256,17 @@ export default function OrderDetailDrawer({
               <span>{toNum(order.subtotal).toLocaleString("vi-VN")}₫</span>
             </div>
             <div className="flex justify-between text-gray-600">
-              <span>Phí giao hàng</span>
+              <span>
+                Phí giao hàng
+                {order.deliveryOption && order.deliveryOption !== "FAST" && (
+                  <span
+                    className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${deliveryOptionMeta(order.deliveryOption).badgeClass}`}
+                  >
+                    {deliveryOptionMeta(order.deliveryOption).icon}{" "}
+                    {deliveryOptionMeta(order.deliveryOption).label}
+                  </span>
+                )}
+              </span>
               <span>{toNum(order.deliveryFee).toLocaleString("vi-VN")}₫</span>
             </div>
             {toNum(order.serviceFee) > 0 && (

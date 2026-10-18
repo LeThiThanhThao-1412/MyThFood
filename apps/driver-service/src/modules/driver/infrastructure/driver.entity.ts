@@ -109,6 +109,17 @@ export class DriverEntity {
   @Column({ type: "uuid", nullable: true })
   currentOrderId!: string | null;
 
+  /**
+   * Danh sách đơn đang giữ (SAVER stacking). `currentOrderId` vẫn được giữ
+   * đồng bộ = phần tử đầu tiên để tương thích với code cũ.
+   */
+  @Column({ type: "uuid", array: true, default: () => "'{}'" })
+  currentOrderIds!: string[];
+
+  /** Số đơn tối đa tài xế được giữ cùng lúc (SAVER: 3, FAST/PRIORITY: 1). */
+  @Column({ type: "int", default: 1 })
+  maxConcurrentOrders!: number;
+
   @Column({ type: "boolean", default: false })
   isTrainingCompleted!: boolean;
 

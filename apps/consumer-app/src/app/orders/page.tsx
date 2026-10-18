@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { orderApi } from "@mythfood/api-client";
-import { useAuthStore } from "@mythfood/frontend-shared";
+import { useAuthStore, deliveryOptionMeta } from "@mythfood/frontend-shared";
 import { reorderOrder } from "@/lib/reorder";
 
 const STATUS_LABELS: Record<
@@ -200,6 +200,14 @@ export default function OrdersPage() {
                     >
                       {s.icon} {s.label}
                     </span>
+                    {o.deliveryOption && o.deliveryOption !== "FAST" && (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${deliveryOptionMeta(o.deliveryOption).badgeClass}`}
+                      >
+                        {deliveryOptionMeta(o.deliveryOption).icon}{" "}
+                        {deliveryOptionMeta(o.deliveryOption).label}
+                      </span>
+                    )}
                   </div>
                   <span className="text-[#ff6b35] font-bold">
                     {toNum(o.totalAmount).toLocaleString("vi-VN")}₫

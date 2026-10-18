@@ -15,9 +15,13 @@ interface DraftLine {
   menuItemId: string;
   name: string;
   imageUrl?: string | null;
+  /** Giá gốc chưa gồm priceDelta của options. */
+  basePrice: number;
   unitPrice: number;
   quantity: number;
   options: DraftOption[];
+  /** true khi merchant đã chỉnh options (cần gửi lên server). */
+  optionsDirty?: boolean;
   specialInstructions?: string;
 }
 
@@ -50,22 +54,89 @@ function pickDefaultOptions(item: any): DraftOption[] {
     const options = group?.options ?? [];
     if (!options.length) continue;
     const max =
-      group.maxSelections ?? (group.type === "CHOICE" ? 1 : options.length);
+      group.maxSelections ??
+      (group.type === "CHOICE" || group.type === "TOGGLE" ? 1 : options.length);
     const min = group.minSelections ?? (group.required ? 1 : 0);
     const defaults = options.filter((o: any) => o.isDefault);
     if (defaults.length > 0) {
       for (const opt of defaults.slice(0, Math.max(1, max))) {
-        result.push({ optionId: opt.id, groupId: group.id, quantity: 1 });
+        result.push({
+          optionId: opt.id,
+          groupId: group.id,
+          quantity: opt.minQuantity ?? 1,
+        });
       }
       continue;
     }
     if (min > 0) {
       for (const opt of options.slice(0, Math.max(1, min))) {
-        result.push({ optionId: opt.id, groupId: group.id, quantity: 1 });
+        result.push({
+          optionId: opt.id,
+          groupId: group.id,
+          quantity: opt.minQuantity ?? 1,
+        });
       }
     }
   }
   return result;
+}
+
+function groupRange(group: any): { min: number; max: number | null } {
+  const min = group?.minSelections ?? (group?.required ? 1 : 0);
+  const max =
+    group?.maxSelections ??
+    (group?.type === "CHOICE" || group?.type === "TOGGLE" ? 1 : null);
+  return { min, max };
+}
+
+/** Validate lựa chọn options theo min/max của từng nhóm và từng option. */
+function validateLineOptions(item: any, options: DraftOption[]): string | null {
+  for (const group of item?.optionGroups ?? []) {
+    const selected = options.filter((option) => option.groupId === group.id);
+    const { min, max } = groupRange(group);
+    if (selected.length < min) {
+      return `chọn ít nhất ${min} mục cho "${group.name}"`;
+    }
+    if (max != null && selected.length > max) {
+      return `chọn tối đa ${max} mục cho "${group.name}"`;
+    }
+    for (const choice of selected) {
+      const option = (group.options ?? []).find(
+        (candidate: any) => candidate.id === choice.optionId,
+      );
+      if (!option) {
+        return `tùy chọn không còn hợp lệ trong "${group.name}"`;
+      }
+      const quantity = choice.quantity ?? 1;
+      if (option.minQuantity != null && quantity < option.minQuantity) {
+        return `"${option.name}" phải chọn tối thiểu ${option.minQuantity}`;
+      }
+      if (option.maxQuantity != null && quantity > option.maxQuantity) {
+        return `"${option.name}" chỉ được chọn tối đa ${option.maxQuantity}`;
+      }
+    }
+  }
+  return null;
+}
+
+/** Hiển thị gọn các option đã chọn: "Size L · Topping: Trân châu ×2". */
+function formatOptions(item: any, options: DraftOption[]): string {
+  const parts: string[] = [];
+  for (const group of item?.optionGroups ?? []) {
+    const selected = options.filter((option) => option.groupId === group.id);
+    if (selected.length === 0) continue;
+    const names = selected.map((choice) => {
+      const option = (group.options ?? []).find(
+        (candidate: any) => candidate.id === choice.optionId,
+      );
+      const quantity = choice.quantity ?? 1;
+      return quantity > 1
+        ? `${option?.name ?? choice.optionId} ×${quantity}`
+        : (option?.name ?? choice.optionId);
+    });
+    parts.push(`${group.name}: ${names.join(", ")}`);
+  }
+  return parts.join(" · ");
 }
 
 export default function OrderEditDrawer({
@@ -81,6 +152,9 @@ export default function OrderEditDrawer({
   const [loadingMenu, setLoadingMenu] = useState(true);
   const [showPicker, setShowPicker] = useState(false);
   const [lines, setLines] = useState<DraftLine[]>([]);
+  const [editingOptionsFor, setEditingOptionsFor] = useState<string | null>(
+    null,
+  );
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -88,21 +162,32 @@ export default function OrderEditDrawer({
 
   useEffect(() => {
     setLines(
-      (order?.items ?? []).map((item: any, index: number) => ({
-        key: `existing-${index}`,
-        sourceIndex: index,
-        menuItemId: item.menuItemId,
-        name: item.name,
-        imageUrl: item.imageUrl ?? null,
-        unitPrice: toNum(item.unitPrice),
-        quantity: toNum(item.quantity) || 1,
-        options: (item.options ?? []).map((opt: any) => ({
+      (order?.items ?? []).map((item: any, index: number) => {
+        const options = (item.options ?? []).map((opt: any) => ({
           optionId: opt.optionId,
           groupId: opt.groupId,
           quantity: opt.quantity ?? 1,
-        })),
-        specialInstructions: item.specialInstructions ?? undefined,
-      })),
+        }));
+        const oldOptionDelta = (item.options ?? []).reduce(
+          (sum: number, opt: any) =>
+            sum + toNum(opt?.priceDelta) * (opt?.quantity ?? 1),
+          0,
+        );
+        const unitPrice = toNum(item.unitPrice);
+        return {
+          key: `existing-${index}`,
+          sourceIndex: index,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          imageUrl: item.imageUrl ?? null,
+          basePrice: unitPrice - oldOptionDelta,
+          unitPrice,
+          quantity: toNum(item.quantity) || 1,
+          options,
+          optionsDirty: false,
+          specialInstructions: item.specialInstructions ?? undefined,
+        };
+      }),
     );
   }, [order?.id]);
 
@@ -168,20 +253,117 @@ export default function OrderEditDrawer({
 
   function addDish(item: any) {
     const options = pickDefaultOptions(item);
+    const key = `new-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const basePrice = toNum(item.price);
     setLines((prev) => [
       ...prev,
       {
-        key: `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        key,
         menuItemId: item.id,
         name: item.name,
         imageUrl: item.imageUrl ?? null,
-        unitPrice: toNum(item.price) + optionDelta(options, item),
+        basePrice,
+        unitPrice: basePrice + optionDelta(options, item),
         quantity: 1,
         options,
+        optionsDirty: true,
       },
     ]);
     setShowPicker(false);
     setSearch("");
+    setEditingOptionsFor(key);
+  }
+
+  function updateLineOptions(key: string, nextOptions: DraftOption[]) {
+    setLines((prev) =>
+      prev.map((line) => {
+        if (line.key !== key) return line;
+        const item = menu.find(
+          (candidate: any) => candidate.id === line.menuItemId,
+        );
+        const delta = item ? optionDelta(nextOptions, item) : 0;
+        return {
+          ...line,
+          options: nextOptions,
+          optionsDirty: true,
+          unitPrice: Math.max(0, line.basePrice + delta),
+        };
+      }),
+    );
+  }
+
+  function toggleLineOption(line: DraftLine, group: any, option: any) {
+    const exists = line.options.some(
+      (choice) => choice.groupId === group.id && choice.optionId === option.id,
+    );
+    const others = line.options.filter((choice) => choice.groupId !== group.id);
+    const sameGroup = line.options.filter(
+      (choice) => choice.groupId === group.id,
+    );
+
+    let nextSame: DraftOption[];
+    if (exists) {
+      const { min } = groupRange(group);
+      if (sameGroup.length <= min) {
+        setError(`Nhóm "${group.name}" cần chọn ít nhất ${min} mục`);
+        return;
+      }
+      nextSame = sameGroup.filter((choice) => choice.optionId !== option.id);
+    } else {
+      const { max } = groupRange(group);
+      const initialQuantity = option.minQuantity ?? 1;
+      if (max === 1) {
+        nextSame = [
+          {
+            optionId: option.id,
+            groupId: group.id,
+            quantity: initialQuantity,
+          },
+        ];
+      } else {
+        const limit = max ?? 999;
+        if (sameGroup.length >= limit) {
+          setError(`Nhóm "${group.name}" chỉ chọn tối đa ${limit} mục`);
+          return;
+        }
+        nextSame = [
+          ...sameGroup,
+          {
+            optionId: option.id,
+            groupId: group.id,
+            quantity: initialQuantity,
+          },
+        ];
+      }
+    }
+
+    updateLineOptions(line.key, [...others, ...nextSame]);
+  }
+
+  function changeOptionQuantity(
+    line: DraftLine,
+    group: any,
+    option: any,
+    diff: number,
+  ) {
+    const selected = line.options.find(
+      (choice) => choice.groupId === group.id && choice.optionId === option.id,
+    );
+    if (!selected) return;
+    const min = option.minQuantity ?? 1;
+    const max = option.maxQuantity ?? 99;
+    const nextQuantity = Math.min(
+      max,
+      Math.max(min, (selected.quantity ?? 1) + diff),
+    );
+    updateLineOptions(
+      line.key,
+      line.options.map((choice) =>
+        choice.groupId === group.id && choice.optionId === option.id
+          ? { ...choice, quantity: nextQuantity }
+          : choice,
+      ),
+    );
   }
 
   function changeQuantity(key: string, diff: number) {
@@ -211,6 +393,20 @@ export default function OrderEditDrawer({
       setError("Đơn hàng phải còn ít nhất một món");
       return;
     }
+
+    for (const line of lines) {
+      const item = menu.find(
+        (candidate: any) => candidate.id === line.menuItemId,
+      );
+      if (!item) continue;
+      const invalid = validateLineOptions(item, line.options);
+      if (invalid) {
+        setError(`${line.name}: ${invalid}`);
+        setEditingOptionsFor(line.key);
+        return;
+      }
+    }
+
     setSubmitting(true);
     setError("");
     try {
@@ -222,7 +418,7 @@ export default function OrderEditDrawer({
             : {}),
           menuItemId: line.menuItemId,
           quantity: line.quantity,
-          ...(line.sourceIndex === undefined && line.options.length > 0
+          ...(line.sourceIndex === undefined || line.optionsDirty
             ? {
                 options: line.options.map((opt) => ({
                   optionId: opt.optionId,
@@ -371,6 +567,160 @@ export default function OrderEditDrawer({
                         </button>
                       </div>
                     </div>
+
+                    {(() => {
+                      const menuItem = menu.find(
+                        (candidate: any) => candidate.id === line.menuItemId,
+                      );
+                      const summary = menuItem
+                        ? formatOptions(menuItem, line.options)
+                        : "";
+                      const isOpen = editingOptionsFor === line.key;
+                      return (
+                        <div className="mt-1.5">
+                          <button
+                            onClick={() =>
+                              setEditingOptionsFor(isOpen ? null : line.key)
+                            }
+                            className="text-xs text-[#ff6b35] font-medium"
+                          >
+                            ⚙️ Tùy chọn
+                            {summary ? `: ${summary}` : " (chưa chọn)"}
+                          </button>
+
+                          {isOpen && (
+                            <div className="mt-2 bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-3">
+                              {!menuItem && (
+                                <p className="text-xs text-red-500">
+                                  Không tải được menu của món này.
+                                </p>
+                              )}
+                              {menuItem &&
+                                (menuItem.optionGroups ?? []).length === 0 && (
+                                  <p className="text-xs text-gray-400">
+                                    Món này không có tùy chọn.
+                                  </p>
+                                )}
+                              {(menuItem?.optionGroups ?? []).map(
+                                (group: any) => {
+                                  const { min, max } = groupRange(group);
+                                  const selectedInGroup = line.options.filter(
+                                    (choice) => choice.groupId === group.id,
+                                  );
+                                  return (
+                                    <div key={group.id}>
+                                      <div className="flex items-center justify-between gap-2">
+                                        <p className="text-xs font-semibold text-gray-700">
+                                          {group.name}
+                                          {group.required ? " *" : ""}
+                                        </p>
+                                        <p className="text-[11px] text-gray-400">
+                                          {min > 0
+                                            ? `Chọn ${min}${max != null ? `-${max}` : ""}`
+                                            : max != null
+                                              ? `Tối đa ${max}`
+                                              : "Tùy chọn"}
+                                        </p>
+                                      </div>
+                                      <div className="mt-1 space-y-1">
+                                        {(group.options ?? []).map(
+                                          (option: any) => {
+                                            const selected =
+                                              selectedInGroup.find(
+                                                (choice) =>
+                                                  choice.optionId === option.id,
+                                              );
+                                            const priceDelta = toNum(
+                                              option.priceDelta,
+                                            );
+                                            return (
+                                              <div
+                                                key={option.id}
+                                                className="flex items-center gap-2"
+                                              >
+                                                <button
+                                                  onClick={() =>
+                                                    toggleLineOption(
+                                                      line,
+                                                      group,
+                                                      option,
+                                                    )
+                                                  }
+                                                  className={`flex-1 text-left text-sm px-2 py-1.5 rounded-lg border transition ${
+                                                    selected
+                                                      ? "border-[#ff6b35] bg-orange-50 text-[#ff6b35] font-medium"
+                                                      : "border-gray-200 bg-white text-gray-600"
+                                                  }`}
+                                                >
+                                                  {selected ? "✓" : "○"}{" "}
+                                                  {option.name}
+                                                  {priceDelta !== 0 && (
+                                                    <span className="text-xs ml-1">
+                                                      {priceDelta > 0
+                                                        ? "+"
+                                                        : ""}
+                                                      {priceDelta.toLocaleString(
+                                                        "vi-VN",
+                                                      )}
+                                                      ₫
+                                                    </span>
+                                                  )}
+                                                </button>
+                                                {group.type === "QUANTITY" &&
+                                                  selected && (
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                      <button
+                                                        onClick={() =>
+                                                          changeOptionQuantity(
+                                                            line,
+                                                            group,
+                                                            option,
+                                                            -1,
+                                                          )
+                                                        }
+                                                        className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600"
+                                                      >
+                                                        −
+                                                      </button>
+                                                      <span className="w-5 text-center text-xs font-semibold">
+                                                        {selected.quantity ?? 1}
+                                                      </span>
+                                                      <button
+                                                        onClick={() =>
+                                                          changeOptionQuantity(
+                                                            line,
+                                                            group,
+                                                            option,
+                                                            1,
+                                                          )
+                                                        }
+                                                        className="w-6 h-6 rounded bg-white border border-gray-200 text-gray-600"
+                                                      >
+                                                        +
+                                                      </button>
+                                                    </div>
+                                                  )}
+                                              </div>
+                                            );
+                                          },
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                },
+                              )}
+
+                              <button
+                                onClick={() => setEditingOptionsFor(null)}
+                                className="w-full bg-[#ff6b35] text-white py-2 rounded-lg text-xs font-semibold"
+                              >
+                                Xong
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
 

@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { merchantApi, orderApi } from "@mythfood/api-client";
-import { useAuthStore } from "@mythfood/frontend-shared";
+import {
+  useAuthStore,
+  deliveryOptionMeta,
+  deliveryPriorityRank,
+} from "@mythfood/frontend-shared";
 import { useMerchantSocket } from "@/components/SocketProvider";
 import OrderDetailDrawer from "@/components/OrderDetailDrawer";
 import MerchantShell from "@/components/MerchantShell";
@@ -50,6 +54,7 @@ export default function MerchantOrdersPage() {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<
     | "ALL"
+    | "PRIORITY"
     | "PENDING"
     | "CONFIRMED"
     | "PREPARING"
@@ -244,9 +249,20 @@ export default function MerchantOrdersPage() {
     }
   }
 
+  // Đơn đang xử lý luôn đứng trước; trong đó PRIORITY lên đầu, cùng hạng
+  // thì đơn cũ nhất trước (FIFO). Đơn đã kết thúc sắp mới nhất trước.
+  const OPEN_STATUSES = [
+    "PENDING",
+    "CONFIRMED",
+    "PREPARING",
+    "READY_FOR_PICKUP",
+  ];
+
   const filtered = orders.filter((o) => {
     if (activeTab === "ALL") return true;
     const s = o.status;
+    if (activeTab === "PRIORITY")
+      return o.deliveryOption === "PRIORITY" && OPEN_STATUSES.includes(s);
     if (activeTab === "PENDING") return s === "PENDING";
     if (activeTab === "CONFIRMED") return s === "CONFIRMED";
     if (activeTab === "PREPARING") return s === "PREPARING";
@@ -260,11 +276,36 @@ export default function MerchantOrdersPage() {
     return true;
   });
 
+  const sortedOrders = [...filtered].sort((a, b) => {
+    const aOpen = OPEN_STATUSES.includes(a.status);
+    const bOpen = OPEN_STATUSES.includes(b.status);
+    if (aOpen !== bOpen) return aOpen ? -1 : 1;
+
+    if (aOpen) {
+      const rankDiff =
+        deliveryPriorityRank(b.deliveryOption) -
+        deliveryPriorityRank(a.deliveryOption);
+      if (rankDiff !== 0) return rankDiff;
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    }
+
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+
+  const priorityCount = orders.filter(
+    (o) => o.deliveryOption === "PRIORITY" && OPEN_STATUSES.includes(o.status),
+  ).length;
+
   const tabs = [
     {
       key: "ALL",
       label: "📋 Tất cả",
       count: orders.length,
+    },
+    {
+      key: "PRIORITY",
+      label: "⚡ Ưu tiên",
+      count: priorityCount,
     },
     {
       key: "PENDING",
@@ -334,6 +375,13 @@ export default function MerchantOrdersPage() {
           </span>
         </div>
       </div>
+      {/* Priority queue banner */}
+      {priorityCount > 0 && (
+        <div className="bg-orange-50 border border-orange-200 text-orange-700 rounded-2xl px-4 py-3 mb-3 text-sm font-semibold flex items-center gap-2">
+          ⚡ Có {priorityCount} đơn ưu tiên — hãy xử lý trước theo thứ tự hiển
+          thị.
+        </div>
+      )}
       {/* Tabs */}
       <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
         {tabs.map((t) => (
@@ -370,16 +418,29 @@ export default function MerchantOrdersPage() {
             <p className="text-gray-400 text-sm">Không có đơn hàng nào</p>
           </div>
         )}
-        {filtered.map((o: any) => (
+        {sortedOrders.map((o: any) => (
           <div
             key={o.id}
             onClick={() => setSelectedId(o.id)}
-            className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 cursor-pointer hover:shadow-md transition"
+            className={`bg-white rounded-2xl shadow-sm p-4 sm:p-5 cursor-pointer hover:shadow-md transition ${
+              o.deliveryOption === "PRIORITY" &&
+              OPEN_STATUSES.includes(o.status)
+                ? "border-l-4 border-l-orange-400 ring-1 ring-orange-100"
+                : ""
+            }`}
           >
             <div className="flex items-start justify-between mb-3">
               <div>
-                <p className="font-semibold text-gray-800">
-                  #{o.id?.slice(0, 8)}
+                <p className="font-semibold text-gray-800 flex items-center gap-2">
+                  <span>#{o.id?.slice(0, 8)}</span>
+                  {o.deliveryOption && o.deliveryOption !== "FAST" && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${deliveryOptionMeta(o.deliveryOption).badgeClass}`}
+                    >
+                      {deliveryOptionMeta(o.deliveryOption).icon}{" "}
+                      {deliveryOptionMeta(o.deliveryOption).label}
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {new Date(o.createdAt).toLocaleString("vi-VN")}

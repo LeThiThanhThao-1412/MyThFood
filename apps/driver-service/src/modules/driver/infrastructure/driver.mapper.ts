@@ -40,6 +40,10 @@ export class DriverMapper {
       reputationScore: entity.reputationScore,
       acceptBlockedUntil: entity.acceptBlockedUntil,
       currentOrderId: entity.currentOrderId,
+      currentOrderIds:
+        entity.currentOrderIds ??
+        (entity.currentOrderId ? [entity.currentOrderId] : []),
+      maxConcurrentOrders: entity.maxConcurrentOrders ?? 1,
       isTrainingCompleted: entity.isTrainingCompleted,
       depositAmount: entity.depositAmount,
       creditWalletBalance: entity.creditWalletBalance,
@@ -78,6 +82,8 @@ export class DriverMapper {
     entity.reputationScore = domain.driverReputationScore;
     entity.acceptBlockedUntil = domain.driverAcceptBlockedUntil;
     entity.currentOrderId = domain.driverCurrentOrderId;
+    entity.currentOrderIds = domain.driverCurrentOrderIds;
+    entity.maxConcurrentOrders = domain.driverMaxConcurrentOrders;
     entity.isTrainingCompleted = domain.driverIsTrainingCompleted;
     entity.depositAmount = domain.driverDepositAmount;
     entity.creditWalletBalance = domain.driverCreditWalletBalance;

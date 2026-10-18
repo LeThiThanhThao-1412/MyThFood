@@ -398,12 +398,12 @@ function MapViewBase({
     const store = markersRef.current;
     const wantedKeys = new Set(markerSpecs.map((spec) => spec.key));
 
-    for (const [key, marker] of store) {
+    store.forEach((marker: any, key: string) => {
       if (!wantedKeys.has(key)) {
         marker.remove();
         store.delete(key);
       }
-    }
+    });
 
     for (const spec of markerSpecs) {
       const existing = store.get(spec.key);

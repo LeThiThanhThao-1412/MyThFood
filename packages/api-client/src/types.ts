@@ -384,6 +384,15 @@ export interface UpdateCapacityRequest {
 
 // --- Order ---
 export type OrderType = "DELIVERY" | "PICKUP";
+
+/**
+ * Phương thức giao hàng:
+ * - SAVER: Tiết kiệm (phí rẻ nhất, thời gian lâu hơn)
+ * - FAST: Nhanh (tiêu chuẩn, mặc định)
+ * - PRIORITY: Ưu tiên (nhà hàng xử lý trước, phí cao nhất)
+ */
+export type DeliveryOption = "SAVER" | "FAST" | "PRIORITY";
+
 export type OrderStatus =
   | "PENDING"
   | "CONFIRMED"
@@ -426,6 +435,15 @@ export interface Order {
   deliveryLatitude?: number;
   deliveryLongitude?: number;
   estimatedDeliveryTime?: string | null;
+  /** Phương thức giao hàng khách đã chọn. */
+  deliveryOption?: DeliveryOption;
+  deliveryOptionLabel?: string;
+  /** Phụ thu/giảm giá của phương thức so với phí FAST (VND). */
+  deliveryOptionFee?: number;
+  /** Thứ tự ưu tiên hàng đợi nhà hàng (SAVER 0, FAST 1, PRIORITY 2). */
+  priorityRank?: number;
+  /** Thời điểm cam kết giao hàng. */
+  promisedDeliveryAt?: string | null;
   notes?: string;
   driverId?: string | null;
   /** Ảnh tài xế chụp món ăn lúc giao cho khách (bằng chứng chống khiếu nại). */
@@ -464,6 +482,8 @@ export interface PlaceOrderRequest {
   promotionCode?: string;
   notes?: string;
   paymentMethod?: string;
+  /** Phương thức giao hàng — bỏ trống = FAST (tương thích ngược). */
+  deliveryOption?: DeliveryOption;
 }
 
 export interface CancelOrderRequest {
@@ -760,6 +780,13 @@ export interface Dispatch {
   deliveryAddress: string;
   deliveryLatitude?: number;
   deliveryLongitude?: number;
+  /** Phương thức giao hàng của dispatch. */
+  deliveryOption?: DeliveryOption;
+  priorityRank?: number;
+  promisedDeliveryAt?: string | null;
+  /** Lô gộp đơn SAVER (Phase 2). */
+  batchId?: string | null;
+  routeSequence?: number | null;
   status: DispatchStatus;
   driverId?: string | null;
   matchedDriverIds?: string[];
@@ -777,6 +804,27 @@ export interface Dispatch {
   updatedAt?: string;
 }
 
+/** Một điểm dừng trong lộ trình gộp đơn SAVER. */
+export interface DriverRouteStop {
+  orderId: string;
+  sequence: number;
+  status: string;
+  merchantLatitude: number;
+  merchantLongitude: number;
+  deliveryLatitude: number;
+  deliveryLongitude: number;
+  pickupDone: boolean;
+  deliveryDone: boolean;
+}
+
+export interface DriverRoute {
+  driverId: string;
+  dispatchId?: string;
+  batchId: string | null;
+  maxStackedOrders: number;
+  stops: DriverRouteStop[];
+}
+
 export interface CreateDispatchRequest {
   orderId: string;
   merchantId: string;
@@ -785,6 +833,8 @@ export interface CreateDispatchRequest {
   deliveryLongitude: number;
   merchantLatitude?: number;
   merchantLongitude?: number;
+  deliveryOption?: DeliveryOption;
+  promisedDeliveryAt?: string;
 }
 
 export interface DeclineDispatchRequest {

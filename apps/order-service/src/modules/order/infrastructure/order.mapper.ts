@@ -27,6 +27,10 @@ export class OrderMapper {
     entity.delivery_latitude = order.orderDeliveryLatitude;
     entity.delivery_longitude = order.orderDeliveryLongitude;
     entity.estimated_delivery_time = order.orderEstimatedDeliveryTime;
+    entity.delivery_option = order.orderDeliveryOption;
+    entity.delivery_option_fee = order.orderDeliveryOptionFee;
+    entity.priority_rank = order.orderPriorityRank;
+    entity.promised_delivery_at = order.orderPromisedDeliveryAt;
     entity.notes = order.orderNotes;
     entity.driver_id = order.orderDriverId;
     entity.delivery_proof_photo_url = order.orderDeliveryProofPhotoUrl;
@@ -97,6 +101,10 @@ export class OrderMapper {
       deliveryLatitude: orderEntity.delivery_latitude,
       deliveryLongitude: orderEntity.delivery_longitude,
       estimatedDeliveryTime: orderEntity.estimated_delivery_time,
+      deliveryOption: orderEntity.delivery_option as any,
+      deliveryOptionFee: Number(orderEntity.delivery_option_fee ?? 0),
+      priorityRank: orderEntity.priority_rank ?? 1,
+      promisedDeliveryAt: orderEntity.promised_delivery_at ?? null,
       notes: orderEntity.notes,
       driverId: orderEntity.driver_id,
       deliveryProofPhotoUrl: orderEntity.delivery_proof_photo_url ?? null,

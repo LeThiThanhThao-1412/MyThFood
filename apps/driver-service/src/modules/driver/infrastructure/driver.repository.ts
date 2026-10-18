@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository as TypeOrmRepo, IsNull } from "typeorm";
+import { Repository as TypeOrmRepo } from "typeorm";
 import { IRepository, EntityNotFoundError } from "@mythfood/shared-kernel";
 import {
   Driver,
@@ -84,17 +84,24 @@ export class DriverRepository implements IRepository<Driver, DriverId> {
     return this.mapper.toDomain(entity);
   }
 
-  async findAvailableDrivers(): Promise<Driver[]> {
+  /**
+   * @param includeStackable true → trả cả tài xế đang có đơn SAVER nhưng còn
+   * slot gộp (dispatch SAVER); false → chỉ tài xế đang rảnh hoàn toàn.
+   */
+  async findAvailableDrivers(includeStackable = false): Promise<Driver[]> {
     const entities = await this.repository.find({
       where: {
         status: DriverStatus.ACTIVE,
         onlineStatus: DriverOnlineStatus.ONLINE,
-        currentOrderId: IsNull(),
       },
     });
     return entities
       .map((e) => this.mapper.toDomain(e))
-      .filter((d) => d.isAvailable);
+      .filter(
+        (d) =>
+          d.canAcceptMoreOrders &&
+          (includeStackable || d.driverActiveOrderCount === 0),
+      );
   }
 
   /**

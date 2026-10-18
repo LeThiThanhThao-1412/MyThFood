@@ -101,8 +101,8 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
     return this.driverRepo.findAll(filter);
   }
 
-  async getAvailableDrivers(): Promise<Driver[]> {
-    return this.driverRepo.findAvailableDrivers();
+  async getAvailableDrivers(includeStackable = false): Promise<Driver[]> {
+    return this.driverRepo.findAvailableDrivers(includeStackable);
   }
 
   async updateProfile(
@@ -265,16 +265,20 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
 
   // ---- Order Assignment ----
 
-  async assignOrder(id: string, orderId: string): Promise<Driver> {
+  async assignOrder(
+    id: string,
+    orderId: string,
+    maxConcurrentOrders?: number,
+  ): Promise<Driver> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
-    driver.assignOrder(orderId);
+    driver.assignOrder(orderId, maxConcurrentOrders);
     await this.driverRepo.save(driver);
     return driver;
   }
 
-  async completeOrder(id: string): Promise<Driver> {
+  async completeOrder(id: string, orderId?: string): Promise<Driver> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
-    driver.completeOrder();
+    driver.completeOrder(orderId);
     await this.driverRepo.save(driver);
     return driver;
   }
@@ -303,9 +307,9 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
   /**
    * Giải phóng tài xế khỏi đơn hiện tại (khi hủy/giao thất bại).
    */
-  async releaseOrder(id: string): Promise<Driver> {
+  async releaseOrder(id: string, orderId?: string): Promise<Driver> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
-    driver.releaseOrder();
+    driver.releaseOrder(orderId);
     await this.driverRepo.save(driver);
     return driver;
   }

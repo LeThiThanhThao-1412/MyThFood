@@ -591,7 +591,7 @@ export async function completeDelivery(
 
   // Giải phóng tài xế (bỏ qua 409 khi đơn đã hoàn tất trước đó)
   try {
-    await driverApi.completeOrder(driverId);
+    await driverApi.completeOrder(driverId, order.id);
   } catch {
     /* non-fatal */
   }

@@ -14,6 +14,11 @@ import MenuItemOptionDrawer from "@/components/MenuItemOptionDrawer";
 import CartDrawer from "@/components/CartDrawer";
 import { resolveConsumerId } from "@/lib/consumer";
 
+// Key nội bộ cho tab "Tất cả" / "Flash Sale" — tránh trùng với tên danh mục thật.
+const ALL_CATEGORY_KEY = "__all__";
+const FLASH_SALE_CATEGORY_KEY = "__flash_sale__";
+const CATEGORY_KEY_PREFIX = "cat:";
+
 export default function RestaurantDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -26,7 +31,9 @@ export default function RestaurantDetailPage() {
   const [menu, setMenu] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
-  const [currentCategory, setCurrentCategory] = useState("");
+  // Mặc định "Tất cả" để khách thấy ngay toàn bộ danh mục + món.
+  const [currentCategory, setCurrentCategory] =
+    useState<string>(ALL_CATEGORY_KEY);
   const [categories, setCategories] = useState<any[]>([]);
   const [optionItem, setOptionItem] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
@@ -134,12 +141,8 @@ export default function RestaurantDetailPage() {
         const catData = await merchantApi.getMenuCategories(id);
         const catList = Array.isArray(catData) ? catData : [];
         setCategories(catList);
-        // Set first category as active (ưu tiên danh mục đã cấu hình)
-        const firstCat =
-          catList[0]?.name ||
-          [...new Set(menuArr.map((i: any) => i.category || "Khác"))][0] ||
-          "";
-        setCurrentCategory(firstCat);
+        // Mặc định chọn tab "Tất cả" — tab danh mục chỉ dùng để lọc.
+        setCurrentCategory(ALL_CATEGORY_KEY);
       } catch {
         /* ignore */
       } finally {
@@ -248,7 +251,73 @@ export default function RestaurantDetailPage() {
     }
   });
 
-  // Loading skeleton
+  // Món đang flash sale trong thực đơn của nhà hàng này.
+  const flashSaleItems = menu.filter((item) => flashSales.has(item.id));
+
+  // Tab danh mục: Flash Sale (nếu có) → Tất cả → từng danh mục.
+  const categoryTabs: {
+    key: string;
+    label: string;
+    count: number;
+    isFlashSale?: boolean;
+  }[] = [
+    ...(flashSaleItems.length > 0
+      ? [
+          {
+            key: FLASH_SALE_CATEGORY_KEY,
+            label: "🔥 Flash Sale",
+            count: flashSaleItems.length,
+            isFlashSale: true,
+          },
+        ]
+      : []),
+    {
+      key: ALL_CATEGORY_KEY,
+      label: "Tất cả",
+      count: menu.length,
+    },
+    ...categoryOrder.map((cat) => ({
+      key: `${CATEGORY_KEY_PREFIX}${cat}`,
+      label: cat,
+      count: groupedMenu[cat]?.length ?? 0,
+    })),
+  ];
+
+  // Tab đang chọn có thể không còn tồn tại (menu/danh mục đổi) → quay về "Tất cả".
+  const activeCategoryKey = categoryTabs.some((t) => t.key === currentCategory)
+    ? currentCategory
+    : ALL_CATEGORY_KEY;
+
+  // "Tất cả" hiển thị toàn bộ danh mục + món; các tab khác chỉ để lọc.
+  const visibleSections =
+    activeCategoryKey === FLASH_SALE_CATEGORY_KEY
+      ? [
+          {
+            key: FLASH_SALE_CATEGORY_KEY,
+            title: "Flash Sale",
+            items: flashSaleItems,
+            isFlashSale: true,
+          },
+        ]
+      : activeCategoryKey === ALL_CATEGORY_KEY
+        ? categoryOrder.map((cat) => ({
+            key: `${CATEGORY_KEY_PREFIX}${cat}`,
+            title: cat,
+            items: groupedMenu[cat] || [],
+            isFlashSale: false,
+          }))
+        : (() => {
+            const cat = activeCategoryKey.slice(CATEGORY_KEY_PREFIX.length);
+            return [
+              {
+                key: activeCategoryKey,
+                title: cat,
+                items: groupedMenu[cat] || [],
+                isFlashSale: false,
+              },
+            ];
+          })();
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f0f2f5]">
@@ -496,22 +565,36 @@ export default function RestaurantDetailPage() {
                 </h2>
               </div>
 
-              {/* Category tabs */}
-              {categoryOrder.length > 1 && (
+              {/* Category tabs: Flash Sale (nếu có) → Tất cả → từng danh mục */}
+              {menu.length > 0 && (
                 <div className="flex gap-2 mb-5 overflow-x-auto hide-scrollbar pb-1">
-                  {categoryOrder.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setCurrentCategory(cat)}
-                      className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all shrink-0 ${
-                        currentCategory === cat
-                          ? "bg-[#ff6b35] text-white shadow-md shadow-orange-200"
-                          : "bg-white text-gray-600 border border-gray-100 hover:border-orange-200"
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
+                  {categoryTabs.map((tab) => {
+                    const active = activeCategoryKey === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        onClick={() => setCurrentCategory(tab.key)}
+                        className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all shrink-0 ${
+                          active
+                            ? tab.isFlashSale
+                              ? "bg-red-500 text-white shadow-md shadow-red-200"
+                              : "bg-[#ff6b35] text-white shadow-md shadow-orange-200"
+                            : tab.isFlashSale
+                              ? "bg-white text-red-500 border border-red-100 hover:border-red-300"
+                              : "bg-white text-gray-600 border border-gray-100 hover:border-orange-200"
+                        }`}
+                      >
+                        {tab.label}
+                        <span
+                          className={`ml-1.5 text-[11px] ${
+                            active ? "text-white/80" : "text-gray-400"
+                          }`}
+                        >
+                          ({tab.count})
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
@@ -524,133 +607,136 @@ export default function RestaurantDetailPage() {
                 </div>
               ) : (
                 <div className="space-y-8">
-                  {(currentCategory ? [currentCategory] : categoryOrder).map(
-                    (cat) => {
-                      const catItems = groupedMenu[cat] || [];
-                      if (catItems.length === 0) return null;
-                      return (
-                        <div key={cat}>
-                          <h3 className="text-base font-bold text-[#ff6b35] mb-3 flex items-center gap-2">
-                            <span>🍽️</span>
-                            {cat}
-                            <span className="text-xs text-gray-400 font-normal">
-                              ({catItems.length})
-                            </span>
-                          </h3>
-                          <div className="space-y-3">
-                            {catItems.map((item: any) => {
-                              const isAdded = addedIds.has(item.id);
-                              const fsItem = flashSales.get(item.id);
-                              return (
-                                <div
-                                  key={item.id}
-                                  className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 flex items-center gap-4 justify-between hover:shadow-md transition-all"
-                                >
-                                  <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
-                                    {item.imageUrl ? (
-                                      <img
-                                        src={item.imageUrl}
-                                        alt={item.name}
-                                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shrink-0 bg-gray-100"
-                                      />
-                                    ) : (
-                                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-gradient-to-br from-[#f093fb] to-[#f5576c] flex items-center justify-center text-2xl shrink-0">
-                                        🍽️
-                                      </div>
-                                    )}
-                                    <div className="min-w-0">
-                                      <h4 className="font-semibold text-gray-800 truncate">
-                                        {item.name}
-                                      </h4>
-                                      {item.description && (
-                                        <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">
-                                          {item.description}
-                                        </p>
-                                      )}
+                  {visibleSections.map((section) => {
+                    if (section.items.length === 0) return null;
+                    return (
+                      <div key={section.key}>
+                        <h3
+                          className={`text-base font-bold mb-3 flex items-center gap-2 ${
+                            section.isFlashSale
+                              ? "text-red-500"
+                              : "text-[#ff6b35]"
+                          }`}
+                        >
+                          <span>{section.isFlashSale ? "🔥" : "🍽️"}</span>
+                          {section.title}
+                          <span className="text-xs text-gray-400 font-normal">
+                            ({section.items.length})
+                          </span>
+                        </h3>
+                        <div className="space-y-3">
+                          {section.items.map((item: any) => {
+                            const isAdded = addedIds.has(item.id);
+                            const fsItem = flashSales.get(item.id);
+                            return (
+                              <div
+                                key={item.id}
+                                className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 flex items-center gap-4 justify-between hover:shadow-md transition-all"
+                              >
+                                <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+                                  {item.imageUrl ? (
+                                    <img
+                                      src={item.imageUrl}
+                                      alt={item.name}
+                                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl object-cover shrink-0 bg-gray-100"
+                                    />
+                                  ) : (
+                                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl bg-gradient-to-br from-[#f093fb] to-[#f5576c] flex items-center justify-center text-2xl shrink-0">
+                                      🍽️
                                     </div>
-                                  </div>
-                                  <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        handleToggleFavoriteDish(item)
-                                      }
-                                      aria-label={
-                                        favDishes.isFavorite(item.id)
-                                          ? "Bỏ yêu thích món"
-                                          : "Yêu thích món"
-                                      }
-                                      title={
-                                        favDishes.isFavorite(item.id)
-                                          ? "Bỏ yêu thích món"
-                                          : "Yêu thích món ăn"
-                                      }
-                                      className={`text-lg transition-transform hover:scale-125 ${
-                                        favDishes.isFavorite(item.id)
-                                          ? ""
-                                          : "grayscale opacity-60"
-                                      }`}
-                                    >
-                                      {favDishes.isFavorite(item.id)
-                                        ? "❤️"
-                                        : "🤍"}
-                                    </button>
-                                    <span className="flex flex-col items-end whitespace-nowrap">
-                                      {fsItem && (
-                                        <span className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full">
-                                          🔥 FLASH SALE
-                                        </span>
-                                      )}
-                                      {fsItem && (
-                                        <span className="text-xs text-gray-400 line-through">
-                                          {item.price?.toLocaleString("vi-VN")}₫
-                                        </span>
-                                      )}
-                                      <span
-                                        className={`font-bold text-base ${fsItem ? "text-red-500" : "text-[#ff6b35]"}`}
-                                      >
-                                        {(fsItem
-                                          ? Number(fsItem.salePrice)
-                                          : item.price
-                                        )?.toLocaleString("vi-VN")}
-                                        ₫
-                                      </span>
-                                      {fsItem && (
-                                        <span className="text-[10px] text-gray-400 whitespace-nowrap">
-                                          Tối đa{" "}
-                                          {Number(fsItem.limitPerUser) || 1}{" "}
-                                          suất/khách
-                                        </span>
-                                      )}
-                                    </span>
-                                    <button
-                                      onClick={() => handleAddToCart(item)}
-                                      disabled={!canOrder}
-                                      className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
-                                        !canOrder
-                                          ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                                          : isAdded
-                                            ? "bg-green-500 text-white scale-105"
-                                            : "bg-[#ff6b35] text-white hover:bg-orange-600 shadow-md shadow-orange-200"
-                                      }`}
-                                    >
-                                      {merchant?.isOpen === false
-                                        ? "Đóng cửa"
-                                        : merchant?.isOpenNow === false
-                                          ? "Ngoài giờ"
-                                          : isAdded
-                                            ? "✅ Đã thêm"
-                                            : "+ Thêm"}
-                                    </button>
+                                  )}
+                                  <div className="min-w-0">
+                                    <h4 className="font-semibold text-gray-800 truncate">
+                                      {item.name}
+                                    </h4>
+                                    {item.description && (
+                                      <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">
+                                        {item.description}
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
-                              );
-                            })}
-                          </div>
+                                <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleToggleFavoriteDish(item)
+                                    }
+                                    aria-label={
+                                      favDishes.isFavorite(item.id)
+                                        ? "Bỏ yêu thích món"
+                                        : "Yêu thích món"
+                                    }
+                                    title={
+                                      favDishes.isFavorite(item.id)
+                                        ? "Bỏ yêu thích món"
+                                        : "Yêu thích món ăn"
+                                    }
+                                    className={`text-lg transition-transform hover:scale-125 ${
+                                      favDishes.isFavorite(item.id)
+                                        ? ""
+                                        : "grayscale opacity-60"
+                                    }`}
+                                  >
+                                    {favDishes.isFavorite(item.id)
+                                      ? "❤️"
+                                      : "🤍"}
+                                  </button>
+                                  <span className="flex flex-col items-end whitespace-nowrap">
+                                    {fsItem && (
+                                      <span className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full">
+                                        🔥 FLASH SALE
+                                      </span>
+                                    )}
+                                    {fsItem && (
+                                      <span className="text-xs text-gray-400 line-through">
+                                        {item.price?.toLocaleString("vi-VN")}₫
+                                      </span>
+                                    )}
+                                    <span
+                                      className={`font-bold text-base ${fsItem ? "text-red-500" : "text-[#ff6b35]"}`}
+                                    >
+                                      {(fsItem
+                                        ? Number(fsItem.salePrice)
+                                        : item.price
+                                      )?.toLocaleString("vi-VN")}
+                                      ₫
+                                    </span>
+                                    {fsItem && (
+                                      <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                                        Tối đa{" "}
+                                        {Number(fsItem.limitPerUser) || 1}{" "}
+                                        suất/khách
+                                      </span>
+                                    )}
+                                  </span>
+                                  <button
+                                    onClick={() => handleAddToCart(item)}
+                                    disabled={!canOrder}
+                                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+                                      !canOrder
+                                        ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                        : isAdded
+                                          ? "bg-green-500 text-white scale-105"
+                                          : "bg-[#ff6b35] text-white hover:bg-orange-600 shadow-md shadow-orange-200"
+                                    }`}
+                                  >
+                                    {merchant?.isOpen === false
+                                      ? "Đóng cửa"
+                                      : merchant?.isOpenNow === false
+                                        ? "Ngoài giờ"
+                                        : isAdded
+                                          ? "✅ Đã thêm"
+                                          : "+ Thêm"}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    },
-                  )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

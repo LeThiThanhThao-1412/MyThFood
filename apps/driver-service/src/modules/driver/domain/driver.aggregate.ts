@@ -56,6 +56,8 @@ export class Driver extends AggregateRoot<DriverId> {
   private _reputationScore: number;
   private _acceptBlockedUntil: Date | null;
   private _currentOrderId: string | null;
+  private _currentOrderIds: string[];
+  private _maxConcurrentOrders: number;
   private _isTrainingCompleted: boolean;
   private _depositAmount: number;
   private _creditWalletBalance: number;
@@ -92,6 +94,8 @@ export class Driver extends AggregateRoot<DriverId> {
       reputationScore?: number;
       acceptBlockedUntil?: Date | null;
       currentOrderId: string | null;
+      currentOrderIds?: string[];
+      maxConcurrentOrders?: number;
       isTrainingCompleted: boolean;
       depositAmount: number;
       creditWalletBalance: number;
@@ -126,7 +130,14 @@ export class Driver extends AggregateRoot<DriverId> {
     this._totalRatings = props.totalRatings;
     this._reputationScore = props.reputationScore ?? 100;
     this._acceptBlockedUntil = props.acceptBlockedUntil ?? null;
-    this._currentOrderId = props.currentOrderId;
+    const orderIds = props.currentOrderIds?.length
+      ? [...props.currentOrderIds]
+      : props.currentOrderId
+        ? [props.currentOrderId]
+        : [];
+    this._currentOrderIds = Array.from(new Set(orderIds));
+    this._currentOrderId = this._currentOrderIds[0] ?? null;
+    this._maxConcurrentOrders = Math.max(1, props.maxConcurrentOrders ?? 1);
     this._isTrainingCompleted = props.isTrainingCompleted;
     this._depositAmount = props.depositAmount;
     this._creditWalletBalance = props.creditWalletBalance;
@@ -178,6 +189,8 @@ export class Driver extends AggregateRoot<DriverId> {
       reputationScore: 100,
       acceptBlockedUntil: null,
       currentOrderId: null,
+      currentOrderIds: [],
+      maxConcurrentOrders: 1,
       isTrainingCompleted: false,
       depositAmount: 0,
       creditWalletBalance: 0,
@@ -216,6 +229,8 @@ export class Driver extends AggregateRoot<DriverId> {
       reputationScore?: number;
       acceptBlockedUntil?: Date | null;
       currentOrderId: string | null;
+      currentOrderIds?: string[];
+      maxConcurrentOrders?: number;
       isTrainingCompleted: boolean;
       depositAmount: number;
       creditWalletBalance: number;
@@ -373,39 +388,69 @@ export class Driver extends AggregateRoot<DriverId> {
 
   // ---- Order Assignment ----
 
-  public assignOrder(orderId: string): void {
+  /**
+   * Gán thêm đơn cho tài xế.
+   * - `maxConcurrentOrders` do dispatch-service truyền theo phương thức:
+   *   SAVER = 3, FAST/PRIORITY = 1.
+   * - Nếu tài xế đã có đơn và còn chỗ → gộp thêm (SAVER stacking).
+   */
+  public assignOrder(orderId: string, maxConcurrentOrders?: number): void {
     if (this._onlineStatus !== DriverOnlineStatus.ONLINE) {
       throw new BusinessRuleViolationError(
         "Cannot assign order to an offline driver",
       );
     }
-    if (this._currentOrderId) {
+    if (!orderId) {
+      throw new BusinessRuleViolationError("Order ID is required");
+    }
+    if (this._currentOrderIds.includes(orderId)) {
+      return;
+    }
+
+    if (maxConcurrentOrders != null) {
+      this._maxConcurrentOrders = Math.max(1, maxConcurrentOrders);
+    }
+    if (this._currentOrderIds.length >= this._maxConcurrentOrders) {
       throw new BusinessRuleViolationError(
-        "Driver already has an active order",
+        `Driver already has the maximum number of active orders (${this._maxConcurrentOrders})`,
       );
     }
-    this._currentOrderId = orderId;
+
+    this._currentOrderIds.push(orderId);
+    this._currentOrderId = this._currentOrderIds[0] ?? null;
     this.markUpdated();
   }
 
-  public completeOrder(): void {
-    if (!this._currentOrderId) {
+  /** Hoàn thành một đơn (mặc định đơn đầu tiên nếu không truyền orderId). */
+  public completeOrder(orderId?: string): void {
+    const target = orderId ?? this._currentOrderId;
+    if (!target || !this._currentOrderIds.includes(target)) {
       throw new BusinessRuleViolationError("Driver has no active order");
     }
-    this._currentOrderId = null;
+    this._currentOrderIds = this._currentOrderIds.filter((id) => id !== target);
+    this._currentOrderId = this._currentOrderIds[0] ?? null;
     this._totalOrders += 1;
     this.markUpdated();
   }
 
   /**
-   * Giải phóng tài xế khỏi đơn hiện tại (khi hủy/giao thất bại)
-   * mà không tính vào số đơn hoàn thành.
+   * Giải phóng tài xế khỏi một đơn (khi hủy/giao thất bại) mà không tính vào
+   * số đơn hoàn thành. Không truyền `orderId` → giải phóng toàn bộ.
    */
-  public releaseOrder(): void {
-    if (!this._currentOrderId) {
+  public releaseOrder(orderId?: string): void {
+    if (this._currentOrderIds.length === 0) {
       throw new BusinessRuleViolationError("Driver has no active order");
     }
-    this._currentOrderId = null;
+
+    if (orderId) {
+      this._currentOrderIds = this._currentOrderIds.filter(
+        (id) => id !== orderId,
+      );
+    } else {
+      this._currentOrderIds = [];
+    }
+
+    this._currentOrderId = this._currentOrderIds[0] ?? null;
     this.markUpdated();
   }
 
@@ -654,6 +699,15 @@ export class Driver extends AggregateRoot<DriverId> {
   get driverCurrentOrderId(): string | null {
     return this._currentOrderId;
   }
+  get driverCurrentOrderIds(): string[] {
+    return [...this._currentOrderIds];
+  }
+  get driverActiveOrderCount(): number {
+    return this._currentOrderIds.length;
+  }
+  get driverMaxConcurrentOrders(): number {
+    return this._maxConcurrentOrders;
+  }
   get driverIsTrainingCompleted(): boolean {
     return this._isTrainingCompleted;
   }
@@ -668,11 +722,19 @@ export class Driver extends AggregateRoot<DriverId> {
   }
 
   get isAvailable(): boolean {
+    return this.canAcceptMoreOrders;
+  }
+
+  /**
+   * Tài xế còn nhận được đơn không (kể cả đang có đơn SAVER nhưng còn slot).
+   * Dùng cho matching engine / dispatch khi xét gộp đơn.
+   */
+  get canAcceptMoreOrders(): boolean {
     return (
       this._status === DriverStatus.ACTIVE &&
       this._onlineStatus === DriverOnlineStatus.ONLINE &&
       this._fatigueLevel !== FatigueLevel.CRITICAL &&
-      !this._currentOrderId &&
+      this._currentOrderIds.length < this._maxConcurrentOrders &&
       !this.isBlocked
     );
   }

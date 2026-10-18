@@ -81,6 +81,27 @@ export class OrderEntity {
   @Column("timestamptz", { name: "estimated_delivery_time", nullable: true })
   estimated_delivery_time!: Date | null;
 
+  /** Phương thức giao hàng: SAVER | FAST | PRIORITY (mặc định FAST). */
+  @Column("varchar", { length: 20, name: "delivery_option", default: "FAST" })
+  delivery_option!: string;
+
+  /** Phụ thu/giảm giá của phương thức so với phí FAST (VND). */
+  @Column("decimal", {
+    precision: 12,
+    scale: 2,
+    name: "delivery_option_fee",
+    default: 0,
+  })
+  delivery_option_fee!: number;
+
+  /** Thứ tự ưu tiên hàng đợi nhà hàng (SAVER 0, FAST 1, PRIORITY 2). */
+  @Column("smallint", { name: "priority_rank", default: 1 })
+  priority_rank!: number;
+
+  /** Thời điểm cam kết giao hàng — dùng cảnh báo trễ / SLA. */
+  @Column("timestamptz", { name: "promised_delivery_at", nullable: true })
+  promised_delivery_at!: Date | null;
+
   @Column("text", { nullable: true })
   notes!: string | null;
 

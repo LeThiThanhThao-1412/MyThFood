@@ -16,7 +16,12 @@ import {
   ChatDrawer,
   useChatUnread,
 } from "@mythfood/frontend-shared";
-import { dispatchApi, chatApi, uploadApi } from "@mythfood/api-client";
+import {
+  dispatchApi,
+  chatApi,
+  uploadApi,
+  type DriverRoute,
+} from "@mythfood/api-client";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
 import DeliveryProofDialog from "@/components/DeliveryProofDialog";
 import {
@@ -46,6 +51,7 @@ export default function DeliveryPage() {
   const [chatConversationId, setChatConversationId] = useState<string | null>(
     null,
   );
+  const [driverRoute, setDriverRoute] = useState<DriverRoute | null>(null);
 
   const openChatWithCustomer = async () => {
     const o = trip.order;
@@ -96,6 +102,31 @@ export default function DeliveryPage() {
     startSimulation,
     stopSimulation,
   } = trip;
+
+  // Lộ trình gộp đơn (SAVER stacking) — tự cập nhật mỗi 15s.
+  useEffect(() => {
+    const idDispatch = dispatch?.id;
+    if (!idDispatch) {
+      setDriverRoute(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res: any = await dispatchApi.getRoute(idDispatch);
+        const data = res?.data ?? res;
+        if (!cancelled && Array.isArray(data?.stops)) setDriverRoute(data);
+      } catch {
+        /* non-fatal */
+      }
+    };
+    load();
+    const timer = setInterval(load, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [dispatch?.id]);
 
   // Tự xác định (hoặc tạo) hội thoại với khách ngay khi có thông tin, để đếm
   // tin nhắn chưa đọc trên icon 💬 ngay cả khi tài xế chưa mở khung chat.
@@ -426,6 +457,64 @@ export default function DeliveryPage() {
             </div>
           )}
         </div>
+
+        {/* Lộ trình gộp đơn SAVER */}
+        {driverRoute && driverRoute.stops.length > 1 && (
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="font-bold text-sm text-[#1a1a2e]">
+                🧺 Lộ trình gộp đơn ({driverRoute.stops.length}/
+                {driverRoute.maxStackedOrders})
+              </p>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">
+                SAVER
+              </span>
+            </div>
+            <div className="space-y-2">
+              {driverRoute.stops.map((stop) => {
+                const isCurrent = stop.orderId === order.id;
+                const statusText = stop.deliveryDone
+                  ? "✅ Đã giao"
+                  : stop.pickupDone
+                    ? "🛵 Đang giao"
+                    : "⏳ Chưa lấy hàng";
+                return (
+                  <button
+                    key={stop.orderId}
+                    type="button"
+                    onClick={() => router.push(`/delivery/${stop.orderId}`)}
+                    className={`w-full text-left flex items-center gap-3 p-3 rounded-xl border transition ${
+                      isCurrent
+                        ? "border-[#ff6b35] bg-orange-50"
+                        : "border-gray-100 hover:border-gray-300"
+                    }`}
+                  >
+                    <span className="w-6 h-6 rounded-full bg-[#1a1a2e] text-white text-xs flex items-center justify-center shrink-0">
+                      {stop.sequence}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-semibold text-gray-800">
+                        Đơn #{stop.orderId.slice(0, 8)}
+                      </span>
+                      <span className="block text-xs text-gray-400">
+                        {statusText}
+                      </span>
+                    </span>
+                    {isCurrent && (
+                      <span className="text-[10px] text-[#ff6b35] font-bold shrink-0">
+                        Đang xem
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-gray-400 mt-2">
+              Thứ tự được tối ưu theo khoảng cách — ưu tiên lấy hàng trước khi
+              giao.
+            </p>
+          </div>
+        )}
 
         {/* Điểm lấy hàng */}
         <div className="bg-white rounded-2xl shadow-sm p-4 space-y-1">

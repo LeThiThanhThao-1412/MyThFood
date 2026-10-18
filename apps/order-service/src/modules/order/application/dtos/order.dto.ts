@@ -159,6 +159,14 @@ export class PlaceOrderDto {
   @IsString()
   @IsOptional()
   paymentMethod?: string;
+
+  /**
+   * Phương thức giao hàng: SAVER (tiết kiệm) | FAST (nhanh, mặc định) |
+   * PRIORITY (ưu tiên). Bỏ trống = FAST (tương thích ngược).
+   */
+  @IsOptional()
+  @IsIn(["SAVER", "FAST", "PRIORITY"])
+  deliveryOption?: string;
 }
 
 export class UpdateOrderDto {
@@ -258,6 +266,15 @@ export class OrderResponseDto {
   deliveryLatitude!: number | null;
   deliveryLongitude!: number | null;
   estimatedDeliveryTime!: string | null;
+  /** Phương thức giao hàng khách đã chọn. */
+  deliveryOption!: string;
+  deliveryOptionLabel!: string;
+  /** Phụ thu/giảm giá của phương thức so với phí FAST (VND). */
+  deliveryOptionFee!: number;
+  /** Thứ tự ưu tiên hàng đợi nhà hàng (SAVER 0, FAST 1, PRIORITY 2). */
+  priorityRank!: number;
+  /** Thời điểm cam kết giao hàng. */
+  promisedDeliveryAt!: string | null;
   notes!: string | null;
   driverId!: string | null;
   /** Ảnh xác nhận giao hàng (tài xế chụp món ăn lúc giao cho khách). */

@@ -20,6 +20,8 @@ import {
   ChatListDrawer,
   ChatDrawer,
   reverseGeocodeAddress,
+  deliveryOptionMeta,
+  deliveryPriorityRank,
 } from "@mythfood/frontend-shared";
 import DeliveryDrawer from "@/components/DeliveryDrawer";
 import DeliveredOrdersDrawer from "@/components/DeliveredOrdersDrawer";
@@ -107,7 +109,33 @@ export default function DriverDashboardPage() {
   // Filter available orders within 5km of driver
   // Hiển thị tất cả đơn READY (sắp theo khoảng cách gần nhất), không giới hạn 5km
   // để khớp matching engine (mở rộng bán kính đến vô hạn).
+  // Khi tài xế đang giữ đơn: chỉ nhận thêm được đơn SAVER (stacking).
+  const busyWithOrders = activeOrders.some(
+    (o: any) =>
+      ![
+        "DELIVERED",
+        "CANCELLED",
+        "CANCELLED_NO_DRIVER",
+        "DELIVERY_FAILED",
+        "REJECTED",
+      ].includes(o.status),
+  );
+
   const nearbyOrders = [...availableOrders].sort((a: any, b: any) => {
+    // Đang bận → ưu tiên hiển thị đơn SAVER (có thể gộp) trước.
+    if (busyWithOrders) {
+      const saverDiff =
+        Number(b.deliveryOption === "SAVER") -
+        Number(a.deliveryOption === "SAVER");
+      if (saverDiff !== 0) return saverDiff;
+    }
+
+    // Đơn ưu tiên luôn đứng đầu để tài xế thấy và nhận trước.
+    const rankDiff =
+      deliveryPriorityRank(b.deliveryOption) -
+      deliveryPriorityRank(a.deliveryOption);
+    if (rankDiff !== 0) return rankDiff;
+
     const dist = (o: any) => {
       if (!hasLocation || !location) return Infinity;
       if (o.deliveryLatitude == null || o.deliveryLongitude == null)
@@ -121,6 +149,10 @@ export default function DriverDashboardPage() {
     };
     return dist(a) - dist(b);
   });
+
+  const priorityAvailable = nearbyOrders.filter(
+    (o: any) => o.deliveryOption === "PRIORITY",
+  ).length;
 
   // Stats (computed from real order data) — tài xế giữ 80% phí ship (20% hoa hồng nền tảng)
   const deliveredOrders = activeOrders.filter((o) => o.status === "DELIVERED");
@@ -157,7 +189,7 @@ export default function DriverDashboardPage() {
       ].includes(o.status),
   );
 
-  // 1 tài xế chỉ nhận 1 đơn tại một thời điểm → đơn đang giao duy nhất
+  // Phase 2: tài xế có thể giữ nhiều đơn SAVER cùng lúc.
   const activeOrder = deliveringOrders[0] ?? null;
 
   const remainingSeconds = (orderId: string): number => {
@@ -699,11 +731,69 @@ export default function DriverDashboardPage() {
             </div>
           </Link>
 
+          {/* ─── ĐƠN ĐANG GIỮ (SAVER STACKING) ─── */}
+          {deliveringOrders.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm p-4 mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-sm font-bold text-[#1a1a2e]">
+                  🧺 Đơn đang giữ ({deliveringOrders.length})
+                </h2>
+                {activeOrder && (
+                  <Link
+                    href={`/delivery/${activeOrder.id}`}
+                    className="text-xs font-semibold text-[#ff6b35] hover:underline"
+                  >
+                    Mở lộ trình →
+                  </Link>
+                )}
+              </div>
+              <div className="space-y-2">
+                {deliveringOrders.map((o: any) => (
+                  <Link
+                    key={o.id}
+                    href={`/delivery/${o.id}`}
+                    className="flex items-center gap-3 p-2.5 rounded-xl border border-gray-100 hover:border-gray-300 transition"
+                  >
+                    <span className="text-lg">
+                      {o.deliveryOption === "SAVER" ? "🐢" : "🛵"}
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-semibold text-gray-800">
+                        Đơn #{o.id?.slice(0, 8)}
+                      </span>
+                      <span className="block text-xs text-gray-400 truncate">
+                        {o.deliveryAddress || "Đang cập nhật địa chỉ"}
+                      </span>
+                    </span>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${deliveryOptionMeta(o.deliveryOption).badgeClass}`}
+                    >
+                      {deliveryOptionMeta(o.deliveryOption).label}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+              {deliveringOrders.some(
+                (o: any) => o.deliveryOption === "SAVER",
+              ) && (
+                <p className="text-[11px] text-emerald-700 bg-emerald-50 rounded-lg px-2.5 py-1.5 mt-2">
+                  🐢 Bạn có thể nhận thêm đơn Tiết kiệm cùng tuyến (tối đa 3
+                  đơn).
+                </p>
+              )}
+            </div>
+          )}
+
           {/* ─── AVAILABLE ORDERS ─── */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-bold text-[#1a1a2e]">
                 📦 Đơn hàng gần bạn ({nearbyOrders.length})
+                {priorityAvailable > 0 && (
+                  <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 font-bold align-middle">
+                    ⚡ {priorityAvailable} ưu tiên
+                  </span>
+                )}
               </h2>
               {nearbyOrders.length > 0 && (
                 <Link
@@ -737,7 +827,11 @@ export default function DriverDashboardPage() {
                 {nearbyOrders.map((o: any) => (
                   <div
                     key={o.id}
-                    className="bg-white rounded-2xl shadow-sm p-4 sm:p-5 hover:shadow-md transition-all"
+                    className={`bg-white rounded-2xl shadow-sm p-4 sm:p-5 hover:shadow-md transition-all ${
+                      o.deliveryOption === "PRIORITY"
+                        ? "border-l-4 border-l-orange-400 ring-1 ring-orange-100"
+                        : ""
+                    }`}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div>
@@ -754,6 +848,14 @@ export default function DriverDashboardPage() {
                         <span className="text-xs bg-[#e8f5e9] text-[#2e7d32] px-2.5 py-0.5 rounded-full font-semibold ml-2">
                           📦 Sẵn sàng
                         </span>
+                        {o.deliveryOption && o.deliveryOption !== "FAST" && (
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ml-1 ${deliveryOptionMeta(o.deliveryOption).badgeClass}`}
+                          >
+                            {deliveryOptionMeta(o.deliveryOption).icon}{" "}
+                            {deliveryOptionMeta(o.deliveryOption).label}
+                          </span>
+                        )}
                       </div>
                       <span className="text-[#ff6b35] font-bold text-lg shrink-0 ml-3">
                         {toNum(o.totalAmount).toLocaleString("vi-VN")}₫

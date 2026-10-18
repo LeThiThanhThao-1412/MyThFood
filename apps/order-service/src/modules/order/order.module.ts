@@ -28,6 +28,7 @@ import { MerchantComplianceStateEntity } from "./infrastructure/merchant-complia
 import { MerchantCompliancePenaltyEntity } from "./infrastructure/merchant-compliance-penalty.entity";
 import { AuthModule } from "../auth/auth.module";
 import { CacheModule } from "../cache/cache.module";
+import { ShippingModule } from "../shipping/shipping.module";
 import { IdempotencyInterceptor } from "../cache/idempotency.interceptor";
 
 @Module({
@@ -45,6 +46,7 @@ import { IdempotencyInterceptor } from "../cache/idempotency.interceptor";
     AuthModule,
     HttpModule,
     CacheModule,
+    ShippingModule,
   ],
   controllers: [
     OrderController,

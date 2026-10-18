@@ -3,6 +3,7 @@ import { Cron, CronExpression } from "@nestjs/schedule";
 import { OrderRepository } from "../infrastructure/order.repository";
 import { OrderService } from "./order.service";
 import { MerchantComplianceService } from "./merchant-compliance.service";
+import { ShippingService } from "../../shipping/shipping.service";
 
 @Injectable()
 export class OrderScheduler {
@@ -12,6 +13,7 @@ export class OrderScheduler {
     private readonly orderRepository: OrderRepository,
     private readonly orderService: OrderService,
     private readonly merchantComplianceService: MerchantComplianceService,
+    private readonly shippingService: ShippingService,
   ) {}
 
   /** Thời gian chờ merchant xác nhận (mặc định 15 phút, cấu hình qua env). */
@@ -24,6 +26,29 @@ export class OrderScheduler {
   private get noDriverTimeoutMinutes(): number {
     const v = Number(process.env.ORDER_NO_DRIVER_TIMEOUT_MINUTES || 5);
     return Number.isFinite(v) && v > 0 ? v : 5;
+  }
+
+  /**
+   * Thời gian chờ tài xế theo phương thức giao hàng — đồng bộ với timeout
+   * của dispatch-service để SAVER không bị hủy sớm hơn thời gian chờ tài xế.
+   */
+  private async noDriverTimeoutMinutesFor(order: {
+    orderDeliveryOption?: string;
+  }): Promise<number> {
+    const option = order.orderDeliveryOption ?? "FAST";
+    try {
+      const policy = await this.shippingService.getPolicy(option as any);
+      const minutes = policy.dispatchTimeoutSeconds / 60;
+      if (option === "PRIORITY") {
+        return Math.min(this.noDriverTimeoutMinutes, minutes);
+      }
+      if (option === "SAVER") {
+        return Math.max(this.noDriverTimeoutMinutes, minutes);
+      }
+      return minutes;
+    } catch {
+      return this.noDriverTimeoutMinutes;
+    }
   }
 
   @Cron(CronExpression.EVERY_30_SECONDS)
@@ -58,9 +83,13 @@ export class OrderScheduler {
   @Cron(CronExpression.EVERY_30_SECONDS)
   async autoCancelNoDriverReadyOrders() {
     try {
-      const cutoff = new Date(
-        Date.now() - this.noDriverTimeoutMinutes * 60 * 1000,
+      // Lấy theo ngưỡng nhỏ nhất (PRIORITY 3 phút) rồi lọc timeout riêng
+      // của từng phương thức (FAST 5', SAVER 10').
+      const minTimeoutMinutes = Math.max(
+        1,
+        Math.min(3, this.noDriverTimeoutMinutes),
       );
+      const cutoff = new Date(Date.now() - minTimeoutMinutes * 60 * 1000);
       const staleOrders =
         await this.orderRepository.findReadyForPickupOlderThan(cutoff);
 
@@ -69,6 +98,13 @@ export class OrderScheduler {
         if (order.orderDriverId) {
           continue;
         }
+
+        const timeoutMinutes = await this.noDriverTimeoutMinutesFor(order);
+        const updatedAt = order.updatedAt?.getTime() ?? 0;
+        if (Date.now() - updatedAt < timeoutMinutes * 60 * 1000) {
+          continue;
+        }
+
         try {
           await this.orderService.cancelNoDriver(
             order.id.toString(),

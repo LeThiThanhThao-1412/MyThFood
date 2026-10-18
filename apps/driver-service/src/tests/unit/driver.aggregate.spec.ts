@@ -271,7 +271,7 @@ describe("Driver Aggregate", () => {
       driver.goOnline();
       driver.assignOrder("order-1");
       expect(() => driver.assignOrder("order-2")).toThrow(
-        "Driver already has an active order",
+        /maximum number of active orders/,
       );
     });
 

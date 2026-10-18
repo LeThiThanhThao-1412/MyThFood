@@ -36,6 +36,13 @@ export type {
   FoodCategory,
   FoodSubCategory,
 } from "./constants/food-categories";
+export {
+  DELIVERY_OPTION_META,
+  DELIVERY_OPTION_LIST,
+  deliveryOptionMeta,
+  deliveryPriorityRank,
+} from "./constants/delivery-options";
+export type { DeliveryOptionMeta } from "./constants/delivery-options";
 
 // Utils
 export { haversineKm, formatDistance } from "./utils/distance";

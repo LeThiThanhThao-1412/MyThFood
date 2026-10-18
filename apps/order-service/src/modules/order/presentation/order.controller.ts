@@ -287,6 +287,17 @@ export class OrderController {
 
   // ===================== Merchant Stats (B7) =====================
 
+  @Get("stats/delivery-options")
+  @Roles("ADMIN")
+  async getDeliveryOptionStats(@Query("days") days?: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.orderService.getDeliveryOptionStats(
+        days ? parseInt(days, 10) : 30,
+      ),
+    };
+  }
+
   @Get("stats/merchant/:merchantId")
   @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
   @Roles("MERCHANT_OWNER", "ADMIN")
@@ -355,6 +366,11 @@ export class OrderController {
       deliveryLongitude: order.orderDeliveryLongitude,
       estimatedDeliveryTime:
         order.orderEstimatedDeliveryTime?.toISOString() ?? null,
+      deliveryOption: order.orderDeliveryOption,
+      deliveryOptionLabel: order.orderDeliveryOptionLabel,
+      deliveryOptionFee: order.orderDeliveryOptionFee,
+      priorityRank: order.orderPriorityRank,
+      promisedDeliveryAt: order.orderPromisedDeliveryAt?.toISOString() ?? null,
       notes: order.orderNotes,
       driverId: order.orderDriverId,
       deliveryProofPhotoUrl: order.orderDeliveryProofPhotoUrl,

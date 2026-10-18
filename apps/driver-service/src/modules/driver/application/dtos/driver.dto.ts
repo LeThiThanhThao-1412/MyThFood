@@ -68,6 +68,30 @@ export class UpdateLocationDto {
   longitude!: number;
 }
 
+export class AssignOrderDto {
+  @IsString()
+  orderId!: string;
+
+  /** Số đơn tối đa được giữ (SAVER = 3, FAST/PRIORITY = 1). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  maxConcurrentOrders?: number;
+}
+
+export class ReleaseOrderDto {
+  @IsOptional()
+  @IsString()
+  orderId?: string;
+}
+
+export class CompleteOrderDto {
+  @IsOptional()
+  @IsString()
+  orderId?: string;
+}
+
 export class UpdateFatigueDto {
   @IsNumber()
   @Min(0)

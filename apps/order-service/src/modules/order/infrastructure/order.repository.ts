@@ -101,6 +101,37 @@ export class OrderRepository implements IRepository<Order, OrderId> {
       where: { merchant_id: merchantId },
       order: { created_at: "DESC" },
     });
+
+    // Hàng đợi nhà hàng:
+    // 1. Đơn đang xử lý (PENDING/CONFIRMED/PREPARING/READY) lên trước.
+    // 2. Trong nhóm đang xử lý: PRIORITY trước, SAVER sau (priority_rank DESC),
+    //    cùng hạng thì đơn cũ nhất trước (FIFO).
+    // 3. Đơn đã kết thúc: mới nhất trước.
+    const openStatuses = new Set([
+      "PENDING",
+      "CONFIRMED",
+      "PREPARING",
+      "READY_FOR_PICKUP",
+    ]);
+
+    entities.sort((a, b) => {
+      const aOpen = openStatuses.has(a.status);
+      const bOpen = openStatuses.has(b.status);
+      if (aOpen !== bOpen) return aOpen ? -1 : 1;
+
+      if (aOpen) {
+        const rankDiff = (b.priority_rank ?? 1) - (a.priority_rank ?? 1);
+        if (rankDiff !== 0) return rankDiff;
+        return (
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+      }
+
+      return (
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    });
+
     return Promise.all(entities.map((e) => this.loadRelatedAndMap(e)));
   }
 
@@ -474,6 +505,47 @@ export class OrderRepository implements IRepository<Order, OrderId> {
       merchantId: r.merchantId,
       name: r.name,
       quantity: Number(r.quantity ?? 0),
+    }));
+  }
+
+  /** Thống kê theo phương thức giao hàng (Phase 3 - admin báo cáo). */
+  async getDeliveryOptionStats(since: Date): Promise<
+    Array<{
+      deliveryOption: string;
+      total: number;
+      delivered: number;
+      late: number;
+      deliveryFees: number;
+      avgFee: number;
+      revenue: number;
+    }>
+  > {
+    const raw = await this.repository.query(
+      `SELECT delivery_option AS "deliveryOption",
+              COUNT(*)::int AS "total",
+              COUNT(*) FILTER (WHERE status = 'DELIVERED')::int AS "delivered",
+              COUNT(*) FILTER (
+                WHERE status = 'DELIVERED'
+                  AND promised_delivery_at IS NOT NULL
+                  AND updated_at > promised_delivery_at
+              )::int AS "late",
+              COALESCE(SUM(delivery_fee), 0)::float AS "deliveryFees",
+              COALESCE(AVG(delivery_fee), 0)::float AS "avgFee",
+              COALESCE(SUM(total_amount), 0)::float AS "revenue"
+       FROM orders
+       WHERE created_at >= $1 AND deleted_at IS NULL
+       GROUP BY delivery_option`,
+      [since],
+    );
+
+    return raw.map((r: any) => ({
+      deliveryOption: r.deliveryOption,
+      total: Number(r.total ?? 0),
+      delivered: Number(r.delivered ?? 0),
+      late: Number(r.late ?? 0),
+      deliveryFees: Number(r.deliveryFees ?? 0),
+      avgFee: Number(r.avgFee ?? 0),
+      revenue: Number(r.revenue ?? 0),
     }));
   }
 

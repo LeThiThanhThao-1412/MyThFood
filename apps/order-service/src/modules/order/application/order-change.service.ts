@@ -1245,7 +1245,10 @@ export class OrderChangeService {
       const options = group.options ?? [];
       if (options.length === 0) continue;
       const max =
-        group.maxSelections ?? (group.type === "CHOICE" ? 1 : options.length);
+        group.maxSelections ??
+        (group.type === "CHOICE" || group.type === "TOGGLE"
+          ? 1
+          : options.length);
       const min = group.minSelections ?? (group.required ? 1 : 0);
       const defaults = options.filter((option) => option.isDefault);
       if (defaults.length > 0) {
@@ -1256,7 +1259,7 @@ export class OrderChangeService {
             groupName: group.name,
             name: option.name,
             priceDelta: Number(option.priceDelta) || 0,
-            quantity: 1,
+            quantity: option.minQuantity ?? 1,
           });
         }
         continue;
@@ -1269,7 +1272,7 @@ export class OrderChangeService {
             groupName: group.name,
             name: option.name,
             priceDelta: Number(option.priceDelta) || 0,
-            quantity: 1,
+            quantity: option.minQuantity ?? 1,
           });
         }
       }
@@ -1330,14 +1333,17 @@ export class OrderChangeService {
     for (const group of groups) {
       const count = selectedByGroup.get(group.id) ?? 0;
       const min = group.minSelections ?? (group.required ? 1 : 0);
+      const max =
+        group.maxSelections ??
+        (group.type === "CHOICE" || group.type === "TOGGLE" ? 1 : null);
       if (count < min) {
         throw new BadRequestException(
           `Nhóm tùy chọn ${group.name} cần chọn ít nhất ${min} mục`,
         );
       }
-      if (group.maxSelections != null && count > group.maxSelections) {
+      if (max != null && count > max) {
         throw new BadRequestException(
-          `Nhóm tùy chọn ${group.name} chỉ được chọn tối đa ${group.maxSelections} mục`,
+          `Nhóm tùy chọn ${group.name} chỉ được chọn tối đa ${max} mục`,
         );
       }
     }

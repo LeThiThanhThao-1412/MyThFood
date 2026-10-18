@@ -3,6 +3,11 @@ import {
   BusinessRuleViolationError,
 } from "@mythfood/shared-kernel";
 import { DispatchId } from "./dispatch-id";
+import {
+  DeliveryOption,
+  normalizeDeliveryOption,
+  priorityRankOf,
+} from "./delivery-option";
 import { DispatchCreatedEvent } from "./events/dispatch-created.event";
 import { DispatchStatusChangedEvent } from "./events/dispatch-status-changed.event";
 
@@ -49,6 +54,14 @@ export class Dispatch extends AggregateRoot<DispatchId> {
   private _expiresAt: Date | null;
   private _cancellationReason: string | null;
   private _notes: string | null;
+  private _deliveryOption: DeliveryOption;
+  private _priorityRank: number;
+  private _promisedDeliveryAt: Date | null;
+  private _batchId: string | null;
+  private _routeSequence: number | null;
+  private _maxStackedOrders: number;
+  private _dispatchTimeoutSeconds: number;
+  private _driverResponseTimeoutSeconds: number;
 
   private constructor(
     id: DispatchId,
@@ -71,9 +84,19 @@ export class Dispatch extends AggregateRoot<DispatchId> {
       expiresAt: Date | null;
       cancellationReason: string | null;
       notes: string | null;
+      deliveryOption?: DeliveryOption;
+      priorityRank?: number;
+      promisedDeliveryAt?: Date | null;
+      batchId?: string | null;
+      routeSequence?: number | null;
+      maxStackedOrders?: number;
+      dispatchTimeoutSeconds?: number;
+      driverResponseTimeoutSeconds?: number;
+      createdAt?: Date | null;
+      updatedAt?: Date | null;
     },
   ) {
-    super(id);
+    super(id, props.createdAt ?? undefined, props.updatedAt ?? undefined);
     this._orderId = props.orderId;
     this._merchantId = props.merchantId;
     this._merchantLatitude = props.merchantLatitude ?? 10.77;
@@ -92,6 +115,21 @@ export class Dispatch extends AggregateRoot<DispatchId> {
     this._expiresAt = props.expiresAt;
     this._cancellationReason = props.cancellationReason;
     this._notes = props.notes;
+    this._deliveryOption = normalizeDeliveryOption(props.deliveryOption);
+    this._priorityRank =
+      props.priorityRank ?? priorityRankOf(this._deliveryOption);
+    this._promisedDeliveryAt = props.promisedDeliveryAt ?? null;
+    this._batchId = props.batchId ?? null;
+    this._routeSequence = props.routeSequence ?? null;
+    this._maxStackedOrders = Math.max(1, props.maxStackedOrders ?? 1);
+    this._dispatchTimeoutSeconds = Math.max(
+      30,
+      props.dispatchTimeoutSeconds ?? 300,
+    );
+    this._driverResponseTimeoutSeconds = Math.max(
+      10,
+      props.driverResponseTimeoutSeconds ?? 60,
+    );
   }
 
   // ===================== Factory Methods =====================
@@ -105,8 +143,14 @@ export class Dispatch extends AggregateRoot<DispatchId> {
     merchantLatitude?: number;
     merchantLongitude?: number;
     expiresAt?: Date;
+    deliveryOption?: DeliveryOption;
+    promisedDeliveryAt?: Date | null;
+    maxStackedOrders?: number;
+    dispatchTimeoutSeconds?: number;
+    driverResponseTimeoutSeconds?: number;
   }): Dispatch {
     const dispatchId = DispatchId.create();
+    const deliveryOption = normalizeDeliveryOption(props.deliveryOption);
 
     const dispatch = new Dispatch(dispatchId, {
       orderId: props.orderId,
@@ -127,6 +171,15 @@ export class Dispatch extends AggregateRoot<DispatchId> {
       expiresAt: props.expiresAt ?? null,
       cancellationReason: null,
       notes: null,
+      deliveryOption,
+      priorityRank: priorityRankOf(deliveryOption),
+      promisedDeliveryAt: props.promisedDeliveryAt ?? null,
+      batchId: null,
+      routeSequence: null,
+      maxStackedOrders:
+        props.maxStackedOrders ?? (deliveryOption === "SAVER" ? 3 : 1),
+      dispatchTimeoutSeconds: props.dispatchTimeoutSeconds,
+      driverResponseTimeoutSeconds: props.driverResponseTimeoutSeconds,
     });
 
     dispatch.addDomainEvent(
@@ -164,6 +217,16 @@ export class Dispatch extends AggregateRoot<DispatchId> {
       expiresAt: Date | null;
       cancellationReason: string | null;
       notes: string | null;
+      deliveryOption?: DeliveryOption;
+      priorityRank?: number;
+      promisedDeliveryAt?: Date | null;
+      batchId?: string | null;
+      routeSequence?: number | null;
+      maxStackedOrders?: number;
+      dispatchTimeoutSeconds?: number;
+      driverResponseTimeoutSeconds?: number;
+      createdAt?: Date | null;
+      updatedAt?: Date | null;
     },
   ): Dispatch {
     return new Dispatch(id, props);
@@ -559,6 +622,49 @@ export class Dispatch extends AggregateRoot<DispatchId> {
   }
   get dispatchNotes(): string | null {
     return this._notes;
+  }
+  get dispatchDeliveryOption(): DeliveryOption {
+    return this._deliveryOption;
+  }
+  get dispatchPriorityRank(): number {
+    return this._priorityRank;
+  }
+  get dispatchPromisedDeliveryAt(): Date | null {
+    return this._promisedDeliveryAt;
+  }
+  get dispatchBatchId(): string | null {
+    return this._batchId;
+  }
+  get dispatchRouteSequence(): number | null {
+    return this._routeSequence;
+  }
+  get dispatchMaxStackedOrders(): number {
+    return this._maxStackedOrders;
+  }
+  get dispatchTimeoutSeconds(): number {
+    return this._dispatchTimeoutSeconds;
+  }
+  get dispatchDriverResponseTimeoutSeconds(): number {
+    return this._driverResponseTimeoutSeconds;
+  }
+
+  /** Gán lô gộp + thứ tự điểm dừng (SAVER stacking). */
+  public assignBatch(batchId: string, routeSequence: number): void {
+    if (this.isTerminal) {
+      throw new BusinessRuleViolationError(
+        `Cannot assign batch when dispatch is ${this._status}`,
+      );
+    }
+    this._batchId = batchId;
+    this._routeSequence = Math.max(0, Math.round(routeSequence));
+    this.markUpdated();
+  }
+
+  /** Xóa thông tin lô khi không còn gộp đơn. */
+  public clearBatch(): void {
+    this._batchId = null;
+    this._routeSequence = null;
+    this.markUpdated();
   }
 
   get isTerminal(): boolean {

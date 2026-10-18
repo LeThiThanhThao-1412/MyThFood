@@ -64,6 +64,17 @@ export class DispatchController {
     };
   }
 
+  @Get("stats/stacking")
+  @Roles("ADMIN")
+  async getStackingStats(@Query("days") days?: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.dispatchService.getStackingStats(
+        days ? parseInt(days, 10) : 30,
+      ),
+    };
+  }
+
   @Get("matching")
   async listMatching() {
     const dispatches = await this.dispatchService.getMatchingDispatches();
@@ -114,6 +125,24 @@ export class DispatchController {
         nearbyDispatches: dispatches.map((d) => this._toResponse(d)),
         total: dispatches.length,
       },
+    };
+  }
+
+  /** Lộ trình gộp đơn hiện tại của tài xế (Phase 2 - SAVER stacking). */
+  @Get("driver/:driverId/route")
+  async getDriverRoute(@Param("driverId") driverId: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.dispatchService.getDriverRoute(driverId),
+    };
+  }
+
+  /** Lộ trình của một dispatch (gồm các đơn đang gộp cùng tài xế). */
+  @Get(":id/route")
+  async getDispatchRoute(@Param("id") id: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.dispatchService.getDispatchRoute(id),
     };
   }
 
@@ -350,6 +379,15 @@ export class DispatchController {
       deliveryAddress: dispatch.dispatchDeliveryAddress,
       deliveryLatitude: dispatch.dispatchDeliveryLatitude,
       deliveryLongitude: dispatch.dispatchDeliveryLongitude,
+      deliveryOption: dispatch.dispatchDeliveryOption,
+      priorityRank: dispatch.dispatchPriorityRank,
+      promisedDeliveryAt: dispatch.dispatchPromisedDeliveryAt,
+      batchId: dispatch.dispatchBatchId,
+      routeSequence: dispatch.dispatchRouteSequence,
+      maxStackedOrders: dispatch.dispatchMaxStackedOrders,
+      dispatchTimeoutSeconds: dispatch.dispatchTimeoutSeconds,
+      driverResponseTimeoutSeconds:
+        dispatch.dispatchDriverResponseTimeoutSeconds,
       status: dispatch.dispatchStatus,
       driverId: dispatch.dispatchDriverId,
       matchedDriverIds: dispatch.dispatchMatchedDriverIds,

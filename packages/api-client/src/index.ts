@@ -19,7 +19,16 @@ export {
   chatApi,
   PORTS,
 } from "./api-endpoints";
-export type { ShippingFeeRequest, ShippingFeeResponse } from "./api-endpoints";
+export type {
+  ShippingFeeRequest,
+  ShippingFeeResponse,
+  DeliveryOptionQuote,
+  ShippingQuoteResponse,
+  DeliveryOptionConfig,
+  UpdateDeliveryOptionConfigRequest,
+  DeliveryOptionStatsRow,
+  StackingStats,
+} from "./api-endpoints";
 export type {
   ApiResponse,
   PaginatedResponse,
@@ -63,6 +72,7 @@ export type {
   SetOperatingHoursRequest,
   UpdateCapacityRequest,
   OrderType,
+  DeliveryOption,
   OrderStatus,
   OrderItem,
   Order,
@@ -106,6 +116,8 @@ export type {
   DriverCancelRequest,
   DeliveryFailedRequest,
   Dispatch,
+  DriverRoute,
+  DriverRouteStop,
   CreateDispatchRequest,
   DeclineDispatchRequest,
   OrderStatusUpdate,

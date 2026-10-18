@@ -24,12 +24,15 @@ import {
   walletApi,
   merchantApi,
   promotionApi,
+  shippingApi,
   type ConsumerProfile,
   type Address,
   type PaymentMethod,
   type PlaceOrderRequest,
   type Order,
   type Promotion,
+  type DeliveryOption,
+  type ShippingQuoteResponse,
 } from "@mythfood/api-client";
 import {
   useCartStore,
@@ -37,9 +40,16 @@ import {
   searchAddress,
   reverseGeocodeAddress,
   computeCartLinePricing,
+  DELIVERY_OPTION_LIST,
+  deliveryOptionMeta,
 } from "@mythfood/frontend-shared";
 import PromoCodeDrawer from "@/components/PromoCodeDrawer";
-import { calculateShippingFee, type ShippingFeeInfo } from "./shipping-utils";
+import {
+  applyDeliveryOptionFee,
+  calculateShippingFee,
+  estimateDeliveryOptionEta,
+  type ShippingFeeInfo,
+} from "./shipping-utils";
 
 // ─── Stripe JS ───────────────────────────────────────────────
 const stripePromise = loadStripe(
@@ -512,6 +522,10 @@ function CheckoutContent() {
   }, [merchantId]);
 
   const [dynamicFee, setDynamicFee] = useState<ShippingFeeInfo | null>(null);
+  // Phương thức giao hàng khách chọn + báo giá 3 phương thức từ server.
+  const [deliveryOption, setDeliveryOption] = useState<DeliveryOption>("FAST");
+  const [deliveryQuote, setDeliveryQuote] =
+    useState<ShippingQuoteResponse | null>(null);
 
   // Real merchant location (fetched from API)
   const [merchantLat, setMerchantLat] = useState(10.77);
@@ -551,21 +565,34 @@ function CheckoutContent() {
     };
   }, [merchantId]);
 
-  // Fetch dynamic shipping fee when location changes (client-side calculation)
+  // Báo giá giao hàng khi vị trí thay đổi: ưu tiên quote 3 phương thức từ
+  // server (khớp phí lúc tạo đơn), fallback tính client nếu API lỗi.
   useEffect(() => {
     if (!merchantId) return;
     let cancelled = false;
     async function fetchFee() {
       try {
-        const fee = await calculateShippingFee(
-          merchantLat,
-          merchantLng,
-          lat,
-          lng,
-        );
-        if (!cancelled) setDynamicFee(fee);
+        const [quote, fee] = await Promise.all([
+          shippingApi
+            .getQuote({
+              originLat: merchantLat,
+              originLng: merchantLng,
+              destLat: lat,
+              destLng: lng,
+            })
+            .catch(() => null),
+          calculateShippingFee(merchantLat, merchantLng, lat, lng).catch(
+            () => null,
+          ),
+        ]);
+        if (cancelled) return;
+        setDeliveryQuote(quote?.options?.length ? quote : null);
+        setDynamicFee(fee);
       } catch {
-        if (!cancelled) setDynamicFee(null);
+        if (!cancelled) {
+          setDeliveryQuote(null);
+          setDynamicFee(null);
+        }
       }
     }
     fetchFee();
@@ -621,7 +648,14 @@ function CheckoutContent() {
   );
   // Tổng tiền được giảm nhờ flash sale
   const flashSaleDiscount = Math.max(0, originalSubtotal - subtotal);
-  const deliveryFee = dynamicFee?.totalFee || 15000;
+  const selectedOptionMeta = deliveryOptionMeta(deliveryOption);
+  const selectedQuote = deliveryQuote?.options.find(
+    (o) => o.option === deliveryOption,
+  );
+  const baseDeliveryFee = dynamicFee?.totalFee ?? 15000;
+  const deliveryFee =
+    selectedQuote?.fee ??
+    applyDeliveryOptionFee(baseDeliveryFee, deliveryOption);
   const serviceFee = Math.round(subtotal * 0.02);
   const voucherValue = Number(compensationVoucher?.value ?? 0);
   const total = Math.max(
@@ -758,6 +792,7 @@ function CheckoutContent() {
         deliveryLongitude: lng,
         deliveryFee,
         serviceFee,
+        deliveryOption,
         discount: discount + voucherValue,
         compensationVoucherId: compensationVoucher?.id ?? undefined,
         promotionCode: promoApplied
@@ -1123,6 +1158,97 @@ function CheckoutContent() {
               )}
             </section>
 
+            {/* ─── 1.5 PHƯƠNG THỨC GIAO HÀNG ─── */}
+            <section className="bg-white rounded-2xl shadow-sm p-5 sm:p-6">
+              <h2 className="text-lg font-bold text-[#1a1a2e] mb-1 flex items-center gap-2">
+                <span className="w-8 h-8 bg-[#fff7ed] rounded-xl flex items-center justify-center text-lg">
+                  🛵
+                </span>
+                Phương thức giao hàng
+              </h2>
+              <p className="text-xs text-gray-400 mb-4">
+                Chọn cách giao phù hợp — phí và thời gian thay đổi theo lựa
+                chọn.
+              </p>
+
+              <div className="space-y-2.5">
+                {DELIVERY_OPTION_LIST.map((meta) => {
+                  const quote = deliveryQuote?.options.find(
+                    (o) => o.option === meta.option,
+                  );
+                  const active = deliveryOption === meta.option;
+                  const fee =
+                    quote?.fee ??
+                    applyDeliveryOptionFee(baseDeliveryFee, meta.option);
+                  const etaText =
+                    quote?.etaRange ??
+                    `${estimateDeliveryOptionEta(dynamicFee?.distanceKm ?? 0, meta.option)} phút`;
+
+                  return (
+                    <button
+                      key={meta.option}
+                      type="button"
+                      onClick={() => setDeliveryOption(meta.option)}
+                      className={`w-full text-left flex items-center gap-4 p-4 rounded-xl border transition-all ${
+                        active
+                          ? meta.activeClass
+                          : "border-gray-100 hover:border-gray-300"
+                      }`}
+                    >
+                      <span className="text-2xl">{meta.icon}</span>
+                      <span className="flex-1 min-w-0">
+                        <span className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-gray-800">
+                            {meta.label}
+                          </span>
+                          {meta.option === "PRIORITY" && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-semibold">
+                              Xử lý trước
+                            </span>
+                          )}
+                        </span>
+                        <span className="block text-xs text-gray-400 mt-0.5">
+                          {quote?.description ?? meta.shortDescription}
+                          {` · ${etaText}`}
+                        </span>
+                      </span>
+                      <span className="text-right shrink-0">
+                        <span className="block text-sm font-bold text-[#ff6b35]">
+                          {fee != null
+                            ? `${fee.toLocaleString("vi-VN")}₫`
+                            : "—"}
+                        </span>
+                        {quote && quote.optionFee !== 0 && (
+                          <span
+                            className={`block text-[10px] ${
+                              quote.optionFee > 0
+                                ? "text-orange-500"
+                                : "text-emerald-600"
+                            }`}
+                          >
+                            {quote.optionFee > 0 ? "+" : ""}
+                            {quote.optionFee.toLocaleString("vi-VN")}₫
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {deliveryOption === "PRIORITY" && (
+                <p className="mt-3 text-xs bg-orange-50 text-orange-700 rounded-xl px-3 py-2">
+                  ⚡ Đơn của bạn được nhà hàng xử lý trước và tài xế nhận đơn ưu
+                  tiên.
+                </p>
+              )}
+              {deliveryOption === "SAVER" && (
+                <p className="mt-3 text-xs bg-emerald-50 text-emerald-700 rounded-xl px-3 py-2">
+                  🐢 Phí rẻ nhất, thời gian giao lâu hơn đơn thường.
+                </p>
+              )}
+            </section>
+
             {/* ─── 2. THANH TOÁN + STRIPE CARD ─── */}
             <section className="bg-white rounded-2xl shadow-sm p-5 sm:p-6">
               <h2 className="text-lg font-bold text-[#1a1a2e] mb-4 flex items-center gap-2">
@@ -1390,42 +1516,95 @@ function CheckoutContent() {
                     🏪 {merchantName}
                   </p>
                   <div className="space-y-2">
-                    {pricedItems.map(({ item: i, pricing }) => (
-                      <div
-                        key={i.variantKey}
-                        className="flex items-center justify-between text-sm"
-                      >
-                        <span className="text-gray-700 flex items-center gap-2">
-                          <span className="inline-flex items-center justify-center w-5 h-5 bg-[#fff7ed] text-[#ff6b35] rounded-full text-xs font-bold">
-                            {i.quantity}
-                          </span>
-                          {i.menuItem.name}
-                        </span>
-                        <span className="text-right">
-                          {pricing.isFlashSale &&
-                            pricing.regularQuantity > 0 && (
-                              <span className="block text-[11px] text-orange-600">
-                                🔥 {pricing.saleQuantity} ×{" "}
-                                {pricing.saleUnitPrice.toLocaleString("vi-VN")}₫
-                                {" + "}
-                                {pricing.regularQuantity} ×{" "}
-                                {pricing.regularUnitPrice.toLocaleString(
-                                  "vi-VN",
-                                )}
+                    {pricedItems.map(({ item: i, pricing }) => {
+                      // Chỉ hiển thị các nhóm có tùy chọn thực sự được chọn
+                      // (nhóm không bắt buộc có thể rỗng).
+                      const groups = (i.selectedGroups ?? []).filter(
+                        (g) => g.options && g.options.length > 0,
+                      );
+                      return (
+                        <div
+                          key={i.variantKey}
+                          className="flex items-start justify-between gap-3 text-sm"
+                        >
+                          <div className="flex items-start gap-2 min-w-0">
+                            <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 shrink-0 bg-[#fff7ed] text-[#ff6b35] rounded-full text-xs font-bold">
+                              {i.quantity}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-gray-700">{i.menuItem.name}</p>
+                              {groups.length > 0 && (
+                                <div className="mt-1 space-y-0.5">
+                                  {groups.map((g) => {
+                                    const delta = g.options.reduce(
+                                      (sum, o) =>
+                                        sum +
+                                        (o.priceDelta || 0) * (o.quantity ?? 1),
+                                      0,
+                                    );
+                                    return (
+                                      <p
+                                        key={g.groupId}
+                                        className="text-[11px] leading-snug text-gray-500"
+                                      >
+                                        <span className="text-gray-400">
+                                          {g.groupName}:
+                                        </span>{" "}
+                                        {g.options
+                                          .map((o) =>
+                                            o.quantity && o.quantity > 1
+                                              ? `${o.name} x${o.quantity}`
+                                              : o.name,
+                                          )
+                                          .join(", ")}
+                                        {delta !== 0 && (
+                                          <span className="text-gray-400">
+                                            {" "}
+                                            ({delta > 0 ? "+" : ""}
+                                            {delta.toLocaleString("vi-VN")}₫)
+                                          </span>
+                                        )}
+                                      </p>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {i.specialInstructions && (
+                                <p className="mt-1 text-[11px] text-gray-400">
+                                  📝 {i.specialInstructions}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <span className="text-right shrink-0">
+                            {pricing.isFlashSale &&
+                              pricing.regularQuantity > 0 && (
+                                <span className="block text-[11px] text-orange-600">
+                                  🔥 {pricing.saleQuantity} ×{" "}
+                                  {pricing.saleUnitPrice.toLocaleString(
+                                    "vi-VN",
+                                  )}
+                                  ₫{" + "}
+                                  {pricing.regularQuantity} ×{" "}
+                                  {pricing.regularUnitPrice.toLocaleString(
+                                    "vi-VN",
+                                  )}
+                                  ₫
+                                </span>
+                              )}
+                            {pricing.originalAmount > pricing.amount && (
+                              <span className="block text-xs text-gray-400 line-through">
+                                {pricing.originalAmount.toLocaleString("vi-VN")}
                                 ₫
                               </span>
                             )}
-                          {pricing.originalAmount > pricing.amount && (
-                            <span className="block text-xs text-gray-400 line-through">
-                              {pricing.originalAmount.toLocaleString("vi-VN")}₫
+                            <span className="text-gray-600 font-medium">
+                              {pricing.amount.toLocaleString("vi-VN")}₫
                             </span>
-                          )}
-                          <span className="text-gray-600 font-medium">
-                            {pricing.amount.toLocaleString("vi-VN")}₫
                           </span>
-                        </span>
-                      </div>
-                    ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="space-y-2.5 text-sm">
@@ -1452,7 +1631,12 @@ function CheckoutContent() {
                     </span>
                   </div>
                   <div className="flex justify-between text-gray-600">
-                    <span>Phí giao hàng</span>
+                    <span>
+                      Phí giao hàng
+                      <span className="ml-1 text-xs text-gray-400">
+                        ({selectedOptionMeta.icon} {selectedOptionMeta.label})
+                      </span>
+                    </span>
                     <span className="font-medium">
                       {deliveryFee.toLocaleString("vi-VN")}₫
                     </span>
@@ -1537,6 +1721,28 @@ function CheckoutContent() {
                     <span>📏 Khoảng cách</span>
                     <span>{dynamicFee.distanceKm} km</span>
                   </div>
+                  {selectedQuote && (
+                    <>
+                      <div className="flex justify-between">
+                        <span>
+                          {selectedOptionMeta.icon} Phương thức{" "}
+                          {selectedOptionMeta.label}
+                        </span>
+                        <span>{selectedQuote.etaRange}</span>
+                      </div>
+                      {selectedQuote.optionFee !== 0 && (
+                        <div
+                          className={`flex justify-between ${selectedQuote.optionFee > 0 ? "text-orange-500" : "text-emerald-600"}`}
+                        >
+                          <span>Phụ thu phương thức</span>
+                          <span>
+                            {selectedQuote.optionFee > 0 ? "+" : ""}
+                            {selectedQuote.optionFee.toLocaleString("vi-VN")}₫
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
                   <div className="flex justify-between">
                     <span>💰 Phí cơ bản</span>
                     <span>{dynamicFee.baseFee.toLocaleString("vi-VN")}₫</span>
@@ -1571,7 +1777,7 @@ function CheckoutContent() {
                   )}
                   <div className="flex justify-between font-bold text-[#ff6b35] pt-1 border-t">
                     <span>Tổng phí ship</span>
-                    <span>{dynamicFee.totalFee.toLocaleString("vi-VN")}₫</span>
+                    <span>{deliveryFee.toLocaleString("vi-VN")}₫</span>
                   </div>
                 </div>
               )}

@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS drivers (
   "acceptBlockedUntil" TIMESTAMPTZ,
 
   "currentOrderId" UUID,
+  -- Phase 2: SAVER stacking
+  "currentOrderIds" UUID[] NOT NULL DEFAULT '{}',
+  "maxConcurrentOrders" INT NOT NULL DEFAULT 1,
   "isTrainingCompleted" BOOLEAN NOT NULL DEFAULT FALSE,
   "depositAmount" DECIMAL(12, 2) NOT NULL DEFAULT 0,
   "creditWalletBalance" DECIMAL(12, 2) NOT NULL DEFAULT 0,
@@ -51,6 +54,9 @@ CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers (status);
 CREATE INDEX IF NOT EXISTS idx_drivers_online_status ON drivers ("onlineStatus");
 CREATE INDEX IF NOT EXISTS idx_drivers_fatigue_level ON drivers ("fatigueLevel");
 CREATE INDEX IF NOT EXISTS idx_drivers_current_order_id ON drivers ("currentOrderId");
+CREATE INDEX IF NOT EXISTS idx_drivers_stackable
+  ON drivers ("status", "onlineStatus")
+  WHERE cardinality("currentOrderIds") < "maxConcurrentOrders";
 CREATE INDEX IF NOT EXISTS idx_drivers_available ON drivers (status, "onlineStatus", "fatigueLevel") WHERE status = 'ACTIVE' AND "onlineStatus" = 'ONLINE' AND "fatigueLevel" != 'CRITICAL';
 CREATE INDEX IF NOT EXISTS idx_drivers_created_at ON drivers ("createdAt");
 

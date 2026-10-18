@@ -34,6 +34,7 @@ import type {
   UpdateCapacityRequest,
   PlaceOrderRequest,
   Order,
+  DeliveryOption,
   CancelOrderRequest,
   RejectOrderRequest,
   OutForDeliveryRequest,
@@ -611,6 +612,13 @@ export const orderApi = {
       params: { startDate, endDate },
     }),
 
+  /** Thống kê theo phương thức giao hàng (admin). */
+  getDeliveryOptionStats: (days = 30) =>
+    httpClient.get<{
+      statusCode: number;
+      data: DeliveryOptionStatsRow[];
+    }>(PORTS.ORDER, "/orders/stats/delivery-options", { params: { days } }),
+
   getTopMenuItems: (take?: number) =>
     httpClient.get<any>(PORTS.ORDER, "/orders/stats/top-items", {
       params: take ? { take: String(take) } : undefined,
@@ -913,10 +921,11 @@ export const driverApi = {
       { orderId },
     ),
 
-  completeOrder: (id: string) =>
+  completeOrder: (id: string, orderId?: string) =>
     httpClient.patch<{ statusCode: number; data: Driver }>(
       PORTS.DRIVER,
       `/drivers/${id}/complete-order`,
+      orderId ? { orderId } : {},
     ),
 
   startShift: (id: string) =>
@@ -1073,6 +1082,27 @@ export const dispatchApi = {
       };
     }>(PORTS.DISPATCH, `/dispatches/${id}/location`),
 
+  /** Thống kê gộp đơn SAVER (admin). */
+  getStackingStats: (days = 30) =>
+    httpClient.get<{
+      statusCode: number;
+      data: StackingStats;
+    }>(PORTS.DISPATCH, "/dispatches/stats/stacking", { params: { days } }),
+
+  /** Lộ trình gộp đơn hiện tại của tài xế (SAVER stacking). */
+  getDriverRoute: (driverId: string) =>
+    httpClient.get<{
+      statusCode: number;
+      data: import("./types").DriverRoute;
+    }>(PORTS.DISPATCH, `/dispatches/driver/${driverId}/route`),
+
+  /** Lộ trình của một dispatch (gồm các đơn đang gộp cùng tài xế). */
+  getRoute: (id: string) =>
+    httpClient.get<{
+      statusCode: number;
+      data: import("./types").DriverRoute;
+    }>(PORTS.DISPATCH, `/dispatches/${id}/route`),
+
   create: (body: import("./types").CreateDispatchRequest) =>
     httpClient.post<DispatchEnvelope>(PORTS.DISPATCH, "/dispatches", body),
 
@@ -1193,6 +1223,76 @@ export interface ShippingFeeResponse {
     weatherMultiplier: number;
     total: number;
   };
+}
+
+export interface DeliveryOptionQuote {
+  option: DeliveryOption;
+  label: string;
+  distanceKm: number;
+  /** Tổng phí giao hàng khách phải trả cho phương thức này. */
+  fee: number;
+  /** Phí giao hàng tiêu chuẩn (FAST) trước khi áp dụng phương thức. */
+  baseFee: number;
+  /** Phụ thu (dương) hoặc giảm giá (âm) so với phí tiêu chuẩn. */
+  optionFee: number;
+  etaMinutes: number;
+  etaRange: string;
+  description: string;
+  maxStackedOrders: number;
+  dispatchTimeoutSeconds: number;
+}
+
+export interface ShippingQuoteResponse {
+  distanceKm: number;
+  standardFee: number;
+  options: DeliveryOptionQuote[];
+  breakdown: ShippingFeeResponse["breakdown"];
+}
+
+/** Cấu hình phương thức giao hàng (admin chỉnh). */
+export interface DeliveryOptionConfig {
+  option: DeliveryOption;
+  label: string;
+  description: string;
+  feeFactor: number;
+  fixedSurcharge: number;
+  minFee: number;
+  maxFee: number;
+  prepMinutes: number;
+  etaBufferMinutes: number;
+  dispatchTimeoutSeconds: number;
+  driverResponseTimeoutSeconds: number;
+  maxStackedOrders: number;
+}
+
+export interface UpdateDeliveryOptionConfigRequest {
+  feeFactor?: number;
+  fixedSurcharge?: number;
+  minFee?: number;
+  maxFee?: number;
+  prepMinutes?: number;
+  etaBufferMinutes?: number;
+  dispatchTimeoutSeconds?: number;
+  driverResponseTimeoutSeconds?: number;
+  maxStackedOrders?: number;
+}
+
+export interface DeliveryOptionStatsRow {
+  deliveryOption: DeliveryOption;
+  total: number;
+  delivered: number;
+  late: number;
+  deliveryFees: number;
+  avgFee: number;
+  revenue: number;
+}
+
+export interface StackingStats {
+  days: number;
+  batches: number;
+  stackedDispatches: number;
+  totalDispatches: number;
+  avgRouteSequence: number;
 }
 
 // ============================================================================
@@ -1484,10 +1584,34 @@ export const walletApi = {
 };
 
 export const shippingApi = {
+  /** Phí giao hàng tiêu chuẩn (FAST) — giữ để tương thích ngược. */
   getFee: (params: ShippingFeeRequest) =>
     httpClient.get<ShippingFeeResponse>(PORTS.ORDER, "/shipping/fee", {
       params,
     }),
+
+  /** Báo giá cả 3 phương thức giao hàng (SAVER / FAST / PRIORITY). */
+  getQuote: (params: ShippingFeeRequest) =>
+    httpClient.get<ShippingQuoteResponse>(PORTS.ORDER, "/shipping/quote", {
+      params,
+    }),
+
+  /** Admin: danh sách cấu hình phương thức giao hàng. */
+  getOptionConfigs: () =>
+    httpClient.get<{
+      statusCode: number;
+      data: DeliveryOptionConfig[];
+    }>(PORTS.ORDER, "/shipping/options/config"),
+
+  /** Admin: cập nhật cấu hình một phương thức. */
+  updateOptionConfig: (
+    option: DeliveryOption,
+    body: UpdateDeliveryOptionConfigRequest,
+  ) =>
+    httpClient.put<{
+      statusCode: number;
+      data: DeliveryOptionConfig;
+    }>(PORTS.ORDER, `/shipping/options/config/${option}`, body),
 };
 
 // ============================================================================

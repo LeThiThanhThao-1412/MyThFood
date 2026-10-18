@@ -24,6 +24,12 @@ CREATE TABLE IF NOT EXISTS orders (
   delivery_latitude DECIMAL(10, 7),
   delivery_longitude DECIMAL(10, 7),
   estimated_delivery_time TIMESTAMPTZ,
+  -- Phase 1: phương thức giao hàng (SAVER / FAST / PRIORITY)
+  delivery_option VARCHAR(20) NOT NULL DEFAULT 'FAST'
+    CHECK (delivery_option IN ('SAVER', 'FAST', 'PRIORITY')),
+  delivery_option_fee NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  priority_rank SMALLINT NOT NULL DEFAULT 1,
+  promised_delivery_at TIMESTAMPTZ,
   notes TEXT,
   driver_id UUID,
   delivery_proof_photo_url TEXT,
@@ -60,6 +66,9 @@ CREATE INDEX IF NOT EXISTS idx_orders_driver_id ON orders(driver_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_deleted_at ON orders(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_orders_merchant_queue
+  ON orders (merchant_id, priority_rank DESC, created_at ASC)
+  WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
 
 -- Grant privileges

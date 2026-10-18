@@ -23,6 +23,9 @@ import {
   RateDriverDto,
   PenalizeCancellationDto,
   DriverComplianceDto,
+  AssignOrderDto,
+  ReleaseOrderDto,
+  CompleteOrderDto,
 } from "../application/dtos/driver.dto";
 
 @Controller("drivers")
@@ -58,8 +61,10 @@ export class DriverController {
   }
 
   @Get("available/list")
-  async getAvailable() {
-    const drivers = await this.driverService.getAvailableDrivers();
+  async getAvailable(@Query("includeStackable") includeStackable?: string) {
+    const drivers = await this.driverService.getAvailableDrivers(
+      includeStackable === "true",
+    );
     return {
       statusCode: HttpStatus.OK,
       data: drivers.map((d) => this.toResponse(d)),
@@ -209,23 +214,43 @@ export class DriverController {
 
   @Patch(":id/assign-order")
   @Roles("DRIVER", "ADMIN")
-  async assignOrder(@Param("id") id: string, @Body("orderId") orderId: string) {
-    const driver = await this.driverService.assignOrder(id, orderId);
+  async assignOrder(@Param("id") id: string, @Body() dto: AssignOrderDto) {
+    const driver = await this.driverService.assignOrder(
+      id,
+      dto.orderId,
+      dto.maxConcurrentOrders,
+    );
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/complete-order")
   @Roles("DRIVER", "ADMIN")
-  async completeOrder(@Param("id") id: string) {
-    const driver = await this.driverService.completeOrder(id);
+  async completeOrder(@Param("id") id: string, @Body() dto?: CompleteOrderDto) {
+    const driver = await this.driverService.completeOrder(id, dto?.orderId);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/release-order")
   @Roles("DRIVER", "ADMIN")
-  async releaseOrder(@Param("id") id: string) {
-    const driver = await this.driverService.releaseOrder(id);
+  async releaseOrder(@Param("id") id: string, @Body() dto?: ReleaseOrderDto) {
+    const driver = await this.driverService.releaseOrder(id, dto?.orderId);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  /** Danh sách đơn đang giữ — driver-app dùng để hiển thị lộ trình gộp. */
+  @Get(":id/active-orders")
+  @Roles("DRIVER", "ADMIN")
+  async getActiveOrders(@Param("id") id: string) {
+    const driver = await this.driverService.getById(id);
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        driverId: driver.id.toString(),
+        orderIds: driver.driverCurrentOrderIds,
+        maxConcurrentOrders: driver.driverMaxConcurrentOrders,
+        activeCount: driver.driverActiveOrderCount,
+      },
+    };
   }
 
   // ---- Fatigue ----
@@ -366,6 +391,15 @@ export class DriverController {
       acceptBlockedUntil:
         driver.driverAcceptBlockedUntil ?? driver._acceptBlockedUntil,
       currentOrderId: driver.driverCurrentOrderId ?? driver._currentOrderId,
+      currentOrderIds:
+        driver.driverCurrentOrderIds ??
+        (driver.driverCurrentOrderId ? [driver.driverCurrentOrderId] : []),
+      maxConcurrentOrders:
+        driver.driverMaxConcurrentOrders ?? driver._maxConcurrentOrders ?? 1,
+      activeOrderCount:
+        driver.driverActiveOrderCount ??
+        driver.driverCurrentOrderIds?.length ??
+        0,
       isTrainingCompleted:
         driver.driverIsTrainingCompleted ?? driver._isTrainingCompleted,
       depositAmount: driver.driverDepositAmount ?? driver._depositAmount,

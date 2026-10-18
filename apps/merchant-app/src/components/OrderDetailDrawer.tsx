@@ -7,7 +7,7 @@ import {
   consumerApi,
   authApi,
 } from "@mythfood/api-client";
-import { useAuthStore } from "@mythfood/frontend-shared";
+import { useAuthStore, deliveryOptionMeta } from "@mythfood/frontend-shared";
 import { useMerchantSocket } from "./SocketProvider";
 import OrderEditDrawer from "./OrderEditDrawer";
 
@@ -574,6 +574,17 @@ export default function OrderDetailDrawer({
                       {toNum(order.deliveryFee).toLocaleString("vi-VN")}₫
                     </span>
                   </div>
+                  {order.deliveryOption && order.deliveryOption !== "FAST" && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Phương thức giao</span>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-semibold ${deliveryOptionMeta(order.deliveryOption).badgeClass}`}
+                      >
+                        {deliveryOptionMeta(order.deliveryOption).icon}{" "}
+                        {deliveryOptionMeta(order.deliveryOption).label}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-gray-500">Phí dịch vụ</span>
                     <span>

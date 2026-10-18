@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { EventBus } from "@nestjs/cqrs";
 import { HttpService } from "@nestjs/axios";
-import { firstValueFrom } from "rxjs";
+import { firstValueFrom, timeout } from "rxjs";
 import { randomUUID } from "node:crypto";
 import { Order } from "../domain/order.aggregate";
 import { OrderId } from "../domain/order-id";
@@ -26,6 +26,15 @@ import { buildInvoicePdf } from "./invoice-pdf";
 import { OrderChangeService } from "./order-change.service";
 import { OrderAdjustmentRepository } from "../infrastructure/order-adjustment.repository";
 import { splitFlashSaleLines } from "../domain/flash-sale-pricing";
+import { ShippingService } from "../../shipping/shipping.service";
+import {
+  DEFAULT_DELIVERY_OPTION,
+  DeliveryOption,
+  applyPolicyToFee,
+  computePromisedDeliveryAtWithPolicy,
+  deriveBaseFeeWithPolicy,
+  normalizeDeliveryOption,
+} from "../domain/delivery-option";
 
 @Injectable()
 export class OrderService {
@@ -39,6 +48,7 @@ export class OrderService {
     private readonly orderTimelineRepository: OrderTimelineRepository,
     private readonly orderChangeService: OrderChangeService,
     private readonly orderAdjustmentRepository: OrderAdjustmentRepository,
+    private readonly shippingService: ShippingService,
   ) {}
 
   // ===================== Order Placement =====================
@@ -88,6 +98,28 @@ export class OrderService {
       0,
     );
 
+    // Phương thức giao hàng + phí do server quyết định. Khách chọn SAVER /
+    // PRIORITY thì server tính lại phí (không tin phí client gửi) để tránh
+    // sửa phí / né phụ thu ưu tiên.
+    const deliveryOption: DeliveryOption = dto.deliveryOption
+      ? normalizeDeliveryOption(dto.deliveryOption)
+      : DEFAULT_DELIVERY_OPTION;
+    const deliveryPricing = await this.resolveDeliveryPricing(
+      dto,
+      deliveryOption,
+    );
+    const deliveryFee = deliveryPricing.fee;
+    const deliveryOptionFee = deliveryPricing.optionFee;
+    const optionPolicy = await this.shippingService.getPolicy(deliveryOption);
+    const promisedDeliveryAt =
+      dto.orderType === "DELIVERY"
+        ? computePromisedDeliveryAtWithPolicy(
+            new Date(),
+            deliveryPricing.distanceKm,
+            optionPolicy,
+          )
+        : null;
+
     let discount = dto.discount ?? 0;
     let discountFundedBy = "MERCHANT";
 
@@ -97,7 +129,7 @@ export class OrderService {
         dto.merchantId,
         dto.consumerId,
         foodTotal,
-        dto.deliveryFee ?? 0,
+        deliveryFee,
         orderItems.map((i) => ({
           menuItemId: i.menuItemId,
           quantity: i.quantity,
@@ -112,7 +144,7 @@ export class OrderService {
     const isCod = paymentMethod === "COD" || paymentMethod === "CASH";
     if (isCod) {
       const orderTotal =
-        foodTotal + (dto.deliveryFee ?? 0) + (dto.serviceFee ?? 0) - discount;
+        foodTotal + deliveryFee + (dto.serviceFee ?? 0) - discount;
       if (orderTotal > 200000) {
         const verified = await this.isConsumerVerified(dto.consumerId);
         if (!verified) {
@@ -136,13 +168,16 @@ export class OrderService {
         deliveryAddress: dto.deliveryAddress ?? null,
         deliveryLatitude: dto.deliveryLatitude ?? null,
         deliveryLongitude: dto.deliveryLongitude ?? null,
-        deliveryFee: dto.deliveryFee,
+        deliveryFee,
         serviceFee: dto.serviceFee,
         discount,
         discountFundedBy,
         estimatedDeliveryTime: dto.estimatedDeliveryTime
           ? new Date(dto.estimatedDeliveryTime)
           : undefined,
+        deliveryOption,
+        deliveryOptionFee,
+        promisedDeliveryAt,
         notes: dto.notes,
         paymentMethod: dto.paymentMethod || "CASH",
       });
@@ -174,7 +209,7 @@ export class OrderService {
           dto.consumerId,
           order.id.toString(),
           foodTotal,
-          dto.deliveryFee ?? 0,
+          deliveryFee,
           orderItems.map((i) => ({
             menuItemId: i.menuItemId,
             quantity: i.quantity,
@@ -205,6 +240,11 @@ export class OrderService {
         deliveryAddress: order.orderDeliveryAddress,
         notes: order.orderNotes,
         paymentMethod: order.orderPaymentMethod,
+        deliveryOption: order.orderDeliveryOption,
+        deliveryOptionLabel: order.orderDeliveryOptionLabel,
+        priorityRank: order.orderPriorityRank,
+        promisedDeliveryAt:
+          order.orderPromisedDeliveryAt?.toISOString() ?? null,
         createdAt: order.createdAt,
       });
     } catch {}
@@ -359,30 +399,109 @@ export class OrderService {
     return order;
   }
 
-  private async triggerDispatchCreation(order: Order): Promise<void> {
-    const dispatchUrl =
-      process.env.DISPATCH_SERVICE_URL || "http://dispatch-service:3008";
+  /**
+   * Tính phí giao hàng theo phương thức khách chọn.
+   * - Không truyền `deliveryOption` (client cũ) → giữ nguyên `dto.deliveryFee`.
+   * - Có toạ độ + lấy được toạ độ quán → server tính lại từ ShippingService
+   *   (chống sửa phí phía client và né phụ thu ưu tiên).
+   * - Không có toạ độ → tin phí cuối cùng client gửi (như hành vi cũ) và suy
+   *   ngược phí chuẩn để lưu `delivery_option_fee`.
+   */
+  private async resolveDeliveryPricing(
+    dto: PlaceOrderDto,
+    option: DeliveryOption,
+  ): Promise<{ fee: number; optionFee: number; distanceKm: number | null }> {
+    const clientFee = Math.max(0, Number(dto.deliveryFee ?? 0));
+
+    // Đơn PICKUP hoặc client cũ không gửi option → giữ nguyên phí hiện tại.
+    if (dto.orderType !== "DELIVERY" || !dto.deliveryOption) {
+      return { fee: clientFee, optionFee: 0, distanceKm: null };
+    }
+
+    const hasCoords =
+      dto.deliveryLatitude != null && dto.deliveryLongitude != null;
+
+    if (hasCoords) {
+      const origin = await this.getMerchantCoordinates(dto.merchantId);
+      if (origin) {
+        try {
+          const quote = await this.shippingService.calculateOptionFee(
+            {
+              originLat: origin.lat,
+              originLng: origin.lng,
+              destLat: Number(dto.deliveryLatitude),
+              destLng: Number(dto.deliveryLongitude),
+            },
+            option,
+          );
+          return {
+            fee: quote.fee,
+            optionFee: quote.optionFee,
+            distanceKm: quote.distanceKm,
+          };
+        } catch (err: any) {
+          this.logger.warn(
+            `Không tính lại được phí giao hàng cho nhà hàng ${dto.merchantId}: ${err?.message}`,
+          );
+        }
+      }
+    }
+
+    // Fallback (không có toạ độ / không gọi được merchant-service):
+    // - Client đã gửi phí cuối cùng theo phương thức (checkout tính từ quote
+    //   hoặc công thức local) → tin phí đó như hành vi cũ, chỉ suy ngược phí
+    //   chuẩn để lưu `delivery_option_fee`.
+    // - Không có phí → áp hệ số trên mức mặc định 15.000đ.
+    const policy = await this.shippingService.getPolicy(option);
+
+    if (clientFee > 0) {
+      const baseFee = deriveBaseFeeWithPolicy(clientFee, policy);
+      return {
+        fee: clientFee,
+        optionFee: clientFee - baseFee,
+        distanceKm: null,
+      };
+    }
+
+    const baseFee = 15000;
+    const fee = applyPolicyToFee(baseFee, policy);
+    return { fee, optionFee: fee - baseFee, distanceKm: null };
+  }
+
+  /** Lấy toạ độ nhà hàng (server-to-server) để tính phí / tạo dispatch. */
+  private async getMerchantCoordinates(
+    merchantId: string,
+  ): Promise<{ lat: number; lng: number } | null> {
     const merchantUrl =
       process.env.MERCHANT_SERVICE_URL || "http://merchant-service:3003";
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
-
-    let merchantLat: number | undefined;
-    let merchantLng: number | undefined;
     try {
       const mRes = await firstValueFrom(
-        this.httpService.get(
-          `${merchantUrl}/api/v1/merchants/${order.orderMerchantId}`,
-          {
+        this.httpService
+          .get(`${merchantUrl}/api/v1/merchants/${merchantId}`, {
             headers: { "x-service-key": serviceKey },
-          },
-        ),
+          })
+          // Không để việc lấy toạ độ quán làm treo luồng đặt đơn.
+          .pipe(timeout(2500)),
       );
       const mData: any = (mRes.data as any)?.data ?? mRes.data;
-      if (mData?.latitude != null) merchantLat = Number(mData.latitude);
-      if (mData?.longitude != null) merchantLng = Number(mData.longitude);
+      if (mData?.latitude != null && mData?.longitude != null) {
+        return { lat: Number(mData.latitude), lng: Number(mData.longitude) };
+      }
     } catch {
       /* non-fatal */
     }
+    return null;
+  }
+
+  private async triggerDispatchCreation(order: Order): Promise<void> {
+    const dispatchUrl =
+      process.env.DISPATCH_SERVICE_URL || "http://dispatch-service:3008";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    const origin = await this.getMerchantCoordinates(order.orderMerchantId);
+    const policy = await this.shippingService.getPolicy(
+      order.orderDeliveryOption,
+    );
 
     await firstValueFrom(
       this.httpService.post(
@@ -393,10 +512,15 @@ export class OrderService {
           deliveryAddress: order.orderDeliveryAddress ?? "",
           deliveryLatitude: Number(order.orderDeliveryLatitude ?? 10.775),
           deliveryLongitude: Number(order.orderDeliveryLongitude ?? 106.7),
-          merchantLatitude:
-            merchantLat != null ? Number(merchantLat) : undefined,
-          merchantLongitude:
-            merchantLng != null ? Number(merchantLng) : undefined,
+          merchantLatitude: origin?.lat,
+          merchantLongitude: origin?.lng,
+          deliveryOption: order.orderDeliveryOption,
+          priorityRank: order.orderPriorityRank,
+          promisedDeliveryAt:
+            order.orderPromisedDeliveryAt?.toISOString() ?? undefined,
+          maxStackedOrders: policy.maxStackedOrders,
+          dispatchTimeoutSeconds: policy.dispatchTimeoutSeconds,
+          driverResponseTimeoutSeconds: policy.driverResponseTimeoutSeconds,
         },
         {
           headers: {
@@ -452,7 +576,7 @@ export class OrderService {
       await firstValueFrom(
         this.httpService.patch(
           `${driverUrl}/api/v1/drivers/${driverId}/release-order`,
-          {},
+          { orderId: order.id.toString() },
           {
             headers: {
               "Content-Type": "application/json",
@@ -1571,6 +1695,40 @@ export class OrderService {
     }>
   > {
     return this.orderRepository.getTopMenuItems(take);
+  }
+
+  // ===================== Delivery option stats =====================
+
+  async getDeliveryOptionStats(days = 30): Promise<
+    Array<{
+      deliveryOption: string;
+      total: number;
+      delivered: number;
+      late: number;
+      deliveryFees: number;
+      avgFee: number;
+      revenue: number;
+    }>
+  > {
+    const safeDays = Math.min(365, Math.max(1, Number(days) || 30));
+    const since = new Date(Date.now() - safeDays * 24 * 60 * 60 * 1000);
+    const rows = await this.orderRepository.getDeliveryOptionStats(since);
+    const byOption = new Map(rows.map((r) => [r.deliveryOption, r]));
+
+    return ["SAVER", "FAST", "PRIORITY"].map((option) => {
+      const row = byOption.get(option);
+      return (
+        row ?? {
+          deliveryOption: option,
+          total: 0,
+          delivered: 0,
+          late: 0,
+          deliveryFees: 0,
+          avgFee: 0,
+          revenue: 0,
+        }
+      );
+    });
   }
 
   // ===================== Delete =====================
