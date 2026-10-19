@@ -302,6 +302,8 @@ export class MerchantResponseDto {
   otherCategoryDescription!: string | null;
   isOpen!: boolean;
   isOpenNow!: boolean;
+  rejectedAt?: Date | null;
+  rejectReason?: string | null;
   matchedMenuItems?: MatchedMenuItemDto[];
   createdAt!: Date;
   updatedAt!: Date;

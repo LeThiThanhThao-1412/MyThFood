@@ -50,6 +50,8 @@ export interface MerchantProps {
   secondaryCategories: string[];
   otherCategoryDescription?: string | null;
   isOpen: boolean;
+  rejectedAt?: Date | null;
+  rejectReason?: string | null;
 }
 
 export class Merchant extends AggregateRoot<MerchantId> {
@@ -77,6 +79,8 @@ export class Merchant extends AggregateRoot<MerchantId> {
   private secondaryCategories: string[];
   private otherCategoryDescription: string | null;
   private isOpenFlag: boolean;
+  private rejectedAt: Date | null;
+  private rejectReason: string | null;
 
   private constructor(id: MerchantId, props: MerchantProps) {
     super(id);
@@ -104,6 +108,8 @@ export class Merchant extends AggregateRoot<MerchantId> {
     this.secondaryCategories = props.secondaryCategories;
     this.otherCategoryDescription = props.otherCategoryDescription ?? null;
     this.isOpenFlag = props.isOpen;
+    this.rejectedAt = props.rejectedAt ?? null;
+    this.rejectReason = props.rejectReason ?? null;
   }
 
   // ===================== Factory Methods =====================
@@ -172,6 +178,8 @@ export class Merchant extends AggregateRoot<MerchantId> {
       secondaryCategories: (props.secondaryCategories ?? []).slice(0, 3),
       otherCategoryDescription: props.otherCategoryDescription ?? null,
       isOpen: true,
+      rejectedAt: null,
+      rejectReason: null,
     });
 
     merchant.addDomainEvent(
@@ -278,19 +286,26 @@ export class Merchant extends AggregateRoot<MerchantId> {
       );
     }
     this.status = "APPROVED";
+    this.rejectedAt = null;
+    this.rejectReason = null;
     this.markUpdated();
   }
 
   /**
    * Reject the merchant (admin action).
+   *
+   * @param reason Lý do từ chối — được lưu lại và hiển thị cho chủ nhà hàng
+   * khi đăng nhập.
    */
-  public reject(): void {
+  public reject(reason?: string): void {
     if (this.status === "APPROVED") {
       throw new BusinessRuleViolationError(
         "Cannot reject an approved merchant",
       );
     }
     this.status = "REJECTED";
+    this.rejectedAt = new Date();
+    this.rejectReason = reason ?? null;
     this.markUpdated();
   }
 
@@ -753,6 +768,14 @@ export class Merchant extends AggregateRoot<MerchantId> {
 
   get merchantOtherCategoryDescription(): string | null {
     return this.otherCategoryDescription;
+  }
+
+  get merchantRejectedAt(): Date | null {
+    return this.rejectedAt;
+  }
+
+  get merchantRejectReason(): string | null {
+    return this.rejectReason;
   }
 
   public isApproved(): boolean {

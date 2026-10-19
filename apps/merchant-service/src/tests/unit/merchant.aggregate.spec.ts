@@ -143,9 +143,21 @@ describe("Merchant Aggregate", () => {
       expect(() => merchant.approve()).toThrow("Merchant is already approved");
     });
 
-    it("should reject a PENDING merchant", () => {
-      merchant.reject();
+    it("should reject a PENDING merchant with a reason", () => {
+      merchant.reject("Giấy phép kinh doanh không hợp lệ");
       expect(merchant.merchantStatus).toBe("REJECTED");
+      expect(merchant.merchantRejectReason).toBe(
+        "Giấy phép kinh doanh không hợp lệ",
+      );
+      expect(merchant.merchantRejectedAt).toBeInstanceOf(Date);
+    });
+
+    it("should clear rejection metadata when approving again", () => {
+      merchant.reject("Thiếu hồ sơ");
+      merchant.approve();
+      expect(merchant.merchantStatus).toBe("APPROVED");
+      expect(merchant.merchantRejectReason).toBeNull();
+      expect(merchant.merchantRejectedAt).toBeNull();
     });
 
     it("should not reject an approved merchant", () => {

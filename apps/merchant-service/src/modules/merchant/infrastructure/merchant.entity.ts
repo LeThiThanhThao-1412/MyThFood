@@ -79,6 +79,12 @@ export class MerchantEntity {
   @Column({ type: "boolean", default: true })
   is_open!: boolean;
 
+  @Column({ type: "timestamptz", nullable: true })
+  rejected_at!: Date | null;
+
+  @Column({ type: "varchar", length: 500, nullable: true })
+  reject_reason!: string | null;
+
   @CreateDateColumn({ type: "timestamptz" })
   created_at!: Date;
 

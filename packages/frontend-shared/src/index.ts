@@ -52,6 +52,11 @@ export { searchAddress, reverseGeocodeAddress } from "./utils/geocoding";
 export type { GeocodingSuggestion } from "./utils/geocoding";
 export { canAccessApp, APP_ALLOWED_ROLES } from "./utils/role-access";
 export type { AppKey } from "./utils/role-access";
+export { getAccountBlockInfo, formatAccountDate } from "./utils/account-status";
+export type {
+  AccountBlockCode,
+  AccountBlockInfo,
+} from "./utils/account-status";
 export {
   MEAL_PERIODS,
   getMealPeriod,
@@ -99,3 +104,4 @@ export { default as ChatListDrawer } from "./components/ChatListDrawer";
 // Import directly from '@mythfood/frontend-shared/components/MapView' with next/dynamic + ssr:false.
 export type { MapLocation } from "./components/MapView";
 export { ErrorBoundary } from "./components/ErrorBoundary";
+export { default as AccountBlockNotice } from "./components/AccountBlockNotice";

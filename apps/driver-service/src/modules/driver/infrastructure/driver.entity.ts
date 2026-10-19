@@ -57,6 +57,12 @@ export class DriverEntity {
   @Column({ type: "enum", enum: DriverStatus, default: DriverStatus.INACTIVE })
   status!: DriverStatus;
 
+  @Column({ type: "timestamptz", nullable: true })
+  rejectedAt!: Date | null;
+
+  @Column({ type: "varchar", length: 500, nullable: true })
+  rejectReason!: string | null;
+
   @Column({
     type: "enum",
     enum: DriverOnlineStatus,

@@ -330,12 +330,19 @@ export const merchantApi = {
   approve: (id: string) =>
     httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${id}/approve`),
 
-  reject: (id: string) =>
-    httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${id}/reject`),
+  /** Từ chối nhà hàng kèm lý do (hiển thị khi chủ nhà hàng đăng nhập). */
+  reject: (id: string, reason?: string) =>
+    httpClient.put<Merchant>(
+      PORTS.MERCHANT,
+      `/merchants/${id}/reject`,
+      reason ? { reason } : {},
+    ),
 
-  suspend: (id: string) =>
+  suspend: (id: string, body?: { reason?: string; durationDays?: number }) =>
     httpClient.patch<Merchant>(PORTS.MERCHANT, `/merchants/${id}/status`, {
       status: "SUSPENDED",
+      reason: body?.reason,
+      durationDays: body?.durationDays,
     }),
 
   reactivate: (id: string) =>
@@ -968,11 +975,19 @@ export const driverApi = {
       `/drivers/${id}/deactivate`,
     ),
 
-  suspend: (id: string, body?: { durationDays?: number }) =>
+  suspend: (id: string, body?: { durationDays?: number; reason?: string }) =>
     httpClient.patch<{ statusCode: number; data: Driver }>(
       PORTS.DRIVER,
       `/drivers/${id}/suspend`,
       body || {},
+    ),
+
+  /** Từ chối hồ sơ tài xế kèm lý do (hiển thị khi đăng nhập). */
+  reject: (id: string, reason?: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/reject`,
+      reason ? { reason } : {},
     ),
 
   unlock: (id: string) =>

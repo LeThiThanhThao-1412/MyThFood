@@ -24,6 +24,8 @@ export class DriverMapper {
       insuranceNumber: entity.insuranceNumber,
       criminalRecordUrl: entity.criminalRecordUrl,
       status: entity.status as DriverStatus,
+      rejectedAt: entity.rejectedAt ?? null,
+      rejectReason: entity.rejectReason ?? null,
       onlineStatus: entity.onlineStatus as DriverOnlineStatus,
       currentLatitude: entity.currentLatitude,
       currentLongitude: entity.currentLongitude,
@@ -66,6 +68,8 @@ export class DriverMapper {
     entity.insuranceNumber = domain.driverInsuranceNumber;
     entity.criminalRecordUrl = domain.driverCriminalRecordUrl;
     entity.status = domain.driverStatus;
+    entity.rejectedAt = domain.driverRejectedAt;
+    entity.rejectReason = domain.driverRejectReason;
     entity.onlineStatus = domain.driverOnlineStatus;
     entity.currentLatitude = domain.driverCurrentLatitude;
     entity.currentLongitude = domain.driverCurrentLongitude;

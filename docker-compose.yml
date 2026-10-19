@@ -132,6 +132,7 @@ services:
       SERVICE_API_KEY: ${SERVICE_API_KEY}
       ORDER_SERVICE_URL: http://order-service:3004
       REVIEW_SERVICE_URL: http://review-service:3011
+      IDENTITY_SERVICE_URL: http://identity-service:3001
     depends_on:
       postgres:
         condition: service_healthy
@@ -277,6 +278,7 @@ services:
       JWT_EXPIRATION: 1h
       SERVICE_API_KEY: ${SERVICE_API_KEY}
       WALLET_SERVICE_URL: http://wallet-service:3009
+      IDENTITY_SERVICE_URL: http://identity-service:3001
     depends_on:
       postgres:
         condition: service_healthy
@@ -308,6 +310,7 @@ services:
       WALLET_SERVICE_URL: http://wallet-service:3009
       ORDER_SERVICE_URL: http://order-service:3004
       DRIVER_SERVICE_URL: http://driver-service:3007
+      RESOLUTION_SERVICE_URL: http://resolution-service:3014
       SERVICE_API_KEY: ${SERVICE_API_KEY}
       DISPATCH_MATCHING_TIMEOUT_SECONDS: ${DISPATCH_MATCHING_TIMEOUT_SECONDS:-300}
       SAVER_DISPATCH_TIMEOUT_SECONDS: ${SAVER_DISPATCH_TIMEOUT_SECONDS:-600}
@@ -315,6 +318,13 @@ services:
       PRIORITY_DRIVER_RESPONSE_TIMEOUT_SECONDS: ${PRIORITY_DRIVER_RESPONSE_TIMEOUT_SECONDS:-30}
       SAVER_DRIVER_RESPONSE_TIMEOUT_SECONDS: ${SAVER_DRIVER_RESPONSE_TIMEOUT_SECONDS:-90}
       SAVER_STACK_RADIUS_KM: ${SAVER_STACK_RADIUS_KM:-3}
+      # Tỉ lệ từ chối / không phản hồi của tài xế (cửa sổ 30 ngày)
+      DRIVER_COMPLIANCE_WINDOW_DAYS: ${DRIVER_COMPLIANCE_WINDOW_DAYS:-30}
+      DRIVER_COMPLIANCE_MIN_OFFERS: ${DRIVER_COMPLIANCE_MIN_OFFERS:-10}
+      DRIVER_COMPLIANCE_WARN_RATE: ${DRIVER_COMPLIANCE_WARN_RATE:-0.3}
+      DRIVER_COMPLIANCE_FINE_RATE: ${DRIVER_COMPLIANCE_FINE_RATE:-0.5}
+      DRIVER_COMPLIANCE_SUSPEND_RATE: ${DRIVER_COMPLIANCE_SUSPEND_RATE:-0.7}
+      DRIVER_COMPLIANCE_COOLDOWN_HOURS: ${DRIVER_COMPLIANCE_COOLDOWN_HOURS:-24}
     depends_on:
       postgres:
         condition: service_healthy

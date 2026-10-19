@@ -387,20 +387,43 @@ export class MerchantService {
     );
     merchant.approve();
     await this.merchantRepository.save(merchant);
+    // Mở khóa/bỏ từ chối tài khoản đăng nhập tương ứng (best-effort).
+    await this.syncIdentityAccount(merchant.ownerId, "ACTIVE");
     return merchant;
   }
 
-  async reject(id: string): Promise<Merchant> {
+  /**
+   * Từ chối nhà hàng (admin action).
+   * Lý do được lưu lại và đồng bộ sang identity-service để chủ nhà hàng thấy
+   * thông báo từ chối khi đăng nhập (tài khoản bị xóa sau 3 ngày).
+   */
+  async reject(id: string, reason?: string): Promise<Merchant> {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(id),
     );
-    merchant.reject();
+    merchant.reject(reason);
     await this.merchantRepository.save(merchant);
+    await this.syncIdentityAccount(merchant.ownerId, "REJECTED", { reason });
     return merchant;
   }
 
-  /** Cập nhật trạng thái nhà hàng (dùng cho resolution-service compliance). */
-  async updateStatus(id: string, status: string): Promise<Merchant> {
+  /**
+   * Cập nhật trạng thái nhà hàng.
+   *
+   * @param options.reason Lý do khóa/từ chối (hiển thị khi đăng nhập).
+   * @param options.durationDays Số ngày khóa (bỏ trống = khóa vĩnh viễn).
+   * @param options.syncIdentity `false` khi thay đổi đến từ identity-service
+   *   (tránh gọi vòng lặp giữa 2 service).
+   */
+  async updateStatus(
+    id: string,
+    status: string,
+    options: {
+      reason?: string;
+      durationDays?: number;
+      syncIdentity?: boolean;
+    } = {},
+  ): Promise<Merchant> {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(id),
     );
@@ -417,12 +440,23 @@ export class MerchantService {
         }
         break;
       case "REJECTED":
-        merchant.reject();
+        merchant.reject(options.reason);
         break;
       default:
         throw new BadRequestException(`Unsupported merchant status: ${status}`);
     }
     await this.merchantRepository.save(merchant);
+
+    if (options.syncIdentity !== false) {
+      if (status === "SUSPENDED") {
+        await this.syncIdentityAccount(merchant.ownerId, "SUSPENDED", options);
+      } else if (status === "REJECTED") {
+        await this.syncIdentityAccount(merchant.ownerId, "REJECTED", options);
+      } else {
+        await this.syncIdentityAccount(merchant.ownerId, "ACTIVE");
+      }
+    }
+
     return merchant;
   }
 
@@ -430,21 +464,84 @@ export class MerchantService {
   async updateStatusByUserId(
     userId: string,
     status: string,
+    options: { reason?: string; durationDays?: number } = {},
   ): Promise<Merchant | null> {
     const merchant = await this.merchantRepository.findByUserId(userId);
     if (!merchant) return null;
-    // Chỉ đồng bộ khóa (APPROVED→SUSPENDED) và mở khóa (SUSPENDED→APPROVED),
+    // Chỉ đồng bộ khóa (→SUSPENDED), từ chối (→REJECTED) và mở khóa (→APPROVED),
     // không tự approve nhà hàng đang PENDING/REJECTED.
     if (status === "SUSPENDED" && merchant.merchantStatus === "APPROVED") {
-      return this.updateStatus(merchant.id.toString(), "SUSPENDED");
+      return this.updateStatus(merchant.id.toString(), "SUSPENDED", {
+        ...options,
+        syncIdentity: false,
+      });
+    }
+    if (status === "REJECTED" && merchant.merchantStatus !== "REJECTED") {
+      return this.updateStatus(merchant.id.toString(), "REJECTED", {
+        ...options,
+        syncIdentity: false,
+      });
     }
     if (
       (status === "APPROVED" || status === "ACTIVE") &&
       merchant.merchantStatus === "SUSPENDED"
     ) {
-      return this.updateStatus(merchant.id.toString(), "APPROVED");
+      return this.updateStatus(merchant.id.toString(), "APPROVED", {
+        syncIdentity: false,
+      });
     }
     return merchant;
+  }
+
+  /**
+   * Đồng bộ trạng thái tài khoản đăng nhập sang identity-service (best-effort).
+   * - ACTIVE  → mở khóa / bỏ từ chối
+   * - SUSPENDED → khóa (có thời hạn hoặc vĩnh viễn) kèm lý do
+   * - REJECTED → từ chối hồ sơ kèm lý do
+   */
+  private async syncIdentityAccount(
+    userId: string,
+    status: "ACTIVE" | "SUSPENDED" | "REJECTED",
+    options: { reason?: string; durationDays?: number } = {},
+  ): Promise<void> {
+    const baseUrl =
+      process.env.IDENTITY_SERVICE_URL || "http://identity-service:3001";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      if (status === "ACTIVE") {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${baseUrl}/api/v1/auth/users/${userId}/unlock`,
+            {},
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      } else if (status === "REJECTED") {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${baseUrl}/api/v1/auth/users/${userId}/reject`,
+            { reason: options.reason },
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      } else {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${baseUrl}/api/v1/auth/users/${userId}/status`,
+            {
+              status: "SUSPENDED",
+              reason: options.reason,
+              durationDays: options.durationDays,
+            },
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Sync identity account ${userId} (${status}) failed: ${err?.message ?? String(err)}`,
+      );
+    }
   }
 
   // ===================== Menu Management =====================

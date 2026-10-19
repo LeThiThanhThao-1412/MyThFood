@@ -115,7 +115,7 @@ export class PenalizeCancellationDto {
 
 export class DriverComplianceDto {
   @IsString()
-  action!: string; // SUSPEND | DEDUCT_REPUTATION
+  action!: string; // SUSPEND | BAN | DEDUCT_REPUTATION
 
   @IsOptional()
   @IsInt()
@@ -126,4 +126,9 @@ export class DriverComplianceDto {
   @IsInt()
   @Min(0)
   points?: number;
+
+  /** Lý do xử phạt (hiển thị cho tài xế khi đăng nhập). */
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }

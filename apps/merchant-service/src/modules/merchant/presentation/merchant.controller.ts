@@ -136,11 +136,12 @@ export class MerchantController {
   @Roles("ADMIN")
   async updateStatusByUserId(
     @Param("userId") userId: string,
-    @Body() dto: { status: string },
+    @Body() dto: { status: string; reason?: string; durationDays?: number },
   ): Promise<MerchantResponseDto | null> {
     const merchant = await this.merchantService.updateStatusByUserId(
       userId,
       dto.status,
+      { reason: dto.reason, durationDays: dto.durationDays },
     );
     return merchant ? this.toMerchantResponse(merchant) : null;
   }
@@ -189,8 +190,11 @@ export class MerchantController {
 
   @Put(":id/reject")
   @Roles("ADMIN")
-  async reject(@Param("id") id: string): Promise<MerchantResponseDto> {
-    const merchant = await this.merchantService.reject(id);
+  async reject(
+    @Param("id") id: string,
+    @Body() body: { reason?: string } = {},
+  ): Promise<MerchantResponseDto> {
+    const merchant = await this.merchantService.reject(id, body?.reason);
     return this.toMerchantResponse(merchant);
   }
 
@@ -198,9 +202,13 @@ export class MerchantController {
   @Roles("ADMIN")
   async updateStatus(
     @Param("id") id: string,
-    @Body() dto: { status: string },
+    @Body()
+    dto: { status: string; reason?: string; durationDays?: number },
   ): Promise<MerchantResponseDto> {
-    const merchant = await this.merchantService.updateStatus(id, dto.status);
+    const merchant = await this.merchantService.updateStatus(id, dto.status, {
+      reason: dto.reason,
+      durationDays: dto.durationDays,
+    });
     return this.toMerchantResponse(merchant);
   }
 
@@ -541,6 +549,8 @@ export class MerchantController {
       otherCategoryDescription: merchant.merchantOtherCategoryDescription,
       isOpen: merchant.merchantIsOpen,
       isOpenNow: merchant.isOpen(),
+      rejectedAt: merchant.merchantRejectedAt,
+      rejectReason: merchant.merchantRejectReason,
       matchedMenuItems,
       createdAt: merchant.createdAt,
       updatedAt: merchant.updatedAt,

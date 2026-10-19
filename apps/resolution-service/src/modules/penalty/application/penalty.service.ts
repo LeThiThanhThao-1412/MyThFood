@@ -147,20 +147,29 @@ export class PenaltyService {
           await this.integration.suspendDriver(
             targetId,
             p.penaltyDurationDays ?? 7,
+            p.penaltyReason,
           );
         } else if (targetType === "CONSUMER") {
           await this.integration.suspendConsumer(targetId, "SUSPENDED");
         } else {
-          await this.integration.suspendMerchant(targetId);
+          await this.integration.suspendMerchant(
+            targetId,
+            p.penaltyDurationDays ?? undefined,
+            p.penaltyReason,
+          );
         }
         break;
       case PenaltyType.BAN:
         if (targetType === "DRIVER") {
-          await this.integration.suspendDriver(targetId, 36500);
+          await this.integration.banDriver(targetId, p.penaltyReason);
         } else if (targetType === "CONSUMER") {
           await this.integration.suspendConsumer(targetId, "BANNED");
         } else {
-          await this.integration.suspendMerchant(targetId);
+          await this.integration.suspendMerchant(
+            targetId,
+            undefined,
+            p.penaltyReason,
+          );
         }
         break;
       case PenaltyType.REPUTATION_DEDUCTION:

@@ -15,7 +15,20 @@ export type UserRole =
   | "MERCHANT_STAFF"
   | "ADMIN";
 
-export type UserStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED" | "BANNED";
+export type UserStatus =
+  | "ACTIVE"
+  | "INACTIVE"
+  | "SUSPENDED"
+  | "BANNED"
+  | "REJECTED";
+
+/**
+ * Số ngày giữ lại tài khoản sau khi hồ sơ/tài khoản bị từ chối.
+ * Hết 3 ngày kể từ thời điểm bị từ chối, tài khoản bị xóa và không thể đăng nhập.
+ */
+export const REJECTION_RETENTION_DAYS = 3;
+
+const MS_PER_DAY = 86_400_000;
 
 export interface UserProps {
   phoneNumber: string;
@@ -29,6 +42,8 @@ export interface UserProps {
   suspendedUntil?: Date | null;
   suspendedAt?: Date | null;
   suspendReason?: string | null;
+  rejectedAt?: Date | null;
+  rejectReason?: string | null;
 }
 
 export class User extends AggregateRoot<UserId> {
@@ -43,6 +58,8 @@ export class User extends AggregateRoot<UserId> {
   private suspendedUntil: Date | null;
   private suspendedAt: Date | null;
   private suspendReason: string | null;
+  private rejectedAt: Date | null;
+  private rejectReason: string | null;
 
   private constructor(id: UserId, props: UserProps) {
     super(id);
@@ -57,6 +74,8 @@ export class User extends AggregateRoot<UserId> {
     this.suspendedUntil = props.suspendedUntil ?? null;
     this.suspendedAt = props.suspendedAt ?? null;
     this.suspendReason = props.suspendReason ?? null;
+    this.rejectedAt = props.rejectedAt ?? null;
+    this.rejectReason = props.rejectReason ?? null;
   }
 
   /**
@@ -94,6 +113,8 @@ export class User extends AggregateRoot<UserId> {
       suspendedUntil: null,
       suspendedAt: null,
       suspendReason: null,
+      rejectedAt: null,
+      rejectReason: null,
     });
 
     // Domain event
@@ -159,8 +180,28 @@ export class User extends AggregateRoot<UserId> {
     this.suspendReason = reason ?? null;
     this.suspendedUntil =
       durationDays && durationDays > 0
-        ? new Date(Date.now() + durationDays * 86_400_000)
+        ? new Date(Date.now() + durationDays * MS_PER_DAY)
         : null;
+    this.markUpdated();
+  }
+
+  /**
+   * Từ chối tài khoản/hồ sơ đăng ký (admin action).
+   *
+   * Tài khoản bị từ chối vẫn đăng nhập được để xem thông báo từ chối + lý do,
+   * nhưng sẽ bị xóa vĩnh viễn sau `REJECTION_RETENTION_DAYS` ngày
+   * (xem `rejectionDeleteAt` và `isRejectionExpired`).
+   */
+  public reject(reason?: string): void {
+    if (this.status === "BANNED") {
+      throw new BusinessRuleViolationError("Cannot reject a banned user");
+    }
+    this.status = "REJECTED";
+    this.rejectedAt = new Date();
+    this.rejectReason = reason ?? null;
+    this.suspendedUntil = null;
+    this.suspendedAt = null;
+    this.suspendReason = null;
     this.markUpdated();
   }
 
@@ -184,13 +225,16 @@ export class User extends AggregateRoot<UserId> {
   }
 
   /**
-   * Activate the user account (unlock). Clears any pending suspension metadata.
+   * Activate the user account (unlock). Clears any pending suspension/rejection
+   * metadata.
    */
   public activate(): void {
     this.status = "ACTIVE";
     this.suspendedUntil = null;
     this.suspendedAt = null;
     this.suspendReason = null;
+    this.rejectedAt = null;
+    this.rejectReason = null;
     this.markUpdated();
   }
 
@@ -208,6 +252,30 @@ export class User extends AggregateRoot<UserId> {
       return true;
     }
     return false;
+  }
+
+  /**
+   * Thời điểm tài khoản bị từ chối sẽ bị xóa khỏi hệ thống
+   * (`rejectedAt + REJECTION_RETENTION_DAYS` ngày). `null` nếu không bị từ chối.
+   */
+  get rejectionDeleteAt(): Date | null {
+    if (!this.rejectedAt) return null;
+    return new Date(
+      this.rejectedAt.getTime() + REJECTION_RETENTION_DAYS * MS_PER_DAY,
+    );
+  }
+
+  /**
+   * Tài khoản bị từ chối đã quá thời hạn lưu trữ (3 ngày) → phải bị xóa và
+   * không thể đăng nhập nữa.
+   */
+  public isRejectionExpired(now: Date = new Date()): boolean {
+    const deleteAt = this.rejectionDeleteAt;
+    return (
+      this.status === "REJECTED" &&
+      deleteAt !== null &&
+      deleteAt.getTime() <= now.getTime()
+    );
   }
 
   // Getters
@@ -253,6 +321,14 @@ export class User extends AggregateRoot<UserId> {
 
   get suspensionReason(): string | null {
     return this.suspendReason;
+  }
+
+  get rejectionAt(): Date | null {
+    return this.rejectedAt;
+  }
+
+  get rejectionReason(): string | null {
+    return this.rejectReason;
   }
 
   public hasRole(role: UserRole): boolean {

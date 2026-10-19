@@ -8,6 +8,11 @@ import { UserId } from "../user/domain/user-id";
 import { Password } from "../user/domain/password.vo";
 import { RegisterUserCommand } from "../user/application/commands/register-user.command";
 import { UserRole } from "../user/domain/user.aggregate";
+import { UserAdminService } from "../user/application/user-admin.service";
+import {
+  accountBlockException,
+  rejectedAccountDeletedException,
+} from "./account-block.util";
 
 export interface AuthTokens {
   accessToken: string;
@@ -41,6 +46,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly commandBus: CommandBus,
     private readonly userRepository: UserRepository,
+    private readonly userAdminService: UserAdminService,
   ) {}
 
   async register(dto: {
@@ -102,15 +108,29 @@ export class AuthService {
     // Auto-unlock nếu tài khoản bị khóa có thời hạn và đã hết hạn.
     if (user.autoUnlockIfExpired()) {
       await this.userRepository.save(user);
+      await this.userAdminService.syncExternalAccountStatus(user, "ACTIVE");
     }
 
-    if (!user.isActive()) {
-      throw new UnauthorizedException("Account is not active");
+    // Tài khoản bị từ chối quá 3 ngày → xóa vĩnh viễn, không thể đăng nhập.
+    if (user.isRejectionExpired()) {
+      await this.userRepository.purgeById(user.id);
+      this.logger.log(
+        `Purged rejected account ${user.id.toString()} (retention exceeded)`,
+      );
+      throw rejectedAccountDeletedException(user);
     }
 
+    // Xác thực mật khẩu TRƯỚC khi tiết lộ trạng thái khóa/từ chối của tài khoản.
     const isValid = await user.verifyPassword(password);
     if (!isValid) {
       throw new UnauthorizedException("Invalid phone number or password");
+    }
+
+    // Tài khoản bị khóa / khóa vĩnh viễn / bị từ chối / chưa kích hoạt:
+    // trả 403 kèm thông báo + lý do để app hiển thị cho người dùng.
+    const blocked = accountBlockException(user);
+    if (blocked) {
+      throw blocked;
     }
 
     user.recordLogin();
@@ -202,10 +222,18 @@ export class AuthService {
       // Auto-unlock nếu tài khoản bị khóa có thời hạn và đã hết hạn.
       if (user.autoUnlockIfExpired()) {
         await this.userRepository.save(user);
+        await this.userAdminService.syncExternalAccountStatus(user, "ACTIVE");
       }
 
-      if (!user.isActive()) {
-        throw new UnauthorizedException("Account is no longer active");
+      // Tài khoản bị từ chối quá 3 ngày → xóa vĩnh viễn.
+      if (user.isRejectionExpired()) {
+        await this.userRepository.purgeById(user.id);
+        throw new UnauthorizedException("Account has been deleted");
+      }
+
+      const blocked = accountBlockException(user);
+      if (blocked) {
+        throw blocked;
       }
 
       return this.generateTokens(user);

@@ -19,6 +19,6 @@ const Guards = [RolesGuard, ServiceKeyOrJwtGuard];
   imports: [CqrsModule, HttpModule, TypeOrmModule.forFeature([UserEntity])],
   providers: [...CommandHandlers, ...Services, UserRepository, ...Guards],
   controllers: [...Controllers],
-  exports: [CqrsModule, UserRepository],
+  exports: [CqrsModule, UserRepository, UserAdminService],
 })
 export class UserModule {}

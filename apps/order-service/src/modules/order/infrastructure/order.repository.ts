@@ -220,7 +220,8 @@ export class OrderRepository implements IRepository<Order, OrderId> {
 
   /**
    * Thống kê tỉ lệ từ chối / không phản hồi theo nhà hàng trong cửa sổ đánh giá.
-   * total = mọi đơn trong cửa sổ; rejected/noResponse = đơn REJECTED theo nguồn.
+   * total = các đơn nhà hàng đã đến hạn xử lý (bỏ PENDING và CANCELLED),
+   * rejected/noResponse = đơn REJECTED theo nguồn.
    */
   async getMerchantComplianceStats(since: Date): Promise<
     Array<{
@@ -247,6 +248,7 @@ export class OrderRepository implements IRepository<Order, OrderId> {
          )::int AS "noResponse"
        FROM orders o
        WHERE o.deleted_at IS NULL AND o.created_at >= $1
+         AND o.status NOT IN ('PENDING', 'CANCELLED')
        GROUP BY o.merchant_id
        ORDER BY "merchantId"`,
       [since],

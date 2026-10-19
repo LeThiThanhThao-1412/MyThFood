@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS merchants (
   secondary_categories TEXT,
   other_category_description VARCHAR(500),
   is_open BOOLEAN NOT NULL DEFAULT TRUE,
+  rejected_at TIMESTAMPTZ,
+  reject_reason VARCHAR(500),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ
@@ -133,6 +135,8 @@ CREATE INDEX IF NOT EXISTS idx_merchants_status ON merchants(status);
 
 -- Migration cho database đã tồn tại trước khi thêm cột total_ratings
 ALTER TABLE merchants ADD COLUMN IF NOT EXISTS total_ratings INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE merchants ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ;
+ALTER TABLE merchants ADD COLUMN IF NOT EXISTS reject_reason VARCHAR(500);
 CREATE INDEX IF NOT EXISTS idx_menu_items_merchant_id ON menu_items(merchant_id);
 CREATE INDEX IF NOT EXISTS idx_menu_categories_merchant_id ON menu_categories(merchant_id);
 CREATE INDEX IF NOT EXISTS idx_operating_hours_merchant_id ON operating_hours(merchant_id);

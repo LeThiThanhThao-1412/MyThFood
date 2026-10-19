@@ -12,7 +12,11 @@ import {
   DriverLocationHistoryRepository,
   DriverLocationPoint,
 } from "../infrastructure/driver-location-history.repository";
-import { Driver, DriverOnlineStatus } from "../domain/driver.aggregate";
+import {
+  Driver,
+  DriverOnlineStatus,
+  DriverStatus,
+} from "../domain/driver.aggregate";
 import { DriverId } from "../domain/driver-id";
 import {
   CreateDriverDto,
@@ -129,10 +133,13 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
     return driver;
   }
 
-  async activateDriver(id: string): Promise<Driver> {
+  async activateDriver(id: string, syncIdentity = true): Promise<Driver> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
     driver.activate();
     await this.driverRepo.save(driver);
+    if (syncIdentity) {
+      await this.syncIdentityAccount(driver.driverUserId, "ACTIVE");
+    }
     return driver;
   }
 
@@ -143,7 +150,18 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
     return driver;
   }
 
-  async suspendDriver(id: string, durationDays?: number): Promise<Driver> {
+  /**
+   * Khóa tài xế.
+   *
+   * @param durationDays Số ngày khóa (bỏ trống = khóa vĩnh viễn).
+   * @param reason Lý do khóa — hiển thị cho tài xế khi đăng nhập.
+   */
+  async suspendDriver(
+    id: string,
+    durationDays?: number,
+    reason?: string,
+    syncIdentity = true,
+  ): Promise<Driver> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
     if (durationDays && durationDays > 0) {
       driver.suspendFor(durationDays);
@@ -151,6 +169,33 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
       driver.suspend();
     }
     await this.driverRepo.save(driver);
+    if (syncIdentity) {
+      await this.syncIdentityAccount(driver.driverUserId, "SUSPENDED", {
+        reason,
+        durationDays,
+      });
+    }
+    return driver;
+  }
+
+  /**
+   * Từ chối hồ sơ tài xế (admin action).
+   * Lý do được đồng bộ sang identity-service để tài xế thấy thông báo khi
+   * đăng nhập; tài khoản bị xóa sau 3 ngày.
+   */
+  async rejectDriver(
+    id: string,
+    reason?: string,
+    syncIdentity = true,
+  ): Promise<Driver> {
+    const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
+    driver.reject(reason);
+    await this.driverRepo.save(driver);
+    if (syncIdentity) {
+      await this.syncIdentityAccount(driver.driverUserId, "REJECTED", {
+        reason,
+      });
+    }
     return driver;
   }
 
@@ -159,6 +204,7 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
     driver.unlock();
     await this.driverRepo.save(driver);
+    await this.syncIdentityAccount(driver.driverUserId, "ACTIVE");
     return driver;
   }
 
@@ -166,15 +212,27 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
   async setStatusByUserId(
     userId: string,
     status: string,
+    options: { reason?: string; durationDays?: number } = {},
   ): Promise<Driver | null> {
     const driver = await this.driverRepo.findByUserId(userId);
     if (!driver) return null;
     if (status === "SUSPENDED") {
-      return this.suspendDriver(driver.id.toString());
+      return this.suspendDriver(
+        driver.id.toString(),
+        options.durationDays,
+        options.reason,
+        false,
+      );
+    }
+    if (status === "REJECTED") {
+      if (driver.driverStatus === DriverStatus.REJECTED) {
+        return driver;
+      }
+      return this.rejectDriver(driver.id.toString(), options.reason, false);
     }
     if (status === "ACTIVE") {
       try {
-        return await this.activateDriver(driver.id.toString());
+        return await this.activateDriver(driver.id.toString(), false);
       } catch {
         return driver;
       }
@@ -193,6 +251,10 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
       case "SUSPEND":
         driver.suspendFor(dto.durationDays ?? 7);
         break;
+      case "BAN":
+        // Khóa vĩnh viễn (không có ngày tự mở khóa).
+        driver.suspend();
+        break;
       case "DEDUCT_REPUTATION":
         driver.deductReputation(dto.points ?? 0);
         break;
@@ -202,7 +264,71 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
         );
     }
     await this.driverRepo.save(driver);
+
+    if (dto.action === "SUSPEND" || dto.action === "BAN") {
+      const isBan = dto.action === "BAN";
+      await this.syncIdentityAccount(driver.driverUserId, "SUSPENDED", {
+        durationDays: isBan ? undefined : (dto.durationDays ?? 7),
+        reason:
+          dto.reason ??
+          (isBan
+            ? "Tài khoản bị khóa vĩnh viễn do vi phạm quy định"
+            : "Tài khoản bị tạm khóa do vi phạm quy định"),
+      });
+    }
+
     return driver;
+  }
+
+  /**
+   * Đồng bộ trạng thái tài khoản đăng nhập sang identity-service (best-effort).
+   * - ACTIVE  → mở khóa / bỏ từ chối
+   * - SUSPENDED → khóa (có thời hạn hoặc vĩnh viễn) kèm lý do
+   * - REJECTED → từ chối hồ sơ kèm lý do
+   */
+  private async syncIdentityAccount(
+    userId: string,
+    status: "ACTIVE" | "SUSPENDED" | "REJECTED",
+    options: { reason?: string; durationDays?: number } = {},
+  ): Promise<void> {
+    const baseUrl =
+      process.env.IDENTITY_SERVICE_URL || "http://identity-service:3001";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      if (status === "ACTIVE") {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${baseUrl}/api/v1/auth/users/${userId}/unlock`,
+            {},
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      } else if (status === "REJECTED") {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${baseUrl}/api/v1/auth/users/${userId}/reject`,
+            { reason: options.reason },
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      } else {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${baseUrl}/api/v1/auth/users/${userId}/status`,
+            {
+              status: "SUSPENDED",
+              reason: options.reason,
+              durationDays: options.durationDays,
+            },
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Sync identity account ${userId} (${status}) failed: ${err?.message ?? String(err)}`,
+      );
+    }
   }
 
   // ---- Online/Offline Status ----

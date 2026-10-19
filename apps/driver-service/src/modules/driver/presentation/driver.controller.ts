@@ -82,11 +82,12 @@ export class DriverController {
   @Roles("ADMIN")
   async updateStatusByUserId(
     @Param("userId") userId: string,
-    @Body() body: { status: string },
+    @Body() body: { status: string; reason?: string; durationDays?: number },
   ) {
     const driver = await this.driverService.setStatusByUserId(
       userId,
       body.status,
+      { reason: body.reason, durationDays: body.durationDays },
     );
     return {
       statusCode: HttpStatus.OK,
@@ -145,12 +146,24 @@ export class DriverController {
   @Roles("ADMIN")
   async suspend(
     @Param("id") id: string,
-    @Body() body: { durationDays?: number },
+    @Body() body: { durationDays?: number; reason?: string },
   ) {
     const driver = await this.driverService.suspendDriver(
       id,
       body.durationDays,
+      body.reason,
     );
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  /** Từ chối hồ sơ tài xế (kèm lý do hiển thị khi đăng nhập). */
+  @Patch(":id/reject")
+  @Roles("ADMIN")
+  async reject(
+    @Param("id") id: string,
+    @Body() body: { reason?: string } = {},
+  ) {
+    const driver = await this.driverService.rejectDriver(id, body?.reason);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
@@ -369,6 +382,8 @@ export class DriverController {
       vehicleType: driver.driverVehicleType ?? driver._vehicleType ?? null,
       insuranceNumber: driver.driverInsuranceNumber ?? driver._insuranceNumber,
       status: driver.driverStatus ?? driver._status,
+      rejectedAt: driver.driverRejectedAt ?? driver._rejectedAt ?? null,
+      rejectReason: driver.driverRejectReason ?? driver._rejectReason ?? null,
       onlineStatus: driver.driverOnlineStatus ?? driver._onlineStatus,
       currentLatitude: driver.driverCurrentLatitude ?? driver._currentLatitude,
       currentLongitude:

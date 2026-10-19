@@ -876,16 +876,11 @@ export class OrderService {
       }
     }
 
-    // Pha A: mở case nhà hàng từ chối đơn để admin theo dõi (chống merchant reject abuse).
-    await this.openResolutionCase({
-      type: "COMPLAINT",
-      category: "MERCHANT_BEHAVIOR",
-      orderId: id,
-      respondentId: order.orderMerchantId,
-      respondentType: "MERCHANT",
-      subject: "Nhà hàng từ chối đơn",
-      description: `Nhà hàng ${order.orderMerchantId} từ chối đơn ${id.slice(0, 8)}: ${dto.reason}`,
-    });
+    // KHÔNG mở case khiếu nại cho từng đơn bị từ chối/không phản hồi.
+    // Đơn đã được ghi nhận bằng `rejection_source` (MERCHANT | NO_RESPONSE) và
+    // được MerchantComplianceService tổng hợp theo cửa sổ đánh giá (mặc định
+    // 30 ngày). Case khiếu nại chỉ được mở khi tỉ lệ vượt ngưỡng cho phép
+    // (tránh biến mọi lần từ chối thành một "sự cố" riêng lẻ trên admin-portal).
 
     const events = order.pullDomainEvents();
     for (const event of events) {

@@ -32,6 +32,8 @@ export class UserMapper {
       suspendedUntil: entity.suspended_until,
       suspendedAt: entity.suspended_at,
       suspendReason: entity.suspend_reason,
+      rejectedAt: entity.rejected_at ?? null,
+      rejectReason: entity.reject_reason ?? null,
     });
   }
 
@@ -52,6 +54,8 @@ export class UserMapper {
     entity.suspended_until = user.suspensionUntil;
     entity.suspended_at = user.suspensionAt;
     entity.suspend_reason = user.suspensionReason;
+    entity.rejected_at = user.rejectionAt;
+    entity.reject_reason = user.rejectionReason;
     return entity;
   }
 }

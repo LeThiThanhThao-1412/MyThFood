@@ -75,6 +75,31 @@ export class DispatchController {
     };
   }
 
+  // ---- Tỉ lệ từ chối / không phản hồi của tài xế (admin) ----
+
+  @Get("stats/driver-compliance")
+  @Roles("ADMIN")
+  async getDriverCompliance(@Query("days") days?: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.dispatchService.getDriverComplianceView(
+        days ? parseInt(days, 10) : undefined,
+      ),
+    };
+  }
+
+  @Post("stats/driver-compliance/evaluate")
+  @Roles("ADMIN")
+  @HttpCode(HttpStatus.OK)
+  async evaluateDriverCompliance() {
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        escalated: await this.dispatchService.evaluateDriverCompliance(),
+      },
+    };
+  }
+
   @Get("matching")
   async listMatching() {
     const dispatches = await this.dispatchService.getMatchingDispatches();

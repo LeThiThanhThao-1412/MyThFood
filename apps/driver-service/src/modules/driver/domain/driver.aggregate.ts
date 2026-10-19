@@ -10,6 +10,7 @@ export enum DriverStatus {
   ACTIVE = "ACTIVE",
   INACTIVE = "INACTIVE",
   SUSPENDED = "SUSPENDED",
+  REJECTED = "REJECTED",
 }
 
 export enum DriverOnlineStatus {
@@ -40,6 +41,8 @@ export class Driver extends AggregateRoot<DriverId> {
   private _insuranceNumber: string;
   private _criminalRecordUrl: string | null;
   private _status: DriverStatus;
+  private _rejectedAt: Date | null;
+  private _rejectReason: string | null;
   private _onlineStatus: DriverOnlineStatus;
   private _currentLatitude: number | null;
   private _currentLongitude: number | null;
@@ -78,6 +81,9 @@ export class Driver extends AggregateRoot<DriverId> {
       insuranceNumber: string;
       criminalRecordUrl: string | null;
       status: DriverStatus;
+      rejectedAt?: Date | null;
+      rejectReason?: string | null;
+
       onlineStatus: DriverOnlineStatus;
       currentLatitude: number | null;
       currentLongitude: number | null;
@@ -115,6 +121,8 @@ export class Driver extends AggregateRoot<DriverId> {
     this._insuranceNumber = props.insuranceNumber;
     this._criminalRecordUrl = props.criminalRecordUrl;
     this._status = props.status;
+    this._rejectedAt = props.rejectedAt ?? null;
+    this._rejectReason = props.rejectReason ?? null;
     this._onlineStatus = props.onlineStatus;
     this._currentLatitude = props.currentLatitude;
     this._currentLongitude = props.currentLongitude;
@@ -173,6 +181,8 @@ export class Driver extends AggregateRoot<DriverId> {
       insuranceNumber: props.insuranceNumber,
       criminalRecordUrl: props.criminalRecordUrl ?? null,
       status: DriverStatus.INACTIVE,
+      rejectedAt: null,
+      rejectReason: null,
       onlineStatus: DriverOnlineStatus.OFFLINE,
       currentLatitude: null,
       currentLongitude: null,
@@ -212,6 +222,9 @@ export class Driver extends AggregateRoot<DriverId> {
       vehicleType: string | null;
       insuranceNumber: string;
       criminalRecordUrl: string | null;
+      rejectedAt?: Date | null;
+      rejectReason?: string | null;
+
       status: DriverStatus;
       onlineStatus: DriverOnlineStatus;
       currentLatitude: number | null;
@@ -272,6 +285,22 @@ export class Driver extends AggregateRoot<DriverId> {
     }
     this._status = DriverStatus.ACTIVE;
     this._acceptBlockedUntil = null;
+    this._rejectedAt = null;
+    this._rejectReason = null;
+    this.markUpdated();
+  }
+
+  /**
+   * Từ chối hồ sơ tài xế (admin action).
+   *
+   * @param reason Lý do từ chối — hiển thị cho tài xế khi đăng nhập.
+   */
+  public reject(reason?: string): void {
+    this._status = DriverStatus.REJECTED;
+    this._onlineStatus = DriverOnlineStatus.OFFLINE;
+    this._rejectedAt = new Date();
+    this._rejectReason = reason ?? null;
+    this._releaseCurrentSession();
     this.markUpdated();
   }
 
@@ -626,6 +655,12 @@ export class Driver extends AggregateRoot<DriverId> {
   }
   get driverStatus(): DriverStatus {
     return this._status;
+  }
+  get driverRejectedAt(): Date | null {
+    return this._rejectedAt;
+  }
+  get driverRejectReason(): string | null {
+    return this._rejectReason;
   }
   get driverOnlineStatus(): DriverOnlineStatus {
     return this._onlineStatus;

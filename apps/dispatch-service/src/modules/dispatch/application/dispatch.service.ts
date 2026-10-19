@@ -26,6 +26,7 @@ import {
 } from "../domain/route-planner";
 import { randomUUID } from "node:crypto";
 import { MatchingEngineService } from "./matching-engine.service";
+import { DriverComplianceService } from "./driver-compliance.service";
 import {
   CreateDispatchDto,
   AssignDriverDto,
@@ -49,10 +50,12 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DispatchService.name);
   private timeoutInterval: ReturnType<typeof setInterval> | null = null;
   private expireInterval: ReturnType<typeof setInterval> | null = null;
+  private complianceInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly dispatchRepo: DispatchRepository,
     private readonly matchingEngine: MatchingEngineService,
+    private readonly driverCompliance: DriverComplianceService,
   ) {}
 
   onModuleInit(): void {
@@ -74,11 +77,27 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
           this.logger.warn(`Stale dispatch sweep failed: ${err.message}`),
         );
     }, 15_000);
+
+    // Đánh giá tỉ lệ từ chối / không phản hồi của tài xế (cửa sổ 30 ngày).
+    // Chỉ mở case khiếu nại khi vượt ngưỡng; không tạo sự cố cho từng lần từ chối.
+    this.complianceInterval = setInterval(() => {
+      this.driverCompliance
+        .evaluateAll()
+        .then((n) => {
+          if (n > 0) {
+            this.logger.log(`Driver compliance: opened ${n} complaint case(s)`);
+          }
+        })
+        .catch((err) =>
+          this.logger.warn(`Driver compliance sweep failed: ${err.message}`),
+        );
+    }, 30 * 60_000);
   }
 
   onModuleDestroy(): void {
     if (this.timeoutInterval) clearInterval(this.timeoutInterval);
     if (this.expireInterval) clearInterval(this.expireInterval);
+    if (this.complianceInterval) clearInterval(this.complianceInterval);
   }
 
   /**
@@ -99,11 +118,15 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       if (updatedAgo < timeoutSeconds * 1000) continue;
 
       try {
-        await this.driverDecline(dispatch.id.value, {
-          driverId: dispatch.dispatchDriverId || "",
-          reason: DispatchDeclineReason.OTHER,
-          detail: `Không phản hồi trong ${timeoutSeconds} giây`,
-        });
+        await this.driverDecline(
+          dispatch.id.value,
+          {
+            driverId: dispatch.dispatchDriverId || "",
+            reason: DispatchDeclineReason.OTHER,
+            detail: `Không phản hồi trong ${timeoutSeconds} giây`,
+          },
+          true,
+        );
         this.logger.log(
           `Driver ${dispatch.dispatchDriverId} timed out on dispatch ${dispatch.id.value} - re-matching`,
         );
@@ -179,6 +202,11 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       if (result.matched && result.driver) {
         dispatch.assignDriver(result.driver.driverId);
         await this.dispatchRepo.save(dispatch);
+        await this.driverCompliance.recordOffer(
+          result.driver.driverId,
+          dispatch.id.value,
+          dispatch.dispatchOrderId,
+        );
         this.logger.log(
           `Auto-assigned driver ${result.driver.driverId} (${result.driver.distanceKm.toFixed(2)} km) to dispatch ${id}`,
         );
@@ -308,6 +336,11 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
 
     dispatch.assignDriver(dto.driverId);
     await this.dispatchRepo.save(dispatch);
+    await this.driverCompliance.recordOffer(
+      dto.driverId,
+      dispatch.id.value,
+      dispatch.dispatchOrderId,
+    );
     return dispatch;
   }
 
@@ -398,6 +431,13 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       dispatch.dispatchMaxStackedOrders,
     );
 
+    // Ghi nhận offer đã được tài xế nhận (phục vụ tỉ lệ tháng).
+    await this.driverCompliance.markAccepted(
+      driverId,
+      id,
+      dispatch.dispatchOrderId,
+    );
+
     // SAVER: gán lô + xếp lại thứ tự điểm dừng cho cả lộ trình.
     await this.refreshDriverRoute(driverId);
 
@@ -485,12 +525,30 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     return dispatch;
   }
 
-  async driverDecline(id: string, dto: DriverDeclineDto): Promise<Dispatch> {
+  async driverDecline(
+    id: string,
+    dto: DriverDeclineDto,
+    noResponse = false,
+  ): Promise<Dispatch> {
     const dispatch = await this.dispatchRepo.findByIdOrFail(
       DispatchId.from(id),
     );
+    const declinedDriverId = dispatch.dispatchDriverId || dto.driverId;
+    const orderId = dispatch.dispatchOrderId;
     dispatch.driverDecline(dto.reason, dto.detail);
     await this.dispatchRepo.save(dispatch);
+
+    // Ghi nhận lượt từ chối/không phản hồi để tính tỉ lệ tháng.
+    // Không mở case tại đây — case chỉ mở khi tỉ lệ vượt ngưỡng.
+    if (declinedDriverId) {
+      await this.driverCompliance.markDeclined({
+        driverId: declinedDriverId,
+        dispatchId: id,
+        orderId,
+        noResponse,
+        reason: dto.reason,
+      });
+    }
 
     // Hết lượt tìm tài xế → không còn tài xế nhận đơn → hủy đơn (Case 3).
     if (dispatch.dispatchStatus === DispatchStatus.EXPIRED) {
@@ -517,8 +575,20 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const dispatch = await this.dispatchRepo.findByIdOrFail(
       DispatchId.from(id),
     );
+    // Ghi nhận tài xế đã chủ động từ chối đơn đang hiển thị cho họ.
+    // Với mô hình tài xế tự chọn đơn, thao tác "Từ chối" chính là một quyết
+    // định thật của tài xế nên được tính vào tỉ lệ (khác với việc bỏ qua đơn).
+    // Unique (driver_id, dispatch_id) đảm bảo không đếm trùng khi UI gọi thêm
+    // driverDecline ngay sau đó.
+    const orderId = dispatch.dispatchOrderId;
     dispatch.recordDriverDecline(driverId);
     await this.dispatchRepo.save(dispatch);
+    await this.driverCompliance.markDeclined({
+      driverId,
+      dispatchId: id,
+      orderId,
+      reason: "OTHER",
+    });
     return dispatch;
   }
 
@@ -934,6 +1004,16 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
             ?.dispatchStatus ?? stop.status,
       })),
     };
+  }
+
+  /** Tỉ lệ từ chối / không phản hồi của tài xế trong N ngày (admin). */
+  async getDriverComplianceView(days?: number) {
+    return this.driverCompliance.getComplianceView(days);
+  }
+
+  /** Chạy đánh giá ngay (admin) — chỉ mở case khi vượt ngưỡng. */
+  async evaluateDriverCompliance(): Promise<number> {
+    return this.driverCompliance.evaluateAll();
   }
 
   /** Thống kê gộp đơn SAVER trong N ngày gần nhất. */

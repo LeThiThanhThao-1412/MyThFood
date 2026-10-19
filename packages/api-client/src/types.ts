@@ -157,6 +157,10 @@ export interface Merchant {
   otherCategoryDescription?: string | null;
   isOpen?: boolean;
   isOpenNow?: boolean;
+  /** Thời điểm nhà hàng bị từ chối (nếu có). */
+  rejectedAt?: string | null;
+  /** Lý do từ chối hồ sơ nhà hàng (nếu có). */
+  rejectReason?: string | null;
   /** Dishes that matched the `search` keyword (only present when searching). */
   matchedMenuItems?: MatchedMenuItem[];
   createdAt: string;
@@ -700,7 +704,15 @@ export interface UpdateStockRequest {
 }
 
 // --- Driver ---
-export type DriverStatus = "ONLINE" | "OFFLINE" | "BUSY" | "ON_DELIVERY";
+export type DriverStatus =
+  | "ACTIVE"
+  | "INACTIVE"
+  | "SUSPENDED"
+  | "REJECTED"
+  | "ONLINE"
+  | "OFFLINE"
+  | "BUSY"
+  | "ON_DELIVERY";
 export type VehicleType = "MOTORBIKE" | "CAR" | "BICYCLE";
 
 export interface Driver {
@@ -712,6 +724,10 @@ export interface Driver {
   vehicleType: VehicleType;
   licensePlate: string;
   status: DriverStatus;
+  /** Thời điểm hồ sơ tài xế bị từ chối (nếu có). */
+  rejectedAt?: string | null;
+  /** Lý do từ chối hồ sơ tài xế (nếu có). */
+  rejectReason?: string | null;
   currentLatitude?: number;
   currentLongitude?: number;
   rating: number;

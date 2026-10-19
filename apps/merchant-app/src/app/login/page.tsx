@@ -2,7 +2,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useAuth, canAccessApp } from "@mythfood/frontend-shared";
+import {
+  useAuth,
+  canAccessApp,
+  AccountBlockNotice,
+  getAccountBlockInfo,
+} from "@mythfood/frontend-shared";
+import type { AccountBlockInfo } from "@mythfood/frontend-shared";
 
 export default function MerchantLoginPage() {
   const router = useRouter();
@@ -10,12 +16,14 @@ export default function MerchantLoginPage() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [block, setBlock] = useState<AccountBlockInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    setBlock(null);
     setLoading(true);
     try {
       const data = await login({ phoneNumber: phone, password });
@@ -26,6 +34,11 @@ export default function MerchantLoginPage() {
       }
       router.push("/dashboard");
     } catch (err: unknown) {
+      const info = getAccountBlockInfo(err);
+      if (info) {
+        setBlock(info);
+        return;
+      }
       setError(err instanceof Error ? err.message : "Đăng nhập thất bại");
     } finally {
       setLoading(false);
@@ -40,6 +53,7 @@ export default function MerchantLoginPage() {
           <p className="text-gray-500 mt-2">Đăng nhập Partner Portal</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-5">
+          {block && <AccountBlockNotice info={block} />}
           {error && (
             <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
               {error}

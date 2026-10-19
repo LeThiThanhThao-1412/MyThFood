@@ -183,13 +183,28 @@ export class IntegrationService {
     );
   }
 
-  async suspendDriver(driverId: string, durationDays: number): Promise<void> {
+  async suspendDriver(
+    driverId: string,
+    durationDays: number,
+    reason?: string,
+  ): Promise<void> {
     await this.patch(
       "DRIVER_SERVICE_URL",
       "http://driver-service:3007",
       "http://localhost:3007",
       `/api/v1/drivers/${driverId}/compliance`,
-      { action: "SUSPEND", durationDays },
+      { action: "SUSPEND", durationDays, reason },
+    );
+  }
+
+  /** Khóa vĩnh viễn tài xế (BAN) kèm lý do hiển thị khi đăng nhập. */
+  async banDriver(driverId: string, reason?: string): Promise<void> {
+    await this.patch(
+      "DRIVER_SERVICE_URL",
+      "http://driver-service:3007",
+      "http://localhost:3007",
+      `/api/v1/drivers/${driverId}/compliance`,
+      { action: "BAN", reason },
     );
   }
 
@@ -203,13 +218,17 @@ export class IntegrationService {
     );
   }
 
-  async suspendMerchant(merchantId: string): Promise<void> {
+  async suspendMerchant(
+    merchantId: string,
+    durationDays?: number,
+    reason?: string,
+  ): Promise<void> {
     await this.patch(
       "MERCHANT_SERVICE_URL",
       "http://merchant-service:3003",
       "http://localhost:3003",
       `/api/v1/merchants/${merchantId}/status`,
-      { status: "SUSPENDED" },
+      { status: "SUSPENDED", durationDays, reason },
     );
   }
 

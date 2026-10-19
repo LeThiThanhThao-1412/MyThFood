@@ -69,6 +69,29 @@ describe("Driver Aggregate", () => {
     });
   });
 
+  describe("rejection", () => {
+    it("should mark the driver as REJECTED and keep the reason", () => {
+      const driver = Driver.create(createProps);
+      driver.reject("Giấy tờ không hợp lệ");
+
+      expect(driver.driverStatus).toBe(DriverStatus.REJECTED);
+      expect(driver.driverOnlineStatus).toBe(DriverOnlineStatus.OFFLINE);
+      expect(driver.driverRejectReason).toBe("Giấy tờ không hợp lệ");
+      expect(driver.driverRejectedAt).toBeInstanceOf(Date);
+    });
+
+    it("should clear rejection metadata after re-activation", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.reject("Thiếu giấy tờ");
+      driver.activate();
+
+      expect(driver.driverStatus).toBe(DriverStatus.ACTIVE);
+      expect(driver.driverRejectReason).toBeNull();
+      expect(driver.driverRejectedAt).toBeNull();
+    });
+  });
+
   describe("online/offline", () => {
     it("should only allow active drivers to go online", () => {
       const driver = Driver.create(createProps);

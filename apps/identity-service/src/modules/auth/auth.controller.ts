@@ -54,6 +54,12 @@ export class AuthController {
         fullName: user.displayName,
         roles: user.userRoles,
         status: user.currentStatus,
+        suspendedUntil: user.suspensionUntil,
+        suspendedAt: user.suspensionAt,
+        suspendReason: user.suspensionReason,
+        rejectedAt: user.rejectionAt,
+        rejectReason: user.rejectionReason,
+        rejectionDeleteAt: user.rejectionDeleteAt,
       },
     };
   }

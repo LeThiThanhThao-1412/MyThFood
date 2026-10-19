@@ -15,6 +15,9 @@ interface UserItem {
   suspendedUntil?: string | null;
   suspendedAt?: string | null;
   suspendReason?: string | null;
+  rejectedAt?: string | null;
+  rejectReason?: string | null;
+  rejectionDeleteAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -92,6 +95,9 @@ export default function AdminUsersPage() {
                 status: "ACTIVE",
                 suspendedUntil: null,
                 suspendReason: null,
+                rejectedAt: null,
+                rejectReason: null,
+                rejectionDeleteAt: null,
               }
             : u,
         ),
@@ -119,6 +125,8 @@ export default function AdminUsersPage() {
       ACTIVE: "bg-green-100 text-green-700",
       INACTIVE: "bg-yellow-100 text-yellow-700",
       SUSPENDED: "bg-red-100 text-red-700",
+      BANNED: "bg-gray-800 text-white",
+      REJECTED: "bg-gray-200 text-gray-700",
     };
     return (
       <span
@@ -180,6 +188,8 @@ export default function AdminUsersPage() {
             <option value="ACTIVE">ACTIVE</option>
             <option value="INACTIVE">INACTIVE</option>
             <option value="SUSPENDED">SUSPENDED</option>
+            <option value="REJECTED">REJECTED</option>
+            <option value="BANNED">BANNED</option>
           </select>
           <button
             onClick={() => {
@@ -258,6 +268,23 @@ export default function AdminUsersPage() {
                           Lý do: {u.suspendReason}
                         </p>
                       )}
+                      {u.status === "REJECTED" && (
+                        <>
+                          {u.rejectReason && (
+                            <p className="text-[10px] text-gray-400">
+                              Lý do từ chối: {u.rejectReason}
+                            </p>
+                          )}
+                          {u.rejectionDeleteAt && (
+                            <p className="text-[10px] text-red-400">
+                              Xóa sau:{" "}
+                              {new Date(u.rejectionDeleteAt).toLocaleString(
+                                "vi-VN",
+                              )}
+                            </p>
+                          )}
+                        </>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex gap-1.5 justify-end">
@@ -283,6 +310,14 @@ export default function AdminUsersPage() {
                             className="bg-[#2ecc71] text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-600"
                           >
                             Mở khóa
+                          </button>
+                        )}
+                        {u.status === "REJECTED" && (
+                          <button
+                            onClick={() => handleUnlock(u.id)}
+                            className="bg-[#2ecc71] text-white text-xs px-3 py-1.5 rounded-lg hover:bg-green-600"
+                          >
+                            Bỏ từ chối
                           </button>
                         )}
                       </div>

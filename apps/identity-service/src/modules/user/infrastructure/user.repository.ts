@@ -129,6 +129,25 @@ export class UserRepository implements IRepository<User, UserId> {
     return entities.map((entity) => UserMapper.toDomain(entity));
   }
 
+  /**
+   * Lấy các user bị từ chối trước mốc `deadline` (thời điểm hết hạn lưu trữ
+   * 3 ngày) để xóa vĩnh viễn khỏi hệ thống.
+   */
+  async findRejectedBefore(deadline: Date): Promise<User[]> {
+    const entities = await this.repository.find({
+      where: {
+        status: "REJECTED",
+        rejected_at: LessThan(deadline),
+      },
+    });
+    return entities.map((entity) => UserMapper.toDomain(entity));
+  }
+
+  /** Xóa vĩnh viễn user (dùng khi tài khoản bị từ chối quá 3 ngày). */
+  async purgeById(id: UserId): Promise<void> {
+    await this.repository.delete(id.toString());
+  }
+
   async delete(aggregate: User): Promise<void> {
     await this.repository.softDelete(aggregate.id.toString());
   }

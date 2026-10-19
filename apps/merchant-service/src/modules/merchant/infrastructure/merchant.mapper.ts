@@ -76,6 +76,8 @@ export class MerchantMapper {
       secondaryCategories: entity.secondary_categories ?? [],
       otherCategoryDescription: entity.other_category_description ?? null,
       isOpen: entity.is_open !== false,
+      rejectedAt: entity.rejected_at ?? null,
+      rejectReason: entity.reject_reason ?? null,
     });
   }
 
@@ -107,6 +109,8 @@ export class MerchantMapper {
     entity.other_category_description =
       merchant.merchantOtherCategoryDescription;
     entity.is_open = merchant.merchantIsOpen;
+    entity.rejected_at = merchant.merchantRejectedAt;
+    entity.reject_reason = merchant.merchantRejectReason;
     return entity;
   }
 

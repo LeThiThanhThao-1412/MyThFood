@@ -10,6 +10,7 @@ import {
 } from "@mythfood/frontend-shared";
 import { formatDateTime, formatVnd, toNum } from "../../../lib/format";
 import AdminShell from "../../../components/AdminShell";
+import ReasonDialog from "../../../components/ReasonDialog";
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   PENDING: { label: "Chờ duyệt", cls: "bg-yellow-100 text-yellow-700" },
@@ -31,6 +32,9 @@ export default function AdminMerchantDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [suspendOpen, setSuspendOpen] = useState(false);
+  const [dialogLoading, setDialogLoading] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -69,6 +73,25 @@ export default function AdminMerchantDetailPage() {
     } catch (e: any) {
       setMsg("❌ " + (e?.message || "Thao tác thất bại"));
     }
+  }
+
+  async function confirmReject(reason: string) {
+    setDialogLoading(true);
+    await act(() => merchantApi.reject(id, reason), "Đã từ chối nhà hàng");
+    setDialogLoading(false);
+    setRejectOpen(false);
+  }
+
+  async function confirmSuspend(reason: string, durationDays: number) {
+    setDialogLoading(true);
+    await act(
+      () => merchantApi.suspend(id, { reason, durationDays }),
+      durationDays > 0
+        ? `Đã khóa nhà hàng ${durationDays} ngày`
+        : "Đã khóa nhà hàng vĩnh viễn",
+    );
+    setDialogLoading(false);
+    setSuspendOpen(false);
   }
 
   if (loading) {
@@ -167,16 +190,63 @@ export default function AdminMerchantDetailPage() {
                   ✅ Phê duyệt
                 </button>
                 <button
-                  onClick={() =>
-                    act(() => merchantApi.reject(id), "Đã từ chối nhà hàng")
-                  }
+                  onClick={() => setRejectOpen(true)}
                   className="bg-[#e74c3c] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-600"
                 >
                   ❌ Từ chối
                 </button>
               </>
             )}
+            {merchant.status === "APPROVED" && (
+              <button
+                onClick={() => setSuspendOpen(true)}
+                className="bg-gray-800 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-900"
+              >
+                🔒 Khóa nhà hàng
+              </button>
+            )}
+            {merchant.status === "SUSPENDED" && (
+              <button
+                onClick={() =>
+                  act(() => merchantApi.reactivate(id), "Đã mở khóa nhà hàng")
+                }
+                className="bg-[#2ecc71] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-green-600"
+              >
+                🔓 Mở khóa
+              </button>
+            )}
+            {merchant.status === "REJECTED" && (
+              <button
+                onClick={() =>
+                  act(
+                    () => merchantApi.approve(id),
+                    "Đã phê duyệt lại nhà hàng",
+                  )
+                }
+                className="bg-[#2ecc71] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-green-600"
+              >
+                ✅ Duyệt lại
+              </button>
+            )}
           </div>
+
+          {merchant.status === "REJECTED" && (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              <p className="font-semibold">Hồ sơ đã bị từ chối</p>
+              {merchant.rejectReason && (
+                <p className="mt-1">Lý do: {merchant.rejectReason}</p>
+              )}
+              {merchant.rejectedAt && (
+                <p className="mt-1">
+                  Từ chối lúc: {formatDateTime(merchant.rejectedAt)}
+                </p>
+              )}
+              <p className="mt-1 text-xs text-red-600">
+                Tài khoản đăng nhập của chủ nhà hàng sẽ bị xóa sau 3 ngày kể từ
+                khi bị từ chối.
+              </p>
+            </div>
+          )}
         </div>
 
         {stats && (
@@ -242,6 +312,27 @@ export default function AdminMerchantDetailPage() {
           )}
         </div>
       </div>
+
+      <ReasonDialog
+        open={rejectOpen}
+        title={`Từ chối nhà hàng "${merchant.name}"`}
+        description="Lý do sẽ hiển thị cho chủ nhà hàng khi đăng nhập. Tài khoản bị xóa sau 3 ngày."
+        confirmLabel="Từ chối hồ sơ"
+        loading={dialogLoading}
+        onCancel={() => setRejectOpen(false)}
+        onConfirm={confirmReject}
+      />
+
+      <ReasonDialog
+        open={suspendOpen}
+        title={`Khóa nhà hàng "${merchant.name}"`}
+        description="Lý do sẽ hiển thị cho chủ nhà hàng khi đăng nhập."
+        confirmLabel="Khóa nhà hàng"
+        withDuration
+        loading={dialogLoading}
+        onCancel={() => setSuspendOpen(false)}
+        onConfirm={confirmSuspend}
+      />
     </AdminShell>
   );
 }

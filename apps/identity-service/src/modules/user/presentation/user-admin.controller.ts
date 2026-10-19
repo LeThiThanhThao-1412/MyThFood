@@ -15,6 +15,7 @@ import { UserAdminService } from "../application/user-admin.service";
 import {
   QueryUsersDto,
   UpdateUserStatusDto,
+  RejectUserDto,
   UserAdminResponseDto,
   PaginatedUsersResponseDto,
 } from "../application/dtos/user-admin.dto";
@@ -66,5 +67,18 @@ export class UserAdminController {
   @HttpCode(HttpStatus.OK)
   async unlockUser(@Param("id") id: string): Promise<UserAdminResponseDto> {
     return this.userAdminService.unlockUser(id);
+  }
+
+  /**
+   * Từ chối tài khoản/hồ sơ đăng ký (nhà hàng/tài xế).
+   * Tài khoản sẽ thấy thông báo từ chối + lý do khi đăng nhập và bị xóa sau 3 ngày.
+   */
+  @Patch(":id/reject")
+  @HttpCode(HttpStatus.OK)
+  async rejectUser(
+    @Param("id") id: string,
+    @Body() dto: RejectUserDto,
+  ): Promise<UserAdminResponseDto> {
+    return this.userAdminService.rejectUser(id, dto.reason);
   }
 }

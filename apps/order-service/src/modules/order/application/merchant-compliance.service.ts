@@ -85,7 +85,13 @@ export class MerchantComplianceService {
       });
       if (!decision) continue;
 
-      await this.applyEscalation(s.merchantId, decision, s, cfg.fineAmount);
+      await this.applyEscalation(
+        s.merchantId,
+        decision,
+        s,
+        cfg.fineAmount,
+        cfg.days,
+      );
       escalated++;
     }
     return escalated;
@@ -121,9 +127,10 @@ export class MerchantComplianceService {
     decision: { level: number; type: CompliancePenaltyType },
     stats: { total: number; rejected: number; noResponse: number },
     fineAmount: number,
+    windowDays: number,
   ): Promise<void> {
     const amount = decision.type === "FINE" ? fineAmount : null;
-    const reason = this.buildReason(decision.type, stats);
+    const reason = this.buildReason(decision.type, stats, windowDays);
 
     await this.complianceRepository.recordPenalty({
       merchantId,
@@ -156,11 +163,12 @@ export class MerchantComplianceService {
   private buildReason(
     type: CompliancePenaltyType,
     stats: { total: number; rejected: number; noResponse: number },
+    windowDays: number,
   ): string {
     return (
       `Tự động xử lý vi phạm tỉ lệ đơn (${type}): ` +
       `${stats.rejected} từ chối + ${stats.noResponse} không phản hồi ` +
-      `trên ${stats.total} đơn trong 30 ngày`
+      `trên ${stats.total} đơn trong ${windowDays} ngày`
     );
   }
 

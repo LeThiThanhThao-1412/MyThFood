@@ -5,6 +5,7 @@ import Link from "next/link";
 import { merchantApi } from "@mythfood/api-client";
 import { useAuthStore, getFoodCategoryLabel } from "@mythfood/frontend-shared";
 import AdminShell from "../../components/AdminShell";
+import ReasonDialog from "../../components/ReasonDialog";
 
 const BADGE: Record<string, string> = {
   PENDING: "bg-yellow-100 text-yellow-700",
@@ -27,6 +28,9 @@ export default function AdminMerchantsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
   const [msg, setMsg] = useState("");
+  const [rejectTarget, setRejectTarget] = useState<any | null>(null);
+  const [suspendTarget, setSuspendTarget] = useState<any | null>(null);
+  const [dialogLoading, setDialogLoading] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -59,6 +63,27 @@ export default function AdminMerchantsPage() {
     } catch (e: any) {
       setMsg("❌ " + (e?.message || "Thao tác thất bại"));
     }
+  }
+
+  async function confirmReject(reason: string) {
+    if (!rejectTarget) return;
+    setDialogLoading(true);
+    await act(() => merchantApi.reject(rejectTarget.id, reason), "Đã từ chối");
+    setDialogLoading(false);
+    setRejectTarget(null);
+  }
+
+  async function confirmSuspend(reason: string, durationDays: number) {
+    if (!suspendTarget) return;
+    setDialogLoading(true);
+    await act(
+      () => merchantApi.suspend(suspendTarget.id, { reason, durationDays }),
+      durationDays > 0
+        ? `Đã khóa nhà hàng ${durationDays} ngày`
+        : "Đã khóa nhà hàng vĩnh viễn",
+    );
+    setDialogLoading(false);
+    setSuspendTarget(null);
   }
 
   return (
@@ -135,6 +160,11 @@ export default function AdminMerchantsPage() {
                       >
                         {LABEL[m.status] || m.status}
                       </span>
+                      {m.status === "REJECTED" && m.rejectReason && (
+                        <p className="mt-1 max-w-[180px] text-[10px] text-red-500">
+                          Lý do: {m.rejectReason}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex gap-1.5 justify-end flex-wrap">
@@ -158,17 +188,20 @@ export default function AdminMerchantsPage() {
                               Duyệt
                             </button>
                             <button
-                              onClick={() =>
-                                act(
-                                  () => merchantApi.reject(m.id),
-                                  "Đã từ chối",
-                                )
-                              }
+                              onClick={() => setRejectTarget(m)}
                               className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-red-700"
                             >
                               Từ chối
                             </button>
                           </>
+                        )}
+                        {m.status === "APPROVED" && (
+                          <button
+                            onClick={() => setSuspendTarget(m)}
+                            className="text-xs bg-gray-700 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-gray-800"
+                          >
+                            Khóa
+                          </button>
                         )}
                         {m.status === "REJECTED" && (
                           <button
@@ -205,6 +238,27 @@ export default function AdminMerchantsPage() {
           </div>
         )}
       </div>
+
+      <ReasonDialog
+        open={!!rejectTarget}
+        title={`Từ chối nhà hàng "${rejectTarget?.name ?? ""}"`}
+        description="Lý do sẽ hiển thị cho chủ nhà hàng khi đăng nhập. Tài khoản bị xóa sau 3 ngày."
+        confirmLabel="Từ chối hồ sơ"
+        loading={dialogLoading}
+        onCancel={() => setRejectTarget(null)}
+        onConfirm={confirmReject}
+      />
+
+      <ReasonDialog
+        open={!!suspendTarget}
+        title={`Khóa nhà hàng "${suspendTarget?.name ?? ""}"`}
+        description="Lý do sẽ hiển thị cho chủ nhà hàng khi đăng nhập."
+        confirmLabel="Khóa nhà hàng"
+        withDuration
+        loading={dialogLoading}
+        onCancel={() => setSuspendTarget(null)}
+        onConfirm={confirmSuspend}
+      />
     </AdminShell>
   );
 }

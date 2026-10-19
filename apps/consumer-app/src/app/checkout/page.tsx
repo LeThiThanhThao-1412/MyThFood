@@ -1522,19 +1522,103 @@ function CheckoutContent() {
                       const groups = (i.selectedGroups ?? []).filter(
                         (g) => g.options && g.options.length > 0,
                       );
+                      // Tách thành từng hàng giá: phần hưởng flash sale và phần
+                      // giá thường, mỗi phần có số lượng + thành tiền riêng.
+                      const priceRows = pricing.isFlashSale
+                        ? [
+                            ...(pricing.saleQuantity > 0
+                              ? [
+                                  {
+                                    key: "flash-sale",
+                                    quantity: pricing.saleQuantity,
+                                    unitPrice: pricing.saleUnitPrice,
+                                    originalUnitPrice:
+                                      i.originalUnitPrice != null &&
+                                      i.originalUnitPrice >
+                                        pricing.saleUnitPrice
+                                        ? i.originalUnitPrice
+                                        : null,
+                                    isFlashSale: true,
+                                  },
+                                ]
+                              : []),
+                            ...(pricing.regularQuantity > 0
+                              ? [
+                                  {
+                                    key: "regular",
+                                    quantity: pricing.regularQuantity,
+                                    unitPrice: pricing.regularUnitPrice,
+                                    originalUnitPrice: null,
+                                    isFlashSale: false,
+                                  },
+                                ]
+                              : []),
+                          ]
+                        : [
+                            {
+                              key: "regular",
+                              quantity: i.quantity,
+                              unitPrice: pricing.saleUnitPrice,
+                              originalUnitPrice: null,
+                              isFlashSale: false,
+                            },
+                          ];
                       return (
-                        <div
-                          key={i.variantKey}
-                          className="flex items-start justify-between gap-3 text-sm"
-                        >
-                          <div className="flex items-start gap-2 min-w-0">
-                            <span className="mt-0.5 inline-flex items-center justify-center w-5 h-5 shrink-0 bg-[#fff7ed] text-[#ff6b35] rounded-full text-xs font-bold">
-                              {i.quantity}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-gray-700">{i.menuItem.name}</p>
+                        <div key={i.variantKey} className="space-y-1">
+                          {priceRows.map((row) => (
+                            <div
+                              key={row.key}
+                              className="flex items-start justify-between gap-3 text-sm"
+                            >
+                              <div className="flex items-start gap-2 min-w-0">
+                                <span
+                                  className={`mt-0.5 inline-flex items-center justify-center min-w-[20px] h-5 px-1 shrink-0 rounded-full text-xs font-bold ${
+                                    row.isFlashSale
+                                      ? "bg-red-50 text-red-500"
+                                      : "bg-[#fff7ed] text-[#ff6b35]"
+                                  }`}
+                                >
+                                  {row.quantity}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="text-gray-700 flex items-center gap-1.5 flex-wrap">
+                                    {i.menuItem.name}
+                                    {row.isFlashSale && (
+                                      <span className="text-[10px] font-bold bg-red-500 text-white px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                                        🔥 Flash Sale
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="text-right shrink-0">
+                                {row.originalUnitPrice != null && (
+                                  <span className="block text-xs text-gray-400 line-through">
+                                    {(
+                                      row.quantity * row.originalUnitPrice
+                                    ).toLocaleString("vi-VN")}
+                                    ₫
+                                  </span>
+                                )}
+                                <span
+                                  className={`font-medium ${
+                                    row.isFlashSale
+                                      ? "text-red-500"
+                                      : "text-gray-600"
+                                  }`}
+                                >
+                                  {(
+                                    row.quantity * row.unitPrice
+                                  ).toLocaleString("vi-VN")}
+                                  ₫
+                                </span>
+                              </span>
+                            </div>
+                          ))}
+                          {(groups.length > 0 || i.specialInstructions) && (
+                            <div className="pl-7">
                               {groups.length > 0 && (
-                                <div className="mt-1 space-y-0.5">
+                                <div className="space-y-0.5">
                                   {groups.map((g) => {
                                     const delta = g.options.reduce(
                                       (sum, o) =>
@@ -1570,38 +1654,12 @@ function CheckoutContent() {
                                 </div>
                               )}
                               {i.specialInstructions && (
-                                <p className="mt-1 text-[11px] text-gray-400">
+                                <p className="text-[11px] text-gray-400">
                                   📝 {i.specialInstructions}
                                 </p>
                               )}
                             </div>
-                          </div>
-                          <span className="text-right shrink-0">
-                            {pricing.isFlashSale &&
-                              pricing.regularQuantity > 0 && (
-                                <span className="block text-[11px] text-orange-600">
-                                  🔥 {pricing.saleQuantity} ×{" "}
-                                  {pricing.saleUnitPrice.toLocaleString(
-                                    "vi-VN",
-                                  )}
-                                  ₫{" + "}
-                                  {pricing.regularQuantity} ×{" "}
-                                  {pricing.regularUnitPrice.toLocaleString(
-                                    "vi-VN",
-                                  )}
-                                  ₫
-                                </span>
-                              )}
-                            {pricing.originalAmount > pricing.amount && (
-                              <span className="block text-xs text-gray-400 line-through">
-                                {pricing.originalAmount.toLocaleString("vi-VN")}
-                                ₫
-                              </span>
-                            )}
-                            <span className="text-gray-600 font-medium">
-                              {pricing.amount.toLocaleString("vi-VN")}₫
-                            </span>
-                          </span>
+                          )}
                         </div>
                       );
                     })}

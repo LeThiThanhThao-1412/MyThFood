@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS drivers (
   "vehicleType" VARCHAR(20) DEFAULT 'MOTORBIKE',
   "insuranceNumber" VARCHAR(30) NOT NULL,
   "criminalRecordUrl" VARCHAR(500),
-  status VARCHAR(20) NOT NULL DEFAULT 'INACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'SUSPENDED')),
+  status VARCHAR(20) NOT NULL DEFAULT 'INACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'SUSPENDED', 'REJECTED')),
+  "rejectedAt" TIMESTAMPTZ,
+  "rejectReason" VARCHAR(500),
   "onlineStatus" VARCHAR(10) NOT NULL DEFAULT 'OFFLINE' CHECK ("onlineStatus" IN ('ONLINE', 'OFFLINE')),
   "currentLatitude" DECIMAL(10, 7),
   "currentLongitude" DECIMAL(10, 7),
@@ -59,6 +61,13 @@ CREATE INDEX IF NOT EXISTS idx_drivers_stackable
   WHERE cardinality("currentOrderIds") < "maxConcurrentOrders";
 CREATE INDEX IF NOT EXISTS idx_drivers_available ON drivers (status, "onlineStatus", "fatigueLevel") WHERE status = 'ACTIVE' AND "onlineStatus" = 'ONLINE' AND "fatigueLevel" != 'CRITICAL';
 CREATE INDEX IF NOT EXISTS idx_drivers_created_at ON drivers ("createdAt");
+
+-- Migration: trạng thái REJECTED + lý do từ chối hồ sơ tài xế.
+ALTER TABLE drivers DROP CONSTRAINT IF EXISTS drivers_status_check;
+ALTER TABLE drivers ADD CONSTRAINT drivers_status_check
+  CHECK (status IN ('ACTIVE', 'INACTIVE', 'SUSPENDED', 'REJECTED'));
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS "rejectedAt" TIMESTAMPTZ;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS "rejectReason" VARCHAR(500);
 
 -- Driver location history (GPS trace: appends 1 row per location update)
 CREATE TABLE IF NOT EXISTS driver_location_history (
