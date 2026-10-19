@@ -7,7 +7,7 @@
 // gửi thông báo tới khách hàng.
 // ============================================================================
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -21,15 +21,46 @@ import {
   chatApi,
   uploadApi,
   type DriverRoute,
+  type DriverRouteLeg,
 } from "@mythfood/api-client";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
 import DeliveryProofDialog from "@/components/DeliveryProofDialog";
 import {
   STAGE_ORDER,
+  fetchRouteThrough,
   formatKm,
   googleMapsDirections,
   toNum,
 } from "@/lib/delivery-flow";
+
+type MapMarker = {
+  latitude: number;
+  longitude: number;
+  emoji: string;
+  label: string;
+  address?: string;
+};
+
+/** Dẫn đường Google Maps qua toàn bộ các chặng còn lại (origin + waypoints). */
+function googleMapsBatchDirections(
+  origin: { latitude: number; longitude: number } | null,
+  legs: DriverRouteLeg[],
+): string | null {
+  if (legs.length === 0) return null;
+  const coords = legs.map((leg) => `${leg.latitude},${leg.longitude}`);
+  const destination = coords[coords.length - 1];
+  if (!destination) return null;
+
+  const params = new URLSearchParams({
+    api: "1",
+    destination,
+    travelmode: "driving",
+  });
+  if (origin) params.set("origin", `${origin.latitude},${origin.longitude}`);
+  const waypoints = coords.slice(0, -1);
+  if (waypoints.length > 0) params.set("waypoints", waypoints.join("|"));
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
 
 const TripMap = dynamic(
   () => import("@mythfood/frontend-shared/components/MapView"),
@@ -52,6 +83,11 @@ export default function DeliveryPage() {
     null,
   );
   const [driverRoute, setDriverRoute] = useState<DriverRoute | null>(null);
+  const [batchRoute, setBatchRoute] = useState<{
+    points: [number, number][];
+    distanceKm: number;
+    durationMin: number;
+  } | null>(null);
 
   const openChatWithCustomer = async () => {
     const o = trip.order;
@@ -102,6 +138,100 @@ export default function DeliveryPage() {
     startSimulation,
     stopSimulation,
   } = trip;
+  const routeLegs = driverRoute?.legs ?? [];
+  // Chỉ coi là lộ trình gộp khi có >= 2 đơn; 1 đơn vẫn dùng map theo bước.
+  const hasBatchRoute =
+    (driverRoute?.stops.length ?? 0) > 1 && routeLegs.length > 1;
+
+  // Giữ vị trí mới nhất để effect vẽ polyline không phải gọi OSRM lại mỗi
+  // lần GPS nhích một chút (chỉ vẽ lại khi danh sách chặng thay đổi).
+  const driverLocationRef = useRef(driverLocation);
+  driverLocationRef.current = driverLocation;
+  const hasDriverLocation = driverLocation != null;
+
+  /** Marker cho toàn bộ chặng còn lại (quán + khách của mọi đơn). */
+  const batchMarkers = useMemo<MapMarker[]>(() => {
+    if (!hasBatchRoute) return [];
+    const markers: MapMarker[] = [];
+    if (driverLocation) {
+      markers.push({
+        ...driverLocation,
+        emoji: "🛵",
+        label: "🛵 Vị trí của bạn",
+      });
+    }
+    for (const leg of routeLegs) {
+      markers.push({
+        latitude: leg.latitude,
+        longitude: leg.longitude,
+        emoji: leg.type === "PICKUP" ? "🏪" : "🏠",
+        label: `${leg.sequence}. ${
+          leg.type === "PICKUP" ? "Lấy món" : "Giao hàng"
+        } · Đơn #${leg.orderId.slice(0, 8)}`,
+      });
+    }
+    return markers;
+  }, [hasBatchRoute, routeLegs, driverLocation]);
+
+  const batchLegsSignature = routeLegs
+    .map(
+      (leg) =>
+        `${leg.sequence}:${leg.type}:${leg.orderId}:${leg.latitude.toFixed(5)},${leg.longitude.toFixed(5)}`,
+    )
+    .join("|");
+
+  // Vẽ polyline nối toàn bộ chặng theo đúng thứ tự tối ưu.
+  useEffect(() => {
+    if (!hasBatchRoute) {
+      setBatchRoute(null);
+      return;
+    }
+    let cancelled = false;
+    const firstLeg = routeLegs[0]!;
+    const origin = driverLocationRef.current ?? {
+      latitude: firstLeg.latitude,
+      longitude: firstLeg.longitude,
+    };
+
+    // Gộp các điểm liên tiếp trùng toạ độ để URL OSRM gọn và hợp lệ.
+    const waypoints = [
+      origin,
+      ...routeLegs.map((leg) => ({
+        latitude: leg.latitude,
+        longitude: leg.longitude,
+      })),
+    ].filter((point, index, all) => {
+      if (index === 0) return true;
+      const previous = all[index - 1]!;
+      return (
+        point.latitude !== previous.latitude ||
+        point.longitude !== previous.longitude
+      );
+    });
+
+    if (waypoints.length < 2) {
+      setBatchRoute(null);
+      return;
+    }
+
+    // Một request OSRM cho cả chuỗi điểm thay vì từng chặng riêng lẻ.
+    fetchRouteThrough(waypoints)
+      .then((info) => {
+        if (cancelled) return;
+        setBatchRoute({
+          points: info.points,
+          distanceKm: info.distanceKm,
+          durationMin: info.durationMin,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setBatchRoute(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasBatchRoute, batchLegsSignature, hasDriverLocation]);
 
   // Lộ trình gộp đơn (SAVER stacking) — tự cập nhật mỗi 15s.
   useEffect(() => {
@@ -418,23 +548,30 @@ export default function DeliveryPage() {
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="px-4 py-3 flex items-center justify-between border-b border-gray-100">
             <p className="font-bold text-[#1a1a2e] text-sm">
-              {stage === "DELIVERING"
-                ? "🗺️ Tuyến: vị trí tài xế → khách hàng"
-                : stageMeta.target === "CUSTOMER"
-                  ? "🗺️ Tuyến: nhà hàng → khách hàng"
-                  : "🗺️ Tuyến: vị trí của bạn → nhà hàng"}
+              {hasBatchRoute
+                ? "🗺️ Lộ trình gộp đơn tối ưu"
+                : stage === "DELIVERING"
+                  ? "🗺️ Tuyến: vị trí tài xế → khách hàng"
+                  : stageMeta.target === "CUSTOMER"
+                    ? "🗺️ Tuyến: nhà hàng → khách hàng"
+                    : "🗺️ Tuyến: vị trí của bạn → nhà hàng"}
             </p>
-            {route && (
+            {hasBatchRoute && batchRoute ? (
+              <span className="text-xs text-gray-500">
+                {formatKm(batchRoute.distanceKm)} · ~{batchRoute.durationMin}{" "}
+                phút · {routeLegs.length} chặng
+              </span>
+            ) : route ? (
               <span className="text-xs text-gray-500">
                 {formatKm(route.distanceKm)} · ~{route.durationMin} phút
                 {route.source === "straight" ? " (ước tính)" : ""}
               </span>
-            )}
+            ) : null}
           </div>
-          {mapMarkers.length > 0 ? (
+          {(hasBatchRoute ? batchMarkers.length : mapMarkers.length) > 0 ? (
             <TripMap
-              locations={mapMarkers}
-              route={route?.points}
+              locations={hasBatchRoute ? batchMarkers : mapMarkers}
+              route={hasBatchRoute ? batchRoute?.points : route?.points}
               height="300px"
               zoom={14}
               className="border-0 rounded-none"
@@ -444,7 +581,20 @@ export default function DeliveryPage() {
               Chưa có toạ độ để hiển thị bản đồ
             </p>
           )}
-          {target && (
+          {hasBatchRoute ? (
+            <div className="px-4 py-3 border-t border-gray-100">
+              <a
+                href={
+                  googleMapsBatchDirections(driverLocation, routeLegs) ?? "#"
+                }
+                target="_blank"
+                rel="noreferrer"
+                className="block w-full text-center bg-gray-100 text-gray-700 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200 transition"
+              >
+                🧭 Mở toàn bộ lộ trình bằng Google Maps
+              </a>
+            </div>
+          ) : target ? (
             <div className="px-4 py-3 border-t border-gray-100">
               <a
                 href={googleMapsDirections(driverLocation, target)}
@@ -455,63 +605,101 @@ export default function DeliveryPage() {
                 🧭 Mở dẫn đường bằng Google Maps
               </a>
             </div>
-          )}
+          ) : null}
         </div>
 
-        {/* Lộ trình gộp đơn SAVER */}
+        {/* Lộ trình gộp đơn SAVER — thứ tự chặng tối ưu */}
         {driverRoute && driverRoute.stops.length > 1 && (
           <div className="bg-white rounded-2xl shadow-sm p-4">
             <div className="flex items-center justify-between mb-3">
               <p className="font-bold text-sm text-[#1a1a2e]">
-                🧺 Lộ trình gộp đơn ({driverRoute.stops.length}/
-                {driverRoute.maxStackedOrders})
+                🧺 Lộ trình gộp đơn tối ưu ({driverRoute.stops.length}/
+                {driverRoute.maxStackedOrders} đơn)
               </p>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">
                 SAVER
               </span>
             </div>
             <div className="space-y-2">
-              {driverRoute.stops.map((stop) => {
-                const isCurrent = stop.orderId === order.id;
-                const statusText = stop.deliveryDone
-                  ? "✅ Đã giao"
-                  : stop.pickupDone
-                    ? "🛵 Đang giao"
-                    : "⏳ Chưa lấy hàng";
-                return (
-                  <button
-                    key={stop.orderId}
-                    type="button"
-                    onClick={() => router.push(`/delivery/${stop.orderId}`)}
-                    className={`w-full text-left flex items-center gap-3 p-3 rounded-xl border transition ${
-                      isCurrent
-                        ? "border-[#ff6b35] bg-orange-50"
-                        : "border-gray-100 hover:border-gray-300"
-                    }`}
-                  >
-                    <span className="w-6 h-6 rounded-full bg-[#1a1a2e] text-white text-xs flex items-center justify-center shrink-0">
-                      {stop.sequence}
-                    </span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-semibold text-gray-800">
-                        Đơn #{stop.orderId.slice(0, 8)}
-                      </span>
-                      <span className="block text-xs text-gray-400">
-                        {statusText}
-                      </span>
-                    </span>
-                    {isCurrent && (
-                      <span className="text-[10px] text-[#ff6b35] font-bold shrink-0">
-                        Đang xem
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+              {routeLegs.length > 0
+                ? routeLegs.map((leg) => {
+                    const isCurrent = leg.orderId === order.id;
+                    const isPickup = leg.type === "PICKUP";
+                    return (
+                      <button
+                        key={`${leg.sequence}-${leg.type}-${leg.orderId}`}
+                        type="button"
+                        onClick={() => router.push(`/delivery/${leg.orderId}`)}
+                        className={`w-full text-left flex items-center gap-3 p-3 rounded-xl border transition ${
+                          isCurrent
+                            ? "border-[#ff6b35] bg-orange-50"
+                            : "border-gray-100 hover:border-gray-300"
+                        }`}
+                      >
+                        <span className="w-6 h-6 rounded-full bg-[#1a1a2e] text-white text-xs flex items-center justify-center shrink-0">
+                          {leg.sequence}
+                        </span>
+                        <span className="text-lg shrink-0">
+                          {isPickup ? "🏪" : "🏠"}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-semibold text-gray-800">
+                            {isPickup ? "Lấy món" : "Giao hàng"} · Đơn #
+                            {leg.orderId.slice(0, 8)}
+                          </span>
+                          <span className="block text-xs text-gray-400">
+                            {isPickup ? "Tại nhà hàng" : "Tại khách hàng"}
+                          </span>
+                        </span>
+                        {isCurrent && (
+                          <span className="text-[10px] text-[#ff6b35] font-bold shrink-0">
+                            Đang xem
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })
+                : driverRoute.stops.map((stop) => {
+                    const isCurrent = stop.orderId === order.id;
+                    const statusText = stop.deliveryDone
+                      ? "✅ Đã giao"
+                      : stop.pickupDone
+                        ? "🛵 Đang giao"
+                        : "⏳ Chưa lấy hàng";
+                    return (
+                      <button
+                        key={stop.orderId}
+                        type="button"
+                        onClick={() => router.push(`/delivery/${stop.orderId}`)}
+                        className={`w-full text-left flex items-center gap-3 p-3 rounded-xl border transition ${
+                          isCurrent
+                            ? "border-[#ff6b35] bg-orange-50"
+                            : "border-gray-100 hover:border-gray-300"
+                        }`}
+                      >
+                        <span className="w-6 h-6 rounded-full bg-[#1a1a2e] text-white text-xs flex items-center justify-center shrink-0">
+                          {stop.sequence}
+                        </span>
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm font-semibold text-gray-800">
+                            Đơn #{stop.orderId.slice(0, 8)}
+                          </span>
+                          <span className="block text-xs text-gray-400">
+                            {statusText}
+                          </span>
+                        </span>
+                        {isCurrent && (
+                          <span className="text-[10px] text-[#ff6b35] font-bold shrink-0">
+                            Đang xem
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
             </div>
             <p className="text-[11px] text-gray-400 mt-2">
-              Thứ tự được tối ưu theo khoảng cách — ưu tiên lấy hàng trước khi
-              giao.
+              Thứ tự được tối ưu theo khoảng cách — có thể lấy/giao đan xen,
+              nhưng luôn lấy món của một đơn trước khi giao đơn đó.
             </p>
           </div>
         )}

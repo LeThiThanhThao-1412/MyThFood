@@ -46,16 +46,24 @@ export type { DeliveryOptionMeta } from "./constants/delivery-options";
 
 // Utils
 export { haversineKm, formatDistance } from "./utils/distance";
-export { fetchRoute } from "./utils/route";
+export { fetchRoute, fetchRouteThrough } from "./utils/route";
 export type { RouteInfo, RoutePoint } from "./utils/route";
 export { searchAddress, reverseGeocodeAddress } from "./utils/geocoding";
 export type { GeocodingSuggestion } from "./utils/geocoding";
 export { canAccessApp, APP_ALLOWED_ROLES } from "./utils/role-access";
 export type { AppKey } from "./utils/role-access";
-export { getAccountBlockInfo, formatAccountDate } from "./utils/account-status";
+export {
+  getAccountBlockInfo,
+  getAccountBlockFromProfile,
+  storeAccountBlock,
+  consumeStoredAccountBlock,
+  ACCOUNT_BLOCK_STORAGE_KEY,
+  formatAccountDate,
+} from "./utils/account-status";
 export type {
   AccountBlockCode,
   AccountBlockInfo,
+  AccountProfileLike,
 } from "./utils/account-status";
 export {
   MEAL_PERIODS,

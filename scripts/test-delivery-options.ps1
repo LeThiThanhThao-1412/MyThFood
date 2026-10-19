@@ -74,7 +74,7 @@ Assert ([double]$options["PRIORITY"].fee -eq $expectedPriority) "PRIORITY fee = 
 # ── 2. Tạo đơn PRIORITY ────────────────────────────────────────────────────
 Write-Host "`n[2] Tạo đơn PRIORITY" -ForegroundColor Magenta
 
-# Case 2: mỗi khách chỉ có 1 đơn đang hoạt động → dọn đơn cũ trước khi test.
+# Dọn đơn cũ trước khi test để dữ liệu sạch (không còn bị chặn bởi rule 1 đơn).
 try {
     $activeStatuses = @("PENDING", "CONFIRMED", "PREPARING", "READY_FOR_PICKUP", "OUT_FOR_DELIVERY")
     $existing = Invoke-RestMethod -Uri "$orderUrl/orders/consumer/$($consumer.userId)" -Headers $ch
@@ -145,7 +145,7 @@ if ($open.Count -gt 0) {
     Assert ($first.deliveryOption -eq "PRIORITY") "đơn PRIORITY đứng đầu hàng đợi"
 }
 
-# Dọn đơn test để lần chạy sau không vướng rule "1 đơn đang hoạt động".
+# Dọn đơn test để lần chạy sau không lẫn dữ liệu cũ.
 try {
     $cancelBody = @{ reason = "delivery-option test cleanup" } | ConvertTo-Json
     Invoke-RestMethod -Uri "$orderUrl/orders/$($order.id)/cancel" -Method Patch -Body $cancelBody -Headers $mhJson | Out-Null

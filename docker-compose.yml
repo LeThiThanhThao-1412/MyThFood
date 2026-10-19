@@ -70,6 +70,9 @@ services:
       JWT_EXPIRATION: 1h
       JWT_REFRESH_EXPIRATION: 7d
       REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
+      SERVICE_API_KEY: ${SERVICE_API_KEY}
+      MERCHANT_SERVICE_URL: http://merchant-service:3003
+      DRIVER_SERVICE_URL: http://driver-service:3007
     depends_on:
       postgres:
         condition: service_healthy
@@ -186,7 +189,8 @@ services:
       SAVER_FEE_FACTOR: ${SAVER_FEE_FACTOR:-0.8}
       PRIORITY_FEE_FACTOR: ${PRIORITY_FEE_FACTOR:-1.3}
       PRIORITY_SURCHARGE: ${PRIORITY_SURCHARGE:-10000}
-      PRIORITY_MAX_FEE: ${PRIORITY_MAX_FEE:-120000}
+      # Đặt nhiều đơn cùng lúc: tối đa 3 đơn đang hoạt động/khách (0 = không giới hạn)
+      MAX_ACTIVE_ORDERS_PER_CONSUMER: ${MAX_ACTIVE_ORDERS_PER_CONSUMER:-3}
     depends_on:
       postgres:
         condition: service_healthy

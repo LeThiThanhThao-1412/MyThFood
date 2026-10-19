@@ -108,10 +108,19 @@ export class MatchingEngineService {
       };
     }
 
-    // SAVER stacking: chỉ gộp khi tài xế đang chạy toàn đơn SAVER và điểm
-    // giao mới nằm trong hành lang lộ trình hiện tại.
+    // SAVER stacking: chỉ gộp khi tài xế đang chạy toàn đơn SAVER, quán và
+    // điểm giao của đơn mới đều gần lộ trình hiện tại, và detour không quá lớn.
     if (includeStackable) {
-      const maxDeviationKm = Number(process.env.SAVER_STACK_RADIUS_KM || 3);
+      const maxDropoffKm = Number(process.env.SAVER_STACK_RADIUS_KM || 3);
+      const maxPickupKm = Number(
+        process.env.SAVER_PICKUP_RADIUS_KM || maxDropoffKm || 3,
+      );
+      const maxDetourKm = Number(process.env.SAVER_MAX_DETOUR_KM || 3);
+      const compatibilityOptions = {
+        maxDropoffDeviationKm: Number.isFinite(maxDropoffKm) ? maxDropoffKm : 3,
+        maxPickupDeviationKm: Number.isFinite(maxPickupKm) ? maxPickupKm : 3,
+        maxDetourKm: Number.isFinite(maxDetourKm) ? maxDetourKm : 3,
+      };
       const stackable: typeof eligibleDrivers = [];
       for (const driver of eligibleDrivers) {
         if (driver.activeOrderIds.length === 0) {
@@ -141,10 +150,14 @@ export class MatchingEngineService {
           driver.longitude,
           stops,
           {
+            orderId: dispatch.dispatchOrderId,
+            merchantLatitude: dispatch.dispatchMerchantLatitude,
+            merchantLongitude: dispatch.dispatchMerchantLongitude,
             deliveryLatitude: dispatch.dispatchDeliveryLatitude,
             deliveryLongitude: dispatch.dispatchDeliveryLongitude,
+            status: dispatch.dispatchStatus,
           },
-          Number.isFinite(maxDeviationKm) ? maxDeviationKm : 3,
+          compatibilityOptions,
         );
         if (compatible) stackable.push(driver);
       }

@@ -405,11 +405,7 @@ export async function acceptOrder(
     );
   }
 
-  // Lấy thông tin nhà hàng (nếu chưa có) để đặt GPS tài xế ngay tại nhà hàng
-  const m = merchant ?? (await getMerchant(order.merchantId));
-  const restaurant = restaurantLocation(dispatch, m);
-
-  // Đánh dấu tài xế đang chạy đơn (bỏ qua nếu đã ON_DELIVERY để tránh 409)
+  // Đánh dấu tài xế đang chạy đơn (bỏ qua nếu đã có đơn để tránh 409)
   try {
     const driverProfile = unwrap<any>(await driverApi.getById(driverId));
     const alreadyOnDelivery =
@@ -428,18 +424,9 @@ export async function acceptOrder(
     /* non-fatal */
   }
 
-  // Mô phỏng GPS: đặt tài xế tại nhà hàng sau khi bấm “Nhận đơn”
-  if (restaurant && driverId) {
-    try {
-      await driverApi.updateLocation(driverId, {
-        latitude: restaurant.latitude,
-        longitude: restaurant.longitude,
-      });
-    } catch {
-      /* non-fatal */
-    }
-  }
-
+  // Không "dịch chuyển" GPS về quán khi nhận đơn: lộ trình gộp đơn phải
+  // xuất phát từ vị trí thật của tài xế. App vẫn cập nhật GPS định kỳ qua
+  // driverApi.updateLocation ở trang vị trí.
   await notifyConsumer(order, "GOING_TO_RESTAURANT");
   return dispatch;
 }
@@ -632,7 +619,7 @@ async function syncOrderOutForDelivery(
 // consumer-app qua @mythfood/frontend-shared.
 // ---------------------------------------------------------------------------
 
-export { fetchRoute } from "@mythfood/frontend-shared";
+export { fetchRoute, fetchRouteThrough } from "@mythfood/frontend-shared";
 export type { RouteInfo } from "@mythfood/frontend-shared";
 
 /** Link mở Google Maps dẫn đường (nếu tài xế muốn dùng app ngoài). */

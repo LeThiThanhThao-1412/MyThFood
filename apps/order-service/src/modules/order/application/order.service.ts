@@ -26,6 +26,10 @@ import { buildInvoicePdf } from "./invoice-pdf";
 import { OrderChangeService } from "./order-change.service";
 import { OrderAdjustmentRepository } from "../infrastructure/order-adjustment.repository";
 import { splitFlashSaleLines } from "../domain/flash-sale-pricing";
+import {
+  isActiveOrderLimitReached,
+  resolveMaxActiveOrdersPerConsumer,
+} from "../domain/concurrent-order.policy";
 import { ShippingService } from "../../shipping/shipping.service";
 import {
   DEFAULT_DELIVERY_OPTION,
@@ -54,13 +58,21 @@ export class OrderService {
   // ===================== Order Placement =====================
 
   async placeOrder(dto: PlaceOrderDto): Promise<Order> {
-    // Case 2: mỗi tài khoản/thiết bị chỉ được có 1 đơn đang hoạt động tại một thời điểm.
-    const hasActiveOrder =
-      await this.orderRepository.hasActiveOrderByConsumerId(dto.consumerId);
-    if (hasActiveOrder) {
-      throw new ConflictException(
-        "Bạn đang có một đơn hàng chưa hoàn tất, vui lòng chờ giao xong hoặc hủy đơn cũ trước khi đặt đơn mới",
-      );
+    // Khách được đặt nhiều đơn cùng lúc (nhiều quán / nhiều lượt trong ngày).
+    // Chỉ khi quản trị đặt trần `MAX_ACTIVE_ORDERS_PER_CONSUMER > 0` mới chặn
+    // thêm; mặc định 0 = không giới hạn. Mỗi đơn vẫn độc lập về tài xế,
+    // thanh toán và trạng thái.
+    const maxActiveOrders = resolveMaxActiveOrdersPerConsumer();
+    if (maxActiveOrders > 0) {
+      const activeOrderCount =
+        await this.orderRepository.countActiveOrdersByConsumerId(
+          dto.consumerId,
+        );
+      if (isActiveOrderLimitReached(activeOrderCount, maxActiveOrders)) {
+        throw new ConflictException(
+          `Bạn đang có ${activeOrderCount} đơn chưa hoàn tất (tối đa ${maxActiveOrders} đơn cùng lúc), vui lòng chờ giao xong hoặc hủy bớt đơn cũ trước khi đặt đơn mới`,
+        );
+      }
     }
 
     // Flash sale: áp giá sale cho các món trong flash sale đang ACTIVE.

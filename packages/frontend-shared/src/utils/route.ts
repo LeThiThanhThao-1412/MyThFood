@@ -30,31 +30,59 @@ function toNum(v: unknown, fallback = 0): number {
   return fallback;
 }
 
-/** Lấy tuyến đường thực tế giữa 2 điểm; lỗi mạng → đường thẳng nối 2 điểm. */
-export async function fetchRoute(
-  from: RoutePoint,
-  to: RoutePoint,
-): Promise<RouteInfo> {
-  const distanceKm = haversineKm(
-    from.latitude,
-    from.longitude,
-    to.latitude,
-    to.longitude,
-  );
-  const straight: RouteInfo = {
-    points: [
-      [from.latitude, from.longitude],
-      [to.latitude, to.longitude],
-    ],
+/** Đường thẳng nối các điểm — fallback khi OSRM lỗi hoặc thiếu toạ độ. */
+function straightRoute(points: RoutePoint[]): RouteInfo {
+  const routePoints: [number, number][] = points.map((point) => [
+    point.latitude,
+    point.longitude,
+  ]);
+  let distanceKm = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1]!;
+    const current = points[index]!;
+    distanceKm += haversineKm(
+      previous.latitude,
+      previous.longitude,
+      current.latitude,
+      current.longitude,
+    );
+  }
+  return {
+    points: routePoints,
     distanceKm,
     durationMin: Math.max(1, Math.round((distanceKm / AVG_SPEED_KMH) * 60)),
     source: "straight",
   };
+}
+
+/**
+ * Lấy tuyến đường thực tế đi qua nhiều điểm theo đúng thứ tự truyền vào.
+ * Dùng cho lộ trình gộp đơn: 1 request OSRM cho toàn bộ chuỗi điểm.
+ * Lỗi mạng → nối thẳng các điểm.
+ */
+export async function fetchRouteThrough(
+  points: RoutePoint[],
+): Promise<RouteInfo> {
+  const validPoints = points.filter(
+    (point) =>
+      Number.isFinite(point.latitude) && Number.isFinite(point.longitude),
+  );
+  if (validPoints.length < 2) {
+    return {
+      points: validPoints.map((point) => [point.latitude, point.longitude]),
+      distanceKm: 0,
+      durationMin: 0,
+      source: "straight",
+    };
+  }
+
+  const straight = straightRoute(validPoints);
 
   try {
-    const url =
-      `${OSRM_BASE}/${from.longitude},${from.latitude};${to.longitude},${to.latitude}` +
-      `?overview=full&geometries=geojson`;
+    const coordinates = validPoints
+      .map((point) => `${point.longitude},${point.latitude}`)
+      .join(";");
+    const url = `${OSRM_BASE}/${coordinates}?overview=full&geometries=geojson`;
     const res = await fetch(url);
     if (!res.ok) return straight;
     const data: any = await res.json();
@@ -70,4 +98,12 @@ export async function fetchRoute(
   } catch {
     return straight;
   }
+}
+
+/** Lấy tuyến đường thực tế giữa 2 điểm; lỗi mạng → đường thẳng nối 2 điểm. */
+export async function fetchRoute(
+  from: RoutePoint,
+  to: RoutePoint,
+): Promise<RouteInfo> {
+  return fetchRouteThrough([from, to]);
 }

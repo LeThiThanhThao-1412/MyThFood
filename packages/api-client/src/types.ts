@@ -831,6 +831,20 @@ export interface DriverRouteStop {
   deliveryLongitude: number;
   pickupDone: boolean;
   deliveryDone: boolean;
+  /** Thứ tự chặng lấy hàng; null nếu đã lấy xong hoặc đơn đã giao. */
+  pickupSequence?: number | null;
+  /** Thứ tự chặng giao hàng; null nếu đơn đã giao. */
+  dropoffSequence?: number | null;
+}
+
+/** Một chặng cụ thể trên lộ trình tối ưu (lấy món hoặc giao hàng). */
+export interface DriverRouteLeg {
+  orderId: string;
+  type: "PICKUP" | "DROPOFF";
+  sequence: number;
+  latitude: number;
+  longitude: number;
+  status: string;
 }
 
 export interface DriverRoute {
@@ -839,6 +853,9 @@ export interface DriverRoute {
   batchId: string | null;
   maxStackedOrders: number;
   stops: DriverRouteStop[];
+  /** Thứ tự chặng tối ưu do dispatch-service tính (có thể đan xen pickup/dropoff). */
+  legs?: DriverRouteLeg[];
+  totalDistanceKm?: number;
 }
 
 export interface CreateDispatchRequest {

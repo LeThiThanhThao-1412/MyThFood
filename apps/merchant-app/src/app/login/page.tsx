@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -7,6 +7,7 @@ import {
   canAccessApp,
   AccountBlockNotice,
   getAccountBlockInfo,
+  consumeStoredAccountBlock,
 } from "@mythfood/frontend-shared";
 import type { AccountBlockInfo } from "@mythfood/frontend-shared";
 
@@ -19,6 +20,12 @@ export default function MerchantLoginPage() {
   const [block, setBlock] = useState<AccountBlockInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Hiển thị thông báo khi bị đăng xuất cưỡng bức do tài khoản bị khóa/từ chối.
+  useEffect(() => {
+    const stored = consumeStoredAccountBlock();
+    if (stored) setBlock(stored);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

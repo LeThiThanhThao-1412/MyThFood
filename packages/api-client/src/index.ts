@@ -117,6 +117,7 @@ export type {
   DeliveryFailedRequest,
   Dispatch,
   DriverRoute,
+  DriverRouteLeg,
   DriverRouteStop,
   CreateDispatchRequest,
   DeclineDispatchRequest,

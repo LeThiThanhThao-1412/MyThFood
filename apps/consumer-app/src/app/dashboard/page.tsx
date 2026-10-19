@@ -312,8 +312,10 @@ export default function DashboardPage() {
     };
   }, [reorderableDishes]);
 
-  // Đơn đang hoạt động (chưa giao xong / chưa hủy) để hiển thị floating card theo dõi
-  const activeOrder = orders
+  // Các đơn đang hoạt động (chưa giao xong / chưa hủy) để hiển thị floating
+  // card theo dõi. Khách được đặt nhiều đơn cùng lúc nên giữ toàn bộ danh sách,
+  // mới nhất trước; component tự giới hạn số thẻ hiển thị.
+  const activeOrders = orders
     .filter((o) =>
       [
         "PENDING",
@@ -327,7 +329,7 @@ export default function DashboardPage() {
       (a, b) =>
         new Date(b.createdAt || 0).getTime() -
         new Date(a.createdAt || 0).getTime(),
-    )[0];
+    );
 
   // Delivery fee from restaurant → customer's current location (distance-based)
   const feeFor = (m: any) => {
@@ -1158,8 +1160,8 @@ export default function DashboardPage() {
           counterpartAvatar={chatCounterpart.avatar}
         />
 
-        {/* Mini floating card theo dõi đơn đang giao */}
-        <FloatingOrderCard order={activeOrder} />
+        {/* Mini floating card theo dõi các đơn đang xử lý/giao */}
+        <FloatingOrderCard orders={activeOrders} />
 
         <footer className="bg-[#1a1a2e] text-white/60 py-6 mt-auto hidden lg:block">
           <div className="max-w-[1920px] mx-auto px-6 text-center text-xs">

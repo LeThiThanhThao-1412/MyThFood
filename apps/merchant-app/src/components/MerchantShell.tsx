@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { merchantApi } from "@mythfood/api-client";
-import { useAuthStore } from "@mythfood/frontend-shared";
+import {
+  useAuthStore,
+  getAccountBlockFromProfile,
+  storeAccountBlock,
+} from "@mythfood/frontend-shared";
 import TopNav from "./TopNav";
 
 /**
@@ -19,18 +24,35 @@ export default function MerchantShell({
   /** Override max-width cho các trang hẹp (VD: max-w-2xl, max-w-3xl). */
   contentClassName?: string;
 }) {
-  const { user } = useAuthStore();
+  const { user, clearAuth } = useAuthStore();
+  const router = useRouter();
   const [info, setInfo] = useState<{ name?: string; isOpen?: boolean }>({});
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (!user?.id) return;
       try {
-        const res = await merchantApi.list({ take: 200 });
-        const m = (res.items || []).find((x: any) => x.userId === user?.id);
-        if (!cancelled && m) {
-          setInfo({ name: m.name, isOpen: m.isOpen });
+        const m: any = await merchantApi.getByUserId(user.id);
+        if (cancelled || !m) return;
+
+        // Nếu hồ sơ nhà hàng đã bị từ chối trong khi vẫn còn token cũ,
+        // buộc đăng xuất và chuyển về trang login kèm thông báo.
+        if (m.status === "REJECTED") {
+          const block = getAccountBlockFromProfile({
+            status: "REJECTED",
+            rejectedAt: m.rejectedAt,
+            rejectReason: m.rejectReason,
+          });
+          if (block) {
+            storeAccountBlock(block);
+            clearAuth();
+            router.replace("/login");
+            return;
+          }
         }
+
+        setInfo({ name: m.name, isOpen: m.isOpen });
       } catch {
         // Header vẫn hiển thị bình thường khi chưa lấy được thông tin.
       }
@@ -38,7 +60,7 @@ export default function MerchantShell({
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [user?.id, clearAuth, router]);
 
   return (
     <div className="min-h-screen bg-[#f0f2f5] flex flex-col">

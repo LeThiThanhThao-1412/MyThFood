@@ -42,7 +42,12 @@ export class DriverDispatchOfferEntity {
   @Index("idx_driver_dispatch_offers_outcome")
   outcome!: DriverDispatchOfferOutcome;
 
-  @Column({ type: "varchar", length: 30, name: "decline_reason", nullable: true })
+  @Column({
+    type: "varchar",
+    length: 30,
+    name: "decline_reason",
+    nullable: true,
+  })
   decline_reason!: string | null;
 
   @Column({

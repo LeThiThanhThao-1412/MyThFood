@@ -107,7 +107,7 @@ export class AuthService {
 
     // Auto-unlock nếu tài khoản bị khóa có thời hạn và đã hết hạn.
     if (user.autoUnlockIfExpired()) {
-      await this.userRepository.save(user);
+      await this.userRepository.activateById(user.id);
       await this.userAdminService.syncExternalAccountStatus(user, "ACTIVE");
     }
 
@@ -134,7 +134,12 @@ export class AuthService {
     }
 
     user.recordLogin();
-    await this.userRepository.save(user);
+    // Chỉ cập nhật last_login_at, tránh ghi đè trạng thái nếu admin vừa
+    // khóa/từ chối tài khoản trong lúc người dùng đang đăng nhập.
+    await this.userRepository.updateLastLogin(
+      user.id,
+      user.lastLogin ?? new Date(),
+    );
 
     return this.generateTokens(user);
   }
@@ -221,7 +226,7 @@ export class AuthService {
 
       // Auto-unlock nếu tài khoản bị khóa có thời hạn và đã hết hạn.
       if (user.autoUnlockIfExpired()) {
-        await this.userRepository.save(user);
+        await this.userRepository.activateById(user.id);
         await this.userAdminService.syncExternalAccountStatus(user, "ACTIVE");
       }
 

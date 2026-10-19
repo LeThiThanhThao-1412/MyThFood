@@ -33,7 +33,6 @@ export default function AdminMerchantDetailPage() {
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
   const [rejectOpen, setRejectOpen] = useState(false);
-  const [suspendOpen, setSuspendOpen] = useState(false);
   const [dialogLoading, setDialogLoading] = useState(false);
 
   useEffect(() => {
@@ -80,18 +79,6 @@ export default function AdminMerchantDetailPage() {
     await act(() => merchantApi.reject(id, reason), "Đã từ chối nhà hàng");
     setDialogLoading(false);
     setRejectOpen(false);
-  }
-
-  async function confirmSuspend(reason: string, durationDays: number) {
-    setDialogLoading(true);
-    await act(
-      () => merchantApi.suspend(id, { reason, durationDays }),
-      durationDays > 0
-        ? `Đã khóa nhà hàng ${durationDays} ngày`
-        : "Đã khóa nhà hàng vĩnh viễn",
-    );
-    setDialogLoading(false);
-    setSuspendOpen(false);
   }
 
   if (loading) {
@@ -198,22 +185,20 @@ export default function AdminMerchantDetailPage() {
               </>
             )}
             {merchant.status === "APPROVED" && (
-              <button
-                onClick={() => setSuspendOpen(true)}
-                className="bg-gray-800 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-900"
+              <Link
+                href="/users"
+                className="bg-gray-100 text-gray-600 px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200"
               >
-                🔒 Khóa nhà hàng
-              </button>
+                🔒 Khóa tài khoản tại trang Người dùng
+              </Link>
             )}
             {merchant.status === "SUSPENDED" && (
-              <button
-                onClick={() =>
-                  act(() => merchantApi.reactivate(id), "Đã mở khóa nhà hàng")
-                }
-                className="bg-[#2ecc71] text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-green-600"
+              <Link
+                href="/users"
+                className="bg-gray-100 text-gray-600 px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200"
               >
-                🔓 Mở khóa
-              </button>
+                🔓 Mở khóa tại trang Người dùng
+              </Link>
             )}
             {merchant.status === "REJECTED" && (
               <button
@@ -321,17 +306,6 @@ export default function AdminMerchantDetailPage() {
         loading={dialogLoading}
         onCancel={() => setRejectOpen(false)}
         onConfirm={confirmReject}
-      />
-
-      <ReasonDialog
-        open={suspendOpen}
-        title={`Khóa nhà hàng "${merchant.name}"`}
-        description="Lý do sẽ hiển thị cho chủ nhà hàng khi đăng nhập."
-        confirmLabel="Khóa nhà hàng"
-        withDuration
-        loading={dialogLoading}
-        onCancel={() => setSuspendOpen(false)}
-        onConfirm={confirmSuspend}
       />
     </AdminShell>
   );

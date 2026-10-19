@@ -45,10 +45,7 @@ export class DriverComplianceService {
       warnRate: this.rate("DRIVER_COMPLIANCE_WARN_RATE", 0.3),
       fineRate: this.rate("DRIVER_COMPLIANCE_FINE_RATE", 0.5),
       suspendRate: this.rate("DRIVER_COMPLIANCE_SUSPEND_RATE", 0.7),
-      cooldownHours: this.positiveInt(
-        "DRIVER_COMPLIANCE_COOLDOWN_HOURS",
-        24,
-      ),
+      cooldownHours: this.positiveInt("DRIVER_COMPLIANCE_COOLDOWN_HOURS", 24),
     };
   }
 
@@ -216,7 +213,8 @@ export class DriverComplianceService {
     windowDays: number,
   ): string {
     const bad = stats.declined + stats.noResponse;
-    const pct = stats.total > 0 ? ((bad / stats.total) * 100).toFixed(1) : "0.0";
+    const pct =
+      stats.total > 0 ? ((bad / stats.total) * 100).toFixed(1) : "0.0";
     return (
       `Tài xế vượt ngưỡng tỉ lệ từ chối/không phản hồi (${type}): ` +
       `${stats.declined} từ chối + ${stats.noResponse} không phản hồi ` +

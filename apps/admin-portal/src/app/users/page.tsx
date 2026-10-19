@@ -121,18 +121,25 @@ export default function AdminUsersPage() {
   }
 
   const statusBadge = (status: string) => {
-    const m: Record<string, string> = {
-      ACTIVE: "bg-green-100 text-green-700",
-      INACTIVE: "bg-yellow-100 text-yellow-700",
-      SUSPENDED: "bg-red-100 text-red-700",
-      BANNED: "bg-gray-800 text-white",
-      REJECTED: "bg-gray-200 text-gray-700",
+    const meta: Record<string, { label: string; cls: string }> = {
+      ACTIVE: { label: "Hoạt động", cls: "bg-green-100 text-green-700" },
+      INACTIVE: {
+        label: "Chưa kích hoạt",
+        cls: "bg-yellow-100 text-yellow-700",
+      },
+      SUSPENDED: { label: "Bị khóa", cls: "bg-red-100 text-red-700" },
+      BANNED: { label: "Khóa vĩnh viễn", cls: "bg-gray-800 text-white" },
+      REJECTED: { label: "Từ chối", cls: "bg-gray-200 text-gray-700" },
+    };
+    const m = meta[status] ?? {
+      label: status,
+      cls: "bg-gray-100 text-gray-600",
     };
     return (
       <span
-        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${m[status] || "bg-gray-100 text-gray-600"}`}
+        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${m.cls}`}
       >
-        {status}
+        {m.label}
       </span>
     );
   };
@@ -257,10 +264,13 @@ export default function AdminUsersPage() {
                     <td className="px-4 py-3">{roleBadge(u.roles)}</td>
                     <td className="px-4 py-3">
                       {statusBadge(u.status)}
-                      {u.status === "SUSPENDED" && u.suspendedUntil && (
+                      {u.status === "SUSPENDED" && (
                         <p className="text-[10px] text-gray-400 mt-1">
-                          Khóa đến:{" "}
-                          {new Date(u.suspendedUntil).toLocaleString("vi-VN")}
+                          {u.suspendedUntil
+                            ? `Khóa đến: ${new Date(
+                                u.suspendedUntil,
+                              ).toLocaleString("vi-VN")}`
+                            : "Khóa vĩnh viễn"}
                         </p>
                       )}
                       {u.suspendReason && (
@@ -361,12 +371,16 @@ export default function AdminUsersPage() {
             <h3 className="font-bold text-lg text-gray-800 mb-1">
               🔒 Khóa tài khoản
             </h3>
-            <p className="text-sm text-gray-500 mb-4">
+            <p className="text-sm text-gray-500 mb-1">
               {lockTarget.fullName} · {lockTarget.phone}
+            </p>
+            <p className="text-[11px] text-gray-400 mb-4">
+              Áp dụng cho tài khoản đăng nhập và hồ sơ nhà hàng/tài xế liên kết.
+              Lý do sẽ hiển thị khi người dùng đăng nhập.
             </p>
 
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              Thời hạn khóa (ngày, để 0 = vô thời hạn)
+              Thời hạn khóa (ngày, để 0 = vĩnh viễn)
             </label>
             <input
               type="number"
@@ -377,7 +391,7 @@ export default function AdminUsersPage() {
             />
 
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              Lý do
+              Lý do <span className="text-red-500">*</span>
             </label>
             <input
               value={lockReason}
@@ -388,11 +402,12 @@ export default function AdminUsersPage() {
 
             <div className="flex gap-2">
               <button
+                disabled={!lockReason.trim()}
                 onClick={async () => {
-                  await handleLock(lockTarget.id, lockDays, lockReason);
+                  await handleLock(lockTarget.id, lockDays, lockReason.trim());
                   setLockTarget(null);
                 }}
-                className="flex-1 bg-[#e74c3c] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-red-600"
+                className="flex-1 bg-[#e74c3c] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-red-600 disabled:opacity-50"
               >
                 Xác nhận khóa
               </button>

@@ -84,8 +84,14 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     return Promise.all(entities.map((e) => this.loadRelatedAndMap(e)));
   }
 
-  async hasActiveOrderByConsumerId(consumerId: string): Promise<boolean> {
-    const count = await this.repository
+  /**
+   * Đếm số đơn còn đang hoạt động của một khách (chưa giao xong / chưa hủy).
+   *
+   * Dùng cho trần "đặt nhiều đơn cùng lúc" — khách được phép có nhiều đơn đồng
+   * thời nên chỉ cần con số, không còn chặn cứng ở mức 1 đơn.
+   */
+  async countActiveOrdersByConsumerId(consumerId: string): Promise<number> {
+    return this.repository
       .createQueryBuilder("order")
       .where("order.consumer_id = :consumerId", { consumerId })
       .andWhere("order.deleted_at IS NULL")
@@ -93,7 +99,6 @@ export class OrderRepository implements IRepository<Order, OrderId> {
         statuses: ACTIVE_ORDER_STATUSES,
       })
       .getCount();
-    return count > 0;
   }
 
   async findByMerchantId(merchantId: string): Promise<Order[]> {

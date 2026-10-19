@@ -1,8 +1,14 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useAuthStore } from "@mythfood/frontend-shared";
+import { driverApi } from "@mythfood/api-client";
+import {
+  useAuthStore,
+  getAccountBlockFromProfile,
+  storeAccountBlock,
+} from "@mythfood/frontend-shared";
 
 const NAV_ITEMS = [
   { href: "/dashboard", icon: "📊", label: "Tổng quan" },
@@ -39,7 +45,38 @@ export default function DriverShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { clearAuth } = useAuthStore();
+  const { user, clearAuth } = useAuthStore();
+
+  // Nếu hồ sơ tài xế đã bị từ chối trong khi vẫn còn token cũ,
+  // buộc đăng xuất và chuyển về trang login kèm thông báo.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!user?.id) return;
+      try {
+        const res: any = await driverApi.getByUserId(user.id);
+        const d = res?.data ?? res;
+        if (cancelled || !d) return;
+        if (d.status === "REJECTED") {
+          const block = getAccountBlockFromProfile({
+            status: "REJECTED",
+            rejectedAt: d.rejectedAt,
+            rejectReason: d.rejectReason,
+          });
+          if (block) {
+            storeAccountBlock(block);
+            clearAuth();
+            router.replace("/login");
+          }
+        }
+      } catch {
+        // Bỏ qua khi chưa tải được hồ sơ tài xế.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, clearAuth, router]);
 
   return (
     <div className="min-h-screen bg-[#f0f2f5] flex flex-col">

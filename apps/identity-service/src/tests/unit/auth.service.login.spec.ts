@@ -33,6 +33,8 @@ describe("AuthService.login — account status notices", () => {
       findByPhone: jest.fn(async () => currentUser),
       findById: jest.fn(async () => currentUser),
       save: jest.fn(async () => undefined),
+      updateLastLogin: jest.fn(async () => undefined),
+      activateById: jest.fn(async () => undefined),
       purgeById,
     };
 

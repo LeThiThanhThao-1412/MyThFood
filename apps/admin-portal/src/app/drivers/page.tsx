@@ -40,7 +40,6 @@ export default function AdminDriversPage() {
   const [actionMsg, setActionMsg] = useState("");
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [rejectTarget, setRejectTarget] = useState<any | null>(null);
-  const [suspendTarget, setSuspendTarget] = useState<any | null>(null);
   const [dialogLoading, setDialogLoading] = useState(false);
 
   useEffect(() => {
@@ -109,19 +108,6 @@ export default function AdminDriversPage() {
     );
     setDialogLoading(false);
     setRejectTarget(null);
-  }
-
-  async function confirmSuspend(reason: string, durationDays: number) {
-    if (!suspendTarget) return;
-    setDialogLoading(true);
-    await runAction(
-      () => driverApi.suspend(suspendTarget.id, { reason, durationDays }),
-      durationDays > 0
-        ? `Đã khóa tài xế ${durationDays} ngày`
-        : "Đã khóa tài xế vĩnh viễn",
-    );
-    setDialogLoading(false);
-    setSuspendTarget(null);
   }
 
   const selectedStatus = STATUS_BADGE[selected?.status] || {
@@ -392,25 +378,20 @@ export default function AdminDriversPage() {
                   </button>
                 )}
                 {selected.status === "ACTIVE" && (
-                  <button
-                    onClick={() => setSuspendTarget(selected)}
-                    className="flex-1 bg-gray-800 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-900"
+                  <Link
+                    href="/users"
+                    className="flex-1 text-center bg-gray-100 text-gray-600 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200"
                   >
-                    🔒 Khóa tài xế
-                  </button>
+                    🔒 Khóa tài khoản tại trang Người dùng
+                  </Link>
                 )}
                 {selected.status === "SUSPENDED" && (
-                  <button
-                    onClick={() =>
-                      runAction(
-                        () => driverApi.unlock(selected.id),
-                        "Đã mở khóa tài xế",
-                      )
-                    }
-                    className="flex-1 bg-green-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-700"
+                  <Link
+                    href="/users"
+                    className="flex-1 text-center bg-gray-100 text-gray-600 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200"
                   >
-                    🔓 Mở khóa ngay
-                  </button>
+                    🔓 Mở khóa tại trang Người dùng
+                  </Link>
                 )}
                 {selected.status === "REJECTED" &&
                   !selected.isTrainingCompleted && (
@@ -460,17 +441,6 @@ export default function AdminDriversPage() {
         loading={dialogLoading}
         onCancel={() => setRejectTarget(null)}
         onConfirm={confirmReject}
-      />
-
-      <ReasonDialog
-        open={!!suspendTarget}
-        title={`Khóa tài xế "${suspendTarget?.fullName ?? ""}"`}
-        description="Lý do sẽ hiển thị cho tài xế khi đăng nhập."
-        confirmLabel="Khóa tài xế"
-        withDuration
-        loading={dialogLoading}
-        onCancel={() => setSuspendTarget(null)}
-        onConfirm={confirmSuspend}
       />
     </AdminShell>
   );

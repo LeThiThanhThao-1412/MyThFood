@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../stores/auth.store";
 import { httpClient } from "@mythfood/api-client";
+import {
+  getAccountBlockFromProfile,
+  storeAccountBlock,
+} from "../utils/account-status";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_GATEWAY || "http://localhost:3001";
@@ -70,6 +74,32 @@ export default function AuthProvider({
     // Proactive refresh: if we have a stored token, try to refresh it immediately
     // so page reload doesn't cause redirect to login
     async function initAuth() {
+      /**
+       * Nếu tài khoản (tài xế/nhà hàng) đã bị khóa/từ chối trong khi vẫn còn
+       * token cũ, buộc đăng xuất và chuyển về trang login kèm thông báo.
+       */
+      function enforceAccountStatus(profile: any): boolean {
+        const roles: string[] = profile?.roles ?? [];
+        const isPartner =
+          roles.includes("DRIVER") ||
+          roles.includes("MERCHANT_OWNER") ||
+          roles.includes("MERCHANT_STAFF");
+        if (!isPartner) return false;
+
+        const info = getAccountBlockFromProfile(profile);
+        if (!info) return false;
+
+        storeAccountBlock(info);
+        clearAuth();
+        if (
+          typeof window !== "undefined" &&
+          window.location.pathname !== "/login"
+        ) {
+          window.location.replace("/login");
+        }
+        return true;
+      }
+
       if (token && isAuthenticated) {
         // We have a stored token – verify it works by fetching profile
         try {
@@ -82,6 +112,7 @@ export default function AuthProvider({
           if (res.ok) {
             const data = await res.json();
             const profile = data.data || data;
+            if (profile && enforceAccountStatus(profile)) return;
             if (profile && profile.id && user) {
               // Token still valid, update user info if needed
               setAuth(
@@ -123,6 +154,7 @@ export default function AuthProvider({
                     if (retryRes.ok) {
                       const profileData = await retryRes.json();
                       const profile = profileData.data || profileData;
+                      if (profile && enforceAccountStatus(profile)) return;
                       if (profile && profile.id) {
                         setAuth(
                           newTokens.accessToken,

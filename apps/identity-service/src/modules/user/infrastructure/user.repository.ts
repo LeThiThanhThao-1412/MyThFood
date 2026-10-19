@@ -118,6 +118,26 @@ export class UserRepository implements IRepository<User, UserId> {
     return count > 0;
   }
 
+  /** Cập nhật riêng mốc đăng nhập (không ghi đè trạng thái khóa/từ chối). */
+  async updateLastLogin(id: UserId, at: Date): Promise<void> {
+    await this.repository.update({ id: id.toString() }, { last_login_at: at });
+  }
+
+  /** Mở khóa tài khoản bằng UPDATE có mục tiêu (an toàn khi có request song song). */
+  async activateById(id: UserId): Promise<void> {
+    await this.repository.update(
+      { id: id.toString() },
+      {
+        status: "ACTIVE",
+        suspended_until: null,
+        suspended_at: null,
+        suspend_reason: null,
+        rejected_at: null,
+        reject_reason: null,
+      },
+    );
+  }
+
   /** Lấy các user đang SUSPENDED nhưng đã hết hạn khóa (để tự mở). */
   async findExpiredSuspended(now: Date): Promise<User[]> {
     const entities = await this.repository.find({

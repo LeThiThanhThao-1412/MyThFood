@@ -29,7 +29,6 @@ export default function AdminMerchantsPage() {
   const [filter, setFilter] = useState("");
   const [msg, setMsg] = useState("");
   const [rejectTarget, setRejectTarget] = useState<any | null>(null);
-  const [suspendTarget, setSuspendTarget] = useState<any | null>(null);
   const [dialogLoading, setDialogLoading] = useState(false);
 
   useEffect(() => {
@@ -71,19 +70,6 @@ export default function AdminMerchantsPage() {
     await act(() => merchantApi.reject(rejectTarget.id, reason), "Đã từ chối");
     setDialogLoading(false);
     setRejectTarget(null);
-  }
-
-  async function confirmSuspend(reason: string, durationDays: number) {
-    if (!suspendTarget) return;
-    setDialogLoading(true);
-    await act(
-      () => merchantApi.suspend(suspendTarget.id, { reason, durationDays }),
-      durationDays > 0
-        ? `Đã khóa nhà hàng ${durationDays} ngày`
-        : "Đã khóa nhà hàng vĩnh viễn",
-    );
-    setDialogLoading(false);
-    setSuspendTarget(null);
   }
 
   return (
@@ -196,12 +182,9 @@ export default function AdminMerchantsPage() {
                           </>
                         )}
                         {m.status === "APPROVED" && (
-                          <button
-                            onClick={() => setSuspendTarget(m)}
-                            className="text-xs bg-gray-700 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-gray-800"
-                          >
-                            Khóa
-                          </button>
+                          <span className="text-[10px] text-gray-400 self-center">
+                            Khóa tại trang Người dùng
+                          </span>
                         )}
                         {m.status === "REJECTED" && (
                           <button
@@ -217,17 +200,12 @@ export default function AdminMerchantsPage() {
                           </button>
                         )}
                         {m.status === "SUSPENDED" && (
-                          <button
-                            onClick={() =>
-                              act(
-                                () => merchantApi.reactivate(m.id),
-                                "Đã mở khóa",
-                              )
-                            }
-                            className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700"
+                          <Link
+                            href="/users"
+                            className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg font-semibold hover:bg-gray-200"
                           >
-                            Mở khóa
-                          </button>
+                            Mở khóa tại Người dùng
+                          </Link>
                         )}
                       </div>
                     </td>
@@ -247,17 +225,6 @@ export default function AdminMerchantsPage() {
         loading={dialogLoading}
         onCancel={() => setRejectTarget(null)}
         onConfirm={confirmReject}
-      />
-
-      <ReasonDialog
-        open={!!suspendTarget}
-        title={`Khóa nhà hàng "${suspendTarget?.name ?? ""}"`}
-        description="Lý do sẽ hiển thị cho chủ nhà hàng khi đăng nhập."
-        confirmLabel="Khóa nhà hàng"
-        withDuration
-        loading={dialogLoading}
-        onCancel={() => setSuspendTarget(null)}
-        onConfirm={confirmSuspend}
       />
     </AdminShell>
   );

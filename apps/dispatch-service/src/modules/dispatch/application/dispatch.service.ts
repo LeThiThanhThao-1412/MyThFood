@@ -20,9 +20,11 @@ import {
   normalizeDeliveryOption,
 } from "../domain/delivery-option";
 import {
+  PlannedLeg,
+  PlannedStop,
   RouteStopInput,
   isRouteCompatible,
-  planRoute,
+  planRouteDetailed,
 } from "../domain/route-planner";
 import { randomUUID } from "node:crypto";
 import { MatchingEngineService } from "./matching-engine.service";
@@ -614,6 +616,18 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     );
     dispatch.markPickedUp();
     await this.dispatchRepo.save(dispatch);
+
+    // Lấy món xong → tính lại lộ trình còn lại (các chặng giao hàng).
+    const driverId = dispatch.dispatchDriverId;
+    if (driverId) {
+      try {
+        await this.refreshDriverRoute(driverId);
+      } catch (err: any) {
+        this.logger.warn(
+          `refreshDriverRoute after pickup failed for ${driverId}: ${err.message}`,
+        );
+      }
+    }
     return dispatch;
   }
 
@@ -754,6 +768,17 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     return Number.isFinite(value) && value > 0 ? value : 3;
   }
 
+  private saverPickupRadiusKm(): number {
+    const fallback = this.saverStackRadiusKm();
+    const value = Number(process.env.SAVER_PICKUP_RADIUS_KM || fallback);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  }
+
+  private saverMaxDetourKm(): number {
+    const value = Number(process.env.SAVER_MAX_DETOUR_KM || 3);
+    return Number.isFinite(value) && value >= 0 ? value : 3;
+  }
+
   private toRouteStop(dispatch: Dispatch): RouteStopInput {
     return {
       orderId: dispatch.dispatchOrderId,
@@ -819,10 +844,18 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       Number(driver.currentLongitude ?? dispatch.dispatchMerchantLongitude),
       stops,
       {
+        orderId: dispatch.dispatchOrderId,
+        merchantLatitude: dispatch.dispatchMerchantLatitude,
+        merchantLongitude: dispatch.dispatchMerchantLongitude,
         deliveryLatitude: dispatch.dispatchDeliveryLatitude,
         deliveryLongitude: dispatch.dispatchDeliveryLongitude,
+        status: dispatch.dispatchStatus,
       },
-      this.saverStackRadiusKm(),
+      {
+        maxDropoffDeviationKm: this.saverStackRadiusKm(),
+        maxPickupDeviationKm: this.saverPickupRadiusKm(),
+        maxDetourKm: this.saverMaxDetourKm(),
+      },
     );
   }
 
@@ -909,22 +942,25 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Tính lại lô + thứ tự điểm dừng cho toàn bộ đơn tài xế đang giữ.
-   * - >=2 đơn SAVER → dùng chung batchId + sequence nearest-neighbor.
+   * - >=2 đơn SAVER → dùng chung batchId + lộ trình tối ưu (pickup/dropoff
+   *   có thể đan xen, miễn lấy món trước khi giao của chính đơn đó).
    * - Còn 0–1 đơn → xóa batch.
    */
   async refreshDriverRoute(driverId: string): Promise<{
     batchId: string | null;
-    stops: ReturnType<typeof planRoute>;
+    stops: PlannedStop[];
+    legs: PlannedLeg[];
+    totalDistanceKm: number;
   }> {
     const active = await this.dispatchRepo.findActiveByDriverId(driverId);
     if (active.length === 0) {
-      return { batchId: null, stops: [] };
+      return { batchId: null, stops: [], legs: [], totalDistanceKm: 0 };
     }
 
     const location = await this.getDriverLocation(driverId);
     const startLat = location?.lat ?? active[0]!.dispatchMerchantLatitude;
     const startLng = location?.lng ?? active[0]!.dispatchMerchantLongitude;
-    const planned = planRoute(
+    const planned = planRouteDetailed(
       startLat,
       startLng,
       active.map((d) => this.toRouteStop(d)),
@@ -941,20 +977,30 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
           await this.dispatchRepo.save(dispatch);
         }
       }
-      return { batchId: null, stops: planned };
+      return {
+        batchId: null,
+        stops: planned.stops,
+        legs: planned.legs,
+        totalDistanceKm: planned.totalDistanceKm,
+      };
     }
 
     const batchId =
       active.find((d) => d.dispatchBatchId)?.dispatchBatchId ?? randomUUID();
 
-    for (const stop of planned) {
+    for (const stop of planned.stops) {
       const dispatch = active.find((d) => d.dispatchOrderId === stop.orderId);
       if (!dispatch) continue;
       dispatch.assignBatch(batchId, stop.sequence);
       await this.dispatchRepo.save(dispatch);
     }
 
-    return { batchId, stops: planned };
+    return {
+      batchId,
+      stops: planned.stops,
+      legs: planned.legs,
+      totalDistanceKm: planned.totalDistanceKm,
+    };
   }
 
   /** Lộ trình gộp đơn hiện tại của tài xế (driver-app). */
@@ -962,17 +1008,9 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     driverId: string;
     batchId: string | null;
     maxStackedOrders: number;
-    stops: Array<{
-      orderId: string;
-      sequence: number;
-      status: string;
-      merchantLatitude: number;
-      merchantLongitude: number;
-      deliveryLatitude: number;
-      deliveryLongitude: number;
-      pickupDone: boolean;
-      deliveryDone: boolean;
-    }>;
+    stops: PlannedStop[];
+    legs: PlannedLeg[];
+    totalDistanceKm: number;
   }> {
     const active = await this.dispatchRepo.findActiveByDriverId(driverId);
     if (active.length === 0) {
@@ -981,13 +1019,15 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         batchId: null,
         maxStackedOrders: 1,
         stops: [],
+        legs: [],
+        totalDistanceKm: 0,
       };
     }
 
     const location = await this.getDriverLocation(driverId);
     const startLat = location?.lat ?? active[0]!.dispatchMerchantLatitude;
     const startLng = location?.lng ?? active[0]!.dispatchMerchantLongitude;
-    const planned = planRoute(
+    const planned = planRouteDetailed(
       startLat,
       startLng,
       active.map((d) => this.toRouteStop(d)),
@@ -997,12 +1037,19 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       driverId,
       batchId: active[0]!.dispatchBatchId,
       maxStackedOrders: active[0]!.dispatchMaxStackedOrders,
-      stops: planned.map((stop) => ({
+      stops: planned.stops.map((stop) => ({
         ...stop,
         status:
           active.find((d) => d.dispatchOrderId === stop.orderId)
             ?.dispatchStatus ?? stop.status,
       })),
+      legs: planned.legs.map((leg) => ({
+        ...leg,
+        status:
+          active.find((d) => d.dispatchOrderId === leg.orderId)
+            ?.dispatchStatus ?? leg.status,
+      })),
+      totalDistanceKm: planned.totalDistanceKm,
     };
   }
 
@@ -1047,8 +1094,12 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
             sequence: 1,
             pickupDone: false,
             deliveryDone: false,
+            pickupSequence: null,
+            dropoffSequence: null,
           },
         ],
+        legs: [],
+        totalDistanceKm: 0,
       };
     }
 
