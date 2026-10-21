@@ -1,27 +1,45 @@
 import { Inject, Injectable, Logger, forwardRef } from "@nestjs/common";
-import { FaultParty, Severity, Verdict } from "../../case/domain/case.enums";
+import {
+  CaseCategory,
+  FaultParty,
+  Severity,
+  Verdict,
+} from "../../case/domain/case.enums";
 import {
   AI_ACTION_TYPES,
+  AI_DELIVERY_MATCH,
   AI_IMAGE_SUPPORT,
   AI_TARGET_TYPES,
   AiActionType,
   AiAnalysisSource,
+  AiContradiction,
+  AiDeliveryMatch,
+  AiDetailedFinding,
   AiEvidenceWeight,
+  AiFindingWeight,
+  AiImageFindings,
   AiImageSupport,
   AiReviewDecision,
   AiSideImageAnalysis,
+  AiSourceAssessment,
   AiSuggestedAction,
   AiTargetType,
+  AiTimelineHighlight,
+  AiVerdictChange,
   AssistantHealth,
   CASE_CONTEXT_SOURCES,
   CaseAiAnalysisRecord,
+  CaseAiListSummary,
   CaseAiReviewResult,
   CaseAiSuggestion,
   CaseContextSnapshot,
 } from "../domain/assistant.types";
 import {
+  AI_IMAGE_SCHEMA,
+  AI_IMAGE_SYSTEM_INSTRUCTION,
   AI_SUGGESTION_SCHEMA,
   AI_SYSTEM_INSTRUCTION,
+  buildImagePrompt,
   buildUserPrompt,
 } from "../domain/assistant.prompt";
 import { ASSISTANT_LLM, AssistantLlmClient } from "../infrastructure/llm.types";
@@ -32,6 +50,11 @@ import {
   AiDecisionOutcome,
 } from "../../case/application/case.service";
 import { CaseContextService } from "./case-context.service";
+import {
+  createPiiContext,
+  redactPayload,
+  resolvePiiMode,
+} from "./pii/pii-redactor";
 import { AnalyzeCaseDto } from "./dtos/assistant.dto";
 import type { AuthUser } from "../../case/application/case.service";
 
@@ -42,7 +65,18 @@ interface NormalizedSuggestion {
   summary: string;
   reporterImages: AiSideImageAnalysis;
   respondentImages: AiSideImageAnalysis;
-  deliveryProofAnalyzed: boolean;
+  deliveryProof: {
+    analyzed: boolean;
+    matchesOrder: AiDeliveryMatch | null;
+    itemsSeen: string | null;
+    analysis: string | null;
+  };
+  menuImagesAnalyzed: number;
+  sourceAssessment: AiSourceAssessment[];
+  detailedFindings: AiDetailedFinding[];
+  contradictions: AiContradiction[];
+  timelineHighlights: AiTimelineHighlight[];
+  whatWouldChangeVerdict: AiVerdictChange[];
   sideComparison: string;
   suggestedVerdict: Verdict;
   suggestedFaultParty: FaultParty;
@@ -72,13 +106,55 @@ const LIMITS = {
   sideComparisonChars: 420,
   noteChars: 420,
   noteSentences: 3,
-  keyFindings: 3,
-  evidenceGaps: 3,
-  riskFlags: 2,
+  keyFindings: 5,
+  evidenceGaps: 5,
+  riskFlags: 3,
   questions: 2,
   actions: 4,
   bulletChars: 220,
+  detailedFindings: 6,
+  contradictions: 4,
+  timelineHighlights: 6,
+  verdictChanges: 4,
+  sourceAssessments: 10,
+  detailChars: 320,
 } as const;
+
+const AI_FINDING_WEIGHT_VALUES: AiFindingWeight[] = [
+  "STRONG",
+  "MEDIUM",
+  "WEAK",
+];
+const AI_SOURCE_STATUS_VALUES: AiSourceAssessment["status"][] = [
+  "USED",
+  "MISSING",
+  "CONTRADICTS",
+  "NOT_RELEVANT",
+];
+
+/** Cờ bật/tắt tầng phân tích chi tiết (rollout). */
+const deepOutputEnabled = (): boolean => {
+  const raw = process.env.AI_DEEP_OUTPUT;
+  if (raw === undefined || raw === "") return true;
+  return !["false", "0", "off", "no"].includes(raw.trim().toLowerCase());
+};
+
+const envBool = (key: string, fallback: boolean): boolean => {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return fallback;
+  return !["false", "0", "off", "no"].includes(raw.trim().toLowerCase());
+};
+
+const envInt = (
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number => {
+  const parsed = Number(process.env[key]);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+};
 
 /** Câu hỏi không phải bằng chứng / không làm thay đổi kết luận. */
 const QUESTION_NOISE =
@@ -90,8 +166,36 @@ const RISK_NOISE =
 
 /** Ghi chú phán quyết thay thế khi guard trọng số lật sang `INVALID`. */
 const NOTE_SELF_CONTRADICTION =
-  "Khiếu nại không có căn cứ: ảnh do bên khiếu nại tự cung cấp không khớp với mô tả thiệt hại. " +
+  "Khiếu nại không có căn cứ: ảnh do bên khiếu nại tự cung cấp cho thấy tình trạng NGƯỢC với thiệt hại đã mô tả. " +
   "Đề xuất đóng vụ việc (INVALID), không áp dụng hình phạt, thông báo kết quả cho cả hai bên.";
+
+/**
+ * Chỉ những danh mục này mới được phép tự lật `INCONCLUSIVE` → `INVALID` khi ảnh
+ * của chính bên khiếu nại mâu thuẫn với thiệt hại họ nêu.
+ *
+ * Cố ý KHÔNG gồm `WRONG_ITEM` / `MISSING_ITEM` / `NOT_RECEIVED`: với các vụ này
+ * ảnh chụp món khác đơn là bằng chứng **ủng hộ** khách, lật sang INVALID sẽ oan
+ * (đúng sự cố "giao nhầm món" — ảnh khách + ảnh tài xế cùng một món sai).
+ */
+const SELF_CONTRADICTION_CATEGORIES = new Set<CaseCategory>([
+  CaseCategory.DAMAGED_ITEM,
+  CaseCategory.ORDER_QUALITY,
+  CaseCategory.FOOD_SAFETY,
+]);
+
+/**
+ * Danh mục "đúng/sai món" — nếu ảnh giao hàng KHÔNG khớp món đã đặt thì không
+ * được bác bỏ khiếu nại, dù model chữ kết luận INVALID.
+ */
+const ITEM_IDENTITY_CATEGORIES = new Set<CaseCategory>([
+  CaseCategory.WRONG_ITEM,
+  CaseCategory.MISSING_ITEM,
+]);
+
+/** Ghi chú thay thế khi AI kết luận INVALID nhưng ảnh lại cho thấy món khác đơn. */
+const NOTE_ITEM_MISMATCH_NEEDS_REVIEW =
+  "Chưa đủ căn cứ để bác bỏ khiếu nại: ảnh giao hàng/ảnh khách không khớp món khách đã đặt. " +
+  "Đề xuất admin đối chiếu lại món đã đặt với ảnh hai bên trước khi kết luận.";
 
 /** Tài khoản hệ thống dùng khi AI tự phân tích (không có admin bấm). */
 const SYSTEM_ACTOR: AuthUser = {
@@ -137,6 +241,23 @@ export class AssistantService {
   }
 
   getHealth(): AssistantHealth {
+    const enabledContextSources = CASE_CONTEXT_SOURCES.filter((source) => {
+      switch (source.id) {
+        case "D15":
+          return envBool("AI_CONTEXT_MENU", true);
+        case "D16":
+          return envBool("AI_CONTEXT_PROMO", true);
+        case "D17":
+          return envBool("AI_CONTEXT_MERCHANT_REVIEWS", true);
+        case "D18":
+          return envBool("AI_CONTEXT_DRIVER_REVIEWS", true);
+        case "D19":
+          return envBool("AI_CONTEXT_DRIVER_PROFILE", true);
+        default:
+          return true;
+      }
+    }).map((source) => source.id);
+
     return {
       provider: this.llm.provider,
       enabled: this.llm.enabled,
@@ -146,7 +267,12 @@ export class AssistantService {
       model: this.llm.model,
       visionModel: this.llm.visionModel ?? null,
       maxEvidenceImages: this.llm.maxEvidenceImages,
+      maxMenuImages: envInt("AI_MAX_MENU_IMAGES", 2, 0, 8),
       sourceCount: CASE_CONTEXT_SOURCES.length,
+      enabledContextSources,
+      piiMode: resolvePiiMode(),
+      promptCharBudget: envInt("AI_PROMPT_CHAR_BUDGET", 48000, 4000, 200000),
+      deepOutput: deepOutputEnabled(),
       autoAnalyze: this.autoAnalyze,
     };
   }
@@ -203,6 +329,24 @@ export class AssistantService {
         `Không đọc được bản phân tích (${caseId}): ${err?.message ?? err}`,
       );
       return null;
+    }
+  }
+
+  /**
+   * Bản rút gọn của nhiều vụ việc — badge "AI: có căn cứ · 82%" trên lưới vụ việc.
+   *
+   * Một query cho cả trang, thay vì gọi `/analysis` cho từng thẻ.
+   */
+  async listSummaries(caseIds: string[]): Promise<CaseAiListSummary[]> {
+    const ids = [...new Set((caseIds ?? []).filter(Boolean))].slice(0, 200);
+    if (ids.length === 0) return [];
+    try {
+      return await this.analysisRepo.findSummaries(ids);
+    } catch (err: any) {
+      this.logger.warn(
+        `Không đọc được danh sách bản phân tích: ${err?.message ?? err}`,
+      );
+      return [];
     }
   }
 
@@ -359,24 +503,90 @@ export class AssistantService {
       maxImages,
     );
 
+    // ---- Lượt 1: ĐỌC ẢNH bằng schema nhỏ (model vision) ----
+    // Tách khỏi lượt suy luận vì model vision free hay trả JSON hỏng khi phải
+    // nhả cùng lúc schema lớn; schema nhỏ giúp phần ảnh luôn được đọc thay vì bị
+    // bỏ âm thầm (đây là lý do bản auto-analysis trước đây "không phân tích ảnh").
+    let imageFindings: AiImageFindings | null = null;
+    let imagesUsed: number | null = null;
+    let imageUsage: CaseAiSuggestion["usage"] | null = null;
+    const notes: string[] = [];
+
+    if (images.length > 0) {
+      try {
+        const imageResponse = await this.llm.generateJson<AiImageFindings>({
+          systemInstruction: AI_IMAGE_SYSTEM_INSTRUCTION,
+          prompt: buildImagePrompt(snapshot),
+          schema: AI_IMAGE_SCHEMA as unknown as Record<string, unknown>,
+          images,
+          temperature: 0.1,
+          maxOutputTokens: 2000,
+        });
+        imageFindings = imageResponse.data ?? null;
+        imagesUsed = imageResponse.imagesUsed ?? images.length;
+        imageUsage = imageResponse.usage;
+        notes.push(...(imageResponse.notes ?? []));
+        if (imagesUsed === 0) {
+          // Provider tự lùi về model chữ ⇒ output không phải kết quả nhìn ảnh.
+          imageFindings = null;
+          notes.push(
+            "Model vision không dùng được — phần ảnh được đánh giá là KHÔNG có bằng chứng ảnh.",
+          );
+        }
+      } catch (err: any) {
+        this.logger.warn(
+          `Đọc ảnh bằng chứng thất bại (case ${caseId}): ${err?.message ?? err}`,
+        );
+        notes.push(
+          `Không đọc được ${images.length} ảnh bằng chứng (${err?.message ?? "lỗi model vision"}) — phân tích chỉ dựa trên dữ liệu chữ.`,
+        );
+      }
+    }
+
+    // ---- Lượt 2: SUY LUẬN CHỮ với kết quả ảnh đã đọc ----
+    const unreadableImages =
+      images.length > 0 && imageFindings === null ? images.length : 0;
     const response = await this.llm.generateJson<RawSuggestion>({
       systemInstruction: AI_SYSTEM_INSTRUCTION,
-      prompt: buildUserPrompt(snapshot),
+      prompt: buildUserPrompt(snapshot, imageFindings, unreadableImages),
       schema: AI_SUGGESTION_SCHEMA as unknown as Record<string, unknown>,
-      images,
+      // Ảnh đã đọc ở lượt 1: gửi lại chỉ tốn token và dễ làm model chữ trả JSON lỗi.
+      images: [],
       temperature: 0.2,
       maxOutputTokens: 6000,
     });
 
-    const normalized = this.normalize(
-      response.data,
-      snapshot,
-      response.imagesUsed ?? snapshot.imagesAttached,
-    );
+    const mergedRaw = this.mergeImageFindings(response.data, imageFindings);
+    // Không có lượt đọc ảnh (không có ảnh, hoặc provider chỉ chạy đường chữ) thì
+    // lấy `imagesUsed` provider báo; test/legacy không báo ⇒ tin số ảnh đã đính kèm.
+    if (imagesUsed === null) {
+      imagesUsed = response.imagesUsed ?? snapshot.imagesAttached;
+    }
+    notes.push(...(response.notes ?? []));
+    const normalized = this.normalize(mergedRaw, snapshot, imagesUsed);
+    const textUsage = response.usage;
+    const combineTokens = (
+      a: number | null | undefined,
+      b: number | null | undefined,
+    ) => (a == null && b == null ? null : (a ?? 0) + (b ?? 0));
+    const usage = {
+      promptTokens: combineTokens(
+        imageUsage?.promptTokens,
+        textUsage?.promptTokens,
+      ),
+      outputTokens: combineTokens(
+        imageUsage?.outputTokens,
+        textUsage?.outputTokens,
+      ),
+      totalTokens: combineTokens(
+        imageUsage?.totalTokens,
+        textUsage?.totalTokens,
+      ),
+    };
 
     this.logger.log(
       `AI analyzed ${snapshot.case.caseNumber} | model=${response.model} ` +
-        `tokens=${response.usage.totalTokens ?? "n/a"} images=${images.length} ` +
+        `tokens=${usage.totalTokens ?? "n/a"} images=${imagesUsed}/${images.length} ` +
         `ms=${Date.now() - startedAt} by=${user.userId}`,
     );
 
@@ -386,12 +596,15 @@ export class AssistantService {
       generatedAt: new Date().toISOString(),
       model: response.model,
       summary: normalized.summary,
-      imagesAnalyzed: response.imagesUsed ?? snapshot.imagesAttached,
+      imagesAnalyzed: imagesUsed,
       reporterImages: normalized.reporterImages,
       respondentImages: normalized.respondentImages,
       deliveryProof: {
         photoUrl: snapshot.deliveryProofPhotoUrl ?? null,
-        analyzed: normalized.deliveryProofAnalyzed,
+        analyzed: normalized.deliveryProof.analyzed,
+        matchesOrder: normalized.deliveryProof.matchesOrder,
+        itemsSeen: normalized.deliveryProof.itemsSeen,
+        analysis: normalized.deliveryProof.analysis,
       },
       evidenceWeight: this.evidenceWeight(normalized, snapshot),
       sideComparison: normalized.sideComparison,
@@ -414,20 +627,30 @@ export class AssistantService {
         .map((s) => `${s.id} · ${s.name}${s.detail ? ` — ${s.detail}` : ""}`),
       warnings: [
         ...normalized.warnings,
-        // Ghi chú kỹ thuật của provider (vd: đã bỏ ảnh bằng chứng vì model chữ).
-        ...(response.notes ?? []),
+        // Ghi chú kỹ thuật: provider bỏ ảnh, lượt đọc ảnh lỗi, model trả JSON lỗi...
+        ...notes,
         ...(snapshot.criticalMissingSourceIds.length > 0
           ? [
               `Thiếu nguồn dữ liệu bắt buộc cho danh mục ${snapshot.case.category}: ${snapshot.criticalMissingSourceIds.join(", ")}`,
             ]
           : []),
       ],
-      usage: response.usage,
+      menuImagesAnalyzed: normalized.menuImagesAnalyzed,
+      sourceAssessment: normalized.sourceAssessment,
+      detailedFindings: normalized.detailedFindings,
+      contradictions: normalized.contradictions,
+      timelineHighlights: normalized.timelineHighlights,
+      whatWouldChangeVerdict: normalized.whatWouldChangeVerdict,
+      usage,
     };
 
     await this.saveAnalysisQuietly(suggestion, source);
 
-    return suggestion;
+    // Chốt lần cuối: kể cả output của model cũng không được chứa PII (model có
+    // thể lặp lại tên/SĐT đọc được trong chat). Chạy enforce bất kể cấu hình.
+    const sanitized = redactPayload(suggestion, createPiiContext("enforce"));
+
+    return sanitized;
   }
 
   /**
@@ -454,6 +677,64 @@ export class AssistantService {
   }
 
   /**
+   * Gộp kết quả **đọc ảnh** vào output của lượt suy luận chữ.
+   *
+   * Lượt chữ không nhìn thấy ảnh nên phần mô tả ảnh do nó viết lại có thể bịa.
+   * Kết quả vision là nguồn khách quan ⇒ ưu tiên giữ support/analysis của vision,
+   * chỉ giữ các field suy luận (verdict, findings...) của lượt chữ.
+   */
+  private mergeImageFindings(
+    raw: RawSuggestion,
+    findings: AiImageFindings | null,
+  ): RawSuggestion {
+    const merged: RawSuggestion =
+      raw && typeof raw === "object" ? { ...raw } : ({} as RawSuggestion);
+    if (!findings || typeof findings !== "object") return merged;
+
+    const mergeSide = (key: "reporterImages" | "respondentImages") => {
+      const visionSide = (findings as any)[key];
+      if (!visionSide || typeof visionSide !== "object") return;
+      const current =
+        merged[key] && typeof merged[key] === "object" ? merged[key] : {};
+      merged[key] = {
+        ...current,
+        ...(typeof visionSide.support === "string"
+          ? { support: visionSide.support }
+          : {}),
+        ...(typeof visionSide.analysis === "string"
+          ? { analysis: visionSide.analysis }
+          : {}),
+        ...(typeof visionSide.visibleItems === "string"
+          ? { visibleItems: visionSide.visibleItems }
+          : {}),
+      };
+    };
+    mergeSide("reporterImages");
+    mergeSide("respondentImages");
+
+    if (
+      typeof findings.sideComparison === "string" &&
+      findings.sideComparison.trim()
+    ) {
+      merged.sideComparison = findings.sideComparison;
+    }
+
+    const proof = (findings as any).deliveryProof;
+    if (proof && typeof proof === "object") {
+      merged.deliveryProof = {
+        matchesOrder:
+          typeof proof.matchesOrder === "string"
+            ? proof.matchesOrder
+            : "UNCLEAR",
+        itemsSeen:
+          typeof proof.visibleItems === "string" ? proof.visibleItems : "",
+        analysis: typeof proof.analysis === "string" ? proof.analysis : "",
+      };
+    }
+    return merged;
+  }
+
+  /**
    * Chuẩn hoá output của model thành kiểu an toàn dùng được.
    *
    * Model có thể trả sai enum / thiếu field / đề xuất phạt bên không có trong
@@ -470,18 +751,28 @@ export class AssistantService {
 
     const allowedTargets = this.allowedTargetTypes(snapshot);
 
-    // Ảnh gửi cho model theo thứ tự: ảnh hệ thống (tài xế chụp lúc giao, nếu
-    // có) → bên khiếu nại → bên bị khiếu nại. Ảnh hệ thống không thuộc bên nào.
-    const systemImages = snapshot.deliveryProofImageAttached ? 1 : 0;
-    const sideImagesUsed = Math.max(0, imagesUsed - systemImages);
-    const reporterAnalyzed = Math.min(
-      snapshot.reporterImagesAttached,
-      sideImagesUsed,
-    );
-    const respondentAnalyzed = Math.min(
-      snapshot.respondentImagesAttached,
-      Math.max(0, sideImagesUsed - reporterAnalyzed),
-    );
+    // Ảnh gửi cho model theo thứ tự: ảnh hệ thống (tài xế chụp lúc giao) →
+    // bên khiếu nại → bên bị khiếu nại → ảnh chuẩn món → ảnh đánh giá.
+    // Provider chỉ báo TỔNG số ảnh đã dùng nên phải phân bổ lại theo kế hoạch
+    // (`snapshot.imagePlan`) để không tính nhầm ảnh của bên nào.
+    const plan = snapshot.imagePlan ?? {
+      deliveryProof: snapshot.deliveryProofImageAttached ? 1 : 0,
+      menuReference: snapshot.menuImagesAttached ?? 0,
+      reporter: snapshot.reporterImagesAttached,
+      respondent: snapshot.respondentImagesAttached,
+      review: snapshot.reviewImagesAttached ?? 0,
+    };
+    let remainingImages = Math.max(0, imagesUsed);
+    const takeImages = (wanted: number): number => {
+      const used = Math.min(Math.max(0, wanted), remainingImages);
+      remainingImages -= used;
+      return used;
+    };
+    const proofAnalyzed = takeImages(plan.deliveryProof);
+    const reporterAnalyzed = takeImages(plan.reporter);
+    const respondentAnalyzed = takeImages(plan.respondent);
+    const menuImagesAnalyzed = takeImages(plan.menuReference);
+    takeImages(plan.review);
 
     const reporterImages = this.normalizeSideImages(
       src.reporterImages,
@@ -498,7 +789,34 @@ export class AssistantService {
       warnings,
     );
     // Ảnh hệ thống chỉ tính là "đã đọc" khi model thật sự nhận được ít nhất 1 ảnh.
-    const deliveryProofAnalyzed = systemImages > 0 && imagesUsed > 0;
+    const deliveryProofAnalyzed = proofAnalyzed > 0 && imagesUsed > 0;
+    const proofRaw = (
+      src.deliveryProof && typeof src.deliveryProof === "object"
+        ? src.deliveryProof
+        : {}
+    ) as Record<string, unknown>;
+    const deliveryProof = {
+      analyzed: deliveryProofAnalyzed,
+      matchesOrder: deliveryProofAnalyzed
+        ? this.pickDeliveryMatch(proofRaw.matchesOrder, warnings)
+        : null,
+      itemsSeen:
+        this.shortenedText(
+          this.str(proofRaw.itemsSeen),
+          2,
+          300,
+          "deliveryProof.itemsSeen",
+          warnings,
+        ) || null,
+      analysis:
+        this.shortenedText(
+          this.str(proofRaw.analysis),
+          2,
+          300,
+          "deliveryProof.analysis",
+          warnings,
+        ) || null,
+    };
 
     const verdictRaw = this.pickEnum(
       src.suggestedVerdict,
@@ -515,20 +833,67 @@ export class AssistantService {
       warnings,
     );
 
-    // Trọng số bằng chứng (prompt luật 25–28): ảnh + dữ liệu hệ thống = 80%,
-    // lời khai chỉ 5% ⇒ khi ảnh tự mâu thuẫn thì không được "chưa đủ căn cứ".
+    // Trọng số bằng chứng (prompt luật 25–35): ảnh + dữ liệu hệ thống = 80%,
+    // lời khai chỉ 5%. Guard chỉ được lật kết luận ở các danh mục hư hỏng/chất
+    // lượng — nơi ảnh "nguyên vẹn" thực sự phủ định lời khiếu nại.
     const weighted = this.applyEvidenceWeight(
       verdictRaw,
       faultRaw,
       this.clampConfidence(src.confidence, warnings),
       reporterImages,
       respondentImages,
+      snapshot.case.category,
       warnings,
     );
 
+    // Guard chống oan cho đúng sự cố "giao nhầm món": model chữ kết luận INVALID
+    // nhưng ảnh khách ỦNG HỘ khiếu nại và ảnh giao hàng KHÔNG khớp món đã đặt.
+    const itemMismatchGuard =
+      weighted.verdict === Verdict.INVALID &&
+      ITEM_IDENTITY_CATEGORIES.has(snapshot.case.category) &&
+      reporterImages.analyzed > 0 &&
+      reporterImages.support === "SUPPORTS" &&
+      deliveryProof.analyzed &&
+      deliveryProof.matchesOrder === "MISMATCH";
+    if (itemMismatchGuard) {
+      warnings.push(
+        "Bằng chứng mâu thuẫn: AI kết luận INVALID nhưng ảnh khách ủng hộ khiếu nại và ảnh giao hàng không khớp món đã đặt ⇒ hạ xuống INCONCLUSIVE để admin xem.",
+      );
+    }
+    const finalVerdict = itemMismatchGuard
+      ? Verdict.INCONCLUSIVE
+      : weighted.verdict;
+    const finalFault = itemMismatchGuard
+      ? FaultParty.INCONCLUSIVE
+      : weighted.faultParty;
+    const finalConfidence = itemMismatchGuard
+      ? Math.min(weighted.confidence, 0.6)
+      : weighted.confidence;
+
+    // Ngữ cảnh con người: lỗi có thể nằm ở bên KHÔNG được chọn khi tạo khiếu nại
+    // (vd khách khiếu nại tài xế nhưng nhà hàng đóng gói sai). Nêu rõ để admin
+    // không bỏ sót bên chịu trách nhiệm thật.
+    const faultActor =
+      finalFault === FaultParty.CUSTOMER
+        ? "CONSUMER"
+        : finalFault === FaultParty.MERCHANT
+          ? "MERCHANT"
+          : finalFault === FaultParty.DRIVER
+            ? "DRIVER"
+            : null;
+    if (
+      faultActor &&
+      faultActor !== snapshot.case.reporterType &&
+      faultActor !== snapshot.case.respondentType
+    ) {
+      warnings.push(
+        `AI xác định lỗi thuộc ${finalFault} nhưng bên này không nằm trong vụ việc (${snapshot.case.reporterType} → ${snapshot.case.respondentType}) — admin cần xem lại phạm vi khiếu nại.`,
+      );
+    }
+
     // Đã kết luận được thì KHÔNG hỏi thêm bên nào (prompt luật 18) — guard lại
     // vì model hay "hỏi cho có" làm admin/khách phải trả lời vô ích.
-    const decided = weighted.verdict !== Verdict.INCONCLUSIVE;
+    const decided = finalVerdict !== Verdict.INCONCLUSIVE;
 
     return {
       summary:
@@ -539,8 +904,8 @@ export class AssistantService {
           "summary",
           warnings,
         ) || "(model không trả về tóm tắt)",
-      suggestedVerdict: weighted.verdict,
-      suggestedFaultParty: weighted.faultParty,
+      suggestedVerdict: finalVerdict,
+      suggestedFaultParty: finalFault,
       suggestedSeverity: this.pickEnum(
         src.suggestedSeverity,
         SEVERITY_VALUES,
@@ -548,10 +913,12 @@ export class AssistantService {
         "suggestedSeverity",
         warnings,
       ),
-      confidence: weighted.confidence,
+      confidence: finalConfidence,
       reporterImages,
       respondentImages,
-      deliveryProofAnalyzed,
+      deliveryProof,
+      menuImagesAnalyzed,
+      ...this.normalizeDeepOutput(src, warnings),
       sideComparison:
         this.shortenedText(
           this.str(src.sideComparison),
@@ -584,22 +951,26 @@ export class AssistantService {
         warnings,
       ),
       suggestedActions:
-        weighted.verdict === Verdict.INVALID
+        finalVerdict === Verdict.INVALID
           ? this.noActionsForInvalid(src, warnings)
-          : this.normalizeActions(
-              src.suggestedActions,
-              allowedTargets,
+          : itemMismatchGuard
+            ? []
+            : this.normalizeActions(
+                src.suggestedActions,
+                allowedTargets,
+                warnings,
+              ),
+      suggestedResolutionNote: itemMismatchGuard
+        ? NOTE_ITEM_MISMATCH_NEEDS_REVIEW
+        : weighted.overridden
+          ? NOTE_SELF_CONTRADICTION
+          : this.shortenedText(
+              this.str(src.suggestedResolutionNote),
+              LIMITS.noteSentences,
+              LIMITS.noteChars,
+              "suggestedResolutionNote",
               warnings,
             ),
-      suggestedResolutionNote: weighted.overridden
-        ? NOTE_SELF_CONTRADICTION
-        : this.shortenedText(
-            this.str(src.suggestedResolutionNote),
-            LIMITS.noteSentences,
-            LIMITS.noteChars,
-            "suggestedResolutionNote",
-            warnings,
-          ),
       followUpQuestions: this.cleanQuestions(
         this.strArray(src.followUpQuestions),
         "followUpQuestions",
@@ -613,6 +984,126 @@ export class AssistantService {
         warnings,
       ),
       warnings,
+    };
+  }
+
+  /** Chuẩn hoá tầng phân tích chi tiết (tùy chọn) và cắt theo giới hạn. */
+  private normalizeDeepOutput(src: RawSuggestion, warnings: string[]) {
+    const empty = {
+      sourceAssessment: [] as AiSourceAssessment[],
+      detailedFindings: [] as AiDetailedFinding[],
+      contradictions: [] as AiContradiction[],
+      timelineHighlights: [] as AiTimelineHighlight[],
+      whatWouldChangeVerdict: [] as AiVerdictChange[],
+    };
+    if (!deepOutputEnabled()) return empty;
+
+    const objects = (value: unknown): any[] =>
+      Array.isArray(value)
+        ? value.filter((item) => item && typeof item === "object")
+        : [];
+    const text = (value: unknown, field: string): string => {
+      const out = this.str(value).replace(/\s+/g, " ").trim();
+      if (out.length <= LIMITS.detailChars) return out;
+      warnings.push(
+        `Cắt ${field} về ${LIMITS.detailChars} ký tự (model trả quá dài)`,
+      );
+      return `${out.slice(0, LIMITS.detailChars)}…`;
+    };
+
+    const sourceAssessment = objects(src.sourceAssessment)
+      .slice(0, LIMITS.sourceAssessments)
+      .map((item) => {
+        const status = AI_SOURCE_STATUS_VALUES.includes(item?.status)
+          ? item.status
+          : "USED";
+        if (!AI_SOURCE_STATUS_VALUES.includes(item?.status)) {
+          warnings.push(
+            `sourceAssessment.status không hợp lệ (${String(item?.status)}) → USED`,
+          );
+        }
+        return {
+          sourceId: text(item?.sourceId, "sourceAssessment.sourceId").slice(
+            0,
+            10,
+          ),
+          status: status as AiSourceAssessment["status"],
+          note: text(item?.note, "sourceAssessment.note"),
+        };
+      })
+      .filter((item) => !!item.sourceId);
+
+    const detailedFindings = objects(src.detailedFindings)
+      .slice(0, LIMITS.detailedFindings)
+      .map((item) => {
+        const weight = AI_FINDING_WEIGHT_VALUES.includes(item?.weight)
+          ? item.weight
+          : "MEDIUM";
+        if (!AI_FINDING_WEIGHT_VALUES.includes(item?.weight)) {
+          warnings.push(
+            `detailedFindings.weight không hợp lệ (${String(item?.weight)}) → MEDIUM`,
+          );
+        }
+        return {
+          signal: text(item?.signal, "detailedFindings.signal"),
+          facts: text(item?.facts, "detailedFindings.facts"),
+          source: text(item?.source, "detailedFindings.source").slice(0, 60),
+          interpretation: text(
+            item?.interpretation,
+            "detailedFindings.interpretation",
+          ),
+          weight: weight as AiFindingWeight,
+        };
+      })
+      .filter((item) => !!item.facts || !!item.interpretation);
+
+    const contradictions = objects(src.contradictions)
+      .slice(0, LIMITS.contradictions)
+      .map((item) => ({
+        between: text(item?.between, "contradictions.between").slice(0, 80),
+        detail: text(item?.detail, "contradictions.detail"),
+      }))
+      .filter((item) => !!item.detail);
+
+    const timelineHighlights = objects(src.timelineHighlights)
+      .slice(0, LIMITS.timelineHighlights)
+      .filter((item) => {
+        const at = new Date(String(item?.at ?? ""));
+        if (!Number.isFinite(at.getTime())) {
+          warnings.push(
+            `Bỏ timelineHighlights.at không hợp lệ: "${String(item?.at)}"`,
+          );
+          return false;
+        }
+        return true;
+      })
+      .map((item) => ({
+        at: new Date(String(item.at)).toISOString(),
+        source: text(item?.source, "timelineHighlights.source").slice(0, 60),
+        event: text(item?.event, "timelineHighlights.event"),
+      }))
+      .filter((item) => !!item.event);
+
+    const whatWouldChangeVerdict = objects(src.whatWouldChangeVerdict)
+      .slice(0, LIMITS.verdictChanges)
+      .map((item) => ({
+        missingData: text(
+          item?.missingData,
+          "whatWouldChangeVerdict.missingData",
+        ),
+        couldChangeTo: text(
+          item?.couldChangeTo,
+          "whatWouldChangeVerdict.couldChangeTo",
+        ),
+      }))
+      .filter((item) => !!item.missingData);
+
+    return {
+      sourceAssessment,
+      detailedFindings,
+      contradictions,
+      timelineHighlights,
+      whatWouldChangeVerdict,
     };
   }
 
@@ -705,11 +1196,14 @@ export class AssistantService {
   }
 
   /**
-   * Guard theo trọng số bằng chứng (prompt luật 25–28).
+   * Guard theo trọng số bằng chứng (prompt luật 25–35).
    *
-   * Ảnh + dữ liệu hệ thống chiếm 80% nên khi **ảnh của chính bên khiếu nại** mâu
-   * thuẫn với lời khai (không thấy thiệt hại đã nêu) thì không được trả
-   * `INCONCLUSIVE` — chuyển `INVALID` + lỗi thuộc CUSTOMER.
+   * Ảnh + dữ liệu hệ thống chiếm 80% nên khi **ảnh của chính bên khiếu nại** cho
+   * thấy tình trạng NGƯỢC với thiệt hại đã nêu thì không nên để `INCONCLUSIVE`.
+   *
+   * Chỉ áp dụng cho các danh mục hư hỏng/chất lượng — nơi "ảnh nguyên vẹn" thực
+   * sự phủ định lời khiếu nại. Với SAI MÓN/THIẾU MÓN, ảnh món khác đơn là bằng
+   * chứng ủng hộ khách; lật thành INVALID sẽ kết luận oan (sự cố giao nhầm món).
    */
   private applyEvidenceWeight(
     verdict: Verdict,
@@ -717,6 +1211,7 @@ export class AssistantService {
     confidence: number,
     reporter: AiSideImageAnalysis,
     respondent: AiSideImageAnalysis,
+    category: CaseCategory,
     warnings: string[],
   ): {
     verdict: Verdict;
@@ -725,6 +1220,9 @@ export class AssistantService {
     overridden: boolean;
   } {
     if (verdict !== Verdict.INCONCLUSIVE) {
+      return { verdict, faultParty, confidence, overridden: false };
+    }
+    if (!SELF_CONTRADICTION_CATEGORIES.has(category)) {
       return { verdict, faultParty, confidence, overridden: false };
     }
 
@@ -740,7 +1238,7 @@ export class AssistantService {
     }
 
     warnings.push(
-      "Trọng số bằng chứng: ảnh của chính bên khiếu nại mâu thuẫn với khiếu nại " +
+      `Trọng số bằng chứng: ảnh của chính bên khiếu nại mâu thuẫn với thiệt hại đã nêu (${category}) ` +
         "⇒ kết luận INVALID (lỗi thuộc CUSTOMER), không cần hỏi thêm.",
     );
 
@@ -750,6 +1248,23 @@ export class AssistantService {
       confidence: Math.max(confidence, 0.7),
       overridden: true,
     };
+  }
+
+  /** `deliveryProof.matchesOrder` do model trả — chỉ nhận enum hợp lệ. */
+  private pickDeliveryMatch(
+    value: unknown,
+    warnings: string[],
+  ): AiDeliveryMatch | null {
+    if (value === null || value === undefined || value === "") return null;
+    const normalized = String(value).trim().toUpperCase();
+    const hit = AI_DELIVERY_MATCH.find((item) => item === normalized);
+    if (!hit) {
+      warnings.push(
+        `deliveryProof.matchesOrder="${String(value)}" không hợp lệ — bỏ trống.`,
+      );
+      return null;
+    }
+    return hit;
   }
 
   /**
@@ -763,7 +1278,7 @@ export class AssistantService {
     snapshot: CaseContextSnapshot,
   ): AiEvidenceWeight {
     // Ảnh: hệ thống 35 + bên khiếu nại 25 + bên bị khiếu nại 15 (tối đa 75).
-    const proof = suggestion.deliveryProofAnalyzed ? 35 : 0;
+    const proof = suggestion.deliveryProof.analyzed ? 35 : 0;
     const reporter = suggestion.reporterImages.analyzed > 0 ? 25 : 0;
     const respondent = suggestion.respondentImages.analyzed > 0 ? 15 : 0;
     const images = proof + reporter + respondent;

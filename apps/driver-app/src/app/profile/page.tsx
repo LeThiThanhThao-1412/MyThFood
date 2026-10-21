@@ -308,6 +308,22 @@ export default function DriverProfilePage() {
         </div>
       )}
 
+      {/* Đánh giá của tôi */}
+      <Link
+        href="/reviews"
+        className="block bg-white rounded-2xl shadow-sm p-5 hover:shadow-md transition"
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-bold text-[#1a1a2e]">⭐ Đánh giá của tôi</p>
+            <p className="text-sm text-gray-400 mt-0.5">
+              Xem nhận xét từ khách hàng sau mỗi chuyến giao
+            </p>
+          </div>
+          <span className="text-[#ff6b35] text-xl">→</span>
+        </div>
+      </Link>
+
       {/* Đổi mật khẩu */}
       <div className="bg-white rounded-2xl shadow-sm p-5">
         <h3 className="font-bold text-lg mb-4">🔐 Đổi mật khẩu</h3>

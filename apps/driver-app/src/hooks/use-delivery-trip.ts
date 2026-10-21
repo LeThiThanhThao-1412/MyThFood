@@ -20,6 +20,7 @@ import {
   STAGE_META,
   acceptOrder,
   arriveAtRestaurant,
+  arriveStackedOrdersAtSameMerchant,
   completeDelivery,
   customerLocation,
   fetchRoute,
@@ -28,6 +29,7 @@ import {
   getDispatchByOrder,
   getMerchant,
   pickUpFood,
+  pickUpStackedOrdersAtSameMerchant,
   resolveStage,
   restaurantLocation,
   toNum,
@@ -320,13 +322,33 @@ export function useDeliveryTrip(orderId?: string | null) {
           setDispatch(
             await arriveAtRestaurant(order, dispatch, driverId, restaurant),
           );
-          setMessage("📍 Đã đến nhà hàng. Đã thông báo cho khách hàng.");
+          // Cùng một nhà hàng: đánh dấu "đã đến" cho các đơn gộp còn lại để
+          // tài xế lấy món tất cả trong một lần, không phải quay lại quán.
+          const arrivedStacked = await arriveStackedOrdersAtSameMerchant(
+            order,
+            driverId,
+            restaurant,
+          );
+          setMessage(
+            arrivedStacked > 0
+              ? `📍 Đã đến nhà hàng — đã đánh dấu ${arrivedStacked + 1} đơn gộp cùng quán. Đã thông báo cho khách hàng.`
+              : "📍 Đã đến nhà hàng. Đã thông báo cho khách hàng.",
+          );
           loadDriver();
         } else if (stage === "AT_RESTAURANT") {
           const res = await pickUpFood(order, dispatch, driverId);
           setDispatch(res.dispatch);
           if (res.order) setOrder(res.order);
-          setMessage("📦 Đã nhận món — đang giao tới khách hàng.");
+          // Lấy luôn món của các đơn gộp cùng nhà hàng (cùng quầy lấy hàng).
+          const pickedStacked = await pickUpStackedOrdersAtSameMerchant(
+            order,
+            driverId,
+          );
+          setMessage(
+            pickedStacked > 0
+              ? `📦 Đã nhận món cho ${pickedStacked + 1} đơn tại cùng nhà hàng — đang giao tới khách hàng.`
+              : "📦 Đã nhận món — đang giao tới khách hàng.",
+          );
         } else if (stage === "DELIVERING") {
           const res = await completeDelivery(
             order,

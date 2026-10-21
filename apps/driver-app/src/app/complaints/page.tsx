@@ -197,11 +197,33 @@ export default function ComplaintsPage() {
 
   async function load() {
     try {
-      const r: any = await resolutionApi.listCases({
-        actorId: profileId || user?.id,
-        take: 100,
-      });
-      setCases(r?.data || []);
+      // Driver profile id và auth user id có thể khác nhau; query cả hai để
+      // không bỏ sót case cũ lưu theo userId.
+      const actorIds = Array.from(
+        new Set([profileId, user?.id].filter((x): x is string => !!x)),
+      );
+      const results = await Promise.all(
+        actorIds.map((actorId) =>
+          resolutionApi
+            .listCases({ actorId, take: 100 })
+            .then((r: any) => (Array.isArray(r?.data) ? r.data : []))
+            .catch(() => [] as any[]),
+        ),
+      );
+      const merged: any[] = [];
+      const seen = new Set<string>();
+      for (const list of results) {
+        for (const c of list) {
+          if (!c?.id || seen.has(c.id)) continue;
+          seen.add(c.id);
+          merged.push(c);
+        }
+      }
+      merged.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      setCases(merged);
     } catch {
       /* ignore */
     }
@@ -608,7 +630,7 @@ export default function ComplaintsPage() {
                   {(c.status === "OPEN" ||
                     c.status === "UNDER_REVIEW" ||
                     c.status === "WAITING_EVIDENCE") &&
-                    c.reporterId === user?.id && (
+                    [profileId, user?.id].includes(c.reporterId) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

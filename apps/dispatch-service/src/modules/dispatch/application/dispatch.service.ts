@@ -21,14 +21,18 @@ import {
 } from "../domain/delivery-option";
 import {
   PlannedLeg,
+  PlannedRoute,
   PlannedStop,
+  RouteMatrixMetric,
   RouteStopInput,
+  buildRouteNodeCoordinates,
   isRouteCompatible,
   planRouteDetailed,
 } from "../domain/route-planner";
 import { randomUUID } from "node:crypto";
 import { MatchingEngineService } from "./matching-engine.service";
 import { DriverComplianceService } from "./driver-compliance.service";
+import { RoadDistanceService } from "./road-distance.service";
 import {
   CreateDispatchDto,
   AssignDriverDto,
@@ -58,6 +62,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     private readonly dispatchRepo: DispatchRepository,
     private readonly matchingEngine: MatchingEngineService,
     private readonly driverCompliance: DriverComplianceService,
+    private readonly roadDistance: RoadDistanceService,
   ) {}
 
   onModuleInit(): void {
@@ -253,6 +258,63 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     return this.dispatchRepo.findMatchingDispatches();
   }
 
+  /**
+   * Danh sách dispatch mà tài xế **thực sự nhận được ngay lúc này**.
+   *
+   * Dùng cho driver-app để chỉ hiển thị đơn hợp lệ:
+   * - Đơn còn `MATCHING` và tài xế đạt điều kiện: đang rảnh (FAST/PRIORITY),
+   *   hoặc đang giữ toàn đơn SAVER còn slot + đơn mới cùng tuyến (gộp đơn).
+   * - Đơn đang chờ chính tài xế phản hồi (`DRIVER_ASSIGNED`).
+   *
+   * Đơn đã gán cho tài xế khác, đơn tài xế đã từ chối/không phản hồi trước đó
+   * và đơn không thỏa luật gộp sẽ KHÔNG trả về → app không hiện để bấm nhận.
+   */
+  async getAvailableDispatchesForDriver(driverId: string): Promise<Dispatch[]> {
+    const driver = await this.fetchDriver(driverId);
+    if (!driver) return [];
+
+    const activeDispatches =
+      await this.dispatchRepo.findActiveByDriverId(driverId);
+    const matchingDispatches = await this.dispatchRepo.findMatchingDispatches();
+    const assignedToDriver = activeDispatches.filter(
+      (d) =>
+        d.dispatchStatus === DispatchStatus.DRIVER_ASSIGNED &&
+        d.dispatchDriverId === driverId,
+    );
+
+    const seen = new Set<string>();
+    const available: Dispatch[] = [];
+
+    for (const dispatch of [...assignedToDriver, ...matchingDispatches]) {
+      if (seen.has(dispatch.id.value)) continue;
+      seen.add(dispatch.id.value);
+
+      // Đơn đã có chủ khác thì không hiển thị cho tài xế này.
+      if (dispatch.dispatchDriverId && dispatch.dispatchDriverId !== driverId) {
+        continue;
+      }
+
+      // Đơn từng được offer cho tài xế này rồi quay lại MATCHING (từ chối /
+      // không phản hồi) → không hiện lại trong phiên.
+      if (
+        dispatch.dispatchStatus === DispatchStatus.MATCHING &&
+        dispatch.dispatchMatchedDriverIds.includes(driverId)
+      ) {
+        continue;
+      }
+
+      const eligible = await this.checkDriverAvailability(
+        driverId,
+        dispatch,
+        driver,
+        activeDispatches,
+      );
+      if (eligible) available.push(dispatch);
+    }
+
+    return available;
+  }
+
   async updateNotes(
     id: string,
     dto: UpdateDispatchNotesDto,
@@ -281,6 +343,31 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const dispatch = await this.dispatchRepo.findByIdOrFail(
       DispatchId.from(id),
     );
+
+    // Đơn đã được gán cho chính tài xế này (vd: matching engine gán trước,
+    // hoặc app gọi lại do dữ liệu vừa đổi trạng thái) → trả về luôn.
+    if (
+      dispatch.dispatchStatus === DispatchStatus.DRIVER_ASSIGNED &&
+      dispatch.dispatchDriverId === dto.driverId
+    ) {
+      return dispatch;
+    }
+
+    // Kiểm tra điều kiện nhận đơn TRƯỚC khi gán. Trước đây dispatch bị gán
+    // cho tài xế rồi mới bị `driver-accept` từ chối (đang bận, hết slot gộp,
+    // ngoài tuyến gộp...) → đơn bị kẹt ở DRIVER_ASSIGNED cho tới khi hết thời
+    // gian phản hồi. Kiểm tra sớm giúp đơn vẫn ở MATCHING cho tài xế khác.
+    if (dispatch.dispatchStatus === DispatchStatus.MATCHING) {
+      const available = await this.checkDriverAvailability(
+        dto.driverId,
+        dispatch,
+      );
+      if (!available) {
+        throw new BusinessRuleViolationError(
+          "Tài xế chưa đủ điều kiện nhận đơn này (đang bận đơn khác, hết slot gộp hoặc đơn ngoài tuyến gộp)",
+        );
+      }
+    }
 
     // Check if this order is COD by querying the order service
     let isCodOrder = _isCodOrder;
@@ -796,12 +883,17 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
    * - FAST/PRIORITY: phải đang rảnh hoàn toàn.
    * - SAVER: được gộp nếu còn slot, các đơn đang giữ đều SAVER và điểm giao
    *   mới nằm trong hành lang lộ trình hiện tại.
+   *
+   * `driverProfile` / `activeDispatches` cho phép tái sử dụng dữ liệu đã tải
+   * (vd: khi lọc cả danh sách đơn khả dụng) để tránh gọi HTTP lặp lại.
    */
   private async checkDriverAvailability(
     driverId: string,
     dispatch: Dispatch,
+    driverProfile?: any,
+    activeDispatches?: Dispatch[],
   ): Promise<boolean> {
-    const driver = await this.fetchDriver(driverId);
+    const driver = driverProfile ?? (await this.fetchDriver(driverId));
     if (!driver) return false;
 
     if (driver.status !== "ACTIVE" || driver.onlineStatus !== "ONLINE") {
@@ -815,29 +907,47 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       return false;
     }
 
-    const activeOrderIds = this.activeOrderIdsOf(driver);
+    const active =
+      activeDispatches ??
+      (await this.dispatchRepo.findActiveByDriverId(driverId));
+
+    // Hợp nhất đơn đang giữ từ dispatch-service (nguồn sự thật về trạng thái
+    // dispatch) và driver-service (có thể còn đơn cũ chưa kịp giải phóng).
+    const activeOrderIds = new Set<string>(
+      active
+        .map((d) => d.dispatchOrderId)
+        .filter((orderId) => orderId !== dispatch.dispatchOrderId),
+    );
+    for (const orderId of this.activeOrderIdsOf(driver)) {
+      if (orderId !== dispatch.dispatchOrderId) activeOrderIds.add(orderId);
+    }
+
     const maxConcurrent = Math.max(
       1,
       Number(dispatch.dispatchMaxStackedOrders) || 1,
     );
 
     if (dispatch.dispatchDeliveryOption !== "SAVER") {
-      return activeOrderIds.length === 0;
+      return activeOrderIds.size === 0;
     }
 
-    if (activeOrderIds.length >= maxConcurrent) return false;
-    if (activeOrderIds.length === 0) return true;
+    if (activeOrderIds.size >= maxConcurrent) return false;
+    if (activeOrderIds.size === 0) return true;
 
-    const activeDispatches =
-      await this.dispatchRepo.findActiveByDriverId(driverId);
-    if (activeDispatches.some((d) => d.dispatchDeliveryOption !== "SAVER")) {
-      return false;
-    }
-
-    const stops = activeDispatches
+    const stops = active
       .filter((d) => d.dispatchOrderId !== dispatch.dispatchOrderId)
       .map((d) => this.toRouteStop(d));
     if (stops.length === 0) return true;
+
+    if (
+      active.some(
+        (d) =>
+          d.dispatchOrderId !== dispatch.dispatchOrderId &&
+          d.dispatchDeliveryOption !== "SAVER",
+      )
+    ) {
+      return false;
+    }
 
     return isRouteCompatible(
       Number(driver.currentLatitude ?? dispatch.dispatchMerchantLatitude),
@@ -946,26 +1056,53 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
    *   có thể đan xen, miễn lấy món trước khi giao của chính đơn đó).
    * - Còn 0–1 đơn → xóa batch.
    */
+  /**
+   * Tính lộ trình tối ưu cho tài xế từ vị trí hiện tại qua toàn bộ đơn đang
+   * giữ. Với lô gộp ≥2 đơn, dùng ma trận khoảng cách/thời gian đường đi thực
+   * tế (OSRM/Google) để tối ưu theo giao thông; lỗi dịch vụ → Haversine.
+   */
+  private async planDriverRoute(
+    driverId: string,
+    active: Dispatch[],
+  ): Promise<PlannedRoute> {
+    const location = await this.getDriverLocation(driverId);
+    const startLat = location?.lat ?? active[0]!.dispatchMerchantLatitude;
+    const startLng = location?.lng ?? active[0]!.dispatchMerchantLongitude;
+    const stops = active.map((d) => this.toRouteStop(d));
+
+    let matrix: RouteMatrixMetric | null = null;
+    if (active.length >= 2) {
+      const nodeCoordinates = buildRouteNodeCoordinates(stops);
+      matrix = await this.roadDistance.getMatrix([
+        { latitude: startLat, longitude: startLng },
+        ...nodeCoordinates,
+      ]);
+    }
+
+    return planRouteDetailed(startLat, startLng, stops, matrix ?? undefined);
+  }
+
   async refreshDriverRoute(driverId: string): Promise<{
     batchId: string | null;
     stops: PlannedStop[];
     legs: PlannedLeg[];
     totalDistanceKm: number;
+    totalDurationMin: number;
+    source: PlannedRoute["source"];
   }> {
     const active = await this.dispatchRepo.findActiveByDriverId(driverId);
     if (active.length === 0) {
-      return { batchId: null, stops: [], legs: [], totalDistanceKm: 0 };
+      return {
+        batchId: null,
+        stops: [],
+        legs: [],
+        totalDistanceKm: 0,
+        totalDurationMin: 0,
+        source: "haversine",
+      };
     }
 
-    const location = await this.getDriverLocation(driverId);
-    const startLat = location?.lat ?? active[0]!.dispatchMerchantLatitude;
-    const startLng = location?.lng ?? active[0]!.dispatchMerchantLongitude;
-    const planned = planRouteDetailed(
-      startLat,
-      startLng,
-      active.map((d) => this.toRouteStop(d)),
-    );
-
+    const planned = await this.planDriverRoute(driverId, active);
     const allSaver = active.every((d) => d.dispatchDeliveryOption === "SAVER");
     if (active.length < 2 || !allSaver) {
       for (const dispatch of active) {
@@ -982,6 +1119,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         stops: planned.stops,
         legs: planned.legs,
         totalDistanceKm: planned.totalDistanceKm,
+        totalDurationMin: planned.totalDurationMin,
+        source: planned.source,
       };
     }
 
@@ -1000,6 +1139,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       stops: planned.stops,
       legs: planned.legs,
       totalDistanceKm: planned.totalDistanceKm,
+      totalDurationMin: planned.totalDurationMin,
+      source: planned.source,
     };
   }
 
@@ -1011,6 +1152,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     stops: PlannedStop[];
     legs: PlannedLeg[];
     totalDistanceKm: number;
+    totalDurationMin: number;
+    source: PlannedRoute["source"];
   }> {
     const active = await this.dispatchRepo.findActiveByDriverId(driverId);
     if (active.length === 0) {
@@ -1021,17 +1164,12 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         stops: [],
         legs: [],
         totalDistanceKm: 0,
+        totalDurationMin: 0,
+        source: "haversine",
       };
     }
 
-    const location = await this.getDriverLocation(driverId);
-    const startLat = location?.lat ?? active[0]!.dispatchMerchantLatitude;
-    const startLng = location?.lng ?? active[0]!.dispatchMerchantLongitude;
-    const planned = planRouteDetailed(
-      startLat,
-      startLng,
-      active.map((d) => this.toRouteStop(d)),
-    );
+    const planned = await this.planDriverRoute(driverId, active);
 
     return {
       driverId,
@@ -1050,6 +1188,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
             ?.dispatchStatus ?? leg.status,
       })),
       totalDistanceKm: planned.totalDistanceKm,
+      totalDurationMin: planned.totalDurationMin,
+      source: planned.source,
     };
   }
 
@@ -1100,6 +1240,8 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         ],
         legs: [],
         totalDistanceKm: 0,
+        totalDurationMin: 0,
+        source: "haversine",
       };
     }
 

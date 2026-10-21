@@ -47,6 +47,39 @@ export class DriverLocationHistoryRepository {
     return rows.map((r) => this.toPoint(r));
   }
 
+  /**
+   * Vết GPS **theo đơn/khoảng thời gian** — dùng cho điều tra khiếu nại.
+   *
+   * Khác `findByDriver`: lấy `limit` điểm **mới nhất** trong cửa sổ rồi đảo
+   * tăng dần, để không bị cắt mất đoạn đường tới lúc giao hàng khi tài xế đã
+   * có nhiều điểm GPS của các đơn trước đó.
+   */
+  async findByDriverForOrder(
+    driverId: string,
+    options: {
+      orderId?: string;
+      from?: Date;
+      to?: Date;
+      limit?: number;
+    } = {},
+  ): Promise<DriverLocationPoint[]> {
+    const qb = this.repository
+      .createQueryBuilder("p")
+      .where("p.driverId = :driverId", { driverId });
+    if (options.orderId) {
+      qb.andWhere("p.orderId = :orderId", { orderId: options.orderId });
+    }
+    if (options.from) {
+      qb.andWhere("p.recordedAt >= :from", { from: options.from });
+    }
+    if (options.to) {
+      qb.andWhere("p.recordedAt <= :to", { to: options.to });
+    }
+    const limit = Math.min(1000, Math.max(1, options.limit ?? 200));
+    const rows = await qb.orderBy("p.recordedAt", "DESC").take(limit).getMany();
+    return rows.reverse().map((r) => this.toPoint(r));
+  }
+
   private toPoint(r: DriverLocationHistoryEntity): DriverLocationPoint {
     return {
       id: r.id,

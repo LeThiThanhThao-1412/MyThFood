@@ -6,11 +6,20 @@
  * không phải sửa tầng nghiệp vụ.
  */
 
+import type { AiImageKind } from "../domain/assistant.types";
+
 export interface LlmInlineImage {
   mimeType: string;
   base64: string;
   /** Nhãn để log/debug (thường là URL ảnh). */
   label?: string;
+  /**
+   * Loại ảnh — dùng để tính đúng "ảnh nào đã được model đọc" khi provider chỉ
+   * báo tổng số ảnh đã dùng. Bỏ trống ⇒ coi là ảnh bằng chứng của một bên.
+   */
+  kind?: AiImageKind;
+  /** ID tham chiếu (menuItemId/reviewId) để đối chiếu với dữ liệu chữ. */
+  refId?: string | null;
 }
 
 export interface LlmJsonRequest {

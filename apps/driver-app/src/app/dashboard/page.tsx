@@ -38,6 +38,15 @@ function toNum(v: unknown): number {
   return 0;
 }
 
+/** Đơn đã kết thúc — không còn chiếm slot của tài xế. */
+const TERMINAL_ORDER_STATUSES = [
+  "DELIVERED",
+  "CANCELLED",
+  "CANCELLED_NO_DRIVER",
+  "DELIVERY_FAILED",
+  "REJECTED",
+];
+
 // ≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡
 export default function DriverDashboardPage() {
   const router = useRouter();
@@ -111,14 +120,7 @@ export default function DriverDashboardPage() {
   // để khớp matching engine (mở rộng bán kính đến vô hạn).
   // Khi tài xế đang giữ đơn: chỉ nhận thêm được đơn SAVER (stacking).
   const busyWithOrders = activeOrders.some(
-    (o: any) =>
-      ![
-        "DELIVERED",
-        "CANCELLED",
-        "CANCELLED_NO_DRIVER",
-        "DELIVERY_FAILED",
-        "REJECTED",
-      ].includes(o.status),
+    (o: any) => !TERMINAL_ORDER_STATUSES.includes(o.status),
   );
 
   const nearbyOrders = [...availableOrders].sort((a: any, b: any) => {
@@ -179,15 +181,24 @@ export default function DriverDashboardPage() {
 
   // Chỉ các đơn đang giao (chưa hoàn thành / chưa hủy) — loại bỏ các đơn đã kết thúc.
   const deliveringOrders = activeOrders.filter(
-    (o) =>
-      ![
-        "DELIVERED",
-        "CANCELLED",
-        "CANCELLED_NO_DRIVER",
-        "DELIVERY_FAILED",
-        "REJECTED",
-      ].includes(o.status),
+    (o) => !TERMINAL_ORDER_STATUSES.includes(o.status),
   );
+
+  // Đang giữ đơn FAST/PRIORITY → không thể gộp thêm; chỉ đơn SAVER mới gộp được.
+  const hasActiveNonSaverOrder = deliveringOrders.some(
+    (o: any) => o.deliveryOption !== "SAVER",
+  );
+
+  // Tài xế bị tạm khóa nhận đơn (do hủy đơn quá nhiều) → backend trả về
+  // danh sách đơn rỗng; hiển thị lý do để tài xế không bấm nhận vô ích.
+  const acceptBlockedUntil = (driver as any)?.acceptBlockedUntil as
+    | string
+    | null
+    | undefined;
+  const acceptBlockedRemainingMs = acceptBlockedUntil
+    ? new Date(acceptBlockedUntil).getTime() - now
+    : 0;
+  const isAcceptBlocked = acceptBlockedRemainingMs > 0;
 
   // Phase 2: tài xế có thể giữ nhiều đơn SAVER cùng lúc.
   const activeOrder = deliveringOrders[0] ?? null;
@@ -216,29 +227,19 @@ export default function DriverDashboardPage() {
         const d = (dRes as any).data ?? dRes;
         setDriver(d);
         if (d && d.status === "ACTIVE") {
-          const [availRes, activeRes, declinedRes] = await Promise.all([
-            orderApi.list({ status: "READY_FOR_PICKUP", take: 20 }),
-            orderApi.listByDriver(d.id),
-            dispatchApi.getDeclinedOrderIds(d.id).catch(() => null),
-          ]);
+          const [availRes, activeRes, declinedRes, eligibleRes] =
+            await Promise.all([
+              orderApi.list({ status: "READY_FOR_PICKUP", take: 20 }),
+              orderApi.listByDriver(d.id),
+              dispatchApi.getDeclinedOrderIds(d.id).catch(() => null),
+              dispatchApi.getAvailableForDriver(d.id).catch(() => null),
+            ]);
           // Cập nhật danh sách đơn đã từ chối (tồn tại qua các lần refresh).
           const declined = (declinedRes as any)?.data ?? [];
           declinedOrderIds.current = new Set(
             Array.isArray(declined) ? declined : [],
           );
           const availItems = (availRes as any).items || [];
-          const availList = (
-            Array.isArray(availItems) ? availItems : []
-          ).filter(
-            (o: any) =>
-              !hiddenOrderIds.current.has(o.id) &&
-              !declinedOrderIds.current.has(o.id),
-          );
-          const seen = firstSeen.current;
-          for (const o of availList) {
-            if (!seen[o.id]) seen[o.id] = Date.now();
-          }
-          setAvailableOrders(availList);
           // activeRes may return all orders assigned to this driver (including DELIVERED)
           const allDriverOrders = Array.isArray(activeRes) ? activeRes : [];
           // Đảm bảo đơn tài xế đang nhận (currentOrderId) luôn hiện trên floating card
@@ -256,6 +257,56 @@ export default function DriverDashboardPage() {
             }
           }
           setActiveOrders(allDriverOrders);
+
+          // Đơn tài xế đang giữ (kể cả các đơn gộp SAVER) → không hiện lại
+          // trong danh sách "đơn hàng gần bạn".
+          const handledOrderIds = new Set<string>();
+          for (const o of allDriverOrders) {
+            if (!TERMINAL_ORDER_STATUSES.includes(o.status)) {
+              handledOrderIds.add(o.id);
+            }
+          }
+          const driverOrderIds = Array.isArray((d as any).currentOrderIds)
+            ? (d as any).currentOrderIds
+            : [];
+          for (const id of driverOrderIds) {
+            if (id) handledOrderIds.add(id);
+          }
+          if (currentOrderId) handledOrderIds.add(currentOrderId);
+
+          // Backend đã áp dụng đúng luật nhận đơn (rảnh hoặc còn slot gộp
+          // SAVER cùng tuyến, không bị khóa, chưa có tài xế khác...). Chỉ
+          // hiển thị đơn nằm trong danh sách đủ điều kiện; nếu API lỗi thì
+          // giữ hành vi cũ (vẫn cho bấm nhận, backend sẽ chặn nếu không hợp lệ).
+          const eligibleResponse = (eligibleRes as any)?.data;
+          const eligibleDispatches: any[] | null = Array.isArray(
+            eligibleResponse,
+          )
+            ? eligibleResponse
+            : null;
+          const eligibleOrderIds = new Set<string>(
+            (eligibleDispatches ?? [])
+              .map((dispatch: any) => dispatch.orderId)
+              .filter(Boolean),
+          );
+
+          const availList = (
+            Array.isArray(availItems) ? availItems : []
+          ).filter(
+            (o: any) =>
+              !hiddenOrderIds.current.has(o.id) &&
+              !handledOrderIds.has(o.id) &&
+              // Backend đã loại đơn đã từ chối/đã có tài xế khác; chỉ dùng
+              // danh sách declined làm fallback khi API đủ điều kiện lỗi.
+              (eligibleDispatches == null
+                ? !declinedOrderIds.current.has(o.id)
+                : eligibleOrderIds.has(o.id)),
+          );
+          const seen = firstSeen.current;
+          for (const o of availList) {
+            if (!seen[o.id]) seen[o.id] = Date.now();
+          }
+          setAvailableOrders(availList);
         }
       } catch {
         /* ignore */
@@ -814,12 +865,26 @@ export default function DriverDashboardPage() {
               </div>
             ) : nearbyOrders.length === 0 ? (
               <div className="bg-white rounded-2xl shadow-sm p-8 text-center">
-                <p className="text-3xl mb-2">📦</p>
-                <p className="text-gray-400 text-sm">
-                  Chưa có đơn hàng nào sẵn sàng gần bạn (trong 5km)
+                <p className="text-3xl mb-2">
+                  {isAcceptBlocked ? "⛔" : busyWithOrders ? "🧺" : "📦"}
+                </p>
+                <p className="text-gray-500 text-sm font-medium">
+                  {isAcceptBlocked
+                    ? "Tài khoản đang tạm khóa nhận đơn"
+                    : busyWithOrders
+                      ? hasActiveNonSaverOrder
+                        ? "Bạn đang giao đơn Nhanh/Ưu tiên nên chưa thể nhận thêm đơn."
+                        : "Chưa có đơn Tiết kiệm nào phù hợp để gộp cùng tuyến."
+                      : "Chưa có đơn hàng nào sẵn sàng gần bạn (trong 5km)"}
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  Hãy đợi thêm đơn mới...
+                  {isAcceptBlocked
+                    ? `Bạn có thể nhận đơn lại sau ${Math.ceil(acceptBlockedRemainingMs / 60000)} phút (do hủy đơn quá nhiều).`
+                    : busyWithOrders
+                      ? hasActiveNonSaverOrder
+                        ? "Hoàn thành đơn hiện tại rồi nhận đơn mới."
+                        : "Hệ thống chỉ hiện đơn SAVER còn slot, cùng tuyến và không làm lộ trình dài hơn 3km."
+                      : "Hãy đợi thêm đơn mới..."}
                 </p>
               </div>
             ) : (
@@ -854,6 +919,11 @@ export default function DriverDashboardPage() {
                           >
                             {deliveryOptionMeta(o.deliveryOption).icon}{" "}
                             {deliveryOptionMeta(o.deliveryOption).label}
+                          </span>
+                        )}
+                        {busyWithOrders && o.deliveryOption === "SAVER" && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold ml-1 bg-emerald-100 text-emerald-700">
+                            🧺 Gộp cùng tuyến
                           </span>
                         )}
                       </div>
@@ -898,7 +968,9 @@ export default function DriverDashboardPage() {
                         onClick={() => acceptOrder(o.id)}
                         className="flex-1 bg-[#ff6b35] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
                       >
-                        ✅ Nhận đơn
+                        {busyWithOrders && o.deliveryOption === "SAVER"
+                          ? "🧺 Nhận gộp đơn"
+                          : "✅ Nhận đơn"}
                       </button>
                     </div>
                   </div>

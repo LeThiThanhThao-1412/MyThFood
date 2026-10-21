@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from "@nestjs/common";
@@ -77,6 +78,24 @@ export class AssistantController {
     return {
       statusCode: HttpStatus.OK,
       data: await this.assistantService.getAnalysis(id),
+    };
+  }
+
+  /**
+   * Badge AI cho NHIỀU vụ việc cùng lúc (lưới vụ việc ở admin-portal).
+   *
+   * `?caseIds=id1,id2,...` — một request thay vì N request `/analysis`.
+   */
+  @Get("analyses")
+  @Roles("ADMIN")
+  async analyses(@Query("caseIds") caseIds?: string) {
+    const ids = (caseIds ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.assistantService.listSummaries(ids),
     };
   }
 

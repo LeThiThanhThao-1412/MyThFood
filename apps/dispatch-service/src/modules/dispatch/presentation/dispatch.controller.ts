@@ -171,6 +171,23 @@ export class DispatchController {
     };
   }
 
+  /**
+   * Các đơn tài xế ĐỦ ĐIỀU KIỆN nhận ngay (đã áp dụng luật gộp SAVER:
+   * còn slot, cùng tuyến, đúng bán kính, không bị khóa...). Driver-app dùng
+   * danh sách này để chỉ hiển thị đơn bấm nhận được.
+   */
+  @Get("available-for-driver/:driverId")
+  @Roles("DRIVER", "ADMIN")
+  async getAvailableForDriver(@Param("driverId") driverId: string) {
+    const dispatches =
+      await this.dispatchService.getAvailableDispatchesForDriver(driverId);
+    return {
+      statusCode: HttpStatus.OK,
+      data: dispatches.map((d) => this._toResponse(d)),
+      total: dispatches.length,
+    };
+  }
+
   // ---- Location (B3) ----
   @Get(":id/location")
   async getDispatchLocation(@Param("id") id: string) {

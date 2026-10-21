@@ -380,13 +380,35 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
   /** Lấy lịch sử vị trí GPS của tài xế (mới nhất trước, giới hạn `limit`). */
   async getLocationHistory(
     id: string,
-    limit?: number,
+    options:
+      | number
+      | {
+          limit?: number;
+          orderId?: string;
+          from?: string | Date;
+          to?: string | Date;
+        } = 200,
   ): Promise<DriverLocationPoint[]> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
-    return this.locationHistoryRepo.findByDriver(
-      driver.id.toString(),
-      limit ?? 200,
-    );
+    const opts = typeof options === "number" ? { limit: options } : options;
+    const from = opts.from ? new Date(opts.from) : undefined;
+    const to = opts.to ? new Date(opts.to) : undefined;
+    const validFrom = from && !Number.isNaN(from.getTime()) ? from : undefined;
+    const validTo = to && !Number.isNaN(to.getTime()) ? to : undefined;
+
+    // Giữ nguyên hành vi cũ khi không có bộ lọc (tương thích driver-app).
+    if (!opts.orderId && !validFrom && !validTo) {
+      return this.locationHistoryRepo.findByDriver(
+        driver.id.toString(),
+        opts.limit ?? 200,
+      );
+    }
+    return this.locationHistoryRepo.findByDriverForOrder(driver.id.toString(), {
+      orderId: opts.orderId,
+      from: validFrom,
+      to: validTo,
+      limit: opts.limit ?? 400,
+    });
   }
 
   // ---- Order Assignment ----

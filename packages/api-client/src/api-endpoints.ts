@@ -96,6 +96,7 @@ import type {
   AssistantHealth,
   CaseAiAnalysisRecord,
   CaseAiContext,
+  CaseAiListSummary,
   CaseAiSuggestion,
   CaseAiReviewResult,
 } from "./types";
@@ -1052,6 +1053,17 @@ export const dispatchApi = {
       `/dispatches/driver/${driverId}`,
     ),
 
+  /**
+   * Các dispatch tài xế đủ điều kiện nhận ngay (backend đã áp dụng luật gộp
+   * SAVER: còn slot, cùng tuyến, đúng bán kính...). Dùng để lọc danh sách đơn
+   * hiển thị trên dashboard tài xế.
+   */
+  getAvailableForDriver: (driverId: string) =>
+    httpClient.get<DispatchListEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/available-for-driver/${driverId}`,
+    ),
+
   /** Case 4: danh sách orderId mà tài xế đã từ chối (để ẩn triệt để). */
   getDeclinedOrderIds: (driverId: string) =>
     httpClient.get<{ statusCode: number; data: string[] }>(
@@ -1663,6 +1675,17 @@ export const reviewApi = {
       averageRating: number;
     }>(PORTS.REVIEW, `/reviews/merchant/${merchantId}`, { params }),
 
+  /** Đánh giá khách hàng dành cho tài xế (kèm điểm trung bình). */
+  getByDriver: (driverId: string, params?: { skip?: number; take?: number }) =>
+    httpClient.get<{
+      statusCode: number;
+      data: Review[];
+      total: number;
+      averageRating: number;
+      /** Số lượng đánh giá theo từng mức sao: { "1": n, ..., "5": n } */
+      distribution?: Record<string, number>;
+    }>(PORTS.REVIEW, `/reviews/driver/${driverId}`, { params }),
+
   getByOrder: (orderId: string) =>
     httpClient.get<ApiResponse<Review | null>>(
       PORTS.REVIEW,
@@ -2198,6 +2221,14 @@ export const resolutionApi = {
     httpClient.get<{ statusCode: number; data: CaseAiAnalysisRecord | null }>(
       PORTS.RESOLUTION,
       `/assistant/cases/${caseId}/analysis`,
+    ),
+
+  /** Badge AI cho nhiều vụ việc cùng lúc (lưới vụ việc) — 1 request thay vì N. */
+  listCaseAiSummaries: (caseIds: string[]) =>
+    httpClient.get<{ statusCode: number; data: CaseAiListSummary[] }>(
+      PORTS.RESOLUTION,
+      "/assistant/analyses",
+      { params: { caseIds: caseIds.join(",") } },
     ),
 
   analyzeCase: (

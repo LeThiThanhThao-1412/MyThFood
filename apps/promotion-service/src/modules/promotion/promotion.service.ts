@@ -92,6 +92,99 @@ export class PromotionService {
     return this.promoRepo.findByMerchantId(merchantId);
   }
 
+  /**
+   * Ưu đãi **thực tế** của một đơn (mã giảm giá + flash sale) cho AI điều tra.
+   *
+   * Chỉ đọc và chỉ trả field nghiệp vụ — cố ý không trả `consumerId` hay bất kỳ
+   * thông tin cá nhân nào để dữ liệu PII không rời khỏi service này.
+   */
+  async getUsageByOrder(orderId: string) {
+    const promotionUsage = await this.promoRepo.findUsageByOrderId(orderId);
+    const promotion = promotionUsage
+      ? await this.promoRepo.findById(promotionUsage.promotionId)
+      : null;
+    const flashSaleUsages =
+      await this.promoRepo.findFlashSaleUsageByOrderId(orderId);
+
+    const flashSaleDetails = await Promise.all(
+      flashSaleUsages.map(async (usage) => {
+        const [sale, item] = await Promise.all([
+          this.promoRepo.findFlashSaleById(usage.flashSaleId),
+          this.promoRepo.findFlashSaleItemById(usage.flashSaleItemId),
+        ]);
+        return {
+          flashSaleId: usage.flashSaleId,
+          flashSaleItemId: usage.flashSaleItemId,
+          quantity: usage.quantity,
+          unitPrice: Number(usage.unitPrice),
+          discountAmount: Number(usage.discountAmount),
+          refundedAt: usage.refundedAt,
+          sale: sale
+            ? {
+                status: sale.status,
+                startAt: sale.startAt,
+                endAt: sale.endAt,
+              }
+            : null,
+          item: item
+            ? {
+                menuItemId: item.menuItemId,
+                menuItemName: item.menuItemName,
+                imageUrl: item.imageUrl,
+                originalPrice: Number(item.originalPrice),
+                salePrice: Number(item.salePrice),
+                discountType: item.discountType,
+                discountPercent:
+                  item.discountPercent === null
+                    ? null
+                    : Number(item.discountPercent),
+                totalQuantity: item.totalQuantity,
+                soldQuantity: item.soldQuantity,
+                limitPerUser: item.limitPerUser,
+              }
+            : null,
+        };
+      }),
+    );
+
+    return {
+      orderId,
+      promotionUsage: promotionUsage
+        ? {
+            promotionId: promotionUsage.promotionId,
+            discountAmount: Number(promotionUsage.discountAmount),
+            createdAt: promotionUsage.createdAt,
+          }
+        : null,
+      promotion: promotion
+        ? {
+            code: promotion.code,
+            type: promotion.type,
+            target: promotion.target,
+            fundedBy: promotion.fundedBy,
+            menuItemId: promotion.menuItemId,
+            menuItemName: promotion.menuItemName,
+            value: Number(promotion.value),
+            minOrderValue:
+              promotion.minOrderValue === null
+                ? null
+                : Number(promotion.minOrderValue),
+            maxDiscount:
+              promotion.maxDiscount === null
+                ? null
+                : Number(promotion.maxDiscount),
+            startAt: promotion.startAt,
+            endAt: promotion.endAt,
+            usageLimit: promotion.usageLimit,
+            usageLimitPerUser: promotion.usageLimitPerUser,
+            usedCount: promotion.usedCount,
+            isActive: promotion.isActive,
+          }
+        : null,
+      flashSaleUsages: flashSaleDetails,
+    };
+  }
+
   async getAll(filter: {
     merchantId?: string;
     isActive?: boolean;

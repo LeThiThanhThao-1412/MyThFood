@@ -289,6 +289,7 @@ export default function RestaurantDetailPage() {
     : ALL_CATEGORY_KEY;
 
   // "Tất cả" hiển thị toàn bộ danh mục + món; các tab khác chỉ để lọc.
+  // Flash Sale nằm trong "Tất cả" và luôn được ưu tiên hiển thị đầu tiên.
   const visibleSections =
     activeCategoryKey === FLASH_SALE_CATEGORY_KEY
       ? [
@@ -300,12 +301,24 @@ export default function RestaurantDetailPage() {
           },
         ]
       : activeCategoryKey === ALL_CATEGORY_KEY
-        ? categoryOrder.map((cat) => ({
-            key: `${CATEGORY_KEY_PREFIX}${cat}`,
-            title: cat,
-            items: groupedMenu[cat] || [],
-            isFlashSale: false,
-          }))
+        ? [
+            ...(flashSaleItems.length > 0
+              ? [
+                  {
+                    key: FLASH_SALE_CATEGORY_KEY,
+                    title: "Flash Sale",
+                    items: flashSaleItems,
+                    isFlashSale: true,
+                  },
+                ]
+              : []),
+            ...categoryOrder.map((cat) => ({
+              key: `${CATEGORY_KEY_PREFIX}${cat}`,
+              title: cat,
+              items: groupedMenu[cat] || [],
+              isFlashSale: false,
+            })),
+          ]
         : (() => {
             const cat = activeCategoryKey.slice(CATEGORY_KEY_PREFIX.length);
             return [
@@ -577,17 +590,21 @@ export default function RestaurantDetailPage() {
                         className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all shrink-0 ${
                           active
                             ? tab.isFlashSale
-                              ? "bg-red-500 text-white shadow-md shadow-red-200"
+                              ? "bg-gradient-to-r from-[#ff6b35] to-[#ffa62b] text-white shadow-md shadow-orange-200"
                               : "bg-[#ff6b35] text-white shadow-md shadow-orange-200"
                             : tab.isFlashSale
-                              ? "bg-white text-red-500 border border-red-100 hover:border-red-300"
+                              ? "bg-orange-50 text-[#ff6b35] border border-orange-200 hover:border-orange-400"
                               : "bg-white text-gray-600 border border-gray-100 hover:border-orange-200"
                         }`}
                       >
                         {tab.label}
                         <span
                           className={`ml-1.5 text-[11px] ${
-                            active ? "text-white/80" : "text-gray-400"
+                            active
+                              ? "text-white/80"
+                              : tab.isFlashSale
+                                ? "text-[#ff6b35]/70"
+                                : "text-gray-400"
                           }`}
                         >
                           ({tab.count})
@@ -610,21 +627,45 @@ export default function RestaurantDetailPage() {
                   {visibleSections.map((section) => {
                     if (section.items.length === 0) return null;
                     return (
-                      <div key={section.key}>
+                      <div
+                        key={section.key}
+                        className={
+                          section.isFlashSale
+                            ? "relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#ff6b35] via-[#ff7d3c] to-[#ffa62b] p-4 sm:p-5 shadow-lg shadow-orange-200/70 ring-1 ring-orange-300/60"
+                            : ""
+                        }
+                      >
+                        {section.isFlashSale && (
+                          <>
+                            <div className="pointer-events-none absolute -top-12 -right-10 h-36 w-36 rounded-full bg-white/15" />
+                            <div className="pointer-events-none absolute -bottom-14 -left-10 h-32 w-32 rounded-full bg-white/10" />
+                          </>
+                        )}
                         <h3
-                          className={`text-base font-bold mb-3 flex items-center gap-2 ${
+                          className={`relative text-base font-bold mb-3 flex items-center gap-2 ${
                             section.isFlashSale
-                              ? "text-red-500"
+                              ? "text-white"
                               : "text-[#ff6b35]"
                           }`}
                         >
                           <span>{section.isFlashSale ? "🔥" : "🍽️"}</span>
                           {section.title}
-                          <span className="text-xs text-gray-400 font-normal">
+                          <span
+                            className={`text-xs font-normal ${
+                              section.isFlashSale
+                                ? "text-white/80"
+                                : "text-gray-400"
+                            }`}
+                          >
                             ({section.items.length})
                           </span>
+                          {section.isFlashSale && (
+                            <span className="ml-auto text-[10px] font-bold bg-white/25 text-white px-2.5 py-1 rounded-full whitespace-nowrap">
+                              Ưu đãi có hạn
+                            </span>
+                          )}
                         </h3>
-                        <div className="space-y-3">
+                        <div className="relative space-y-3">
                           {section.items.map((item: any) => {
                             const isAdded = addedIds.has(item.id);
                             const fsItem = flashSales.get(item.id);

@@ -13,6 +13,7 @@ import {
 const NAV_ITEMS = [
   { href: "/dashboard", icon: "📊", label: "Tổng quan" },
   { href: "/earnings", icon: "💰", label: "Thu nhập" },
+  { href: "/reviews", icon: "⭐", label: "Đánh giá" },
   { href: "/wallet", icon: "💳", label: "Ví" },
   { href: "/location", icon: "📍", label: "Khu vực" },
   { href: "/complaints", icon: "🛡️", label: "Khiếu nại" },

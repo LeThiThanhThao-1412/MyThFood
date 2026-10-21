@@ -190,6 +190,10 @@ export function friendlyError(err: any, fallback = "Có lỗi xảy ra"): string
     return "Đơn đã hết lượt tìm tài xế, vui lòng chọn đơn khác.";
   if (raw.includes("does not meet COD requirements"))
     return "Ví chưa đủ 2.000.000₫ để nhận đơn COD.";
+  if (raw.includes("chưa đủ điều kiện nhận đơn"))
+    return "Bạn chưa đủ điều kiện nhận đơn này. Đơn gộp chỉ dành cho tài xế đang giữ toàn đơn Tiết kiệm (SAVER) còn slot và cùng tuyến.";
+  if (raw.includes("đã được gán cho tài xế khác"))
+    return "Đơn này đã được gán cho tài xế khác, vui lòng chọn đơn khác.";
   if (raw.includes("Dispatch already exists"))
     return "Đơn này đã có tài xế khác nhận.";
   if (raw.toLowerCase().includes("network"))
@@ -352,6 +356,12 @@ async function ensureDispatch(order: any, merchant?: any): Promise<any> {
     deliveryLongitude: toNum(order.deliveryLongitude, 106.7),
     ...(m?.latitude != null ? { merchantLatitude: toNum(m.latitude) } : {}),
     ...(m?.longitude != null ? { merchantLongitude: toNum(m.longitude) } : {}),
+    // Giữ đúng phương thức giao hàng của đơn: thiếu field này dispatch sẽ
+    // mặc định FAST (maxStackedOrders = 1) và đơn SAVER không thể gộp.
+    ...(order.deliveryOption ? { deliveryOption: order.deliveryOption } : {}),
+    ...(order.promisedDeliveryAt
+      ? { promisedDeliveryAt: order.promisedDeliveryAt }
+      : {}),
   });
   return unwrap<any>(created);
 }
@@ -499,6 +509,89 @@ export async function pickUpFood(
   const updatedOrder = await syncOrderOutForDelivery(order, driverId);
   await notifyConsumer(order, "DELIVERING");
   return { dispatch: current, order: updatedOrder };
+}
+
+/**
+ * Các dispatch KHÁC của tài xế đang chờ lấy món tại CÙNG nhà hàng.
+ *
+ * Dùng khi tài xế đã ở quán: lấy món luôn cho tất cả đơn gộp cùng quán, tránh
+ * việc giao xong một đơn rồi phải quay lại quán lấy đơn còn lại.
+ */
+export async function getStackedDispatchesAtSameMerchant(
+  order: any,
+  driverId: string,
+  statuses: string[],
+): Promise<any[]> {
+  if (!order?.id || !order?.merchantId || !driverId) return [];
+  try {
+    const res: any = await dispatchApi.getByDriver(driverId);
+    const dispatches = unwrap<any[]>(res) ?? [];
+    return dispatches.filter(
+      (d) =>
+        d.orderId !== order.id &&
+        d.merchantId === order.merchantId &&
+        statuses.includes(d.status),
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Đánh dấu “đã đến nhà hàng” cho các đơn gộp cùng quán (cùng một điểm lấy
+ * hàng) để tài xế có thể lấy món tất cả trong một lần.
+ */
+export async function arriveStackedOrdersAtSameMerchant(
+  order: any,
+  driverId: string,
+  restaurant: LatLng | null,
+): Promise<number> {
+  const others = await getStackedDispatchesAtSameMerchant(order, driverId, [
+    "DRIVER_ACCEPTED",
+  ]);
+  let count = 0;
+  for (const other of others) {
+    try {
+      const otherOrder = unwrap<any>(await orderApi.getById(other.orderId));
+      if (!otherOrder) continue;
+      await arriveAtRestaurant(otherOrder, other, driverId, restaurant);
+      count += 1;
+    } catch {
+      /* non-fatal: lỗi đơn khác không ảnh hưởng đơn hiện tại */
+    }
+  }
+  return count;
+}
+
+/**
+ * Lấy món cho toàn bộ đơn gộp cùng nhà hàng (kể cả đơn chưa bấm “đã đến quán”
+ * nhưng tài xế đang ở cùng quán). Trả về số đơn lấy thêm được.
+ */
+export async function pickUpStackedOrdersAtSameMerchant(
+  order: any,
+  driverId: string,
+): Promise<number> {
+  const others = await getStackedDispatchesAtSameMerchant(order, driverId, [
+    "DRIVER_ACCEPTED",
+    "DRIVER_ARRIVED",
+  ]);
+  let count = 0;
+  for (const other of others) {
+    try {
+      const otherOrder = unwrap<any>(await orderApi.getById(other.orderId));
+      if (!otherOrder) continue;
+      let current = other;
+      if (current.status === "DRIVER_ACCEPTED") {
+        current = unwrap<any>(await dispatchApi.driverArrived(current.id));
+      }
+      if (current.status !== "DRIVER_ARRIVED") continue;
+      await pickUpFood(otherOrder, current, driverId);
+      count += 1;
+    } catch {
+      /* non-fatal */
+    }
+  }
+  return count;
 }
 
 /**

@@ -214,12 +214,20 @@ export class DriverController {
   async getLocationHistory(
     @Param("id") id: string,
     @Query("limit") limit?: string,
+    @Query("orderId") orderId?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
   ) {
-    const parsed = limit ? parseInt(limit, 10) : 200;
+    const parsed = limit ? parseInt(limit, 10) : orderId ? 400 : 200;
     const safeLimit = Number.isNaN(parsed)
       ? 200
       : Math.min(1000, Math.max(1, parsed));
-    const history = await this.driverService.getLocationHistory(id, safeLimit);
+    const history = await this.driverService.getLocationHistory(id, {
+      limit: safeLimit,
+      orderId,
+      from,
+      to,
+    });
     return { statusCode: HttpStatus.OK, data: history };
   }
 
@@ -361,6 +369,39 @@ export class DriverController {
   async getPublicProfile(@Param("id") id: string) {
     const driver = await this.driverService.getById(id);
     return { statusCode: HttpStatus.OK, data: this.toPublicProfile(driver) };
+  }
+
+  /**
+   * Hồ sơ năng lực phục vụ điều tra (chỉ dữ liệu vận hành — KHÔNG PII).
+   *
+   * Dùng cho AI phân tích khiếu nại: rating/uy tín/tổng đơn/mức mệt/đơn đang
+   * giữ. Cố ý không trả tên, SĐT, email, CCCD, biển số, số ví.
+   */
+  @Get(":id/analytics-profile")
+  @Roles("ADMIN")
+  async getAnalyticsProfile(@Param("id") id: string) {
+    const driver = await this.driverService.getById(id);
+    const full = this.toResponse(driver);
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        rating: full.rating ?? null,
+        totalRatings: full.totalRatings ?? null,
+        totalOrders: full.totalOrders ?? null,
+        reputationScore: full.reputationScore ?? null,
+        status: full.status ?? null,
+        onlineStatus: full.onlineStatus ?? null,
+        vehicleType: full.vehicleType ?? null,
+        fatigueLevel: full.fatigueLevel ?? null,
+        consecutiveDrivingMinutes: full.consecutiveDrivingMinutes ?? null,
+        totalDrivingMinutesToday: full.totalDrivingMinutesToday ?? null,
+        isTrainingCompleted: full.isTrainingCompleted ?? null,
+        acceptBlockedUntil: full.acceptBlockedUntil ?? null,
+        activeOrderCount: full.activeOrderCount ?? null,
+        maxConcurrentOrders: full.maxConcurrentOrders ?? null,
+        createdAt: full.createdAt ?? null,
+      },
+    };
   }
 
   // ---- Helper ----

@@ -1,12 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { randomUUID } from "crypto";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import { CaseAiAnalysisEntity } from "./analysis.entity";
 import {
   AiAnalysisSource,
   AiReviewDecision,
   CaseAiAnalysisRecord,
+  CaseAiListSummary,
   CaseAiSuggestion,
 } from "../domain/assistant.types";
 
@@ -54,6 +55,37 @@ export class CaseAiAnalysisRepository {
   async findByCaseId(caseId: string): Promise<CaseAiAnalysisRecord | null> {
     const entity = await this.repo.findOne({ where: { caseId } });
     return entity ? this.toRecord(entity) : null;
+  }
+
+  /**
+   * Bản rút gọn cho NHIỀU vụ việc (badge AI trên lưới vụ việc).
+   *
+   * Chỉ select các cột nhẹ + `summary` trong payload, không trả cả JSONB nặng.
+   */
+  async findSummaries(caseIds: string[]): Promise<CaseAiListSummary[]> {
+    if (caseIds.length === 0) return [];
+    const rows = await this.repo.find({
+      select: {
+        caseId: true,
+        verdict: true,
+        confidence: true,
+        source: true,
+        reviewDecision: true,
+        createdAt: true,
+        payload: true,
+      },
+      where: { caseId: In(caseIds) },
+    });
+
+    return rows.map((row) => ({
+      caseId: row.caseId,
+      verdict: row.verdict as CaseAiListSummary["verdict"],
+      confidence: Number(row.confidence) || 0,
+      summary: String((row.payload as any)?.summary ?? ""),
+      source: row.source as AiAnalysisSource,
+      reviewDecision: row.reviewDecision as AiReviewDecision | null,
+      createdAt: row.createdAt.toISOString(),
+    }));
   }
 
   /** Lưu quyết định duyệt/bỏ qua của admin. Trả `null` nếu vụ việc chưa có bản phân tích. */

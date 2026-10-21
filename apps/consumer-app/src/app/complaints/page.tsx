@@ -200,11 +200,35 @@ export default function ComplaintsPage() {
 
   async function load() {
     try {
-      const r: any = await resolutionApi.listCases({
-        actorId: profileId || user?.id,
-        take: 100,
-      });
-      setCases(r?.data || []);
+      // Một khiếu nại có thể được lưu với 2 loại id khác nhau cho cùng một khách:
+      // - consumerId (id hồ sơ consumer): case tạo từ trang theo dõi đơn/trang này
+      // - userId (id tài khoản đăng nhập): case cũ tạo khi backend fallback về user
+      // Truy vấn cả hai để không bỏ sót (giống dashboard/ordered-dishes).
+      const actorIds = Array.from(
+        new Set([profileId, user?.id].filter((x): x is string => !!x)),
+      );
+      const results = await Promise.all(
+        actorIds.map((actorId) =>
+          resolutionApi
+            .listCases({ actorId, take: 100 })
+            .then((r: any) => (Array.isArray(r?.data) ? r.data : []))
+            .catch(() => [] as any[]),
+        ),
+      );
+      const merged: any[] = [];
+      const seen = new Set<string>();
+      for (const list of results) {
+        for (const c of list) {
+          if (!c?.id || seen.has(c.id)) continue;
+          seen.add(c.id);
+          merged.push(c);
+        }
+      }
+      merged.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      setCases(merged);
     } catch {
       /* ignore */
     }
@@ -644,7 +668,7 @@ export default function ComplaintsPage() {
                   {(c.status === "OPEN" ||
                     c.status === "UNDER_REVIEW" ||
                     c.status === "WAITING_EVIDENCE") &&
-                    c.reporterId === user?.id && (
+                    [profileId, user?.id].includes(c.reporterId) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

@@ -856,6 +856,10 @@ export interface DriverRoute {
   /** Thứ tự chặng tối ưu do dispatch-service tính (có thể đan xen pickup/dropoff). */
   legs?: DriverRouteLeg[];
   totalDistanceKm?: number;
+  /** Tổng thời gian di chuyển (phút) theo metric đường thực tế/fallback. */
+  totalDurationMin?: number;
+  /** Nguồn metric: osrm/google = đường thực tế, haversine = fallback. */
+  source?: "osrm" | "google" | "haversine";
 }
 
 export interface CreateDispatchRequest {
@@ -1387,12 +1391,47 @@ export interface AiEvidenceWeight {
   reporterSelfContradiction: boolean;
 }
 
+/** Ảnh giao hàng có khớp MÓN ĐÃ ĐẶT không (AI đọc ảnh). */
+export type AiDeliveryMatch = "MATCH" | "MISMATCH" | "UNCLEAR";
+
 /** Ảnh bằng chứng của **một bên**, đã phân tích riêng. */
 export interface AiSideImageAnalysis {
   attached: number;
   analyzed: number;
   support: AiImageSupport;
   analysis: string;
+}
+
+/** Một phát hiện chi tiết của AI (tầng phân tích sâu). */
+export interface AiDetailedFinding {
+  signal: string;
+  facts: string;
+  source: string;
+  interpretation: string;
+  weight: "STRONG" | "MEDIUM" | "WEAK";
+}
+
+/** Đánh giá một nguồn dữ liệu: dùng được / thiếu / mâu thuẫn / không liên quan. */
+export interface AiSourceAssessment {
+  sourceId: string;
+  status: "USED" | "MISSING" | "CONTRADICTS" | "NOT_RELEVANT";
+  note: string;
+}
+
+export interface AiContradiction {
+  between: string;
+  detail: string;
+}
+
+export interface AiTimelineHighlight {
+  at: string;
+  source: string;
+  event: string;
+}
+
+export interface AiVerdictChange {
+  missingData: string;
+  couldChangeTo: string;
 }
 
 export interface CaseAiSuggestion {
@@ -1403,6 +1442,8 @@ export interface CaseAiSuggestion {
   summary: string;
   /** Tổng số ảnh bằng chứng đã gửi cho model (0 = không có ảnh). */
   imagesAnalyzed: number;
+  /** Số ảnh chuẩn món từ thực đơn đã gửi cho model. */
+  menuImagesAnalyzed?: number;
   /** Phân tích ảnh của bên khiếu nại. */
   reporterImages: AiSideImageAnalysis;
   /** Phân tích ảnh của bên bị khiếu nại. */
@@ -1411,6 +1452,12 @@ export interface CaseAiSuggestion {
   deliveryProof: {
     photoUrl: string | null;
     analyzed: boolean;
+    /** Ảnh giao hàng khớp/không khớp món đã đặt. */
+    matchesOrder?: AiDeliveryMatch | null;
+    /** Món/bao bì AI nhìn thấy trong ảnh giao hàng. */
+    itemsSeen?: string | null;
+    /** Nhận xét ngắn về ảnh giao hàng. */
+    analysis?: string | null;
   };
   /** Trọng số bằng chứng (%) đã dùng để kết luận — ảnh & hệ thống > lời khai. */
   evidenceWeight: AiEvidenceWeight;
@@ -1431,6 +1478,12 @@ export interface CaseAiSuggestion {
   sourcesUsed: string[];
   sourcesMissing: string[];
   warnings: string[];
+  /** Tầng phân tích chi tiết (tùy chọn — bản ngắn phía trên vẫn là bản chính). */
+  sourceAssessment?: AiSourceAssessment[];
+  detailedFindings?: AiDetailedFinding[];
+  contradictions?: AiContradiction[];
+  timelineHighlights?: AiTimelineHighlight[];
+  whatWouldChangeVerdict?: AiVerdictChange[];
   usage: {
     promptTokens: number | null;
     outputTokens: number | null;
@@ -1444,6 +1497,24 @@ export interface CaseAiContextSource {
   available: boolean;
   detail?: string;
   payload?: unknown;
+}
+
+export interface CaseAiMenuItem {
+  menuItemId: string | null;
+  name: string;
+  description: string | null;
+  price: number | null;
+  originalPrice: number | null;
+  imageUrl: string | null;
+  isAvailable: boolean | null;
+  availabilityStatus: string | null;
+  outOfStockUntil: string | null;
+  preparationTime: number | null;
+  isFeatured: boolean | null;
+  optionGroups: string[];
+  orderedQuantity: number;
+  orderUnitPrice: number | null;
+  priceMismatch: boolean | null;
 }
 
 export interface CaseAiContext {
@@ -1478,6 +1549,37 @@ export interface CaseAiContext {
   deliveryProofPhotoUrl?: string | null;
   /** Ảnh giao hàng của tài xế có được gửi cho AI phân tích hay không. */
   deliveryProofImageAttached?: boolean;
+  /** Thực đơn của các món đã đặt (D15) — đối chiếu giá/tồn kho/ảnh chuẩn. */
+  menuItems?: CaseAiMenuItem[];
+  /** Ưu đãi của đơn/nhà hàng (D16). */
+  promotions?: unknown;
+  /** Đánh giá của đơn + lịch sử quán/tài xế (D17/D18). */
+  reviews?: unknown;
+  /** Hồ sơ năng lực tài xế (D19, không PII). */
+  driverProfile?: unknown;
+  /** Dòng thời gian hợp nhất. */
+  timeline?: Array<{ at: string; source: string; event: string }>;
+  /** Tín hiệu GPS dẫn xuất (không có toạ độ thô). */
+  gpsSignals?: unknown;
+  /** Báo cáo ẩn danh PII. */
+  pii?: {
+    mode: string;
+    redactedFields: number;
+    redactedKinds: string[];
+    pseudonymizedIds: number;
+  };
+  /** Kích thước ngữ cảnh (đo token/latency). */
+  contextStats?: {
+    totalChars: number;
+    estimatedTokens: number;
+    perSourceChars: Record<string, number>;
+    gpsPoints: number;
+    imagesByKind: Record<string, number>;
+  };
+  /** Kế hoạch ảnh đã gửi theo loại. */
+  imagePlan?: Record<string, number>;
+  menuImagesAttached?: number;
+  reviewImagesAttached?: number;
 }
 
 export interface AssistantHealth {
@@ -1492,7 +1594,15 @@ export interface AssistantHealth {
   /** Model đọc ảnh bằng chứng (GLM tách riêng model vision). */
   visionModel?: string | null;
   maxEvidenceImages: number;
+  /** Số ảnh chuẩn món tối đa đính kèm. */
+  maxMenuImages?: number;
   sourceCount: number;
+  /** Các nguồn ngữ cảnh đang bật (D1..D19). */
+  enabledContextSources?: string[];
+  /** `off` | `shadow` | `enforce`. */
+  piiMode?: string;
+  promptCharBudget?: number;
+  deepOutput?: boolean;
   /** AI có tự phân tích khi có khiếu nại mới hay không. */
   autoAnalyze: boolean;
 }
@@ -1534,4 +1644,15 @@ export interface CaseAiAnalysisRecord {
   review: CaseAiAnalysisReview | null;
   /** Bản phân tích đã cũ (vụ việc có phản hồi mới sau thời điểm phân tích). */
   stale: boolean;
+}
+
+/** Bản rút gọn dùng cho badge AI trên lưới vụ việc. */
+export interface CaseAiListSummary {
+  caseId: string;
+  verdict: AiVerdict;
+  confidence: number;
+  summary: string;
+  source: AiAnalysisSource;
+  reviewDecision: AiReviewDecision | null;
+  createdAt: string;
 }

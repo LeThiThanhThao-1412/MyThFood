@@ -329,6 +329,10 @@ export default function OrderDetailPage() {
         type: "COMPLAINT",
         category: complaintCategory,
         orderId: order.id,
+        // Phải gửi consumerId (id hồ sơ consumer), không để backend fallback về
+        // userId: trang /complaints lọc theo consumerId nên nếu lưu userId thì
+        // khách không thấy khiếu nại của mình (admin vẫn thấy vì không lọc).
+        reporterId: order.consumerId || undefined,
         respondentId,
         respondentType: complaintRespondentType,
         subject: complaintSubject.trim() || complaintCategory,

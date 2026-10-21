@@ -5,9 +5,12 @@
  * - Mỗi đơn gồm 2 điểm: PICKUP (quán) và DROPOFF (khách).
  * - Ràng buộc duy nhất: PICKUP của một đơn phải đứng trước DROPOFF của
  *   chính đơn đó.
- * - Các điểm còn lại được xếp theo tổng quãng đường ngắn nhất (Haversine),
- *   nên lộ trình có thể đan xen: lấy B1 trên đường tới A1, giao A2 trên
- *   đường tới C1, v.v.
+ * - Các điểm còn lại được xếp theo tổng **chi phí lộ trình nhỏ nhất**:
+ *   mặc định dùng ma trận khoảng cách/thời gian đường đi thực tế từ OSRM
+ *   (hoặc Google Distance Matrix nếu cấu hình), fallback Haversine khi
+ *   không gọi được dịch vụ bản đồ.
+ * - Có thể tối ưu theo `duration` (mặc định — tính cả tốc độ/turn penalty,
+ *   phù hợp "giao thông") hoặc theo `distance`.
  * - Với lô ≤ 14 node, dùng quy hoạch động chính xác; vượt ngưỡng thì
  *   fallback greedy để tránh bùng nổ bộ nhớ.
  */
@@ -71,8 +74,44 @@ export interface PlannedLeg {
 export interface PlannedRoute {
   stops: PlannedStop[];
   legs: PlannedLeg[];
-  /** Tổng quãng đường ước tính (Haversine) từ vị trí tài xế qua các chặng. */
+  /** Tổng quãng đường (km) theo nguồn metric đã dùng. */
   totalDistanceKm: number;
+  /** Tổng thời gian di chuyển (phút) — có cả khi fallback Haversine. */
+  totalDurationMin: number;
+  /** Nguồn metric: đường thực tế (osrm/google) hay fallback đường chim bay. */
+  source: "osrm" | "google" | "haversine";
+}
+
+/** Tiêu chí tối ưu lộ trình. */
+export type RouteOptimizationMetric = "distance" | "duration";
+
+/**
+ * Ma trận khoảng cách/thời gian đường đi thực tế.
+ * Index 0 = vị trí hiện tại của tài xế; index 1..n = các node theo đúng thứ
+ * tự `buildRouteNodeCoordinates()` (pickup/dropoff đang cần đi).
+ */
+export interface RouteMatrixMetric {
+  /** Khoảng cách đường đi (km), kích thước (n+1)x(n+1). */
+  distanceKm: number[][];
+  /** Thời gian di chuyển (phút), cùng kích thước với `distanceKm`. */
+  durationMin?: number[][];
+  source: "osrm" | "google";
+  /** Tiêu chí dùng để tối ưu (mặc định duration nếu có). */
+  metric?: RouteOptimizationMetric;
+}
+
+/**
+ * Toạ độ các node theo đúng thứ tự dùng trong `planRouteDetailed()`.
+ * Service gọi hàm này để dựng ma trận OSRM/Google khớp index với planner.
+ */
+export function buildRouteNodeCoordinates(
+  stops: RouteStopInput[],
+): { latitude: number; longitude: number }[] {
+  const { nodes } = buildRouteNodes(stops);
+  return nodes.map((node) => ({
+    latitude: node.latitude,
+    longitude: node.longitude,
+  }));
 }
 
 /** Các trạng thái cho biết tài xế đã lấy hàng tại quán. */
@@ -158,16 +197,39 @@ function buildRouteNodes(stops: RouteStopInput[]): {
   return { nodes, pickupNodeByOrder, dropoffNodeByOrder };
 }
 
-/** Fallback cho lô quá lớn: chọn node hợp lệ gần nhất tại mỗi bước. */
-function greedyNodeOrder(
+/** Chi phí đi từ node `from` (-1 = vị trí tài xế) tới node `to`. */
+type NodeEdgeCost = (from: number, to: number) => number;
+
+function haversineEdgeCost(
   driverLatitude: number,
   driverLongitude: number,
   nodes: RouteNode[],
-): number[] {
+): NodeEdgeCost {
+  return (from, to) => {
+    const target = nodes[to]!;
+    if (from < 0) {
+      return haversineKm(
+        driverLatitude,
+        driverLongitude,
+        target.latitude,
+        target.longitude,
+      );
+    }
+    const source = nodes[from]!;
+    return haversineKm(
+      source.latitude,
+      source.longitude,
+      target.latitude,
+      target.longitude,
+    );
+  };
+}
+
+/** Fallback cho lô quá lớn: chọn node hợp lệ có chi phí nhỏ nhất tại mỗi bước. */
+function greedyNodeOrder(nodes: RouteNode[], edgeCost: NodeEdgeCost): number[] {
   const remaining = new Set<number>(nodes.map((_, index) => index));
   const path: number[] = [];
-  let latitude = driverLatitude;
-  let longitude = driverLongitude;
+  let last = -1;
   let visitedMask = 0;
 
   while (path.length < nodes.length) {
@@ -179,12 +241,7 @@ function greedyNodeOrder(
       if ((node.prerequisiteMask & visitedMask) !== node.prerequisiteMask) {
         continue;
       }
-      const distance = haversineKm(
-        latitude,
-        longitude,
-        node.latitude,
-        node.longitude,
-      );
+      const distance = edgeCost(last, index);
       if (distance < bestDistance - 1e-9) {
         bestDistance = distance;
         bestIndex = index;
@@ -197,12 +254,10 @@ function greedyNodeOrder(
       break;
     }
 
-    const chosen = nodes[bestIndex]!;
     path.push(bestIndex);
     remaining.delete(bestIndex);
     visitedMask |= 1 << bestIndex;
-    latitude = chosen.latitude;
-    longitude = chosen.longitude;
+    last = bestIndex;
   }
 
   return path;
@@ -213,14 +268,13 @@ function greedyNodeOrder(
  * tôn trọng ràng buộc pickup-before-dropoff. Quy hoạch động trên bitmask.
  */
 function optimalNodeOrder(
-  driverLatitude: number,
-  driverLongitude: number,
   nodes: RouteNode[],
+  edgeCost: NodeEdgeCost,
 ): number[] {
   const count = nodes.length;
   if (count === 0) return [];
   if (count > MAX_OPTIMAL_NODES) {
-    return greedyNodeOrder(driverLatitude, driverLongitude, nodes);
+    return greedyNodeOrder(nodes, edgeCost);
   }
 
   const size = 1 << count;
@@ -234,12 +288,7 @@ function optimalNodeOrder(
   for (let index = 0; index < count; index += 1) {
     const node = nodes[index]!;
     if (node.prerequisiteMask !== 0) continue;
-    cost[1 << index]![index] = haversineKm(
-      driverLatitude,
-      driverLongitude,
-      node.latitude,
-      node.longitude,
-    );
+    cost[1 << index]![index] = edgeCost(-1, index);
   }
 
   for (let mask = 1; mask < size; mask += 1) {
@@ -248,7 +297,6 @@ function optimalNodeOrder(
       const currentCost = row[last]!;
       if (!Number.isFinite(currentCost)) continue;
 
-      const lastNode = nodes[last]!;
       for (let next = 0; next < count; next += 1) {
         const bit = 1 << next;
         if ((mask & bit) !== 0) continue;
@@ -258,14 +306,7 @@ function optimalNodeOrder(
           continue;
         }
 
-        const nextCost =
-          currentCost +
-          haversineKm(
-            lastNode.latitude,
-            lastNode.longitude,
-            nextNode.latitude,
-            nextNode.longitude,
-          );
+        const nextCost = currentCost + edgeCost(last, next);
         const nextMask = mask | bit;
         const targetRow = cost[nextMask]!;
         if (nextCost + 1e-9 < targetRow[next]!) {
@@ -288,7 +329,7 @@ function optimalNodeOrder(
   }
 
   if (bestLast < 0) {
-    return greedyNodeOrder(driverLatitude, driverLongitude, nodes);
+    return greedyNodeOrder(nodes, edgeCost);
   }
 
   const path: number[] = [];
@@ -304,18 +345,76 @@ function optimalNodeOrder(
   return path;
 }
 
+/** Tốc độ trung bình dùng để quy đổi km → phút khi không có duration thực. */
+const AVG_SPEED_KMH = 25;
+
 /**
  * Xếp lộ trình chi tiết: trả về cả thứ tự từng chặng (legs) để UI/map vẽ
  * đúng trình tự lấy hàng và giao hàng đan xen theo tuyến tối ưu.
+ *
+ * `matrix` (tuỳ chọn) là ma trận khoảng cách/thời gian đường đi thực tế:
+ * index 0 = vị trí tài xế, 1..n = các node theo `buildRouteNodeCoordinates()`.
+ * Không truyền / ma trận sai kích thước → tự fallback Haversine.
  */
 export function planRouteDetailed(
   driverLatitude: number,
   driverLongitude: number,
   stops: RouteStopInput[],
+  matrix?: RouteMatrixMetric,
 ): PlannedRoute {
   const { nodes, pickupNodeByOrder, dropoffNodeByOrder } =
     buildRouteNodes(stops);
-  const visitOrder = optimalNodeOrder(driverLatitude, driverLongitude, nodes);
+  const matrixSize = nodes.length + 1;
+  const useMatrix =
+    matrix != null &&
+    matrix.distanceKm.length === matrixSize &&
+    matrix.distanceKm.every((row) => row.length === matrixSize);
+  const hasDurationMatrix =
+    useMatrix &&
+    matrix!.durationMin != null &&
+    matrix!.durationMin.length === matrixSize &&
+    matrix!.durationMin.every((row) => row.length === matrixSize);
+  const metric: RouteOptimizationMetric =
+    useMatrix && hasDurationMatrix
+      ? (matrix!.metric ?? "duration")
+      : "distance";
+
+  const haversineCost = haversineEdgeCost(
+    driverLatitude,
+    driverLongitude,
+    nodes,
+  );
+
+  const readCell = (
+    grid: number[][] | undefined,
+    from: number,
+    to: number,
+  ): number | null => {
+    if (!grid) return null;
+    const row = from < 0 ? 0 : from + 1;
+    const value = grid[row]?.[to + 1];
+    return typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? value
+      : null;
+  };
+
+  // Chi phí dùng cho DP: thời gian (mặc định, tính cả tốc độ/turn penalty)
+  // hoặc khoảng cách đường thực tế. Ô thiếu → quy đổi/fallback Haversine.
+  const edgeCost: NodeEdgeCost = (from, to) => {
+    if (useMatrix && metric === "duration") {
+      const duration = readCell(matrix!.durationMin, from, to);
+      if (duration != null) return duration;
+      const distance = readCell(matrix!.distanceKm, from, to);
+      return ((distance ?? haversineCost(from, to)) / AVG_SPEED_KMH) * 60;
+    }
+    if (useMatrix) {
+      const distance = readCell(matrix!.distanceKm, from, to);
+      if (distance != null) return distance;
+    }
+    return haversineCost(from, to);
+  };
+
+  const visitOrder = optimalNodeOrder(nodes, edgeCost);
   const sequenceByNode = new Map<number, number>();
   visitOrder.forEach((nodeIndex, index) => {
     sequenceByNode.set(nodeIndex, index + 1);
@@ -334,17 +433,21 @@ export function planRouteDetailed(
   });
 
   let totalDistanceKm = 0;
-  let latitude = driverLatitude;
-  let longitude = driverLongitude;
-  for (const leg of legs) {
-    totalDistanceKm += haversineKm(
-      latitude,
-      longitude,
-      leg.latitude,
-      leg.longitude,
-    );
-    latitude = leg.latitude;
-    longitude = leg.longitude;
+  let totalDurationMin = 0;
+  let previous = -1;
+  for (const nodeIndex of visitOrder) {
+    const matrixDistance = useMatrix
+      ? readCell(matrix!.distanceKm, previous, nodeIndex)
+      : null;
+    const distance = matrixDistance ?? haversineCost(previous, nodeIndex);
+    totalDistanceKm += distance;
+
+    const matrixDuration = useMatrix
+      ? readCell(matrix!.durationMin, previous, nodeIndex)
+      : null;
+    totalDurationMin += matrixDuration ?? (distance / AVG_SPEED_KMH) * 60;
+
+    previous = nodeIndex;
   }
 
   let fallbackSequence = legs.length;
@@ -390,7 +493,15 @@ export function planRouteDetailed(
   plannedStops.forEach((stop, index) => {
     stop.sequence = index + 1;
   });
-  return { stops: plannedStops, legs, totalDistanceKm };
+
+  return {
+    stops: plannedStops,
+    legs,
+    totalDistanceKm,
+    totalDurationMin:
+      legs.length === 0 ? 0 : Math.max(1, Math.round(totalDurationMin)),
+    source: useMatrix ? matrix!.source : "haversine",
+  };
 }
 
 /**

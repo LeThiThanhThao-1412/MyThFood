@@ -20,6 +20,19 @@ export class IntegrationService {
     return process.env.SERVICE_API_KEY || "mythfood-service-key";
   }
 
+  /**
+   * Timeout cho các lần đọc dữ liệu phục vụ AI.
+   *
+   * Auto-analysis chạy ngay khi khiếu nại được tạo; một service chết mà không có
+   * timeout sẽ giữ tiến trình chờ vô hạn ⇒ bản phân tích không bao giờ được lưu.
+   * Fail-fast (mặc định 8s) để nguồn đó được ghi "KHÔNG CÓ" và AI vẫn kết luận
+   * bằng dữ liệu còn lại.
+   */
+  private get readTimeoutMs(): number {
+    const raw = Number(process.env.ANALYSIS_HTTP_TIMEOUT_MS);
+    return Number.isFinite(raw) && raw > 0 ? raw : 8000;
+  }
+
   private candidates(
     envKey: string,
     dockerUrl: string,
@@ -94,6 +107,7 @@ export class IntegrationService {
         const res = await firstValueFrom(
           this.httpService.get(`${base}${path}`, {
             headers: { "x-service-key": this.serviceKey },
+            timeout: this.readTimeoutMs,
           }),
         );
         return res.data;
@@ -327,15 +341,34 @@ export class IntegrationService {
     );
   }
 
-  /** D5 — Vết GPS của tài xế (driver-service), dùng cho GPS_SPOOFING. */
-  async getDriverLocationHistory(driverId: string, limit = 200): Promise<any> {
+  /**
+   * D4 — Vết GPS của tài xế (driver-service).
+   *
+   * Khi biết đơn/khoảng thời gian, phải lọc theo đó: endpoint cũ trả 200 điểm
+   * **cũ nhất** của tài xế nên với tài xế chạy nhiều đơn, AI không bao giờ thấy
+   * đoạn đường tới lúc giao hàng.
+   */
+  async getDriverLocationHistory(
+    driverId: string,
+    options: {
+      orderId?: string;
+      from?: string | null;
+      to?: string | null;
+      limit?: number;
+    } = {},
+  ): Promise<any> {
     if (!driverId) return [];
-    const safeLimit = Math.min(1000, Math.max(1, limit));
+    const params = new URLSearchParams();
+    const limit = Math.min(1000, Math.max(1, options.limit ?? 400));
+    params.set("limit", String(limit));
+    if (options.orderId) params.set("orderId", options.orderId);
+    if (options.from) params.set("from", options.from);
+    if (options.to) params.set("to", options.to);
     const data = await this.getData(
       "DRIVER_SERVICE_URL",
       "http://driver-service:3007",
       "http://localhost:3007",
-      `/api/v1/drivers/${driverId}/location/history?limit=${safeLimit}`,
+      `/api/v1/drivers/${driverId}/location/history?${params.toString()}`,
     );
     return data ?? [];
   }
@@ -361,6 +394,125 @@ export class IntegrationService {
       `/api/v1/reviews/order/${orderId}`,
     );
     return data ?? [];
+  }
+
+  /**
+   * D17 — Đánh giá của nhà hàng (kèm tổng số + điểm trung bình).
+   *
+   * Dùng `get()` thô thay vì `getData()` vì envelope còn chứa `total` và
+   * `averageRating` — hai số liệu quan trọng để đánh giá mẫu đánh giá xấu.
+   */
+  async getMerchantReviews(
+    merchantId: string,
+    take = 10,
+  ): Promise<{
+    items: any[];
+    total: number | null;
+    averageRating: number | null;
+  } | null> {
+    if (!merchantId) return null;
+    const body = await this.get(
+      "REVIEW_SERVICE_URL",
+      "http://review-service:3011",
+      "http://localhost:3011",
+      `/api/v1/reviews/merchant/${merchantId}?skip=0&take=${Math.min(50, Math.max(1, take))}`,
+    );
+    if (!body || typeof body !== "object") return null;
+    return {
+      items: Array.isArray(body.data) ? body.data : [],
+      total: typeof body.total === "number" ? body.total : null,
+      averageRating:
+        typeof body.averageRating === "number" ? body.averageRating : null,
+    };
+  }
+
+  /** D18 — Đánh giá khách dành cho tài xế (kèm phân bố điểm). */
+  async getDriverReviews(
+    driverId: string,
+    take = 10,
+  ): Promise<{
+    items: any[];
+    total: number | null;
+    averageRating: number | null;
+    distribution: Record<string, number> | null;
+  } | null> {
+    if (!driverId) return null;
+    const body = await this.get(
+      "REVIEW_SERVICE_URL",
+      "http://review-service:3011",
+      "http://localhost:3011",
+      `/api/v1/reviews/driver/${driverId}?skip=0&take=${Math.min(50, Math.max(1, take))}`,
+    );
+    if (!body || typeof body !== "object") return null;
+    return {
+      items: Array.isArray(body.data) ? body.data : [],
+      total: typeof body.total === "number" ? body.total : null,
+      averageRating:
+        typeof body.averageRating === "number" ? body.averageRating : null,
+      distribution:
+        body.distribution && typeof body.distribution === "object"
+          ? body.distribution
+          : null,
+    };
+  }
+
+  /** D15 — Thực đơn của nhà hàng (merchant-service). */
+  async getMerchantMenu(merchantId: string): Promise<any[]> {
+    if (!merchantId) return [];
+    const data = await this.getData(
+      "MERCHANT_SERVICE_URL",
+      "http://merchant-service:3003",
+      "http://localhost:3003",
+      `/api/v1/merchants/${merchantId}/menu?includeUnavailable=true`,
+    );
+    return Array.isArray(data) ? data : [];
+  }
+
+  /** D16 — Các mã khuyến mãi của nhà hàng (promotion-service). */
+  async getMerchantPromotions(merchantId: string): Promise<any[]> {
+    if (!merchantId) return [];
+    const data = await this.getData(
+      "PROMOTION_SERVICE_URL",
+      "http://promotion-service:3012",
+      "http://localhost:3012",
+      `/api/v1/promotions/merchant/${merchantId}`,
+    );
+    return Array.isArray(data) ? data : [];
+  }
+
+  /** D16 — Các chương trình flash sale của nhà hàng. */
+  async getMerchantFlashSales(merchantId: string): Promise<any[]> {
+    if (!merchantId) return [];
+    const body: any = await this.getData(
+      "PROMOTION_SERVICE_URL",
+      "http://promotion-service:3012",
+      "http://localhost:3012",
+      `/api/v1/promotions/flash-sales/merchant/${merchantId}`,
+    );
+    if (Array.isArray(body)) return body;
+    return Array.isArray(body?.items) ? body.items : [];
+  }
+
+  /** D16 — Ưu đãi thực tế của đơn (mã đã dùng + suất flash sale). */
+  async getPromotionUsageByOrder(orderId: string): Promise<any> {
+    if (!orderId) return null;
+    return this.getData(
+      "PROMOTION_SERVICE_URL",
+      "http://promotion-service:3012",
+      "http://localhost:3012",
+      `/api/v1/promotions/usages/order/${orderId}`,
+    );
+  }
+
+  /** D19 — Hồ sơ năng lực tài xế, đã whitelist ở driver-service (không PII). */
+  async getDriverAnalyticsProfile(driverId: string): Promise<any> {
+    if (!driverId) return null;
+    return this.getData(
+      "DRIVER_SERVICE_URL",
+      "http://driver-service:3007",
+      "http://localhost:3007",
+      `/api/v1/drivers/${driverId}/analytics-profile`,
+    );
   }
 
   /** D6 — Thanh toán của đơn (payment-service), dùng cho CHARGEBACK_FRAUD. */

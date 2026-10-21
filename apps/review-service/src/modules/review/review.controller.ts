@@ -57,6 +57,27 @@ export class ReviewController {
     };
   }
 
+  @Get("driver/:driverId")
+  @Roles("DRIVER", "ADMIN")
+  async getByDriver(
+    @Param("driverId") driverId: string,
+    @Query("skip") skip?: string,
+    @Query("take") take?: string,
+  ) {
+    const result = await this.reviewService.getByDriverId(
+      driverId,
+      skip ? parseInt(skip, 10) : 0,
+      take ? parseInt(take, 10) : 20,
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      data: result.items,
+      total: result.total,
+      averageRating: result.averageRating,
+      distribution: result.distribution,
+    };
+  }
+
   @Post(":id/reply")
   @Roles("MERCHANT_OWNER", "ADMIN")
   async reply(

@@ -71,7 +71,8 @@ const IMAGE_SUPPORT_TONE: Record<string, string> = {
 
 /** AI chạy nền khi khiếu nại được tạo — chờ bao lâu thì ngừng hỏi lại. */
 const POLL_INTERVAL_MS = 8000;
-const POLL_MAX_ATTEMPTS = 25;
+// Auto-analysis giờ chạy 2 lượt (đọc ảnh → suy luận) nên chờ tối đa ~5 phút.
+const POLL_MAX_ATTEMPTS = 40;
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -355,7 +356,8 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
           <div className="h-2 w-4/5 bg-gray-100 rounded animate-pulse" />
           <p className="text-[11px] text-indigo-700">
             AI đang tự phân tích vụ việc này (chạy nền từ lúc khiếu nại được
-            tạo). Panel tự cập nhật khi xong — thường 40–90 giây.
+            tạo): đọc ảnh bằng chứng trước, rồi đối chiếu với món đã đặt. Panel
+            tự cập nhật khi xong — thường 1–2 phút.
           </p>
         </div>
       )}
@@ -382,6 +384,7 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
           )}
           <AnalysisCard
             record={record}
+            context={context}
             reviewing={reviewing}
             reviewNote={reviewNote}
             onReviewNoteChange={setReviewNote}
@@ -401,6 +404,7 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
  */
 function AnalysisCard({
   record,
+  context,
   reviewing,
   reviewNote,
   onReviewNoteChange,
@@ -408,6 +412,7 @@ function AnalysisCard({
   onReject,
 }: {
   record: CaseAiAnalysisRecord;
+  context?: CaseAiContext | null;
   reviewing: boolean;
   reviewNote: string;
   onReviewNoteChange: (value: string) => void;
@@ -443,49 +448,67 @@ function AnalysisCard({
 
   return (
     <div className="bg-white rounded-xl border border-indigo-100 p-3 space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+      {/* Lưới kết luận nhanh: admin liếc 4 ô là nắm được kết quả */}
+      <div className="grid grid-cols-2 gap-2">
+        <div
+          className={`rounded-xl px-2.5 py-2 ${
             VERDICT_TONE[suggestion.suggestedVerdict] ||
             "bg-gray-100 text-gray-600"
           }`}
         >
-          {VERDICT_LABEL[suggestion.suggestedVerdict] ||
-            suggestion.suggestedVerdict}
-        </span>
-        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600">
-          Lỗi: {FAULT_LABEL[suggestion.suggestedFaultParty] || "—"}
-        </span>
-        <span
-          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-            SEVERITY_BADGE[suggestion.suggestedSeverity] ||
-            "bg-gray-100 text-gray-600"
-          }`}
-        >
-          {suggestion.suggestedSeverity}
-        </span>
-        <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-600">
-          Tự tin {confidence}%
-        </span>
-        <span className="px-2 py-0.5 rounded-full text-[11px] bg-gray-50 text-gray-500">
-          {record.source === "AUTO" ? "AI tự phân tích" : "Admin bấm phân tích"}
-        </span>
-        <span className="text-[11px] text-gray-400 ml-auto">
-          {suggestion.model} · {formatDateTime(record.createdAt)}
-        </span>
+          <p className="text-[10px] uppercase opacity-70">Kết luận AI</p>
+          <p className="text-[13px] font-bold leading-tight">
+            {VERDICT_LABEL[suggestion.suggestedVerdict] ||
+              suggestion.suggestedVerdict}
+          </p>
+        </div>
+        <div className="rounded-xl px-2.5 py-2 bg-gray-50 text-gray-700">
+          <p className="text-[10px] uppercase text-gray-400">Bên có lỗi</p>
+          <p className="text-[13px] font-bold leading-tight">
+            {FAULT_LABEL[suggestion.suggestedFaultParty] || "Không xác định"}
+          </p>
+        </div>
+        <div className="rounded-xl px-2.5 py-2 bg-gray-50 text-gray-700">
+          <p className="text-[10px] uppercase text-gray-400">Mức độ</p>
+          <span
+            className={`mt-0.5 inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+              SEVERITY_BADGE[suggestion.suggestedSeverity] ||
+              "bg-gray-100 text-gray-600"
+            }`}
+          >
+            {suggestion.suggestedSeverity}
+          </span>
+        </div>
+        <div className="rounded-xl px-2.5 py-2 bg-indigo-50 text-indigo-700">
+          <p className="text-[10px] uppercase opacity-70">Độ tự tin</p>
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-bold">{confidence}%</span>
+            <div className="h-1.5 flex-1 rounded-full bg-white/70 overflow-hidden">
+              <div
+                className={`h-1.5 rounded-full ${
+                  confidence >= 70
+                    ? "bg-green-500"
+                    : confidence >= 40
+                      ? "bg-amber-500"
+                      : "bg-red-500"
+                }`}
+                style={{ width: `${Math.min(100, Math.max(0, confidence))}%` }}
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
-        <div
-          className={`h-1.5 rounded-full ${
-            confidence >= 70
-              ? "bg-green-500"
-              : confidence >= 40
-                ? "bg-amber-500"
-                : "bg-red-500"
-          }`}
-          style={{ width: `${Math.min(100, Math.max(0, confidence))}%` }}
-        />
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-gray-400">
+        <span className="px-2 py-0.5 rounded-full bg-gray-50 text-gray-500">
+          {record.source === "AUTO" ? "AI tự phân tích" : "Admin bấm phân tích"}
+        </span>
+        <span>
+          {suggestion.model} · {formatDateTime(record.createdAt)}
+        </span>
+        {suggestion.imagesAnalyzed > 0 && (
+          <span>· đã đọc {suggestion.imagesAnalyzed} ảnh</span>
+        )}
       </div>
 
       {lowConfidence && (
@@ -560,7 +583,7 @@ function AnalysisCard({
             <div className="text-[11px] text-gray-600 space-y-0.5">
               <p>
                 Tài xế chụp ngay trước khi bấm <b>giao hàng thành công</b> —
-                dùng làm căn cứ đối chiếu lời khai/ảnh của hai bên.
+                dùng làm căn cứ đối chiếu <b>món đã đặt</b> và ảnh hai bên.
               </p>
               <p
                 className={
@@ -573,6 +596,34 @@ function AnalysisCard({
                   ? "✅ Đã gửi cho AI phân tích"
                   : "⚠️ Ảnh có nhưng chưa gửi được cho AI"}
               </p>
+              {suggestion.deliveryProof.analyzed &&
+                suggestion.deliveryProof.matchesOrder && (
+                  <p
+                    className={`font-semibold ${
+                      suggestion.deliveryProof.matchesOrder === "MATCH"
+                        ? "text-green-700"
+                        : suggestion.deliveryProof.matchesOrder === "MISMATCH"
+                          ? "text-red-600"
+                          : "text-gray-500"
+                    }`}
+                  >
+                    {suggestion.deliveryProof.matchesOrder === "MATCH"
+                      ? "✅ Ảnh khớp món đã đặt"
+                      : suggestion.deliveryProof.matchesOrder === "MISMATCH"
+                        ? "⚠️ Ảnh KHÔNG khớp món đã đặt"
+                        : "➖ Chưa xác định được khớp món"}
+                  </p>
+                )}
+              {suggestion.deliveryProof.itemsSeen && (
+                <p>
+                  <b>Nhìn thấy:</b> {suggestion.deliveryProof.itemsSeen}
+                </p>
+              )}
+              {suggestion.deliveryProof.analysis && (
+                <p className="text-gray-500">
+                  {suggestion.deliveryProof.analysis}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -584,7 +635,7 @@ function AnalysisCard({
           📷 Phân tích ảnh bằng chứng (tách theo bên)
         </p>
         {hasImageData ? (
-          <div className="space-y-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             <SideImageBlock
               label="Bên khiếu nại"
               data={suggestion.reporterImages}
@@ -646,21 +697,112 @@ function AnalysisCard({
         </div>
       )}
 
-      <Bullets
-        title="Phát hiện chính"
-        items={suggestion.keyFindings}
-        tone="text-green-600"
-      />
-      <Bullets
-        title="Thiếu bằng chứng"
-        items={suggestion.evidenceGaps}
-        tone="text-amber-600"
-      />
-      <Bullets
-        title="Dấu hiệu rủi ro"
-        items={suggestion.riskFlags}
-        tone="text-red-600"
-      />
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Bullets
+          title="Phát hiện chính"
+          items={suggestion.keyFindings}
+          tone="text-green-600"
+        />
+        <Bullets
+          title="Thiếu bằng chứng"
+          items={suggestion.evidenceGaps}
+          tone="text-amber-600"
+        />
+        <Bullets
+          title="Dấu hiệu rủi ro"
+          items={suggestion.riskFlags}
+          tone="text-red-600"
+        />
+      </div>
+
+      {((suggestion.detailedFindings?.length ?? 0) > 0 ||
+        (suggestion.contradictions?.length ?? 0) > 0 ||
+        (suggestion.whatWouldChangeVerdict?.length ?? 0) > 0 ||
+        (suggestion.sourceAssessment?.length ?? 0) > 0 ||
+        (suggestion.timelineHighlights?.length ?? 0) > 0) && (
+        <details className="text-[12px] text-gray-600">
+          <summary className="cursor-pointer text-[11px] font-semibold uppercase text-gray-400">
+            Phân tích chi tiết (theo nguồn &amp; mốc thời gian)
+          </summary>
+          <div className="mt-2 space-y-2">
+            {(suggestion.detailedFindings?.length ?? 0) > 0 && (
+              <div className="space-y-1">
+                {suggestion.detailedFindings!.map((finding, index) => (
+                  <div
+                    key={`finding-${index}`}
+                    className="rounded-lg border border-gray-100 bg-gray-50 px-2 py-1"
+                  >
+                    <p>
+                      <b>{finding.signal}</b>{" "}
+                      <span className="text-[10px] text-gray-400">
+                        [{finding.source} · {finding.weight}]
+                      </span>
+                    </p>
+                    <p>{finding.facts}</p>
+                    <p className="text-gray-500">{finding.interpretation}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {(suggestion.contradictions?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-gray-400">
+                  Mâu thuẫn
+                </p>
+                <ul className="list-disc pl-4">
+                  {suggestion.contradictions!.map((item, index) => (
+                    <li key={`contradiction-${index}`}>
+                      <b>{item.between}</b>: {item.detail}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {(suggestion.whatWouldChangeVerdict?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-gray-400">
+                  Dữ liệu có thể lật kết luận
+                </p>
+                <ul className="list-disc pl-4">
+                  {suggestion.whatWouldChangeVerdict!.map((item, index) => (
+                    <li key={`change-${index}`}>
+                      {item.missingData} → {item.couldChangeTo}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {(suggestion.timelineHighlights?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-gray-400">
+                  Mốc quan trọng
+                </p>
+                <ul className="list-disc pl-4">
+                  {suggestion.timelineHighlights!.map((item, index) => (
+                    <li key={`time-${index}`}>
+                      {formatDateTime(item.at)} · [{item.source}] {item.event}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {(suggestion.sourceAssessment?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase text-gray-400">
+                  Đánh giá nguồn dữ liệu
+                </p>
+                <ul className="list-disc pl-4">
+                  {suggestion.sourceAssessment!.map((item, index) => (
+                    <li key={`source-${index}`}>
+                      <b>{item.sourceId}</b> · {item.status}: {item.note}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </details>
+      )}
 
       {(suggestion.followUpQuestions.length > 0 ||
         suggestion.respondentQuestions.length > 0) && (
@@ -745,6 +887,36 @@ function AnalysisCard({
           Nguồn dữ liệu &amp; cảnh báo
         </summary>
         <div className="mt-1 space-y-1">
+          {context?.menuItems && context.menuItems.length > 0 && (
+            <div>
+              <p className="font-semibold text-indigo-600">Món &amp; giá</p>
+              <ul className="list-disc pl-4">
+                {context.menuItems.map((item, index) => (
+                  <li key={`menu-${index}`}>
+                    {item.name} ×{item.orderedQuantity}: thực đơn{" "}
+                    {formatVnd(item.price ?? 0)} · đơn{" "}
+                    {formatVnd(item.orderUnitPrice ?? 0)}
+                    {item.priceMismatch ? " · ⚠ lệch giá" : ""}
+                    {item.isAvailable === false ? " · hết hàng" : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {context?.pii && (
+            <p>
+              <span className="font-semibold text-indigo-600">Ẩn danh:</span>{" "}
+              {context.pii.redactedFields} trường PII · mode {context.pii.mode}{" "}
+              · {context.pii.pseudonymizedIds} ID giả danh
+            </p>
+          )}
+          {context?.contextStats && (
+            <p>
+              Ngữ cảnh: ~{context.contextStats.estimatedTokens} token · GPS{" "}
+              {context.contextStats.gpsPoints} điểm · ảnh{" "}
+              {context.imagesAttached}
+            </p>
+          )}
           <p>
             <span className="font-semibold text-green-600">Đã dùng:</span>{" "}
             {(suggestion.sourcesUsed ?? []).join("; ") || "—"}

@@ -143,6 +143,20 @@ export default function DeliveryPage() {
   const hasBatchRoute =
     (driverRoute?.stops.length ?? 0) > 1 && routeLegs.length > 1;
 
+  /** Chặng kế tiếp chưa hoàn thành theo lộ trình tối ưu (có thể là đơn khác). */
+  const nextLeg = useMemo(() => {
+    if (!hasBatchRoute || !driverRoute) return null;
+    return (
+      routeLegs.find((leg) => {
+        const stop = driverRoute.stops.find(
+          (item) => item.orderId === leg.orderId,
+        );
+        if (!stop) return true;
+        return leg.type === "PICKUP" ? !stop.pickupDone : !stop.deliveryDone;
+      }) ?? null
+    );
+  }, [hasBatchRoute, driverRoute, routeLegs]);
+
   // Giữ vị trí mới nhất để effect vẽ polyline không phải gọi OSRM lại mỗi
   // lần GPS nhích một chút (chỉ vẽ lại khi danh sách chặng thay đổi).
   const driverLocationRef = useRef(driverLocation);
@@ -256,7 +270,7 @@ export default function DeliveryPage() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [dispatch?.id]);
+  }, [dispatch?.id, dispatch?.status]);
 
   // Tự xác định (hoặc tạo) hội thoại với khách ngay khi có thông tin, để đếm
   // tin nhắn chưa đọc trên icon 💬 ngay cả khi tài xế chưa mở khung chat.
@@ -558,7 +572,16 @@ export default function DeliveryPage() {
             </p>
             {hasBatchRoute && batchRoute ? (
               <span className="text-xs text-gray-500">
-                {formatKm(batchRoute.distanceKm)} · ~{batchRoute.durationMin}{" "}
+                {formatKm(
+                  driverRoute?.totalDistanceKm ?? batchRoute.distanceKm,
+                )}{" "}
+                · ~
+                {Math.max(
+                  1,
+                  Math.round(
+                    driverRoute?.totalDurationMin ?? batchRoute.durationMin,
+                  ),
+                )}{" "}
                 phút · {routeLegs.length} chặng
               </span>
             ) : route ? (
@@ -616,10 +639,42 @@ export default function DeliveryPage() {
                 🧺 Lộ trình gộp đơn tối ưu ({driverRoute.stops.length}/
                 {driverRoute.maxStackedOrders} đơn)
               </p>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">
-                SAVER
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">
+                  SAVER
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-bold">
+                  {driverRoute.source === "google"
+                    ? "Google traffic"
+                    : driverRoute.source === "osrm"
+                      ? "Đường thực tế"
+                      : "Ước tính"}
+                </span>
+              </div>
             </div>
+
+            {/* Chặng kế tiếp theo lộ trình — có thể thuộc đơn khác đang gộp. */}
+            {nextLeg && nextLeg.orderId !== order.id && (
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-orange-200 bg-orange-50 p-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-orange-600">
+                    Bước tiếp theo theo lộ trình
+                  </p>
+                  <p className="text-sm font-semibold text-[#1a1a2e]">
+                    {nextLeg.type === "PICKUP" ? "🏪 Lấy món" : "🏠 Giao hàng"}{" "}
+                    · Đơn #{nextLeg.orderId.slice(0, 8)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/delivery/${nextLeg.orderId}`)}
+                  className="shrink-0 rounded-lg bg-[#ff6b35] px-3 py-2 text-xs font-bold text-white hover:bg-orange-600 transition"
+                >
+                  Chuyển đơn →
+                </button>
+              </div>
+            )}
+
             <div className="space-y-2">
               {routeLegs.length > 0
                 ? routeLegs.map((leg) => {

@@ -1,6 +1,8 @@
 import { AssistantService } from "../../modules/assistant/application/assistant.service";
 import {
+  AI_IMAGE_SYSTEM_INSTRUCTION,
   AI_SYSTEM_INSTRUCTION,
+  buildImagePrompt as imageBuildPrompt,
   buildUserPrompt,
   compactForPrompt,
 } from "../../modules/assistant/domain/assistant.prompt";
@@ -323,9 +325,9 @@ describe("AssistantService", () => {
       const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
 
       expect(result.summary).toBe("Câu một. Câu hai.");
-      expect(result.keyFindings).toHaveLength(3);
-      expect(result.evidenceGaps).toHaveLength(3);
-      expect(result.riskFlags).toHaveLength(2);
+      expect(result.keyFindings).toHaveLength(5);
+      expect(result.evidenceGaps).toHaveLength(4);
+      expect(result.riskFlags).toHaveLength(3);
       expect(result.followUpQuestions).toHaveLength(2);
       expect(result.respondentQuestions).toHaveLength(2);
       expect(result.warnings.join(" ")).toContain("chỉ giữ");
@@ -442,7 +444,7 @@ describe("AssistantService", () => {
 
       const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
 
-      expect(result.deliveryProof).toEqual({
+      expect(result.deliveryProof).toMatchObject({
         photoUrl: proofUrl,
         analyzed: true,
       });
@@ -455,14 +457,20 @@ describe("AssistantService", () => {
 
       const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
 
-      expect(result.deliveryProof).toEqual({ photoUrl: null, analyzed: false });
+      expect(result.deliveryProof).toMatchObject({
+        photoUrl: null,
+        analyzed: false,
+        matchesOrder: null,
+      });
     });
 
-    it("ảnh của khách mâu thuẫn với khiếu nại ⇒ INVALID, không hỏi thêm", async () => {
+    it("ảnh của khách mâu thuẫn với thiệt hại (hư hỏng) ⇒ INVALID, không hỏi thêm", async () => {
+      const base = makeSnapshot();
       const { service } = makeService(
         {
           ...VALID_RAW,
           suggestedVerdict: "INCONCLUSIVE",
+          suggestedFaultParty: "INCONCLUSIVE",
           confidence: 0.4,
           reporterImages: {
             support: "CONTRADICTS",
@@ -476,6 +484,12 @@ describe("AssistantService", () => {
           respondentQuestions: ["Bạn đã giao đơn thế nào?"],
         },
         makeSnapshot({
+          case: {
+            ...base.case,
+            category: CaseCategory.DAMAGED_ITEM,
+            subject: "Hàng bị đổ vỡ",
+            description: "Khách nói hộp hàng bị móp và nước lèo tràn ra ngoài",
+          },
           imagesAttached: 2,
           reporterImagesAttached: 1,
           respondentImagesAttached: 1,
@@ -492,6 +506,86 @@ describe("AssistantService", () => {
       expect(result.suggestedActions).toEqual([]);
       expect(result.suggestedResolutionNote).toContain("không có căn cứ");
       expect(result.warnings.join(" ")).toContain("Trọng số bằng chứng");
+    });
+
+    it("giao nhầm món: ảnh khách bị đánh CONTRADICTS KHÔNG được lật INVALID", async () => {
+      const base = makeSnapshot();
+      const { service } = makeService(
+        {
+          ...VALID_RAW,
+          suggestedVerdict: "INCONCLUSIVE",
+          suggestedFaultParty: "INCONCLUSIVE",
+          confidence: 0.5,
+          reporterImages: {
+            support: "CONTRADICTS",
+            analysis:
+              "Ảnh cho thấy món khác với đơn đã đặt — đây là ảnh ủng hộ khiếu nại sai món.",
+          },
+          suggestedActions: [],
+        },
+        makeSnapshot({
+          case: {
+            ...base.case,
+            category: CaseCategory.WRONG_ITEM,
+            subject: "Giao nhầm món",
+            description: "Đặt cơm gà nhưng nhận phở bò",
+          },
+          imagesAttached: 2,
+          reporterImagesAttached: 1,
+          respondentImagesAttached: 1,
+        }),
+      );
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      // Sai món không phải danh mục được phép ép INVALID: giữ nguyên để admin
+      // xem ảnh + món đã đặt và quyết định, không đổ lỗi khách một cách máy móc.
+      expect(result.suggestedVerdict).toBe("INCONCLUSIVE");
+      expect(result.suggestedFaultParty).not.toBe("CUSTOMER");
+      expect(result.warnings.join(" ")).not.toContain("Trọng số bằng chứng");
+    });
+
+    it("AI nói INVALID nhưng ảnh giao hàng lệch món + ảnh khách ủng hộ ⇒ hạ INCONCLUSIVE", async () => {
+      const base = makeSnapshot();
+      const { service } = makeService(
+        {
+          ...VALID_RAW,
+          suggestedVerdict: "INVALID",
+          suggestedFaultParty: "CUSTOMER",
+          confidence: 0.9,
+          reporterImages: {
+            support: "SUPPORTS",
+            analysis: "Ảnh cho thấy phở bò, không phải cơm gà đã đặt.",
+          },
+          deliveryProof: {
+            matchesOrder: "MISMATCH",
+            itemsSeen: "Hộp phở bò",
+            analysis: "Ảnh tài xế chụp phở bò, không khớp đơn cơm gà.",
+          },
+          suggestedActions: [],
+        },
+        makeSnapshot({
+          case: {
+            ...base.case,
+            category: CaseCategory.WRONG_ITEM,
+            subject: "Giao nhầm món",
+            description: "Đặt cơm gà nhưng nhận phở bò",
+          },
+          imagesAttached: 2,
+          reporterImagesAttached: 1,
+          respondentImagesAttached: 0,
+          deliveryProofPhotoUrl:
+            "http://localhost:3010/api/v1/upload/delivery/proof.jpg",
+          deliveryProofImageAttached: true,
+        }),
+      );
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.suggestedVerdict).toBe("INCONCLUSIVE");
+      expect(result.suggestedFaultParty).toBe("INCONCLUSIVE");
+      expect(result.suggestedResolutionNote).toContain("Chưa đủ căn cứ");
+      expect(result.warnings.join(" ")).toContain("Bằng chứng mâu thuẫn");
     });
 
     it("model đã kết luận ⇒ giữ nguyên verdict, chỉ ghi nhận trọng số", async () => {
@@ -786,6 +880,47 @@ describe("assistant prompt helpers", () => {
     expect(prompt).toContain("CẢNH BÁO DỮ LIỆU");
     expect(prompt).toContain("ẢNH BẰNG CHỨNG ĐÍNH KÈM — 1 ảnh");
     expect(prompt).toContain("[BÊN KHIẾU NẠI]");
+  });
+
+  it("đưa MÓN ĐÃ ĐẶT làm mốc đối chiếu + playbook giao nhầm món", () => {
+    const snapshot = makeSnapshot({
+      orderItems: [
+        { name: "Cơm gà", quantity: 1, options: "ít cay" },
+        { name: "Trà đào", quantity: 2 },
+      ],
+      orderTotalAmount: 95000,
+    });
+
+    const prompt = buildUserPrompt(snapshot, {
+      deliveryProof: {
+        visibleItems: "Một hộp phở bò",
+        matchesOrder: "MISMATCH",
+        analysis: "Ảnh tài xế cho thấy phở bò, không có trong đơn.",
+      },
+      reporterImages: {
+        visibleItems: "Hộp phở bò đã mở",
+        support: "SUPPORTS",
+        analysis: "Khách chụp đúng món phở bò nhận được.",
+      },
+      respondentImages: {
+        visibleItems: "Không có",
+        support: "NO_IMAGE",
+        analysis: "Không có ảnh bằng chứng",
+      },
+      sideComparison:
+        "Cả ảnh tài xế và ảnh khách đều là phở bò, không khớp đơn.",
+    });
+
+    expect(prompt).toContain("<MON_DA_DAT>");
+    expect(prompt).toContain("1 × Cơm gà · ít cay");
+    expect(prompt).toContain("2 × Trà đào");
+    expect(prompt).toContain("<PHAN_TICH_ANH>");
+    expect(prompt).toContain('"matchesOrder": "MISMATCH"');
+    expect(imageBuildPrompt(snapshot)).toContain("MÓN KHÁCH ĐÃ ĐẶT");
+    expect(AI_SYSTEM_INSTRUCTION).toContain("PLAYBOOK SAI MÓN / THIẾU MÓN");
+    expect(AI_IMAGE_SYSTEM_INSTRUCTION).toContain(
+      "Hai ảnh giống nhau vẫn có thể CÙNG SAI MÓN",
+    );
   });
 
   it("lược gọn chuỗi và mảng quá dài", () => {

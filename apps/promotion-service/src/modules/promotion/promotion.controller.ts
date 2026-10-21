@@ -277,6 +277,19 @@ export class PromotionController {
     };
   }
 
+  /**
+   * Ưu đãi thực tế của một đơn — resolution-service dùng để phân tích khiếu nại.
+   * Khai báo TRƯỚC `@Get(":id")` để "usages" không bị bắt làm `:id`.
+   */
+  @Get("usages/order/:orderId")
+  @Roles("ADMIN")
+  async getUsageByOrder(@Param("orderId") orderId: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.promotionService.getUsageByOrder(orderId),
+    };
+  }
+
   @Get(":id")
   async getById(@Param("id") id: string) {
     return {

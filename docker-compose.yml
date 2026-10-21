@@ -322,6 +322,15 @@ services:
       PRIORITY_DRIVER_RESPONSE_TIMEOUT_SECONDS: ${PRIORITY_DRIVER_RESPONSE_TIMEOUT_SECONDS:-30}
       SAVER_DRIVER_RESPONSE_TIMEOUT_SECONDS: ${SAVER_DRIVER_RESPONSE_TIMEOUT_SECONDS:-90}
       SAVER_STACK_RADIUS_KM: ${SAVER_STACK_RADIUS_KM:-3}
+      # Xếp lộ trình gộp đơn: ma trận khoảng cách/thời gian đường đi thực tế
+      # osrm = mạng đường bộ OSRM; google = Distance Matrix có traffic.
+      ROAD_MATRIX_PROVIDER: ${ROAD_MATRIX_PROVIDER:-osrm}
+      OSRM_BASE_URL: ${OSRM_BASE_URL:-https://router.project-osrm.org}
+      ROAD_MATRIX_TIMEOUT_MS: ${ROAD_MATRIX_TIMEOUT_MS:-4000}
+      ROAD_MATRIX_CACHE_SECONDS: ${ROAD_MATRIX_CACHE_SECONDS:-30}
+      # duration (tối ưu theo thời gian/giao thông) hoặc distance (km)
+      ROUTE_OPTIMIZE_METRIC: ${ROUTE_OPTIMIZE_METRIC:-duration}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
       # Tỉ lệ từ chối / không phản hồi của tài xế (cửa sổ 30 ngày)
       DRIVER_COMPLIANCE_WINDOW_DAYS: ${DRIVER_COMPLIANCE_WINDOW_DAYS:-30}
       DRIVER_COMPLIANCE_MIN_OFFERS: ${DRIVER_COMPLIANCE_MIN_OFFERS:-10}
@@ -510,10 +519,26 @@ services:
       REVIEW_SERVICE_URL: http://review-service:3011
       PAYMENT_SERVICE_URL: http://payment-service:3006
       CHAT_SERVICE_URL: http://chat-service:3015
+      PROMOTION_SERVICE_URL: http://promotion-service:3012
       UPLOAD_SERVICE_URL: http://upload-service:3010
       AI_ASSISTANT_ENABLED: ${AI_ASSISTANT_ENABLED:-false}
       AI_AUTO_ANALYZE: ${AI_AUTO_ANALYZE:-true}
-      AI_ASSISTANT_MAX_IMAGES: ${AI_ASSISTANT_MAX_IMAGES:-4}
+      AI_ASSISTANT_MAX_IMAGES: ${AI_ASSISTANT_MAX_IMAGES:-6}
+      # Ẩn danh PII trước khi gửi model (off|shadow|enforce)
+      AI_PII_MODE: ${AI_PII_MODE:-enforce}
+      AI_PII_HMAC_SECRET: ${AI_PII_HMAC_SECRET}
+      # Nguồn dữ liệu mở rộng (bật/tắt từng nguồn để rollout)
+      AI_CONTEXT_MENU: ${AI_CONTEXT_MENU:-true}
+      AI_CONTEXT_PROMO: ${AI_CONTEXT_PROMO:-true}
+      AI_CONTEXT_MERCHANT_REVIEWS: ${AI_CONTEXT_MERCHANT_REVIEWS:-true}
+      AI_CONTEXT_DRIVER_REVIEWS: ${AI_CONTEXT_DRIVER_REVIEWS:-true}
+      AI_CONTEXT_DRIVER_PROFILE: ${AI_CONTEXT_DRIVER_PROFILE:-true}
+      AI_CONTEXT_MAX_MENU_ITEMS: ${AI_CONTEXT_MAX_MENU_ITEMS:-10}
+      AI_CONTEXT_MAX_REVIEWS: ${AI_CONTEXT_MAX_REVIEWS:-5}
+      AI_CONTEXT_MAX_PROMOTIONS: ${AI_CONTEXT_MAX_PROMOTIONS:-10}
+      AI_MAX_MENU_IMAGES: ${AI_MAX_MENU_IMAGES:-2}
+      AI_PROMPT_CHAR_BUDGET: ${AI_PROMPT_CHAR_BUDGET:-48000}
+      AI_DEEP_OUTPUT: ${AI_DEEP_OUTPUT:-true}
       # Provider đang dùng (xem docs/AI_ASSISTANT_REPORT.md mục 2.7)
       AI_PROVIDER: ${AI_PROVIDER:-glm}
       GLM_API_KEY: ${GLM_API_KEY}

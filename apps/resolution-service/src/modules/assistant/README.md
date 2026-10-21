@@ -262,6 +262,61 @@ sẽ sinh thêm cảnh báo và được model yêu cầu hạ `confidence`.
 - `suggestedVerdict` / `suggestedFaultParty` / `suggestedSeverity` ngoài enum ⇒
   bị thay bằng giá trị an toàn và ghi vào `warnings`.
 - Đề xuất hình phạt nhắm vào bên **không** tham gia vụ việc ⇒ bị loại bỏ.
+
+---
+
+## Cập nhật: ngữ cảnh mở rộng D15–D19 · ẩn danh PII · phân tích sâu
+
+### 1. Nguồn dữ liệu mới (D15–D19)
+
+| ID  | Nguồn                   | Endpoint                                                                                                    | Dùng để kết luận                                                          |
+| --- | ----------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| D15 | Thực đơn & món đã đặt   | `GET /merchants/:id/menu?includeUnavailable=true`                                                           | So giá niêm yết ↔ giá trên đơn, món hết hàng lúc đặt, tùy chọn, ảnh chuẩn |
+| D16 | Khuyến mãi & flash sale | `GET /promotions/merchant/:id`, `.../flash-sales/merchant/:id`, **`GET /promotions/usages/order/:orderId`** | Mã đã dùng, mức giảm, hạn mức/đã dùng, flash sale tồn suất                |
+| D17 | Đánh giá nhà hàng       | `GET /reviews/order/:orderId`, `GET /reviews/merchant/:id?take=5`                                           | Đối chiếu đánh giá với khiếu nại, mẫu đánh giá xấu                        |
+| D18 | Đánh giá tài xế         | `GET /reviews/driver/:id?take=5`                                                                            | Hành vi tài xế, mẫu đánh giá                                              |
+| D19 | Hồ sơ năng lực tài xế   | **`GET /drivers/:id/analytics-profile`**                                                                    | Uy tín, mức mệt, số đơn đang giữ, thâm niên                               |
+
+Endpoint mới chỉ **SELECT**, guard `ADMIN`/service-key, response whitelist — **không** trả PII.
+
+### 2. Ẩn danh PII (`AI_PII_MODE=enforce` mặc định)
+
+- Key blocklist: tên/SĐT/email/CCCD/địa chỉ/toạ độ/payment/Stripe/token.
+- Pseudonym HMAC: `KH-`, `TX-`, `NH-`, `ND-`.
+- Text scrub: SĐT VN, email, CCCD 12 số, STK.
+- GPS: chỉ tín hiệu dẫn xuất (khoảng cách tới điểm giao, tốc độ, jump, dừng) — **không** toạ độ thô.
+- `shadow` để đối chiếu trước khi bật; `off` chỉ dùng khi test.
+- Panel admin hiển thị “Đã ẩn N trường PII”.
+
+### 3. Sửa lỗi phân tích
+
+- GPS lấy **theo đơn/cửa sổ giao** (trước đây lấy 200 điểm cũ nhất của tài xế rồi prompt cắt 25 điểm đầu).
+- Thêm `<DONG_THOI_GIAN>` hợp nhất đơn/điều phối/GPS/chat/đánh giá.
+- `<TIN_HIEU_GPS>` thay cho toạ độ thô.
+- Nguồn D15–D19 in thẻ riêng, **không dump JSON** trong `<NGUON_DU_LIEU>`.
+
+### 4. Output 2 tầng
+
+- Bản ngắn giữ nguyên (summary ≤2 câu, keyFindings 5, evidenceGaps 5, riskFlags 3).
+- Thêm optional: `sourceAssessment`, `detailedFindings`, `contradictions`, `timelineHighlights`, `whatWouldChangeVerdict`.
+- `AI_DEEP_OUTPUT=false` để tắt.
+
+### 5. Ảnh
+
+- Loại ảnh: `DELIVERY_PROOF`, `REPORTER`, `RESPONDENT`, `MENU_REFERENCE`, `REVIEW`.
+- Ảnh chuẩn món chỉ để đối chiếu hình dạng/bao bì; khác biệt nhỏ không đồng nghĩa sai món.
+
+### 6. Rollout & rollback
+
+`AI_CONTEXT_MENU|PROMO|MERCHANT_REVIEWS|DRIVER_REVIEWS|DRIVER_PROFILE`, `AI_MAX_MENU_IMAGES`, `AI_PROMPT_CHAR_BUDGET`, `AI_DEEP_OUTPUT`.
+Tắt cờ ⇒ nguồn đó không gọi/không vào prompt.
+
+### 7. Kiểm chứng
+
+- `pnpm --filter @mythfood/resolution-service test` → **111/111**.
+- Test mới: `pii-redactor`, `gps-signals`, `timeline`, `prompt-extended`.
+- Tài liệu chi tiết: `docs/AI_DATA_ACCESS_MATRIX.md`.
+
 - `confidence` bị kẹp về `[0, 1]`; `amount` / `durationDays` phải là số dương.
 - Mọi câu trả lời kèm `sourcesUsed` / `sourcesMissing` / `warnings` / `usage`
   để admin biết gợi ý dựa trên dữ liệu gì.

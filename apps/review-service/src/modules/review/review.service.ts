@@ -215,6 +215,31 @@ export class ReviewService {
     return { items, total, averageRating };
   }
 
+  /**
+   * Danh sách đánh giá khách hàng dành cho một tài xế (kèm điểm trung bình).
+   */
+  async getByDriverId(
+    driverId: string,
+    skip: number,
+    take: number,
+  ): Promise<{
+    items: ReviewEntity[];
+    total: number;
+    averageRating: number;
+    distribution: Record<number, number>;
+  }> {
+    const { items, total } = await this.reviewRepo.findByDriverId(
+      driverId,
+      skip,
+      take,
+    );
+    const averageRating =
+      await this.reviewRepo.getAverageDriverRating(driverId);
+    const distribution =
+      await this.reviewRepo.getDriverRatingBreakdown(driverId);
+    return { items, total, averageRating, distribution };
+  }
+
   async reply(
     id: string,
     dto: ReplyReviewDto,

@@ -179,11 +179,33 @@ export default function ComplaintsPage() {
 
   async function load() {
     try {
-      const r: any = await resolutionApi.listCases({
-        actorId: profileId || user?.id,
-        take: 100,
-      });
-      setCases(r?.data || []);
+      // Merchant profile id và auth user id có thể khác nhau; case cũ (tạo khi
+      // backend fallback về userId) sẽ không khớp filter nếu chỉ query profileId.
+      const actorIds = Array.from(
+        new Set([profileId, user?.id].filter((x): x is string => !!x)),
+      );
+      const results = await Promise.all(
+        actorIds.map((actorId) =>
+          resolutionApi
+            .listCases({ actorId, take: 100 })
+            .then((r: any) => (Array.isArray(r?.data) ? r.data : []))
+            .catch(() => [] as any[]),
+        ),
+      );
+      const merged: any[] = [];
+      const seen = new Set<string>();
+      for (const list of results) {
+        for (const c of list) {
+          if (!c?.id || seen.has(c.id)) continue;
+          seen.add(c.id);
+          merged.push(c);
+        }
+      }
+      merged.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      setCases(merged);
     } catch {
       /* ignore */
     }
@@ -299,6 +321,9 @@ export default function ComplaintsPage() {
         type: form.type,
         category: form.category,
         orderId: form.orderId || undefined,
+        // Gửi merchantId (id hồ sơ) thay vì để backend fallback về userId —
+        // trang này lọc theo merchantId nên nếu lưu userId sẽ không thấy case.
+        reporterId: profileId || user?.id || undefined,
         respondentId: form.respondentId || user?.id || "unknown",
         respondentType: form.respondentType,
         subject: form.subject,
@@ -574,7 +599,7 @@ export default function ComplaintsPage() {
                   {(c.status === "OPEN" ||
                     c.status === "UNDER_REVIEW" ||
                     c.status === "WAITING_EVIDENCE") &&
-                    c.reporterId === user?.id && (
+                    [profileId, user?.id].includes(c.reporterId) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

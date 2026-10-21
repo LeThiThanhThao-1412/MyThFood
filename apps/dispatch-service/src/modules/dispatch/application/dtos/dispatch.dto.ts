@@ -46,6 +46,19 @@ export class CreateDispatchDto {
   @IsIn(["SAVER", "FAST", "PRIORITY"])
   deliveryOption?: string;
 
+  /**
+   * Thứ tự ưu tiên điều phối (SAVER 0, FAST 1, PRIORITY 2) do order-service
+   * gửi kèm. Dispatch tự suy ra từ `deliveryOption` nên chỉ nhận để tương
+   * thích payload — thiếu field này khiến request tạo dispatch bị 400
+   * (`forbidNonWhitelisted`) và đơn không có dispatch đúng phương thức.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(2)
+  @Type(() => Number)
+  priorityRank?: number;
+
   /** Thời điểm cam kết giao hàng do order-service tính. */
   @IsOptional()
   @IsDateString()
