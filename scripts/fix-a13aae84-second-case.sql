@@ -29,8 +29,12 @@
 --       (amount → 0, status → WAIVED) để tab hình phạt khớp sổ ví.
 --
 -- Chạy lại nhiều lần vẫn an toàn: mọi lệnh đều lọc theo trạng thái CŨ.
---   Get-Content -Raw scripts/fix-a13aae84-second-case.sql |
---     docker exec -i mythfood-postgres psql -U mythfood -d postgres -v ON_ERROR_STOP=1
+--
+-- ⚠ CÁCH NẠP (byte-safe — script có chữ tiếng Việt!):
+--   cmd /c "type scripts\fix-a13aae84-second-case.sql | docker exec -i mythfood-postgres psql -U mythfood -d postgres -v ON_ERROR_STOP=1"
+--   KHÔNG dùng `Get-Content -Raw x.sql | docker exec -i ...`: PowerShell 5.1 ghi
+--   stdin theo $OutputEncoding (mặc định ASCII) ⇒ mọi ký tự có dấu thành '?'
+--   (xem scripts/fix-mojibake-utf8.sql).
 -- ============================================================================
 
 -- ============================ WALLET DB =====================================

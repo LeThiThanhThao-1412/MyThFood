@@ -27,8 +27,12 @@
 -- Chạy lại nhiều lần vẫn an toàn: mọi bước đều lọc theo giá trị CŨ nên lần thứ
 -- hai không còn gì để sửa; số dư ví được đồng bộ lại từ sổ
 -- (balance = Σ CREDIT − Σ DEBIT).
---   Get-Content -Raw fix-883f25a8-late-delivery-ship-fee.sql |
---     docker exec -i mythfood-postgres psql -U mythfood -d postgres -v ON_ERROR_STOP=1
+--
+-- ⚠ CÁCH NẠP (byte-safe — script có chữ tiếng Việt!):
+--   cmd /c "type scripts\fix-883f25a8-late-delivery-ship-fee.sql | docker exec -i mythfood-postgres psql -U mythfood -d postgres -v ON_ERROR_STOP=1"
+--   KHÔNG dùng `Get-Content -Raw x.sql | docker exec -i ...`: PowerShell 5.1 ghi
+--   stdin theo $OutputEncoding (mặc định ASCII) ⇒ mọi ký tự có dấu thành '?'
+--   (đúng lỗi chữ của đơn 883f25a8 — xem scripts/fix-mojibake-utf8.sql).
 -- ============================================================================
 
 -- ============================ WALLET DB =====================================
