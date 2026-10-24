@@ -41,6 +41,50 @@ import {
   normalizeDeliveryOption,
 } from "../domain/delivery-option";
 
+/**
+ * Kết quả quyết toán tiền của một vụ việc khiếu nại (đơn **đã giao xong**).
+ *
+ * Vì sao trả về thay vì `void`: resolution-service ghi hình phạt COMPENSATION
+ * lên tab hình phạt, nên nó phải biết **số tiền thực sự đã chuyển**. Trước đây
+ * route chỉ trả `{ ok: true }` ⇒ resolution-service tự đoán theo chính sách và
+ * sinh bút toán ảo khi ví bỏ qua (case CASE-2026-000002 ghi 93.247đ trong khi
+ * đơn đã quyết toán từ trước, ví không chuyển đồng nào).
+ */
+export interface CaseCompensationOutcome {
+  /** `true` khi khoản bồi thường đã/đang nằm trong ví khách. */
+  settled: boolean;
+  /** Số tiền THỰC SỰ vào ví khách ở lần gọi này (0 khi bỏ qua). */
+  amount: number;
+  /** Phần trừ được ngay từ ví bên lỗi. */
+  charged: number;
+  /** Phần ví bên lỗi không đủ ⇒ ghi nợ clawback. */
+  clawback: number;
+  /** `true` khi bút toán đã tồn tại từ lần gọi trước (idempotent). */
+  duplicated: boolean;
+  /** Lý do bỏ qua (`ORDER_NOT_DELIVERED`, `FAILURE_ALREADY_SETTLED`...). */
+  reason: string | null;
+}
+
+/**
+ * Kết quả quyết toán "giao thất bại" (hoàn 100%).
+ *
+ * Cùng lý do với `CaseCompensationOutcome`: `refundAmount` là con số duy nhất
+ * phản ánh tiền đã vào ví khách, `duplicated` cho biết đơn đã được quyết toán
+ * ở lần trước nên lần này KHÔNG phát sinh thêm dòng tiền.
+ */
+export interface FailureSettlementOutcome {
+  settled: boolean;
+  duplicated: boolean;
+  refundAmount: number;
+  driverCompensation: number;
+  merchantDebit: number;
+  merchantClawback: number;
+  driverDebit: number;
+  platformFunding: number;
+  escrowReleased: number;
+  escrowVoided: number;
+}
+
 @Injectable()
 export class OrderService {
   private readonly logger = new Logger(OrderService.name);
@@ -1302,7 +1346,7 @@ export class OrderService {
     id: string,
     faultParty: string,
     severity: string,
-  ): Promise<void> {
+  ): Promise<FailureSettlementOutcome> {
     const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
     const foodTotal = Math.max(
       Number(order.orderSubtotal) - Number(order.orderDiscount),
@@ -1386,6 +1430,124 @@ export class OrderService {
     ) {
       await this.closeStoreCreditPayment(id, settlement.refundAmount);
     }
+
+    // Trả số tiền THẬT cho resolution-service: `duplicated` ⇒ đơn đã được quyết
+    // toán ở lần trước nên lần này không phát sinh thêm dòng tiền nào.
+    return {
+      settled: true,
+      duplicated: settlement.duplicated,
+      refundAmount: settlement.refundAmount,
+      driverCompensation: settlement.driverCompensation,
+      merchantDebit: settlement.merchantDebit,
+      merchantClawback: settlement.merchantClawback,
+      driverDebit: settlement.driverDebit,
+      platformFunding: settlement.platformFunding,
+      escrowReleased: settlement.escrowReleased,
+      escrowVoided: settlement.escrowVoided,
+    };
+  }
+
+  /**
+   * Bồi thường cho khách khi đơn **ĐÃ giao xong** nhưng dịch vụ có lỗi.
+   *
+   * Khác `settleFailureMoney()` (chỉ dùng cho đơn giao thất bại: hoàn 100% +
+   * huỷ toàn bộ escrow). Đơn đã giao thành công thì tiền món của nhà hàng và
+   * thu nhập ship của tài xế vẫn được quyết toán bình thường lúc 23:00; chỉ MỘT
+   * khoản được chuyển từ ví bên lỗi sang ví khách, đúng bằng số tiền
+   * resolution-service tính theo chính sách (giao trễ = 100% phí ship).
+   *
+   * Nhờ vậy "khách nhận bao nhiêu" và "bên lỗi bị trừ bấy nhiêu" luôn bằng nhau
+   * — không còn cảnh khách được hoàn 100% đơn trong khi tài xế chỉ bị trừ phần
+   * NET và nền tảng âm thầm chịu phần hoa hồng + phí dịch vụ.
+   */
+  async settleCompensation(
+    id: string,
+    input: {
+      caseId?: string;
+      category?: string;
+      faultParty: string;
+      amount: number;
+    },
+  ): Promise<CaseCompensationOutcome> {
+    const skipped = (reason: string): CaseCompensationOutcome => ({
+      settled: false,
+      amount: 0,
+      charged: 0,
+      clawback: 0,
+      duplicated: false,
+      reason,
+    });
+
+    const amount = Math.max(0, Math.round(Number(input.amount) || 0));
+    if (amount <= 0) return skipped("AMOUNT_ZERO");
+
+    const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
+    const faultParty = String(input.faultParty || "").toUpperCase();
+    const short = id.slice(0, 8);
+
+    if (order.orderStatus !== "DELIVERED") {
+      this.logger.warn(
+        `Bỏ bồi thường phí ship #${short}: đơn đang ở ${order.orderStatus} — phải quyết toán qua settleFailureMoney()`,
+      );
+      return skipped("ORDER_NOT_DELIVERED");
+    }
+
+    const debtor =
+      faultParty === "DRIVER"
+        ? order.orderDriverId
+          ? { id: order.orderDriverId, type: "DRIVER" }
+          : null
+        : faultParty === "MERCHANT"
+          ? order.orderMerchantId
+            ? { id: order.orderMerchantId, type: "MERCHANT" }
+            : null
+          : null;
+    const creditorId = order.orderConsumerId;
+    if (!debtor || !creditorId || debtor.id === creditorId) {
+      this.logger.warn(
+        `Bỏ bồi thường phí ship #${short}: không xác định được bên chịu thiệt/bên lỗi (fault=${faultParty || "?"})`,
+      );
+      return skipped("INVALID_PARTIES");
+    }
+
+    const result = await this.walletRequest<{
+      duplicated: boolean;
+      amount: number;
+      charged: number;
+      clawback: number;
+      skipped?: string | null;
+    }>("/api/v1/wallets/case-compensation", "post", {
+      orderId: id,
+      caseId: input.caseId,
+      category: input.category,
+      creditorId,
+      creditorType: "CONSUMER",
+      debtorId: debtor.id,
+      debtorType: debtor.type,
+      amount,
+    });
+
+    this.logger.log(
+      `Bồi thường #${short} (${input.category ?? "?"}/${faultParty}): khách +${result.amount}, ` +
+        `${debtor.type} -${result.charged} (nợ ${result.clawback})` +
+        (result.duplicated ? " — duplicated" : ""),
+    );
+
+    // `skipped` từ wallet-service = ví đã bỏ qua (vd đơn đã quyết toán giao thất
+    // bại) ⇒ KHÔNG có đồng nào vào ví khách, resolution-service không được ghi
+    // hình phạt bồi thường cho khoản này.
+    if (result.skipped) {
+      return { ...skipped(result.skipped), duplicated: result.duplicated };
+    }
+
+    return {
+      settled: true,
+      amount: result.amount,
+      charged: result.charged,
+      clawback: result.clawback,
+      duplicated: result.duplicated,
+      reason: null,
+    };
   }
 
   /**

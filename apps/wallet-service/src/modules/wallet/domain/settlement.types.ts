@@ -61,3 +61,37 @@ export interface FailureSettlementResult {
   /** Chi tiết bổ sung (vd clawback của khách, số dòng escrow). */
   detail: Record<string, number>;
 }
+
+/**
+ * Bồi thường cho đơn **đã giao xong** nhưng dịch vụ có lỗi (giao trễ, thái độ).
+ *
+ * Khác `FailureSettlementInput`: KHÔNG huỷ escrow, KHÔNG hoàn 100% giá trị đơn —
+ * chỉ chuyển đúng một khoản từ ví bên lỗi sang ví khách.
+ */
+export interface CaseCompensationInput {
+  orderId: string;
+  /** Vụ việc (case) đã có phán quyết — chỉ để ghi log. */
+  caseId?: string | null;
+  /** Danh mục khiếu nại (DELIVERY_LATE...) — chỉ để ghi diễn giải. */
+  category?: string | null;
+  /** Bên được bồi thường (thường là CONSUMER). */
+  creditorId: string;
+  creditorType: string;
+  /** Bên chịu chi phí (DRIVER | MERCHANT). */
+  debtorId: string;
+  debtorType: string;
+  amount: number;
+}
+
+export interface CaseCompensationResult {
+  orderId: string;
+  /** Số tiền đã cộng cho bên được bồi thường. */
+  amount: number;
+  /** Số tiền THỰC trừ được từ ví bên lỗi (phần khả dụng). */
+  charged: number;
+  /** Phần bên lỗi còn nợ (đã ghi clawback, category = CUSTOMER_COMPENSATION). */
+  clawback: number;
+  duplicated: boolean;
+  /** Lý do bỏ qua (AMOUNT_ZERO | INVALID_PARTIES | FAILURE_ALREADY_SETTLED...). */
+  skipped: string | null;
+}

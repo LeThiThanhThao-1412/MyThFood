@@ -24,7 +24,14 @@ import {
   Severity,
   Verdict,
 } from "../domain/case.enums";
-import { IntegrationService } from "../../integration/integration.service";
+import {
+  CaseMoneyDecision,
+  decideCaseMoney,
+} from "../domain/case.money-policy";
+import {
+  IntegrationService,
+  SettlementResponse,
+} from "../../integration/integration.service";
 import { AssistantService } from "../../assistant/application/assistant.service";
 import {
   ActorIdDto,
@@ -76,6 +83,23 @@ export interface AiDecisionOutcome {
   /** Bên được yêu cầu bổ sung bằng chứng: REPORTER / RESPONDENT. */
   evidenceRequestedFrom: string[];
   summary: string;
+}
+
+/**
+ * Quyết định tiền theo chính sách + **số tiền thực sự đã chuyển** ở lần quyết
+ * toán này.
+ *
+ * Vì sao tách `amount` (policy) khỏi `settledAmount` (ví): tab hình phạt chỉ
+ * được ghi con số đã rời ví. Trước đây `recordReporterCompensation()` dùng
+ * `policy.amount` nên khi ví trả `FAILURE_ALREADY_SETTLED` (đơn đã quyết toán)
+ * vẫn sinh bút toán COMPENSATION ảo — CASE-2026-000002 ghi 93.247đ trong khi
+ * không có đồng nào vào ví khách.
+ */
+export interface CaseSettlement extends CaseMoneyDecision {
+  /** Tiền thực sự vào ví bên khiếu nại trong lần chạy này (0 nếu không chuyển). */
+  settledAmount: number;
+  /** Lý do không chuyển tiền / đã chuyển ở lần trước — dùng để log & hậu kiểm. */
+  settlementNote: string | null;
 }
 
 @Injectable()
@@ -362,12 +386,10 @@ export class CaseService {
     if (input.verdict === Verdict.INVALID && c.caseOrderId) {
       void this.integration.releaseSettlement(c.caseOrderId);
     }
+    // Quyết toán tiền theo chính sách (đơn đã giao ⇒ chỉ hoàn phí ship).
+    let decision: CaseSettlement | undefined;
     if (input.verdict === Verdict.VALID && c.caseOrderId) {
-      void this.integration.settleFailureMoney(
-        c.caseOrderId,
-        c.caseFaultParty ?? "",
-        c.caseSeverity,
-      );
+      decision = await this.settleCaseMoney(c);
     }
 
     // Hình phạt: ưu tiên đúng hình phạt AI đề xuất (admin đã đọc & duyệt);
@@ -376,8 +398,8 @@ export class CaseService {
     if (input.verdict === Verdict.VALID) {
       penalties =
         input.actions.length > 0
-          ? await this.recordAiPenalties(c, input.actions)
-          : await this.recordResolutionPenalties(c);
+          ? await this.recordAiPenalties(c, input.actions, decision)
+          : await this.recordResolutionPenalties(c, decision);
     }
 
     const notified: string[] = [];
@@ -493,15 +515,11 @@ export class CaseService {
     if (dto.verdict === Verdict.INVALID && c.caseOrderId) {
       void this.integration.releaseSettlement(c.caseOrderId);
     }
-    if (dto.verdict === Verdict.VALID && c.caseOrderId) {
-      void this.integration.settleFailureMoney(
-        c.caseOrderId,
-        c.caseFaultParty ?? "",
-        c.caseSeverity,
-      );
-    }
+    let decision: CaseSettlement | undefined;
     if (dto.verdict === Verdict.VALID) {
-      await this.recordResolutionPenalties(c);
+      // Đơn đã giao xong ⇒ chỉ hoàn phí ship; đơn giao thất bại ⇒ hoàn 100%.
+      decision = await this.settleCaseMoney(c);
+      await this.recordResolutionPenalties(c, decision);
     }
     void this.integration.notify(
       c.caseReporterId,
@@ -617,14 +635,8 @@ export class CaseService {
       actorType: this.mapRoleToActorType(user.roles),
       note: "Respondent confirmed fault",
     });
-    if (c.caseOrderId) {
-      void this.integration.settleFailureMoney(
-        c.caseOrderId,
-        c.caseFaultParty ?? "",
-        c.caseSeverity,
-      );
-    }
-    await this.recordResolutionPenalties(c);
+    const decision = await this.settleCaseMoney(c);
+    await this.recordResolutionPenalties(c, decision);
     return this.getEntityOrFail(id);
   }
 
@@ -646,14 +658,8 @@ export class CaseService {
         actorType: "SYSTEM",
         note: "Auto-resolved: respondent did not respond in time",
       });
-      if (c.caseOrderId) {
-        void this.integration.settleFailureMoney(
-          c.caseOrderId,
-          c.caseFaultParty ?? "",
-          c.caseSeverity,
-        );
-      }
-      await this.recordResolutionPenalties(c);
+      const decision = await this.settleCaseMoney(c);
+      await this.recordResolutionPenalties(c, decision);
     }
     if (expired.length > 0) {
       this.logger.log(
@@ -663,10 +669,185 @@ export class CaseService {
     return expired.length;
   }
 
+  /**
+   * Quyết toán tiền cho case có phán quyết `VALID`.
+   *
+   * Trước đây cả 4 call-site đều gọi thẳng `settleFailureMoney` (luồng của đơn
+   * **giao thất bại**: hoàn 100% + huỷ escrow) nên khiếu nại "giao trễ" trên
+   * đơn đã giao thành công bị xử như đơn thất bại. Nay dùng `decideCaseMoney()`:
+   *
+   *  - `FULL_REFUND` → order-service `settle-failure-money` (hoàn 100%).
+   *  - `SHIP_COMPENSATION` → order-service `settle-compensation` (hoàn đúng
+   *    phần phí ship, trừ đúng bên lỗi, không đụng tiền món).
+   *  - `NONE` → không phát sinh dòng tiền.
+   */
+  /**
+   * Quyết toán tiền cho case có phán quyết `VALID`.
+   *
+   * Trước đây cả 4 call-site đều gọi thẳng `settleFailureMoney` (luồng của đơn
+   * **giao thất bại**: hoàn 100% + huỷ escrow) nên khiếu nại "giao trễ" trên
+   * đơn đã giao thành công bị xử như đơn thất bại. Nay dùng `decideCaseMoney()`:
+   *
+   *  - `FULL_REFUND` → order-service `settle-failure-money` (hoàn 100%).
+   *  - `SHIP_COMPENSATION` → order-service `settle-compensation` (hoàn đúng
+   *    phần phí ship, trừ đúng bên lỗi, không đụng tiền món).
+   *  - `NONE` → không phát sinh dòng tiền.
+   *
+   * Hai điều luật bất di bất dịch ở đây:
+   *  1. **Đọc kết quả** route tiền (không fire-and-forget) để `settledAmount`
+   *     phản ánh đúng số tiền ví đã chuyển — nhờ đó tab hình phạt không bao giờ
+   *     ghi khoản tiền không tồn tại (bút toán ảo 93.247đ của CASE-2026-000002).
+   *  2. **Luôn mở khoá escrow** khi phán quyết không tiêu thụ escrow. Trước đây
+   *     chỉ nhánh INVALID/WITHDRAWN mới release, nên đơn `a13aae84` (giao trễ,
+   *     VALID/DRIVER) bị treo 75.769đ `HELD_BY_DISPUTE` vĩnh viễn: nhà hàng và
+   *     tài xế không bao giờ được quyết toán lúc 23:00.
+   */
+  private async settleCaseMoney(c: Case): Promise<CaseSettlement> {
+    const orderId = c.caseOrderId;
+    const order = orderId ? await this.integration.getOrder(orderId) : null;
+    const decision = decideCaseMoney({
+      verdict: c.caseVerdict,
+      faultParty: c.caseFaultParty,
+      category: c.caseCategory,
+      reporterType: c.caseReporterType,
+      order,
+    });
+    const status = String((order as any)?.status ?? "").toUpperCase();
+    const delivered = status === "DELIVERED" || status === "COMPLETED";
+    const label = `Case ${c.caseNumberValue}`;
+
+    if (decision.mode === "NONE") {
+      // Không có đồng nào rời ví ⇒ doanh thu của đơn phải về ví đúng hạn 23:00.
+      // (Đơn chưa giao xong thì để escrow lại cho luồng giao thất bại xử lý.)
+      if (orderId && delivered) await this.releaseEscrow(orderId, c);
+      this.logger.log(`${label}: không quyết toán tiền — ${decision.reason}`);
+      return { ...decision, settledAmount: 0, settlementNote: decision.reason };
+    }
+
+    if (!orderId) {
+      return {
+        ...decision,
+        mode: "NONE",
+        amount: 0,
+        settledAmount: 0,
+        reason: "Vụ việc không gắn đơn hàng — không thể quyết toán",
+        settlementNote: "NO_ORDER",
+      };
+    }
+
+    const outcome =
+      decision.mode === "FULL_REFUND"
+        ? await this.settleFullRefund(orderId, c)
+        : await this.settleShipCompensation(orderId, c, decision.amount);
+
+    this.logger.log(
+      `${label}: ${decision.mode} policy=${decision.amount}đ, ví chuyển=${outcome.settledAmount}đ` +
+        (outcome.settlementNote ? ` (${outcome.settlementNote})` : "") +
+        ` — ${decision.reason}`,
+    );
+    return { ...decision, ...outcome };
+  }
+
+  /**
+   * Hoàn 100% qua luồng "giao thất bại" — escrow do order-service/wallet huỷ,
+   * nên ở đây KHÔNG được release (sẽ trả tiền hai lần).
+   */
+  private async settleFullRefund(
+    orderId: string,
+    c: Case,
+  ): Promise<Pick<CaseSettlement, "settledAmount" | "settlementNote">> {
+    let res: SettlementResponse | null;
+    try {
+      res = await this.integration.settleFailureMoney(
+        orderId,
+        c.caseFaultParty ?? "",
+        c.caseSeverity,
+      );
+    } catch (err: any) {
+      // Lỗi mạng không được làm hỏng phán quyết (order-service/wallet-service
+      // đều idempotent theo orderId nên có thể gọi lại sau).
+      this.logger.warn(
+        `Case ${c.caseNumberValue}: hoàn tiền đơn ${orderId.slice(0, 8)} lỗi — ${err?.message}`,
+      );
+      return { settledAmount: 0, settlementNote: "CALL_FAILED" };
+    }
+    if (!res) return { settledAmount: 0, settlementNote: "CALL_FAILED" };
+
+    // `duplicated` ⇒ đơn đã được quyết toán (case khác hoặc lần chạy trước):
+    // tiền đã vào ví từ trước, lần này không phát sinh dòng tiền mới nên tab
+    // hình phạt không được ghi thêm một khoản nữa.
+    if (res.duplicated) {
+      return { settledAmount: 0, settlementNote: "FAILURE_ALREADY_SETTLED" };
+    }
+
+    const refunded = Math.max(0, Math.round(Number(res.refundAmount) || 0));
+    return {
+      settledAmount: refunded,
+      settlementNote: refunded > 0 ? null : "NO_REFUND_AMOUNT",
+    };
+  }
+
+  /** Bồi thường đúng phần phí ship cho khách (đơn đã giao xong). */
+  private async settleShipCompensation(
+    orderId: string,
+    c: Case,
+    amount: number,
+  ): Promise<Pick<CaseSettlement, "settledAmount" | "settlementNote">> {
+    let res: SettlementResponse | null;
+    try {
+      res = await this.integration.settleCaseCompensation({
+        orderId,
+        caseId: c.id.toString(),
+        category: c.caseCategory,
+        faultParty: c.caseFaultParty ?? "",
+        amount,
+      });
+    } catch (err: any) {
+      this.logger.warn(
+        `Case ${c.caseNumberValue}: bồi thường phí ship đơn ${orderId.slice(0, 8)} lỗi — ${err?.message}`,
+      );
+      res = null;
+    }
+
+    // Đây chỉ là MỘT khoản bồi thường giữa hai ví — tiền món của nhà hàng và thu
+    // nhập ship của tài xế vẫn phải được quyết toán lúc 23:00.
+    await this.releaseEscrow(orderId, c);
+
+    if (!res) return { settledAmount: 0, settlementNote: "CALL_FAILED" };
+    // Ví bỏ qua (vd đơn đã quyết toán giao thất bại) ⇒ không có đồng nào vào ví
+    // khách, nên không được ghi COMPENSATION (đây chính là bút toán ảo cũ).
+    if (res.skipped) return { settledAmount: 0, settlementNote: res.skipped };
+
+    const credited = Math.max(0, Math.round(Number(res.amount) || 0));
+    return {
+      settledAmount: credited,
+      settlementNote:
+        credited > 0 ? (res.duplicated ? "DUPLICATED" : null) : "NO_CREDIT",
+    };
+  }
+
+  /**
+   * Mở khoá doanh thu của đơn (HELD_BY_DISPUTE → PENDING) khi phán quyết không
+   * tiêu thụ escrow. Idempotent: wallet chỉ đổi các dòng đang bị giữ.
+   */
+  private async releaseEscrow(orderId: string, c: Case): Promise<void> {
+    try {
+      await this.integration.releaseSettlement(orderId);
+      this.logger.log(
+        `Case ${c.caseNumberValue}: mở khoá escrow đơn ${orderId.slice(0, 8)}`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Case ${c.caseNumberValue}: mở khoá escrow đơn ${orderId.slice(0, 8)} thất bại — ${err?.message}`,
+      );
+    }
+  }
+
   /** Ghi hình phạt đúng như AI đề xuất (admin đã duyệt), có chặn trần tiền. */
   private async recordAiPenalties(
     c: Case,
     actions: AiDecisionAction[],
+    decision?: CaseSettlement,
   ): Promise<number> {
     const targetTypeMap: Record<string, string> = {
       CUSTOMER: "CONSUMER",
@@ -682,6 +863,7 @@ export class CaseService {
     const cap = total > 0 ? Math.round(total * 2) : Number.POSITIVE_INFINITY;
 
     let created = 0;
+    let compensationRecorded = false;
     for (const action of actions) {
       const targetType = targetTypeMap[action.targetType];
       if (
@@ -718,6 +900,31 @@ export class CaseService {
       // (mô hình cũ) được hạ thành WARNING, bỏ số tiền.
       const isLegacyFine = action.type === "FINE";
 
+      // COMPENSATION phải ghi ĐÚNG số tiền đã thực trả (policy), không phải con
+      // số AI tự đoán: đơn đã giao xong chỉ được hoàn phí ship, nên ghi 100%
+      // giá trị đơn lên tab hình phạt sẽ mâu thuẫn với bút toán ví.
+      if (action.type === "COMPENSATION" && targetType === c.caseReporterType) {
+        const settled = decision?.settledAmount ?? 0;
+        if (settled <= 0) {
+          this.logger.log(
+            `Bỏ COMPENSATION ${action.amount ?? "?"}đ: ví chưa chuyển tiền cho case này (${decision?.settlementNote ?? "chưa quyết toán"})`,
+          );
+          continue;
+        }
+        await this.penaltyService.recordPenalty({
+          caseId: c.id.toString(),
+          type: PenaltyType.COMPENSATION,
+          targetId,
+          targetType,
+          amount: settled,
+          durationDays: null,
+          reason: action.reason,
+        });
+        compensationRecorded = true;
+        created += 1;
+        continue;
+      }
+
       await this.penaltyService.recordPenalty({
         caseId: c.id.toString(),
         type: isLegacyFine ? PenaltyType.WARNING : (action.type as PenaltyType),
@@ -734,9 +941,66 @@ export class CaseService {
       this.logger.warn(
         "AI không đề xuất hình phạt nào hợp lệ — dùng chính sách mặc định",
       );
-      return this.recordResolutionPenalties(c);
+      return this.recordResolutionPenalties(c, decision);
+    }
+
+    // AI có thể chỉ đề xuất WARNING (không đề xuất COMPENSATION) trong khi tiền
+    // đã thực sự được quyết toán theo policy ⇒ bổ sung để tab hình phạt khớp ví.
+    if (!compensationRecorded) {
+      const fault = c.caseFaultParty;
+      const faultTargetType = fault ? targetTypeMap[fault] : undefined;
+      if (faultTargetType) {
+        created += await this.recordReporterCompensation(
+          c,
+          faultTargetType,
+          decision,
+        );
+      }
     }
     return created;
+  }
+
+  /**
+   * Ghi hình phạt COMPENSATION cho bên khiếu nại với ĐÚNG số tiền ví đã chuyển
+   * trong lần quyết toán này (`settledAmount`) — KHÔNG dùng con số policy/AI.
+   *
+   * Vì sao phải khớp: tab hình phạt là sổ đối chiếu với bút toán ví. Ghi theo
+   * policy sẽ sinh "bút toán ảo" mỗi khi ví bỏ qua quyết toán (`FAILURE_ALREADY_SETTLED`,
+   * đơn đã hoàn 100% từ case khác) — đúng lỗi của CASE-2026-000002 (93.247đ).
+   *
+   * @returns 1 nếu có ghi hình phạt, 0 nếu không (ví không chuyển tiền / tự nhận lỗi).
+   */
+  private async recordReporterCompensation(
+    c: Case,
+    faultTargetType: string,
+    decision: CaseSettlement | undefined,
+  ): Promise<number> {
+    // Bên khiếu nại đồng thời là bên lỗi (vd tài xế tự nhận lỗi khi giao thất
+    // bại) thì không có ai để bồi thường.
+    if (c.caseReporterType === faultTargetType) return 0;
+    if (!c.caseReporterId) return 0;
+    // Tiền bồi thường chỉ được chuyển vào ví KHÁCH của đơn; bên khiếu nại là
+    // nhà hàng/tài xế không nhận khoản này ⇒ không ghi hình phạt tiền.
+    if (c.caseReporterType !== "CONSUMER") return 0;
+
+    const compensation = Math.max(0, Math.round(decision?.settledAmount ?? 0));
+    if (compensation <= 0) {
+      this.logger.log(
+        `Không ghi COMPENSATION cho case ${c.caseNumberValue}: ví không chuyển tiền` +
+          ` (${decision?.settlementNote ?? "chưa quyết toán"})`,
+      );
+      return 0;
+    }
+
+    await this.penaltyService.recordPenalty({
+      caseId: c.id.toString(),
+      type: PenaltyType.COMPENSATION,
+      targetId: c.caseReporterId,
+      targetType: c.caseReporterType,
+      amount: compensation,
+      reason: `Bồi thường do ${c.caseFaultParty} gây lỗi`,
+    });
+    return 1;
   }
 
   /**
@@ -745,7 +1009,10 @@ export class CaseService {
    *
    * @returns số hình phạt đã ghi.
    */
-  private async recordResolutionPenalties(c: Case): Promise<number> {
+  private async recordResolutionPenalties(
+    c: Case,
+    decision?: CaseSettlement,
+  ): Promise<number> {
     let created = 0;
     try {
       const fault = c.caseFaultParty;
@@ -762,10 +1029,6 @@ export class CaseService {
           ? c.caseReporterId
           : c.caseRespondentId;
 
-      const order = await this.integration.getOrder(c.caseOrderId ?? "");
-      const total = Number(order?.totalAmount) || 0;
-      const shippingFee = Number(order?.deliveryFee) || 0;
-
       // CHÍNH SÁCH MỚI: không phạt tiền khi đơn giao thất bại. Bên có lỗi chỉ
       // nhận hình phạt dạng WARNING (không số tiền) — app hiển thị banner vàng,
       // tiền do order-service/wallet-service route theo từng dòng nợ riêng.
@@ -781,25 +1044,9 @@ export class CaseService {
         created += 1;
       }
 
-      // Bồi thường: ghi nhận trên tài khoản của bên khiếu nại (bên được hưởng).
-      // Trường hợp bên khiếu nại đồng thời là bên lỗi (vd: tài xế tự nhận lỗi khi
-      // giao thất bại) thì không có ai để bồi thường → bỏ qua mục bồi thường.
-      const selfAdmittedFault = c.caseReporterType === targetType;
-      if (!selfAdmittedFault) {
-        const compensation =
-          c.caseReporterType === "CONSUMER" ? total : shippingFee;
-        if (compensation > 0 && c.caseReporterId) {
-          await this.penaltyService.recordPenalty({
-            caseId: c.id.toString(),
-            type: PenaltyType.COMPENSATION,
-            targetId: c.caseReporterId,
-            targetType: c.caseReporterType,
-            amount: compensation,
-            reason: `Bồi thường do ${fault} gây lỗi`,
-          });
-          created += 1;
-        }
-      }
+      // Bồi thường: ghi nhận trên tài khoản của bên khiếu nại (bên được hưởng),
+      // đúng bằng số tiền VÍ ĐÃ CHUYỂN ở lần quyết toán này (settledAmount).
+      created += await this.recordReporterCompensation(c, targetType, decision);
     } catch (err: any) {
       this.logger.warn(`Record resolution penalties failed: ${err?.message}`);
       return 0;

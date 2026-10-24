@@ -5,6 +5,8 @@ import { SettlementRepository } from "../infrastructure/settlement.repository";
 import { SettlementEntryEntity } from "../infrastructure/settlement-entry.entity";
 import { OwnerType } from "../domain/wallet.aggregate";
 import {
+  CaseCompensationInput,
+  CaseCompensationResult,
   FailureSettlementInput,
   FailureSettlementResult,
 } from "../domain/settlement.types";
@@ -1437,6 +1439,103 @@ export class WalletService {
     if (otherClawback > 0) result.detail.otherClawback = otherClawback;
 
     return result;
+  }
+
+  /**
+   * Bồi thường một khoản DUY NHẤT từ ví bên lỗi sang ví bên bị hại khi đơn đã
+   * giao xong (giao trễ, thái độ...).
+   *
+   * Khác `settleFailure()` (chỉ dùng cho đơn giao thất bại: hoàn 100% + huỷ
+   * escrow). Ở đây không đụng escrow: nhà hàng vẫn nhận tiền món, tài xế vẫn
+   * nhận thu nhập ship lúc 23:00; chỉ khoản bồi thường được chuyển ví.
+   *
+   * Bất biến: `số khách nhận === số bên lỗi bị trừ (kể cả phần ghi nợ)`, nên
+   * hai con số trên app luôn khớp. Ví bên lỗi không đủ ⇒ trừ phần khả dụng và
+   * phần thiếu thành clawback có nhãn `CUSTOMER_COMPENSATION` (nền tảng ứng
+   * trước cho khách, thu hồi dần từ thu nhập các đơn sau).
+   *
+   * Idempotent theo orderId: mỗi đơn chỉ bồi thường một lần cho một cặp ví.
+   */
+  async settleCaseCompensation(
+    input: CaseCompensationInput,
+  ): Promise<CaseCompensationResult> {
+    const orderId = String(input.orderId || "");
+    if (!orderId) throw new BadRequestException("orderId is required");
+
+    const amount = Math.max(0, Math.round(Number(input.amount) || 0));
+    const creditorId = String(input.creditorId || "");
+    const debtorId = String(input.debtorId || "");
+    const creditorType = String(input.creditorType || "CONSUMER").toUpperCase();
+    const debtorType = String(input.debtorType || "").toUpperCase();
+    const short = orderId.slice(0, 8);
+    const label = input.category ? `${input.category} ` : "";
+
+    const skip = (reason: string): CaseCompensationResult => {
+      this.logger.warn(
+        `settleCaseCompensation bỏ qua đơn ${short} (${reason}) — amount=${amount}`,
+      );
+      return {
+        orderId,
+        amount: 0,
+        charged: 0,
+        clawback: 0,
+        duplicated: true,
+        skipped: reason,
+      };
+    };
+
+    if (amount <= 0) return skip("AMOUNT_ZERO");
+    if (!creditorId || !debtorId || creditorId === debtorId) {
+      return skip("INVALID_PARTIES");
+    }
+    if (!(debtorType in OwnerType) || !(creditorType in OwnerType)) {
+      return skip("INVALID_OWNER_TYPE");
+    }
+
+    // Đơn đã quyết toán theo luồng giao thất bại (hoàn 100% + huỷ escrow) thì
+    // không được bồi thêm — nếu không khách nhận hai lần.
+    const settledFailure =
+      await this.settlementRepo.findFailureSettlement(orderId);
+    if (settledFailure) return skip("FAILURE_ALREADY_SETTLED");
+
+    // 1) Trừ bên lỗi trước (ví thiếu ⇒ ghi nợ), rồi mới cộng cho khách. Thứ tự
+    //    này khiến lần retry không thể cộng tiền hai lần.
+    const debit = await this.penaltyDebit(
+      debtorId,
+      debtorType as OwnerType,
+      amount,
+      `Bồi thường khách đơn #${short} (${label.trim() || "khiếu nại"})`,
+      {
+        referenceType: "CASE_COMPENSATION_DEBT",
+        referenceId: orderId,
+        clawbackCategory: "CUSTOMER_COMPENSATION",
+        clawbackDescription: `Bồi thường khách đơn #${short}`,
+      },
+    );
+
+    const credit = await this.penaltyCredit(
+      creditorId,
+      creditorType as OwnerType,
+      amount,
+      `Bồi thường ${label}— đơn #${short} (${debtorType} chịu chi phí)`,
+      { referenceType: "CASE_COMPENSATION", referenceId: orderId },
+    );
+
+    await this.recoverDebtsQuietly(debtorId, debtorType as OwnerType);
+
+    this.logger.log(
+      `settleCaseCompensation ${short}: ${creditorType}:${creditorId} +${credit.amount}, ` +
+        `${debtorType}:${debtorId} -${debit.platformCredit} (clawback ${debit.clawback})`,
+    );
+
+    return {
+      orderId,
+      amount: credit.amount,
+      charged: debit.platformCredit,
+      clawback: debit.clawback,
+      duplicated: debit.duplicated && credit.duplicated,
+      skipped: null,
+    };
   }
 
   async handleStripeTopup(

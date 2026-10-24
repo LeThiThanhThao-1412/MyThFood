@@ -50,11 +50,11 @@ describe("ShippingService delivery option quote", () => {
     const byOption = Object.fromEntries(
       quote.options.map((o) => [o.option, o]),
     );
-    expect(byOption.SAVER.fee).toBe(17600);
-    expect(byOption.SAVER.optionFee).toBe(-4400);
-    expect(byOption.FAST.fee).toBe(22000);
-    expect(byOption.PRIORITY.fee).toBe(38600);
-    expect(byOption.PRIORITY.distanceKm).toBe(4);
+    expect(byOption.SAVER!.fee).toBe(17600);
+    expect(byOption.SAVER!.optionFee).toBe(-4400);
+    expect(byOption.FAST!.fee).toBe(22000);
+    expect(byOption.PRIORITY!.fee).toBe(38600);
+    expect(byOption.PRIORITY!.distanceKm).toBe(4);
   });
 
   it("calculateOptionFee trả đúng phí của một phương thức", async () => {

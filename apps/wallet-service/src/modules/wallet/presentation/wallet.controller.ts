@@ -17,7 +17,10 @@ import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { Request } from "express";
 import { WalletService } from "../application/wallet.service";
 import { OwnerType } from "../domain/owner-type.enum";
-import { FailureSettlementInput } from "../domain/settlement.types";
+import {
+  FailureSettlementInput,
+  CaseCompensationInput,
+} from "../domain/settlement.types";
 import { StripeService } from "../../stripe/stripe.service";
 
 @Controller("wallets")
@@ -385,6 +388,16 @@ export class WalletController {
   @UseGuards(ServiceKeyOrJwtGuard)
   async settleFailure(@Body() body: FailureSettlementInput) {
     return this.walletService.settleFailure(body);
+  }
+
+  /**
+   * Bồi thường cho đơn ĐÃ giao xong (giao trễ...) — không huỷ escrow, không hoàn
+   * 100%: chỉ chuyển đúng một khoản từ ví bên lỗi sang ví khách.
+   */
+  @Post("case-compensation")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async settleCaseCompensation(@Body() body: CaseCompensationInput) {
+    return this.walletService.settleCaseCompensation(body);
   }
 
   @Get("reserve/balance")

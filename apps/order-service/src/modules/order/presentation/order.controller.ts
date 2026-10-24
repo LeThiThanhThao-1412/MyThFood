@@ -224,13 +224,35 @@ export class OrderController {
   async settleFailureMoney(
     @Param("id") id: string,
     @Body() body: { faultParty: string; severity: string },
-  ): Promise<{ statusCode: number; data: { ok: boolean } }> {
-    await this.orderService.settleFailureMoney(
+  ) {
+    const data = await this.orderService.settleFailureMoney(
       id,
       body.faultParty,
       body.severity,
     );
-    return { statusCode: 200, data: { ok: true } };
+    return { statusCode: 200, data: { ok: true, ...data } };
+  }
+
+  /**
+   * Bồi thường cho khách khi đơn ĐÃ giao xong nhưng dịch vụ có lỗi (giao trễ...).
+   * Số tiền do resolution-service tính theo chính sách; order-service chỉ xác
+   * định đúng ví bên chịu / bên nhận rồi gọi wallet-service.
+   */
+  @Post(":id/settle-compensation")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  @Roles("ADMIN", "SERVICE")
+  async settleCompensation(
+    @Param("id") id: string,
+    @Body()
+    body: {
+      caseId?: string;
+      category?: string;
+      faultParty: string;
+      amount: number;
+    },
+  ) {
+    const data = await this.orderService.settleCompensation(id, body);
+    return { statusCode: 200, data: { ok: true, ...data } };
   }
 
   // ============ Cảnh báo đơn hàng (thay cho phạt tiền) ============

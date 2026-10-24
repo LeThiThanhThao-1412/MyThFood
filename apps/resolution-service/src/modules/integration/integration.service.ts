@@ -29,6 +29,27 @@ interface ReadOptions {
 }
 
 /**
+ * Phản hồi của các route quyết toán tiền (order-service → wallet-service).
+ *
+ * Mỗi field là **tuỳ chọn** vì mỗi route trả một tập khác nhau và vì
+ * order-service có thể là phiên bản cũ (chỉ trả `{ ok: true }`) — người gọi phải
+ * chịu được việc thiếu số liệu thay vì crash.
+ */
+export interface SettlementResponse {
+  settled?: boolean;
+  duplicated?: boolean;
+  /** `FULL_REFUND`: số tiền thực sự vào ví khách. */
+  refundAmount?: number;
+  /** `SHIP_COMPENSATION`: số tiền thực sự vào ví khách. */
+  amount?: number;
+  charged?: number;
+  clawback?: number;
+  /** Lý do ví/order-service bỏ qua quyết toán (`FAILURE_ALREADY_SETTLED`...). */
+  skipped?: string | null;
+  reason?: string | null;
+}
+
+/**
  * Best-effort cross-service HTTP integration.
  *
  * Every call is fire-and-forget: if the target service is unreachable or the
@@ -108,6 +129,49 @@ export class IntegrationService {
         );
       }
     }
+  }
+
+  /**
+   * POST có ĐỌC kết quả — dùng riêng cho các route quyết toán tiền.
+   *
+   * Vì sao cần: `post()` ở trên là fire-and-forget nên resolution-service không
+   * biết ví đã chuyển bao nhiêu (hoặc đã bỏ qua). Hệ quả cũ: case VALID ghi
+   * `COMPENSATION` đúng bằng số tiền **theo chính sách** kể cả khi ví trả
+   * `FAILURE_ALREADY_SETTLED` ⇒ bút toán ảo (CASE-2026-000002: 93.247đ).
+   *
+   * Trả `{ data: null, error }` khi mọi candidate đều lỗi ⇒ người gọi coi như
+   * "chưa chuyển đồng nào" và không ghi hình phạt tiền.
+   */
+  private async postForData(
+    envKey: string,
+    dockerUrl: string,
+    localUrl: string,
+    path: string,
+    payload: unknown,
+  ): Promise<{ data: SettlementResponse | null; error: string | null }> {
+    for (const base of this.candidates(envKey, dockerUrl, localUrl)) {
+      try {
+        const res = await firstValueFrom(
+          this.httpService.post(`${base}${path}`, payload, {
+            headers: {
+              "Content-Type": "application/json",
+              "x-service-key": this.serviceKey,
+            },
+            timeout: this.readTimeoutMs,
+          }),
+        );
+        const body: any = res.data;
+        return {
+          data: (body?.data ?? body) as SettlementResponse,
+          error: null,
+        };
+      } catch (err: any) {
+        this.logger.warn(
+          `POST ${envKey}${path} failed against ${base}: ${err?.message}`,
+        );
+      }
+    }
+    return { data: null, error: "CALL_FAILED" };
   }
 
   private async patch(
@@ -211,15 +275,47 @@ export class IntegrationService {
     orderId: string,
     faultParty: string,
     severity: string,
-  ): Promise<void> {
-    if (!orderId) return;
-    await this.post(
+  ): Promise<SettlementResponse | null> {
+    if (!orderId) return null;
+    const { data } = await this.postForData(
       "ORDER_SERVICE_URL",
       "http://order-service:3004",
       "http://localhost:3004",
       `/api/v1/orders/${orderId}/settle-failure-money`,
       { faultParty, severity },
     );
+    return data;
+  }
+
+  /**
+   * Bồi thường cho khách khi đơn **đã giao xong** nhưng dịch vụ có lỗi (giao
+   * trễ, thái độ...): chỉ hoàn phần phí ship và trừ đúng bên lỗi.
+   *
+   * Khác `settleFailureMoney` (luồng đơn giao thất bại: hoàn 100% + huỷ escrow)
+   * — dùng luồng này để hai con số "khách nhận" và "bên lỗi chịu" luôn bằng nhau
+   * và tiền món của nhà hàng không bị đụng tới.
+   */
+  async settleCaseCompensation(input: {
+    orderId: string;
+    caseId?: string;
+    category?: string;
+    faultParty: string;
+    amount: number;
+  }): Promise<SettlementResponse | null> {
+    if (!input.orderId || !(input.amount > 0)) return null;
+    const { data } = await this.postForData(
+      "ORDER_SERVICE_URL",
+      "http://order-service:3004",
+      "http://localhost:3004",
+      `/api/v1/orders/${input.orderId}/settle-compensation`,
+      {
+        caseId: input.caseId,
+        category: input.category,
+        faultParty: input.faultParty,
+        amount: input.amount,
+      },
+    );
+    return data;
   }
 
   async debit(
