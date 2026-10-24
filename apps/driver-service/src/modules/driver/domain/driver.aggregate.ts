@@ -405,6 +405,21 @@ export class Driver extends AggregateRoot<DriverId> {
       );
     }
 
+    // Chặn toạ độ rác từ GPS lỗi / client gửi sai: nếu lọt vào DB, điều kiện
+    // bán kính nhận đơn và matching engine sẽ tính sai khoảng cách.
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      throw new BusinessRuleViolationError(
+        `Invalid GPS coordinates (${latitude}, ${longitude})`,
+      );
+    }
+
     this._currentLatitude = latitude;
     this._currentLongitude = longitude;
     this._lastLocationUpdateAt = new Date();

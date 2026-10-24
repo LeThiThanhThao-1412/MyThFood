@@ -97,15 +97,35 @@ export default function OrderDetailDrawer({
   const [rejectReason, setRejectReason] = useState("");
   const [editing, setEditing] = useState(false);
   const [changeRequests, setChangeRequests] = useState<any[]>([]);
+  const [warnings, setWarnings] = useState<any[]>([]);
 
   async function refreshFromServer(id: string) {
     try {
-      const [freshOrder, changes] = await Promise.all([
+      const [freshOrder, changes, activeWarnings] = await Promise.all([
         orderApi.getById(id),
         orderApi.listChangeRequests(id).catch(() => []),
+        orderApi.listWarnings(id).catch(() => []),
       ]);
       setOrder(freshOrder);
       setChangeRequests(Array.isArray(changes) ? changes : []);
+      setWarnings(Array.isArray(activeWarnings) ? activeWarnings : []);
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  /** Nhà hàng bấm "Đã hiểu" ⇒ ẩn banner (lưu server-side, không hiện lại). */
+  async function dismissWarning(warningId: string) {
+    if (!orderId) return;
+    try {
+      await orderApi.dismissWarning(orderId, warningId);
+      setWarnings((prev) =>
+        prev.map((w) =>
+          w.id === warningId
+            ? { ...w, dismissedAt: new Date().toISOString() }
+            : w,
+        ),
+      );
     } catch {
       /* non-fatal */
     }
@@ -121,6 +141,7 @@ export default function OrderDetailDrawer({
       setRejectReason("");
       setEditing(false);
       setChangeRequests([]);
+      setWarnings([]);
       return;
     }
     setLoading(true);
@@ -171,6 +192,14 @@ export default function OrderDetailDrawer({
           setChangeRequests(Array.isArray(changes) ? changes : []);
         } catch {
           setChangeRequests([]);
+        }
+
+        // Cảnh báo đơn (banner vàng) — thay cho tiền phạt trước đây.
+        try {
+          const list = await orderApi.listWarnings(id);
+          setWarnings(Array.isArray(list) ? list : []);
+        } catch {
+          setWarnings([]);
         }
       } catch {
         setOrder(null);
@@ -311,6 +340,7 @@ export default function OrderDetailDrawer({
 
   const badge = STATUS_BADGE[order?.status] || STATUS_BADGE.PENDING;
   const activeIdx = STATUS_STEPS.indexOf(order?.status);
+  const activeWarnings = warnings.filter((w) => !w.dismissedAt);
 
   return (
     <div className="fixed inset-0 z-[200]">
@@ -351,6 +381,68 @@ export default function OrderDetailDrawer({
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Cảnh báo đơn (thay cho tiền phạt): banner vàng, tắt được */}
+              {activeWarnings.map((w) => (
+                <div
+                  key={w.id}
+                  className="bg-yellow-50 border-l-4 border-yellow-400 rounded-xl p-3"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-lg leading-none">⚠️</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-yellow-900">
+                        {w.title}
+                      </p>
+                      <p className="text-xs text-yellow-800 mt-1 whitespace-pre-line">
+                        {w.message}
+                      </p>
+                      {w.detail && (
+                        <div className="mt-2 text-xs text-yellow-900 space-y-0.5">
+                          {typeof w.detail.refundAmount === "number" &&
+                            w.detail.refundAmount > 0 && (
+                              <p>
+                                • Hoàn tiền cho khách:{" "}
+                                <strong>
+                                  {w.detail.refundAmount.toLocaleString(
+                                    "vi-VN",
+                                  )}
+                                  ₫
+                                </strong>
+                              </p>
+                            )}
+                          {typeof w.detail.driverCompensation === "number" &&
+                            w.detail.driverCompensation > 0 && (
+                              <p>
+                                • Bồi thường tài xế:{" "}
+                                <strong>
+                                  {w.detail.driverCompensation.toLocaleString(
+                                    "vi-VN",
+                                  )}
+                                  ₫
+                                </strong>
+                              </p>
+                            )}
+                          {typeof w.detail.foodTotal === "number" &&
+                            w.detail.foodTotal > 0 && (
+                              <p>
+                                • Doanh thu đơn vẫn được quyết toán:{" "}
+                                <strong>
+                                  {w.detail.foodTotal.toLocaleString("vi-VN")}₫
+                                </strong>
+                              </p>
+                            )}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => dismissWarning(w.id)}
+                        className="mt-2 text-xs font-semibold text-yellow-900 underline"
+                      >
+                        Đã hiểu, ẩn cảnh báo
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
               {/* Khách hàng */}
               {customer && (
                 <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-3">

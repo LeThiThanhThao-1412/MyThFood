@@ -4,11 +4,13 @@ import { CaseRepository } from "../../case/infrastructure/case.repository";
 import { IntegrationService } from "../../integration/integration.service";
 import {
   CASE_CONTEXT_SOURCES,
+  AiImageKind,
   CaseContextSnapshot,
   CaseDriverProfileInfo,
   CaseFlashSaleItemSnapshot,
   CaseGpsSignals,
   CaseImagePlan,
+  CaseImageSkipReason,
   CaseMenuItemSnapshot,
   CaseOrderItem,
   CasePromotionInfo,
@@ -18,6 +20,7 @@ import {
 } from "../domain/assistant.types";
 import { LlmInlineImage } from "../infrastructure/llm.types";
 import { deriveGpsSignals } from "./gps-signals";
+import { buildImageOrder } from "./image-plan";
 import {
   createPiiContext,
   PiiContext,
@@ -102,6 +105,53 @@ const WALLET_RELATED = new Set<CaseCategory>([
 ]);
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif)(\?.*)?$/i;
+
+/** URL http(s) — bằng chứng hợp lệ để thử tải, kể cả khi không có đuôi ảnh. */
+const REMOTE_URL = /^https?:\/\//i;
+
+/**
+ * Có phải URL có thể tải về làm ảnh?
+ *
+ * KHÔNG đòi hỏi đuôi `.jpg/.png`: ảnh upload từ điện thoại thường là
+ * `.../complaints/1729-abc` (không đuôi), `.HEIC`, hoặc URL có query string lạ.
+ * Trước đây lọc bằng `IMAGE_EXT` nên những ảnh này bị loại âm thầm ⇒ AI không
+ * bao giờ nhận được ảnh của bên khiếu nại. Loại nội dung vẫn được kiểm tra
+ * thật khi tải (`downloadImage` chỉ nhận `image/*`).
+ */
+const isImageCandidate = (value: unknown): value is string =>
+  typeof value === "string" && REMOTE_URL.test(value.trim());
+
+/** Ưu tiên URL trông giống ảnh để thử trước (không loại bỏ URL còn lại). */
+const sortImageCandidates = (urls: string[]): string[] =>
+  [...urls].sort(
+    (a, b) => Number(IMAGE_EXT.test(b)) - Number(IMAGE_EXT.test(a)),
+  );
+
+/** Trần số URL thử tải cho mỗi nhóm ảnh (tránh treo khi bằng chứng toàn link hỏng). */
+const MAX_IMAGE_ATTEMPTS = 8;
+
+/**
+ * Mã ẩn danh do tầng PII sinh ra (`KH-3F2A9C`, `TX-2D8256`, `NH-805152`, `ND-…`).
+ *
+ * Đây là giá trị **chỉ để hiển thị**: order-service/driver-service/merchant-service
+ * nhận `id` kiểu UUID, nên gửi mã ẩn danh vào URL sẽ khiến Postgres báo
+ * "invalid input syntax for type uuid" ⇒ service trả 500 (đúng lỗi từng thấy với
+ * D4/D10/D11/D12/D15–D19: `…/drivers/TX-2D8256/location/history → 500`).
+ */
+const PSEUDONYM_ID = /^(?:KH|TX|NH|ND)-[0-9A-F]{6}$/i;
+
+/**
+ * Id dùng được để gọi service nội bộ.
+ *
+ * Trả `null` cho giá trị rỗng **và** cho mã ẩn danh — nhờ đó tầng này không bao
+ * giờ gọi service bằng pseudonym dù dữ liệu đầu vào bị redact nhầm.
+ */
+const resolvableId = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed || PSEUDONYM_ID.test(trimmed)) return null;
+  return trimmed;
+};
 
 /** Danh mục cần lịch sử đơn của tài xế dù không thuộc nhóm gian lận. */
 const DRIVER_HISTORY_REQUIRED = new Set<CaseCategory>([
@@ -246,26 +296,47 @@ export class CaseContextService {
       ]);
 
     // ---- Suy ra danh tính các bên từ đợt 1 ----
+    // QUAN TRỌNG: dùng `rawOrder` (payload gốc), KHÔNG dùng `order` — `order` đã
+    // bị `redactPayload()` thay id bằng pseudonym (TX-/NH-/KH-). Gọi service khác
+    // bằng pseudonym ⇒ Postgres lỗi cast UUID ⇒ mọi nguồn D4/D10/D11/D12/D15–D19
+    // đều trả 500 (lỗi thực tế đã gặp). `resolvableId` chặn thêm lần nữa.
     const driverId: string | null =
-      order?.driverId ??
+      resolvableId(rawOrder?.driverId) ??
       (c.caseRespondentType === "DRIVER"
-        ? c.caseRespondentId
+        ? resolvableId(c.caseRespondentId)
         : c.caseReporterType === "DRIVER"
-          ? c.caseReporterId
+          ? resolvableId(c.caseReporterId)
           : null);
-    const merchantId: string | null = order?.merchantId ?? null;
+    const merchantId: string | null = resolvableId(rawOrder?.merchantId);
     const consumerId: string | null =
-      c.caseReporterType === "CONSUMER"
-        ? c.caseReporterId
+      resolvableId(rawOrder?.consumerId) ??
+      (c.caseReporterType === "CONSUMER"
+        ? resolvableId(c.caseReporterId)
         : c.caseRespondentType === "CONSUMER"
-          ? c.caseRespondentId
-          : null;
-    const walletOwnerId: string | null =
+          ? resolvableId(c.caseRespondentId)
+          : null);
+    /**
+     * Ví cần soi: ưu tiên bên bị khiếu nại (người giữ tiền/COD), fallback bên
+     * khiếu nại. `ownerType` phải đi kèm ownerId — wallet-service mặc định
+     * DRIVER nên ví khách/nhà hàng sẽ không bao giờ được tìm thấy nếu thiếu.
+     */
+    const walletOwnerType: "CONSUMER" | "DRIVER" | "MERCHANT" | null =
       c.caseRespondentType === "CONSUMER" ||
       c.caseRespondentType === "DRIVER" ||
       c.caseRespondentType === "MERCHANT"
+        ? (c.caseRespondentType as "CONSUMER" | "DRIVER" | "MERCHANT")
+        : c.caseReporterType === "CONSUMER" ||
+            c.caseReporterType === "DRIVER" ||
+            c.caseReporterType === "MERCHANT"
+          ? (c.caseReporterType as "CONSUMER" | "DRIVER" | "MERCHANT")
+          : null;
+    const walletOwnerId: string | null = resolvableId(
+      walletOwnerType === c.caseRespondentType
         ? c.caseRespondentId
-        : null;
+        : walletOwnerType === c.caseReporterType
+          ? c.caseReporterId
+          : null,
+    );
     const noDriver = driverId
       ? undefined
       : "Không xác định được tài xế của đơn";
@@ -342,7 +413,7 @@ export class CaseContextService {
         ? this.collect(
             results,
             "D13",
-            () => this.integration.getConsumerByUserId(consumerId),
+            () => this.integration.getConsumerProfile(consumerId),
             noConsumer,
             pii,
             (value) => this.projectConsumer(value),
@@ -371,7 +442,11 @@ export class CaseContextService {
         ? this.collect(
             results,
             "D8",
-            () => this.integration.getWalletTransactions(walletOwnerId ?? ""),
+            () =>
+              this.integration.getWalletTransactions(
+                walletOwnerId ?? "",
+                walletOwnerType ?? "DRIVER",
+              ),
             walletOwnerId
               ? undefined
               : "Không xác định được chủ ví cần kiểm tra",
@@ -467,12 +542,15 @@ export class CaseContextService {
     });
 
     // ---- Ảnh bằng chứng cho vision model ----
-    // Thứ tự gửi: ẢNH HỆ THỐNG → ảnh bên khiếu nại → ảnh bên bị khiếu nại →
-    // ảnh chuẩn món (D15) → ảnh đánh giá. Bằng chứng của hai bên được ưu tiên
-    // hơn ảnh tham chiếu để không làm mất suất ảnh quan trọng.
+    // Thứ tự gửi ảnh phụ thuộc danh mục:
+    // - Sự cố MÓN ĂN: ưu tiên ảnh chuẩn món (đối chiếu đúng/sai món).
+    // - Còn lại: ưu tiên ảnh bằng chứng của hai bên.
+    // Thứ tự này được lưu vào `snapshot.imageOrder` và dùng lại ở prompt +
+    // `normalize()` để phân bổ đúng số ảnh provider báo đã đọc.
     const limit = Math.max(0, maxImages);
     const images: LlmInlineImage[] = [];
     const imagesSkipped: string[] = [];
+    const imageSkipReasons: CaseImageSkipReason[] = [];
     const imagePlan: CaseImagePlan = {
       deliveryProof: 0,
       menuReference: 0,
@@ -482,91 +560,152 @@ export class CaseContextService {
     };
     const canTake = (): boolean => images.length < limit;
 
+    /**
+     * Suất ảnh phải chừa cho ảnh bằng chứng của **hai bên** khi ảnh chuẩn món
+     * đứng trước.
+     *
+     * Với sự cố món ăn, thứ tự là proof → món → hai bên. Nếu ảnh món lấy hết
+     * suất thì ảnh khách gửi (bằng chứng mạnh nhất, trọng số 25%) **và** ảnh của
+     * bên bị khiếu nại không bao giờ được gửi cho model ⇒ AI kết luận "không có
+     * ảnh" dù cả hai bên đã gửi. Chừa 1 suất cho mỗi bên có ảnh.
+     */
+    const reserveSlots = (): number => {
+      const menuIndex = imageOrder.indexOf("MENU_REFERENCE");
+      if (menuIndex < 0) return 0;
+      const reserveFor = (kind: "REPORTER" | "RESPONDENT", urls: string[]) =>
+        imageOrder.indexOf(kind) > menuIndex && urls.length > 0 ? 1 : 0;
+      return (
+        reserveFor("REPORTER", reporterUrls) +
+        reserveFor("RESPONDENT", respondentUrls)
+      );
+    };
+
+    /**
+     * Tải 1 URL đúng 1 lần cho cả lần dựng ngữ cảnh: cùng một ảnh có thể xuất
+     * hiện ở nhiều nguồn (proof photo trùng evidence…) — không tải lại và không
+     * báo "bỏ qua" hai lần.
+     */
+    const triedImageUrls = new Set<string>();
+    const tryDownload = async (
+      url: string,
+    ): Promise<{ mimeType: string; base64: string; url: string } | null> => {
+      if (triedImageUrls.has(url)) return null;
+      triedImageUrls.add(url);
+      const { image, reason } =
+        await this.integration.downloadImageDetailed(url);
+      if (!image) {
+        imagesSkipped.push(url);
+        imageSkipReasons.push({
+          url,
+          reason: reason || "không rõ nguyên nhân",
+        });
+      }
+      return image;
+    };
+
     const rawProofUrl =
       rawOrder?.deliveryProofPhotoUrl ?? (order as any)?.deliveryProofPhotoUrl;
-    const deliveryProofPhotoUrl =
-      typeof rawProofUrl === "string" && IMAGE_EXT.test(rawProofUrl)
-        ? rawProofUrl
-        : null;
+    const deliveryProofPhotoUrl = isImageCandidate(rawProofUrl)
+      ? rawProofUrl.trim()
+      : null;
 
     let deliveryProofImageAttached = false;
-    if (deliveryProofPhotoUrl && canTake()) {
-      const proofImage = await this.integration.downloadImage(
-        deliveryProofPhotoUrl,
-      );
-      if (proofImage) {
-        images.push({
-          mimeType: proofImage.mimeType,
-          base64: proofImage.base64,
-          label: `ẢNH HỆ THỐNG — tài xế chụp món ăn lúc giao hàng: ${deliveryProofPhotoUrl}`,
-          kind: "DELIVERY_PROOF",
-        });
-        deliveryProofImageAttached = true;
-        imagePlan.deliveryProof = 1;
-      } else {
-        imagesSkipped.push(deliveryProofPhotoUrl);
+    const attachProof = async (): Promise<void> => {
+      if (deliveryProofImageAttached || !deliveryProofPhotoUrl || !canTake()) {
+        return;
       }
-    }
+      const proofImage = await tryDownload(deliveryProofPhotoUrl);
+      if (!proofImage) {
+        return;
+      }
+      images.push({
+        mimeType: proofImage.mimeType,
+        base64: proofImage.base64,
+        label: `ẢNH HỆ THỐNG — tài xế chụp món ăn lúc giao hàng: ${deliveryProofPhotoUrl}`,
+        kind: "DELIVERY_PROOF",
+      });
+      deliveryProofImageAttached = true;
+      imagePlan.deliveryProof = 1;
+    };
 
-    // Mỗi bên tối đa 2 ảnh (đủ để đối chiếu, không chiếm hết suất ảnh).
-    const reporterUrls = (c.caseEvidence ?? [])
-      .filter((u) => typeof u === "string" && IMAGE_EXT.test(u))
-      .slice(0, Math.min(2, Math.max(0, limit - images.length)));
-    const respondentUrls = (c.caseRespondentEvidence ?? [])
-      .filter((u) => typeof u === "string" && IMAGE_EXT.test(u))
-      .slice(
-        0,
-        Math.min(2, Math.max(0, limit - images.length - reporterUrls.length)),
-      );
+    // Bằng chứng hai bên: nhận mọi URL http(s). Ảnh upload từ app không phải
+    // lúc nào cũng có đuôi `.jpg` (xem `isImageCandidate`).
+    const reporterUrls = sortImageCandidates(
+      (c.caseEvidence ?? []).filter(isImageCandidate),
+    );
+    const respondentUrls = sortImageCandidates(
+      (c.caseRespondentEvidence ?? []).filter(isImageCandidate),
+    );
 
-    // Thứ tự gửi: ảnh bên khiếu nại trước, rồi tới bên bị khiếu nại — prompt
-    // cũng liệt kê đúng thứ tự này để model biết ảnh nào của ai.
-    for (const [side, urls] of [
-      ["BÊN KHIẾU NẠI", reporterUrls],
-      ["BÊN BỊ KHIẾU NẠI", respondentUrls],
-    ] as const) {
-      let index = 0;
+    /** URL thực sự tải được, theo đúng thứ tự gửi model (dùng cho prompt). */
+    const attachedSideUrls: Record<"REPORTER" | "RESPONDENT", string[]> = {
+      REPORTER: [],
+      RESPONDENT: [],
+    };
+
+    const attachSide = async (
+      kind: "REPORTER" | "RESPONDENT",
+      urls: string[],
+    ): Promise<void> => {
+      const sideLabel =
+        kind === "REPORTER" ? "BÊN KHIẾU NẠI" : "BÊN BỊ KHIẾU NẠI";
+      let attached = 0;
+      let attempts = 0;
       for (const url of urls) {
-        if (!canTake()) break;
-        index += 1;
-        const img = await this.integration.downloadImage(url);
+        // Mỗi bên tối đa 2 ảnh (đủ để đối chiếu, không chiếm hết suất ảnh).
+        // `attempts` chặn trường hợp bằng chứng toàn link hỏng (mỗi link tốn
+        // tới 15s timeout) làm cả lần phân tích bị treo.
+        if (!canTake() || attached >= 2 || attempts >= MAX_IMAGE_ATTEMPTS) {
+          break;
+        }
+        attempts += 1;
+        const img = await tryDownload(url);
         if (!img) {
-          imagesSkipped.push(url);
+          continue;
+        }
+        attached += 1;
+        images.push({
+          mimeType: img.mimeType,
+          base64: img.base64,
+          label: `${sideLabel} — ảnh ${attached}: ${url}`,
+          kind,
+        });
+        attachedSideUrls[kind].push(url);
+        if (kind === "REPORTER") imagePlan.reporter += 1;
+        else imagePlan.respondent += 1;
+      }
+    };
+
+    // Ảnh chuẩn món từ thực đơn — chỉ để đối chiếu hình dạng/bao bì/số hộp.
+    const menuImageCap = envInt("AI_MAX_MENU_IMAGES", 2, 0, 8);
+    const seenMenuImages = new Set<string>();
+    const attachMenu = async (): Promise<void> => {
+      // Tính suất ảnh món MỘT LẦN trước vòng lặp: nếu tính lại theo
+      // `images.length` sau mỗi ảnh thì suất sẽ co dần và ảnh món thứ hai
+      // không bao giờ được gửi.
+      const menuCapacity = Math.min(
+        menuImageCap,
+        Math.max(0, limit - images.length - reserveSlots()),
+      );
+      for (const item of menuItems) {
+        if (!canTake() || imagePlan.menuReference >= menuCapacity) break;
+        const url = item.imageUrl;
+        if (!isImageCandidate(url) || seenMenuImages.has(url)) continue;
+        seenMenuImages.add(url);
+        const img = await tryDownload(url);
+        if (!img) {
           continue;
         }
         images.push({
           mimeType: img.mimeType,
           base64: img.base64,
-          label: `${side} — ảnh ${index}: ${url}`,
-          kind: side === "BÊN KHIẾU NẠI" ? "REPORTER" : "RESPONDENT",
+          label: `ẢNH CHUẨN MÓN TỪ THỰC ĐƠN — ${item.name} — ${item.price ?? "?"}`,
+          kind: "MENU_REFERENCE",
+          refId: item.menuItemId,
         });
-        if (side === "BÊN KHIẾU NẠI") imagePlan.reporter += 1;
-        else imagePlan.respondent += 1;
+        imagePlan.menuReference += 1;
       }
-    }
-
-    // Ảnh chuẩn món từ thực đơn — chỉ để đối chiếu hình dạng/bao bì/số hộp.
-    const menuImageCap = envInt("AI_MAX_MENU_IMAGES", 2, 0, 8);
-    const seenMenuImages = new Set<string>();
-    for (const item of menuItems) {
-      if (!canTake() || imagePlan.menuReference >= menuImageCap) break;
-      const url = item.imageUrl;
-      if (!url || !IMAGE_EXT.test(url) || seenMenuImages.has(url)) continue;
-      seenMenuImages.add(url);
-      const img = await this.integration.downloadImage(url);
-      if (!img) {
-        imagesSkipped.push(url);
-        continue;
-      }
-      images.push({
-        mimeType: img.mimeType,
-        base64: img.base64,
-        label: `ẢNH CHUẨN MÓN TỪ THỰC ĐƠN — ${item.name} — ${item.price ?? "?"}`,
-        kind: "MENU_REFERENCE",
-        refId: item.menuItemId,
-      });
-      imagePlan.menuReference += 1;
-    }
+    };
 
     // Ảnh đánh giá của khách (tối đa 1) — bằng chứng phụ, không thay thế ảnh khiếu nại.
     const reviewForImages = Array.isArray(orderReview)
@@ -575,24 +714,105 @@ export class CaseContextService {
     const reviewImageUrls = (
       Array.isArray(reviewForImages?.images) ? reviewForImages.images : []
     )
-      .filter(
-        (u: unknown): u is string => typeof u === "string" && IMAGE_EXT.test(u),
-      )
+      .filter(isImageCandidate)
       .slice(0, 1);
-    for (const url of reviewImageUrls) {
-      if (!canTake()) break;
-      const img = await this.integration.downloadImage(url);
-      if (!img) {
-        imagesSkipped.push(url);
-        continue;
+    const attachReview = async (): Promise<void> => {
+      if (imagePlan.review > 0) return;
+      for (const url of reviewImageUrls) {
+        if (!canTake()) break;
+        const img = await tryDownload(url);
+        if (!img) {
+          continue;
+        }
+        images.push({
+          mimeType: img.mimeType,
+          base64: img.base64,
+          label: `ẢNH ĐÁNH GIÁ CỦA KHÁCH: ${url}`,
+          kind: "REVIEW",
+        });
+        imagePlan.review += 1;
       }
-      images.push({
-        mimeType: img.mimeType,
-        base64: img.base64,
-        label: `ẢNH ĐÁNH GIÁ CỦA KHÁCH: ${url}`,
-        kind: "REVIEW",
+    };
+
+    const imageOrder: AiImageKind[] = buildImageOrder(
+      ITEM_RELATED.has(category),
+    );
+    for (const kind of imageOrder) {
+      if (!canTake()) break;
+      switch (kind) {
+        case "DELIVERY_PROOF":
+          await attachProof();
+          break;
+        case "MENU_REFERENCE":
+          await attachMenu();
+          break;
+        case "REPORTER":
+          await attachSide("REPORTER", reporterUrls);
+          break;
+        case "RESPONDENT":
+          await attachSide("RESPONDENT", respondentUrls);
+          break;
+        case "REVIEW":
+          await attachReview();
+          break;
+      }
+    }
+
+    /**
+     * Ảnh **có sẵn** (chưa tải) theo từng nhóm.
+     *
+     * Endpoint xem trước ngữ cảnh gọi `build(caseId, 0)` nên không tải ảnh —
+     * nếu chỉ dựa vào `imagePlan` thì admin luôn thấy 0 và tưởng bên khiếu nại
+     * không gửi ảnh. Trường này cho biết bằng chứng ảnh có tồn tại hay không.
+     */
+    const availableMenuImages = new Set(
+      menuItems.map((item) => item.imageUrl).filter(isImageCandidate),
+    ).size;
+    const imagesAvailable: CaseImagePlan = {
+      deliveryProof: deliveryProofPhotoUrl ? 1 : 0,
+      menuReference: Math.min(menuImageCap, availableMenuImages),
+      reporter: Math.min(2, reporterUrls.length),
+      respondent: Math.min(2, respondentUrls.length),
+      review: reviewImageUrls.length,
+    };
+
+    /**
+     * Nguồn bị **bỏ qua** (thiếu tài xế/nhà hàng/khách, không áp dụng danh mục,
+     * hoặc bị tắt bằng cờ rollout) vẫn phải xuất hiện trong danh sách nguồn.
+     *
+     * Trước đây các nguồn này không được ghi vào `results` nên biến mất khỏi
+     * `snapshot.sources`: admin thấy "x/15 khả dụng" mà không biết nguồn nào không
+     * được gọi và vì sao (rất dễ hiểu nhầm là service lỗi).
+     */
+    const disabledByFlag: Record<string, boolean> = {
+      D15: !flags.menu,
+      D16: !flags.promo,
+      D17: !flags.merchantReviews,
+      D18: !flags.driverReviews,
+      D19: !flags.driverProfile,
+    };
+    const skippedSourceDetail: Record<string, string> = {};
+    for (const id of ["D4", "D10", "D11", "D18", "D19"])
+      skippedSourceDetail[id] = noDriver ?? "Không áp dụng cho danh mục này";
+    for (const id of ["D12", "D15", "D16", "D17"])
+      skippedSourceDetail[id] = noMerchant ?? "Không áp dụng cho danh mục này";
+    for (const id of ["D9", "D13"])
+      skippedSourceDetail[id] = noConsumer ?? "Không áp dụng cho danh mục này";
+    for (const def of CASE_CONTEXT_SOURCES) {
+      if (results.has(def.id)) continue;
+      results.set(def.id, {
+        id: def.id,
+        name: def.name,
+        available: false,
+        detail: disabledByFlag[def.id]
+          ? "Đã tắt bằng cờ cấu hình (rollout)"
+          : (skippedSourceDetail[def.id] ??
+            (def.id === "D6"
+              ? "Danh mục này không cần dữ liệu thanh toán"
+              : def.id === "D8"
+                ? "Danh mục này không cần dữ liệu ví"
+                : "Không áp dụng cho danh mục này")),
       });
-      imagePlan.review += 1;
     }
 
     const sources = CASE_CONTEXT_SOURCES.map((def) =>
@@ -673,7 +893,11 @@ export class CaseContextService {
       deliveryProofImageAttached,
       reporterImagesAttached: imagePlan.reporter,
       respondentImagesAttached: imagePlan.respondent,
+      reporterImageUrls: attachedSideUrls.REPORTER,
+      respondentImageUrls: attachedSideUrls.RESPONDENT,
       imagesSkipped,
+      imageSkipReasons,
+      imagesAvailable,
       orderItems,
       orderTotalAmount:
         typeof (rawOrder ?? order)?.totalAmount === "number"
@@ -687,6 +911,7 @@ export class CaseContextService {
       gpsSignals,
       pii: piiReport(pii),
       imagePlan,
+      imageOrder,
       menuImagesAttached: imagePlan.menuReference,
       reviewImagesAttached: imagePlan.review,
       contextStats: {
@@ -1132,7 +1357,7 @@ export class CaseContextService {
       return {
         available: false,
         detail:
-          "Không lấy được dữ liệu (service không phản hồi hoặc chưa có bản ghi)",
+          "Service trả về rỗng (HTTP 200 nhưng không có bản ghi cho id này)",
       };
     }
     if (Array.isArray(value)) {

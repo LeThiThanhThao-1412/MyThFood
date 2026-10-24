@@ -10,6 +10,18 @@ function formatVnd(n: unknown): string {
   return (Number(n) || 0).toLocaleString("vi-VN") + "₫";
 }
 
+/** Nhãn từng dòng nợ clawback (khớp `category` của wallet-service). */
+const DEBT_CATEGORY_LABEL: Record<string, string> = {
+  CUSTOMER_REFUND: "Hoàn tiền khách",
+  DRIVER_COMPENSATION: "Bồi thường tài xế",
+  PLATFORM_FUND: "Bù quỹ nền tảng",
+  UNCATEGORIZED: "Chưa phân loại",
+};
+
+function debtCategoryLabel(category?: string | null): string {
+  return DEBT_CATEGORY_LABEL[category || "UNCATEGORIZED"] ?? "Chưa phân loại";
+}
+
 const STATUS_BADGE: Record<string, string> = {
   SUCCESS: "bg-green-100 text-green-700",
   FAILED: "bg-red-100 text-red-700",
@@ -189,10 +201,12 @@ export default function AdminSettlementPage() {
                     {runResult.summary && (
                       <span className="text-gray-500">
                         Tổng credit:{" "}
-                        <b>{formatVnd(runResult.summary.totalCredit)}</b> ·
-                        Clawback:{" "}
-                        <b>{formatVnd(runResult.summary.totalClawback)}</b> ·
-                        Đối soát:{" "}
+                        <b>{formatVnd(runResult.summary.totalCredit)}</b> · Thu
+                        hồi nợ ngay:{" "}
+                        <b>
+                          {formatVnd(runResult.summary.totalRecovered ?? 0)}
+                        </b>{" "}
+                        · Đối soát:{" "}
                         <b
                           className={
                             runResult.summary.reconciled
@@ -211,9 +225,10 @@ export default function AdminSettlementPage() {
                         <thead>
                           <tr className="text-left text-xs text-gray-400 uppercase">
                             <th className="py-2 pr-4">Chủ thể</th>
-                            <th className="py-2 pr-4 text-right">Gross</th>
-                            <th className="py-2 pr-4 text-right">Clawback</th>
-                            <th className="py-2 text-right">Net credit</th>
+                            <th className="py-2 pr-4 text-right">Doanh thu</th>
+                            <th className="py-2 pr-4 text-right">Nợ đã thu</th>
+                            <th className="py-2 pr-4 text-right">Nợ còn lại</th>
+                            <th className="py-2 text-right">Credit</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -229,7 +244,10 @@ export default function AdminSettlementPage() {
                                 {formatVnd(g.gross)}
                               </td>
                               <td className="py-2 pr-4 text-right text-orange-600">
-                                {formatVnd(g.clawback)}
+                                {formatVnd(g.recovered ?? 0)}
+                              </td>
+                              <td className="py-2 pr-4 text-right text-red-500">
+                                {formatVnd(g.openDebt ?? 0)}
                               </td>
                               <td className="py-2 text-right font-semibold text-green-600">
                                 {formatVnd(g.netCredit)}
@@ -334,10 +352,20 @@ export default function AdminSettlementPage() {
                           key={c.id}
                           className="flex justify-between py-1.5 border-b border-gray-50"
                         >
-                          <span className="text-gray-500">
-                            #{c.sourceOrderId?.slice(0, 8)}
+                          <span className="text-gray-500 min-w-0">
+                            <span className="inline-flex items-center gap-2">
+                              <span>#{c.sourceOrderId?.slice(0, 8)}</span>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
+                                {debtCategoryLabel(c.category)}
+                              </span>
+                            </span>
+                            {c.description && (
+                              <span className="block text-xs text-gray-400 truncate">
+                                {c.description}
+                              </span>
+                            )}
                           </span>
-                          <span className="font-semibold text-red-600">
+                          <span className="font-semibold text-red-600 whitespace-nowrap ml-2">
                             {formatVnd(c.remainingAmount)}
                           </span>
                         </div>

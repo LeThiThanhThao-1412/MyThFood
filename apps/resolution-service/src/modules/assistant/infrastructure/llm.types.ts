@@ -38,6 +38,35 @@ export interface LlmUsage {
   totalTokens: number | null;
 }
 
+/**
+ * Vì sao provider phải bỏ ảnh ở lượt vừa rồi.
+ *
+ * - `VISION_DISABLED`: cấu hình tắt đường ảnh (`GLM_VISION_MODEL=none`) — không
+ *   phải lỗi, chỉ là chưa bật.
+ * - `VISION_OVERLOADED`: model đọc ảnh quá tải/hết hạn mức (429, 1302, 1305)
+ *   ⇒ **tạm thời**, chờ 30–60 giây bấm lại thường thành công.
+ * - `VISION_ERROR`: model ảnh lỗi nội dung (JSON hỏng, 1210, 404…) ⇒ cần đổi
+ *   model/kiểm tra cấu hình.
+ */
+export type LlmImageFailureReason =
+  | "VISION_DISABLED"
+  | "VISION_OVERLOADED"
+  | "VISION_ERROR";
+
+/**
+ * Lý do **mất ảnh** ở lượt đọc ảnh, để tầng nghiệp vụ hiển thị đúng cho admin
+ * thay vì chỉ ghi một câu cảnh báo chung ("model không đọc được ảnh").
+ */
+export interface LlmImageFailure {
+  reason: LlmImageFailureReason;
+  /** Mã lỗi kỹ thuật ngắn: `429/1305`, `404`, `mạng`… */
+  detail: string;
+  /** Model đã thử ở lượt ảnh (theo đúng thứ tự gọi). */
+  modelsTried: string[];
+  /** Lỗi tạm thời ⇒ bấm "Phân tích lại" sau ít phút có thể đọc được ảnh. */
+  retryable: boolean;
+}
+
 export interface LlmJsonResponse<T> {
   data: T;
   rawText: string;
@@ -50,6 +79,11 @@ export interface LlmJsonResponse<T> {
    * (0 = không có ảnh, hoặc ảnh bị bỏ vì model không nhận ảnh / lỗi).
    */
   imagesUsed?: number;
+  /**
+   * Chỉ có khi `imagesUsed === 0` **nhưng** request có ảnh: nói rõ ảnh bị bỏ vì
+   * lý do gì (quá tải / tắt vision / lỗi model) để UI hướng dẫn admin đúng cách.
+   */
+  imageFailure?: LlmImageFailure;
   /**
    * Ghi chú kỹ thuật của provider, đưa thẳng vào `warnings` cho admin biết
    * (vd: đã bỏ ảnh bằng chứng vì model không nhận ảnh).

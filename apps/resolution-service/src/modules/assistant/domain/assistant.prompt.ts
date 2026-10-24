@@ -2,6 +2,7 @@ import {
   AI_ACTION_TYPES,
   AI_TARGET_TYPES,
   AiImageFindings,
+  AiImageKind,
   CaseContextSnapshot,
 } from "./assistant.types";
 
@@ -414,6 +415,116 @@ export function orderItemsLines(
   });
 }
 
+/**
+ * Thứ tự ảnh mặc định khi snapshot không có `imageOrder` (snapshot cũ hoặc do
+ * nơi khác dựng): bằng chứng hai bên trước, ảnh chuẩn món sau.
+ *
+ * Trùng với `DEFAULT_IMAGE_ORDER` của tầng application nhưng khai báo tại đây để
+ * tầng domain không phụ thuộc ngược lên application.
+ */
+const FALLBACK_IMAGE_ORDER: AiImageKind[] = [
+  "DELIVERY_PROOF",
+  "REPORTER",
+  "RESPONDENT",
+  "MENU_REFERENCE",
+  "REVIEW",
+];
+
+/**
+ * Nhãn từng ảnh **ĐÚNG thứ tự đã gửi model** — nguồn duy nhất cho cả prompt ảnh
+ * (`buildImagePrompt`) và prompt chữ (`buildUserPrompt`).
+ *
+ * Vì sao cần dùng chung: provider chỉ báo tổng số ảnh đã dùng, còn model phải
+ * gán nhãn từng ảnh cho đúng bên. Nếu hai prompt tự suy ra danh sách riêng thì
+ * khi thứ tự tải khác mặc định (sự cố món ăn: proof → món → hai bên) nhãn sẽ
+ * lệch ảnh. Số lượng lấy từ `imagePlan` (chỉ ảnh tải được), URL lấy từ
+ * `reporterImageUrls`/`respondentImageUrls` (đúng thứ tự tải), fallback về
+ * `case.evidence` cho snapshot cũ.
+ */
+export function imageLabelEntries(
+  context: CaseContextSnapshot,
+): Array<{ side: string; url: string }> {
+  const stringUrls = (values: unknown): string[] =>
+    (Array.isArray(values) ? values : []).filter(
+      (u): u is string => typeof u === "string",
+    );
+  /**
+   * URL tải hỏng bị ghi vào `imagesSkipped` ⇒ phải loại khỏi danh sách nhãn.
+   * Nếu không, nhãn sẽ trỏ vào ảnh KHÔNG được gửi và mọi số thứ tự phía sau
+   * lệch một bậc.
+   */
+  const skipped = new Set(context.imagesSkipped ?? []);
+  const notSkipped = (urls: string[]): string[] =>
+    urls.filter((url) => !skipped.has(url));
+
+  const reporterUrls = notSkipped(
+    context.reporterImageUrls ??
+      stringUrls(context.case.evidence).slice(
+        0,
+        context.reporterImagesAttached ?? 0,
+      ),
+  );
+  const respondentUrls = notSkipped(
+    context.respondentImageUrls ??
+      stringUrls(context.case.respondentEvidence).slice(
+        0,
+        context.respondentImagesAttached ?? 0,
+      ),
+  );
+  const orderReview = context.sources.find((s) => s.id === "D5")?.payload as
+    | { images?: unknown }
+    | undefined;
+  const menuImageItems = (context.menuItems ?? [])
+    .filter((item) => !!item.imageUrl && !skipped.has(String(item.imageUrl)))
+    .slice(0, context.imagePlan?.menuReference ?? 0);
+  const reviewUrls = notSkipped(stringUrls(orderReview?.images)).slice(
+    0,
+    context.imagePlan?.review ?? 0,
+  );
+
+  const entries: Array<{ side: string; url: string }> = [];
+  for (const kind of context.imageOrder ?? FALLBACK_IMAGE_ORDER) {
+    switch (kind) {
+      case "DELIVERY_PROOF":
+        if (
+          context.deliveryProofImageAttached &&
+          context.deliveryProofPhotoUrl
+        ) {
+          entries.push({
+            side: "ẢNH HỆ THỐNG — TÀI XẾ CHỤP LÚC GIAO",
+            url: context.deliveryProofPhotoUrl,
+          });
+        }
+        break;
+      case "REPORTER":
+        reporterUrls.forEach((url) =>
+          entries.push({ side: "BÊN KHIẾU NẠI", url }),
+        );
+        break;
+      case "RESPONDENT":
+        respondentUrls.forEach((url) =>
+          entries.push({ side: "BÊN BỊ KHIẾU NẠI", url }),
+        );
+        break;
+      case "MENU_REFERENCE":
+        menuImageItems.forEach((item) =>
+          entries.push({
+            side: `ẢNH CHUẨN MÓN TỪ THỰC ĐƠN — ${item.name}`,
+            url: String(item.imageUrl),
+          }),
+        );
+        break;
+      case "REVIEW":
+        reviewUrls.forEach((url) =>
+          entries.push({ side: "ẢNH ĐÁNH GIÁ CỦA KHÁCH", url }),
+        );
+        break;
+    }
+  }
+  // Không vượt quá số ảnh thực sự đính kèm (snapshot lệch plan/URL).
+  return entries.slice(0, context.imagesAttached ?? entries.length);
+}
+
 export function buildImagePrompt(context: CaseContextSnapshot): string {
   const lines: string[] = [];
   const ordered = orderItemsLines(context.orderItems);
@@ -439,60 +550,20 @@ export function buildImagePrompt(context: CaseContextSnapshot): string {
   lines.push(
     `ẢNH GỬI KÈM — ${context.imagesAttached} ảnh, ĐÚNG thứ tự (nhãn từng ảnh nằm ngay trước ảnh):`,
   );
-  const reporterUrls = (context.case.evidence ?? [])
-    .filter((u): u is string => typeof u === "string")
-    .slice(0, context.reporterImagesAttached);
-  const respondentUrls = (context.case.respondentEvidence ?? [])
-    .filter((u): u is string => typeof u === "string")
-    .slice(0, context.respondentImagesAttached);
-  let index = 0;
-  if (context.deliveryProofImageAttached && context.deliveryProofPhotoUrl) {
-    index += 1;
-    lines.push(
-      `${index}. [ẢNH HỆ THỐNG — TÀI XẾ CHỤP LÚC GIAO] ${context.deliveryProofPhotoUrl}`,
-    );
-  }
-  for (const url of reporterUrls) {
-    index += 1;
-    lines.push(`${index}. [BÊN KHIẾU NẠI] ${url}`);
-  }
-  for (const url of respondentUrls) {
-    index += 1;
-    lines.push(`${index}. [BÊN BỊ KHIẾU NẠI] ${url}`);
-  }
-
-  // Ảnh chuẩn món + ảnh đánh giá (nếu có gửi) — đúng thứ tự trong imagePlan.
-  const menuImageLimit = context.imagePlan?.menuReference ?? 0;
-  const menuImageItems = (context.menuItems ?? [])
-    .filter((item) => !!item.imageUrl)
-    .slice(0, menuImageLimit);
-  for (const item of menuImageItems) {
-    index += 1;
-    lines.push(
-      `${index}. [ẢNH CHUẨN MÓN TỪ THỰC ĐƠN — ${item.name}] ${item.imageUrl}`,
-    );
-  }
-
-  const reviewImageLimit = context.imagePlan?.review ?? 0;
-  const orderReview = context.sources.find((s) => s.id === "D5")
-    ?.payload as any;
-  const reviewUrls = (
-    Array.isArray(orderReview?.images) ? orderReview.images : []
-  )
-    .filter((u: unknown): u is string => typeof u === "string")
-    .slice(0, reviewImageLimit);
-  for (const url of reviewUrls) {
-    index += 1;
-    lines.push(`${index}. [ẢNH ĐÁNH GIÁ CỦA KHÁCH] ${url}`);
-  }
-  if (index === 0) {
+  // Danh sách nhãn dùng chung với prompt chữ (`imageLabelEntries`) để số thứ tự
+  // và nhãn luôn khớp ảnh gửi model, kể cả khi thứ tự tải khác mặc định.
+  const imageLabels = imageLabelEntries(context);
+  imageLabels.forEach((entry, index) => {
+    lines.push(`${index + 1}. [${entry.side}] ${entry.url}`);
+  });
+  if (imageLabels.length === 0) {
     lines.push("Không có ảnh nào tải được.");
   } else {
     lines.push("");
     lines.push(
       'Điền deliveryProof (không có ảnh hệ thống thì visibleItems="Không có ảnh", matchesOrder="UNCLEAR"), reporterImages, respondentImages, sideComparison. Bên không có ảnh ⇒ support="NO_IMAGE", analysis="Không có ảnh bằng chứng".',
     );
-    if (menuImageItems.length > 0) {
+    if (imageLabels.some((entry) => entry.side.startsWith("ẢNH CHUẨN MÓN"))) {
       lines.push(
         "Ảnh [ẢNH CHUẨN MÓN TỪ THỰC ĐƠN] chỉ dùng đối chiếu hình dạng/bao bì/số hộp với ảnh giao hàng; ảnh quảng cáo có thể khác thực tế, khác biệt nhỏ KHÔNG đồng nghĩa sai món.",
       );
@@ -855,12 +926,16 @@ export function buildUserPrompt(
     lines.push("</CANH_BAO_ANH>");
   }
 
-  const reporterUrls = (context.case.evidence ?? []).filter(
-    (u): u is string => typeof u === "string",
-  );
-  const respondentUrls = (context.case.respondentEvidence ?? []).filter(
-    (u): u is string => typeof u === "string",
-  );
+  const reporterUrls =
+    context.reporterImageUrls ??
+    (context.case.evidence ?? []).filter(
+      (u): u is string => typeof u === "string",
+    );
+  const respondentUrls =
+    context.respondentImageUrls ??
+    (context.case.respondentEvidence ?? []).filter(
+      (u): u is string => typeof u === "string",
+    );
 
   lines.push("");
   if (unreadableImages > 0) {
@@ -874,19 +949,9 @@ export function buildUserPrompt(
         ? `ẢNH ĐÃ ĐƯỢC MODEL VISION ĐỌC RIÊNG — ${context.imagesAttached} ảnh (kết quả chi tiết ở <PHAN_TICH_ANH>):`
         : `ẢNH BẰNG CHỨNG ĐÍNH KÈM — ${context.imagesAttached} ảnh, ĐÚNG thứ tự gửi cho model (phân tích TÁCH BIỆT từng bên):`,
     );
-    const ordered = [
-      ...(context.deliveryProofImageAttached && context.deliveryProofPhotoUrl
-        ? [
-            {
-              side: "ẢNH HỆ THỐNG — TÀI XẾ CHỤP LÚC GIAO",
-              url: context.deliveryProofPhotoUrl,
-            },
-          ]
-        : []),
-      ...reporterUrls.map((url) => ({ side: "BÊN KHIẾU NẠI", url })),
-      ...respondentUrls.map((url) => ({ side: "BÊN BỊ KHIẾU NẠI", url })),
-    ].slice(0, context.imagesAttached);
-    ordered.forEach((item, index) =>
+    // Cùng nguồn nhãn với `buildImagePrompt`: thứ tự + nhãn phải khớp ảnh thật
+    // (sự cố món ăn đưa ảnh chuẩn món lên trước ảnh hai bên).
+    imageLabelEntries(context).forEach((item, index) =>
       lines.push(`${index + 1}. [${item.side}] ${item.url}`),
     );
     lines.push(
@@ -900,13 +965,19 @@ export function buildUserPrompt(
       );
     }
     if (reporterUrls.length === 0) {
+      const available = context.imagesAvailable?.reporter ?? 0;
       lines.push(
-        'Bên KHIẾU NẠI không có ảnh ⇒ reporterImages.support="NO_IMAGE".',
+        available > 0
+          ? `Bên KHIẾU NẠI CÓ ${available} ảnh bằng chứng nhưng không được gửi kèm lượt này ⇒ reporterImages.support="NO_IMAGE", analysis="Có ảnh nhưng chưa đọc được", và ghi vào evidenceGaps.`
+          : 'Bên KHIẾU NẠI không có ảnh ⇒ reporterImages.support="NO_IMAGE".',
       );
     }
     if (respondentUrls.length === 0) {
+      const available = context.imagesAvailable?.respondent ?? 0;
       lines.push(
-        'Bên BỊ KHIẾU NẠI không có ảnh ⇒ respondentImages.support="NO_IMAGE".',
+        available > 0
+          ? `Bên BỊ KHIẾU NẠI CÓ ${available} ảnh nhưng không được gửi kèm lượt này ⇒ respondentImages.support="NO_IMAGE", analysis="Có ảnh nhưng chưa đọc được", và ghi vào evidenceGaps.`
+          : 'Bên BỊ KHIẾU NẠI không có ảnh ⇒ respondentImages.support="NO_IMAGE".',
       );
     }
   } else {

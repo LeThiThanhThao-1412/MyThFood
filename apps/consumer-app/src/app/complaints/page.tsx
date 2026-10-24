@@ -790,16 +790,42 @@ export default function ComplaintsPage() {
             </div>
             <p className="text-sm text-gray-700">{selectedCase.description}</p>
             {selectedCase.evidence?.length > 0 && (
-              <div className="flex gap-2 flex-wrap">
-                {selectedCase.evidence.map((url: string, i: number) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={i}
-                    src={url}
-                    alt="Bằng chứng"
-                    className="h-20 w-20 object-cover rounded-lg border border-gray-200"
-                  />
-                ))}
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-gray-500">
+                  Ảnh bằng chứng bạn đã gửi
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {selectedCase.evidence.map((url: string, i: number) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={i}
+                      src={url}
+                      alt="Bằng chứng"
+                      className="h-20 w-20 object-cover rounded-lg border border-gray-200"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Ảnh minh chứng do nhà hàng/tài xế gửi — trước đây khách không thấy. */}
+            {selectedCase.respondentEvidence?.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-gray-500">
+                  Ảnh minh chứng từ bên bị khiếu nại
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {selectedCase.respondentEvidence.map(
+                    (url: string, i: number) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={i}
+                        src={url}
+                        alt="Ảnh minh chứng"
+                        className="h-20 w-20 object-cover rounded-lg border border-gray-200"
+                      />
+                    ),
+                  )}
+                </div>
               </div>
             )}
             {selectedCase.respondentResponse && (

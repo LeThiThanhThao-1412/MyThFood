@@ -48,6 +48,9 @@ describe("GlmClient", () => {
     delete process.env.GLM_MAX_ATTEMPTS;
     delete process.env.GLM_RETRY_BASE_MS;
     delete process.env.GLM_FALLBACK_MODELS;
+    delete process.env.GLM_VISION_FALLBACK_MODELS;
+    delete process.env.GLM_OVERLOAD_RETRY_MS;
+    delete process.env.GLM_OVERLOAD_ATTEMPTS;
     delete process.env.GLM_THINKING;
   });
 
@@ -230,12 +233,15 @@ describe("GlmClient", () => {
       process.env.GLM_MAX_ATTEMPTS = "3";
       process.env.GLM_RETRY_BASE_MS = "1";
       process.env.GLM_FALLBACK_MODELS = "none";
+      // 429/1305 chờ dài ở production (8s); test đặt 1ms cho nhanh.
+      process.env.GLM_OVERLOAD_RETRY_MS = "1";
     });
 
     afterEach(() => {
       delete process.env.GLM_MAX_ATTEMPTS;
       delete process.env.GLM_RETRY_BASE_MS;
       delete process.env.GLM_FALLBACK_MODELS;
+      delete process.env.GLM_OVERLOAD_RETRY_MS;
     });
 
     it("tự thử lại khi bị chặn tần suất (429) rồi thành công", async () => {
@@ -311,13 +317,35 @@ describe("GlmClient", () => {
       expect(httpService.post).toHaveBeenCalledTimes(1);
     });
 
-    it("model vision hỏng ⇒ vẫn phân tích bằng model chữ và ghi chú đã bỏ ảnh", async () => {
-      const { client, httpService } = makeClient((_url: string, body: any) =>
+    it("model vision chính quá tải (1305) ⇒ chuyển sang model vision dự phòng, vẫn đọc ảnh", async () => {
+      const { client } = makeClient((_url: string, body: any) =>
         body.model === "glm-4.6v-flash"
-          ? throwError(() =>
-              glmError(400, "1210", "messages.content.type 非法"),
-            )
-          : glmOk('{"ok":true}', "glm-4.5-flash"),
+          ? throwError(() => glmError(429, "1305", "该模型当前访问量过大"))
+          : glmOk('{"ok":true}', String(body.model)),
+      );
+
+      const result = await client.generateJson<{ ok: boolean }>({
+        systemInstruction: "sys",
+        prompt: "prompt",
+        schema: { type: "object" },
+        images: [{ mimeType: "image/png", base64: "AAAA" }],
+      });
+
+      expect(result.data.ok).toBe(true);
+      // Chuỗi vision mặc định: glm-4.6v-flash → glm-4.6v-flashx.
+      expect(result.model).toBe("glm-4.6v-flashx");
+      // Ảnh vẫn được đọc ⇒ không bị coi là "mất ảnh".
+      expect(result.imagesUsed).toBe(1);
+      expect(result.imageFailure).toBeUndefined();
+      expect(result.notes?.join(" ")).toMatch(/model dự phòng/);
+    });
+
+    it("cả chuỗi vision lỗi ⇒ lùi về model chữ, ghi chú rõ + imageFailure để UI hướng dẫn", async () => {
+      process.env.GLM_VISION_FALLBACK_MODELS = "glm-4.6v-flashx";
+      const { client, httpService } = makeClient((_url: string, body: any) =>
+        body.model === "glm-4.5-flash"
+          ? glmOk('{"ok":true}', "glm-4.5-flash")
+          : throwError(() => glmError(429, "1305", "该模型当前访问量过大")),
       );
 
       const result = await client.generateJson<{ ok: boolean }>({
@@ -329,9 +357,24 @@ describe("GlmClient", () => {
 
       expect(result.data.ok).toBe(true);
       expect(result.model).toBe("glm-4.5-flash");
+      expect(result.imagesUsed).toBe(0);
+      // Quá tải ⇒ được phép bấm lại sau khi chờ (khác lỗi cấu hình).
+      expect(result.imageFailure).toMatchObject({
+        reason: "VISION_OVERLOADED",
+        modelsTried: ["glm-4.6v-flash", "glm-4.6v-flashx"],
+        retryable: true,
+      });
+      // Mã lỗi phải còn đọc được sau khi bị bọc thành HttpException.
+      expect(result.imageFailure?.detail).toMatch(/429\/1305/);
       expect(result.notes?.join(" ")).toMatch(/ảnh bằng chứng/);
-      // lần gọi cuối cùng không còn ảnh
-      const lastBody = httpService.post.mock.calls[1][1] as any;
+      expect(result.notes?.join(" ")).toMatch(/quá tải/);
+      // Mỗi model vision được thử 1 + GLM_OVERLOAD_ATTEMPTS(2) lần.
+      const visionCalls = httpService.post.mock.calls.filter(
+        (call: any[]) => call[1]?.model !== "glm-4.5-flash",
+      );
+      expect(visionCalls).toHaveLength(6);
+      // Lượt cuối cùng không còn ảnh.
+      const lastBody = httpService.post.mock.calls.at(-1)?.[1] as any;
       expect(lastBody.model).toBe("glm-4.5-flash");
       expect(typeof lastBody.messages[1].content).toBe("string");
     });
@@ -349,6 +392,10 @@ describe("GlmClient", () => {
 
       expect(result.model).toBe("glm-4.5-flash");
       expect(result.notes?.join(" ")).toMatch(/GLM_VISION_MODEL=none/);
+      expect(result.imageFailure).toMatchObject({
+        reason: "VISION_DISABLED",
+        retryable: false,
+      });
       expect(httpService.post).toHaveBeenCalledTimes(1);
       const body = httpService.post.mock.calls[0][1] as any;
       expect(typeof body.messages[1].content).toBe("string");

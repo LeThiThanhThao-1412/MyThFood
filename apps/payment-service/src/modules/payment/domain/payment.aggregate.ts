@@ -327,6 +327,38 @@ export class Payment extends AggregateRoot<PaymentId> {
     );
   }
 
+  /**
+   * Chốt payment khi đơn được quyết toán bằng store credit (hoàn vào ví khách
+   * thay vì refund về thẻ) — vd đơn giao thất bại có phán quyết VALID.
+   *
+   * PaymentIntent được tạo với capture_method=automatic nên tiền đã được thu;
+   * HELD ở đây chỉ là trạng thái nội bộ. Bút toán này đóng vòng đời payment để
+   * payment không bị treo HELD vĩnh viễn (GAP G3).
+   */
+  public closeAsStoreCredit(transactionId: string): void {
+    if (this.status !== PaymentStatus.HELD) {
+      throw new BusinessRuleViolationError(
+        `Cannot close payment in status ${this.status}. Only HELD payments can be closed.`,
+      );
+    }
+    if (!transactionId?.trim()) {
+      throw new BusinessRuleViolationError(
+        "Transaction ID is required to close payment",
+      );
+    }
+
+    this.status = PaymentStatus.COMPLETED;
+    this.transactionId = transactionId;
+    this.markUpdated();
+
+    this.addDomainEvent(
+      new PaymentCompletedEvent(this.id, {
+        orderId: this.orderId,
+        transactionId,
+      }),
+    );
+  }
+
   // ===================== Queries =====================
 
   public isCompleted(): boolean {

@@ -3,6 +3,9 @@ import { io, Socket } from "socket.io-client";
 const SOCKET_URL = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3004";
 const CHAT_SOCKET_URL =
   process.env.NEXT_PUBLIC_CHAT_WS_URL || "http://localhost:3015/chat";
+/** driver-service (port 3007) — namespace `/tracking`. */
+const TRACKING_SOCKET_URL =
+  process.env.NEXT_PUBLIC_DRIVER_WS_URL || "http://localhost:3007/tracking";
 
 type EventHandler = (data: unknown) => void;
 
@@ -71,7 +74,48 @@ class SocketClient {
   emit(event: string, data: unknown) {
     this.socket?.emit(event, data);
   }
+
+  isConnected(): boolean {
+    return this.socket?.connected === true;
+  }
+
+  /**
+   * Emit kèm ack — dùng cho luồng GPS realtime: server trả `{ ok: true }` sau khi
+   * đã lưu điểm, nhờ đó client biết có thể xoá điểm khỏi buffer offline.
+   *
+   * Trả `false` khi chưa kết nối, timeout hoặc server báo lỗi để client fallback
+   * sang HTTP.
+   */
+  emitWithAck(
+    event: string,
+    data: unknown,
+    timeoutMs = 5000,
+  ): Promise<boolean> {
+    const socket = this.socket;
+    if (!socket?.connected) return Promise.resolve(false);
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        resolve(false);
+      }, timeoutMs);
+
+      socket.emit(event, data, (ack?: { ok?: boolean }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(ack?.ok !== false);
+      });
+    });
+  }
 }
 
 export const socketClient = new SocketClient(SOCKET_URL);
 export const chatSocketClient = new SocketClient(CHAT_SOCKET_URL);
+/**
+ * Namespace `/tracking` của driver-service: đẩy GPS lên (driver) và nhận
+ * `tracking:update` (app khách / điều phối) theo room `order:<orderId>`.
+ */
+export const trackingSocketClient = new SocketClient(TRACKING_SOCKET_URL);

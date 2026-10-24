@@ -13,7 +13,10 @@ import {
   merchantApi,
   chatApi,
   resolutionApi,
+  trackingSocketClient,
 } from "@mythfood/api-client";
+import type { TrackingUpdate } from "@mythfood/api-client";
+
 import {
   useAuthStore,
   fetchRoute,
@@ -144,7 +147,7 @@ function toNum(v: unknown, fallback = 0): number {
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, user, token } = useAuthStore();
   const [order, setOrder] = useState<any>(null);
   const [changeRequests, setChangeRequests] = useState<any[]>([]);
   const [merchant, setMerchant] = useState<any>(null);
@@ -460,6 +463,46 @@ export default function OrderDetailPage() {
       }
     })();
   }, [id]);
+
+  // GPS realtime của tài xế: WS `/tracking` đẩy toạ độ ngay khi tài xế di
+  // chuyển, thay vì chờ vòng poll HTTP 5 giây. Poll vẫn chạy song song nên tự
+  // phục hồi khi WS lỗi/mất kết nối.
+  useEffect(() => {
+    if (!isAuthenticated || !id) return;
+
+    trackingSocketClient.connect(token ?? undefined);
+
+    const subscribe = () => {
+      trackingSocketClient.emit("tracking:subscribe", { orderId: id });
+    };
+    if (trackingSocketClient.isConnected()) subscribe();
+
+    const offConnected = trackingSocketClient.on("connect", subscribe);
+    const offUpdate = trackingSocketClient.on(
+      "tracking:update",
+      (raw: unknown) => {
+        const update = raw as TrackingUpdate;
+        if (!update || update.orderId !== id) return;
+        if (
+          !Number.isFinite(update.latitude) ||
+          !Number.isFinite(update.longitude)
+        ) {
+          return;
+        }
+        setDispatchLocation((prev: any) => ({
+          ...(prev ?? {}),
+          driverLatitude: update.latitude,
+          driverLongitude: update.longitude,
+        }));
+      },
+    );
+
+    return () => {
+      offConnected();
+      offUpdate();
+      trackingSocketClient.emit("tracking:unsubscribe", { orderId: id });
+    };
+  }, [id, isAuthenticated, token]);
 
   async function submitReview() {
     if (!order) return;

@@ -283,8 +283,14 @@ services:
       SERVICE_API_KEY: ${SERVICE_API_KEY}
       WALLET_SERVICE_URL: http://wallet-service:3009
       IDENTITY_SERVICE_URL: http://identity-service:3001
+      # Redis GEO hot cache cho GPS realtime (bỏ trống = chỉ dùng DB)
+      REDIS_URL: redis://default:${REDIS_PASSWORD}@redis:6379
+      DRIVER_GEO_TTL_SECONDS: ${DRIVER_GEO_TTL_SECONDS:-90}
+      DRIVER_OFFLINE_TIMEOUT_SECONDS: ${DRIVER_OFFLINE_TIMEOUT_SECONDS:-20}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - mythfood-network
@@ -317,6 +323,8 @@ services:
       RESOLUTION_SERVICE_URL: http://resolution-service:3014
       SERVICE_API_KEY: ${SERVICE_API_KEY}
       DISPATCH_MATCHING_TIMEOUT_SECONDS: ${DISPATCH_MATCHING_TIMEOUT_SECONDS:-300}
+      # Bán kính nhận đơn: GPS tài xế → quán (km)
+      DISPATCH_MAX_RADIUS_KM: ${DISPATCH_MAX_RADIUS_KM:-5}
       SAVER_DISPATCH_TIMEOUT_SECONDS: ${SAVER_DISPATCH_TIMEOUT_SECONDS:-600}
       PRIORITY_DISPATCH_TIMEOUT_SECONDS: ${PRIORITY_DISPATCH_TIMEOUT_SECONDS:-180}
       PRIORITY_DRIVER_RESPONSE_TIMEOUT_SECONDS: ${PRIORITY_DRIVER_RESPONSE_TIMEOUT_SECONDS:-30}
@@ -370,6 +378,10 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
       STRIPE_API_VERSION: ${STRIPE_API_VERSION:-2023-10-16}
+      # Thu hồi nợ clawback: FULL_WHEN_COVERED = ví đủ tiền là trừ ngay toàn bộ nợ
+      DEBT_RECOVERY_MODE: ${DEBT_RECOVERY_MODE:-FULL_WHEN_COVERED}
+      # Cron quét nợ 30 phút (false = tắt)
+      DEBT_RECOVERY_SWEEP_ENABLED: ${DEBT_RECOVERY_SWEEP_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -395,6 +407,11 @@ services:
       TZ: Asia/Ho_Chi_Minh
       JWT_SECRET: ${JWT_SECRET_UPLOAD}
       JWT_EXPIRATION: 1h
+    # Ảnh bằng chứng khiếu nại (STORAGE_DRIVER=local) nằm trong /app/uploads.
+    # Không mount ⇒ mất toàn bộ ảnh mỗi lần container được tạo lại, và AI sẽ báo
+    # "không đọc được ảnh" dù khách đã gửi.
+    volumes:
+      - upload_data:/app/uploads
     networks:
       - mythfood-network
 
@@ -537,6 +554,12 @@ services:
       AI_CONTEXT_MAX_REVIEWS: ${AI_CONTEXT_MAX_REVIEWS:-5}
       AI_CONTEXT_MAX_PROMOTIONS: ${AI_CONTEXT_MAX_PROMOTIONS:-10}
       AI_MAX_MENU_IMAGES: ${AI_MAX_MENU_IMAGES:-2}
+      # Ảnh lớn hơn giới hạn này bị bỏ (model không nhận nổi) — mặc định 5MB
+      AI_MAX_IMAGE_BYTES: ${AI_MAX_IMAGE_BYTES:-5242880}
+      # Tải ảnh bằng chứng: thử lại khi DNS/timeout, cache để "Phân tích lại" không mất ảnh
+      AI_IMAGE_DOWNLOAD_ATTEMPTS: ${AI_IMAGE_DOWNLOAD_ATTEMPTS:-3}
+      AI_IMAGE_CACHE_TTL_MS: ${AI_IMAGE_CACHE_TTL_MS:-600000}
+      AI_IMAGE_CACHE_MAX: ${AI_IMAGE_CACHE_MAX:-12}
       AI_PROMPT_CHAR_BUDGET: ${AI_PROMPT_CHAR_BUDGET:-48000}
       AI_DEEP_OUTPUT: ${AI_DEEP_OUTPUT:-true}
       # Provider đang dùng (xem docs/AI_ASSISTANT_REPORT.md mục 2.7)
@@ -548,6 +571,12 @@ services:
       GLM_TIMEOUT_MS: ${GLM_TIMEOUT_MS:-120000}
       GLM_MAX_ATTEMPTS: ${GLM_MAX_ATTEMPTS:-3}
       GLM_RETRY_BASE_MS: ${GLM_RETRY_BASE_MS:-1500}
+      # Model đọc ảnh dự phòng khi model vision free quá tải (1305/1302).
+      # Không đặt = glm-4.6v-flashx,glm-4.5v; "none" = chỉ dùng GLM_VISION_MODEL.
+      GLM_VISION_FALLBACK_MODELS: ${GLM_VISION_FALLBACK_MODELS:-glm-4.6v-flashx,glm-4.5v}
+      # Quá tải model (1305/1302): chờ bao lâu & thử thêm mấy lần trước khi bỏ ảnh
+      GLM_OVERLOAD_RETRY_MS: ${GLM_OVERLOAD_RETRY_MS:-8000}
+      GLM_OVERLOAD_ATTEMPTS: ${GLM_OVERLOAD_ATTEMPTS:-2}
       GLM_FALLBACK_MODELS: ${GLM_FALLBACK_MODELS:-none}
       GLM_THINKING: ${GLM_THINKING:-auto}
       # Vẫn giữ để đổi lại Google bằng AI_PROVIDER=gemini

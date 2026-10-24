@@ -185,6 +185,30 @@ export class DispatchRepository {
     const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
 
     try {
+      // Ưu tiên endpoint GEOSEARCH của driver-service (Redis GEO hot cache).
+      // Lỗi/không có kết quả → fallback danh sách đầy đủ + Haversine bên dưới.
+      try {
+        const nearbyUrl =
+          `${driverUrl}/api/v1/drivers/available/nearby` +
+          `?latitude=${lat}&longitude=${lng}&radiusKm=${radiusKm}` +
+          `&includeStackable=${includeStackable}&limit=20`;
+        const nearbyRes = await fetch(nearbyUrl, {
+          headers: { "x-service-key": serviceKey },
+        });
+        if (nearbyRes.ok) {
+          const nearbyJson: any = await nearbyRes.json();
+          const nearbyDrivers: any[] = nearbyJson?.data ?? [];
+          const nearbyResults = this._mapNearbyDrivers(
+            nearbyDrivers,
+            radiusKm,
+            includeStackable,
+          );
+          if (nearbyResults.length > 0) return nearbyResults;
+        }
+      } catch {
+        // Redis chết / driver-service phiên bản cũ → dùng đường dự phòng.
+      }
+
       const query = includeStackable ? "?includeStackable=true" : "";
       const res = await fetch(
         `${driverUrl}/api/v1/drivers/available/list${query}`,
@@ -203,10 +227,12 @@ export class DispatchRepository {
         maxConcurrentOrders: number;
       }[] = [];
       for (const d of drivers) {
+        // Chưa có GPS (null/undefined) → KHÔNG coi là toạ độ (0,0).
+        // Number(null) === 0 nên phải kiểm tra null trước khi ép kiểu.
+        if (d.currentLatitude == null || d.currentLongitude == null) continue;
         const dLat = Number(d.currentLatitude);
         const dLng = Number(d.currentLongitude);
-        if (dLat == null || dLng == null || isNaN(dLat) || isNaN(dLng))
-          continue;
+        if (!Number.isFinite(dLat) || !Number.isFinite(dLng)) continue;
 
         const activeOrderIds: string[] = Array.isArray(d.currentOrderIds)
           ? d.currentOrderIds
@@ -263,6 +289,73 @@ export class DispatchRepository {
       totalDispatches: Number(row.totalDispatches ?? 0),
       avgRouteSequence: Number(row.avgRouteSequence ?? 0),
     };
+  }
+
+  /**
+   * Chuẩn hoá kết quả `GET /drivers/available/nearby` (đã có `distanceKm` từ
+   * driver-service) về cùng shape với đường dự phòng, đồng thời áp lại quy tắc
+   * gán đơn (FAST/PRIORITY chỉ nhận tài xế rảnh, không vượt số đơn tối đa).
+   */
+  private _mapNearbyDrivers(
+    drivers: any[],
+    radiusKm: number,
+    includeStackable: boolean,
+  ): {
+    driverId: string;
+    distanceKm: number;
+    latitude: number;
+    longitude: number;
+    activeOrderIds: string[];
+    maxConcurrentOrders: number;
+  }[] {
+    const results: {
+      driverId: string;
+      distanceKm: number;
+      latitude: number;
+      longitude: number;
+      activeOrderIds: string[];
+      maxConcurrentOrders: number;
+    }[] = [];
+
+    for (const d of drivers) {
+      if (d.currentLatitude == null || d.currentLongitude == null) continue;
+      const dLat = Number(d.currentLatitude);
+      const dLng = Number(d.currentLongitude);
+      const distanceKm = Number(d.distanceKm);
+      if (
+        !Number.isFinite(dLat) ||
+        !Number.isFinite(dLng) ||
+        !Number.isFinite(distanceKm)
+      ) {
+        continue;
+      }
+
+      const activeOrderIds: string[] = Array.isArray(d.currentOrderIds)
+        ? d.currentOrderIds
+        : d.currentOrderId
+          ? [d.currentOrderId]
+          : [];
+      const maxConcurrentOrders = Math.max(
+        1,
+        Number(d.maxConcurrentOrders ?? 1),
+      );
+
+      if (!includeStackable && activeOrderIds.length > 0) continue;
+      if (activeOrderIds.length >= maxConcurrentOrders) continue;
+      if (radiusKm < 9999 && distanceKm > radiusKm) continue;
+
+      results.push({
+        driverId: d.id,
+        distanceKm,
+        latitude: dLat,
+        longitude: dLng,
+        activeOrderIds,
+        maxConcurrentOrders,
+      });
+    }
+
+    results.sort((a, b) => a.distanceKm - b.distanceKm);
+    return results.slice(0, 20);
   }
 
   private _haversine(

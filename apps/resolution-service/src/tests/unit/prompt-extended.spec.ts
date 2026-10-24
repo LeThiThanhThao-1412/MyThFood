@@ -235,6 +235,30 @@ describe("buildUserPrompt — dữ liệu mở rộng", () => {
     expect(prompt).toContain("CẢNH BÁO DỮ LIỆU");
     expect(prompt).toContain("D15");
   });
+
+  it("báo rõ bên khiếu nại CÓ ảnh nhưng chưa gửi kèm thay vì nói 'không có ảnh'", () => {
+    const base = snapshot();
+    const prompt = buildUserPrompt({
+      ...base,
+      imagesAttached: 1,
+      reporterImagesAttached: 0,
+      reporterImageUrls: [],
+      imagesAvailable: {
+        deliveryProof: 1,
+        menuReference: 1,
+        reporter: 2,
+        respondent: 0,
+        review: 0,
+      },
+    } as CaseContextSnapshot);
+
+    expect(prompt).toContain(
+      "Bên KHIẾU NẠI CÓ 2 ảnh bằng chứng nhưng không được gửi kèm",
+    );
+    expect(prompt).not.toContain(
+      'Bên KHIẾU NẠI không có ảnh ⇒ reporterImages.support="NO_IMAGE".',
+    );
+  });
 });
 
 describe("buildImagePrompt — nhãn ảnh chuẩn món", () => {
@@ -244,5 +268,165 @@ describe("buildImagePrompt — nhãn ảnh chuẩn món", () => {
     expect(prompt).toContain("[BÊN KHIẾU NẠI]");
     expect(prompt).toContain("[ẢNH CHUẨN MÓN TỪ THỰC ĐƠN — Cơm gà]");
     expect(prompt).toContain("khác biệt nhỏ KHÔNG đồng nghĩa sai món");
+  });
+
+  it("tôn trọng imageOrder món-trước của snapshot mới", () => {
+    const base = snapshot();
+    const prompt = buildImagePrompt({
+      ...base,
+      imageOrder: [
+        "DELIVERY_PROOF",
+        "MENU_REFERENCE",
+        "REPORTER",
+        "RESPONDENT",
+        "REVIEW",
+      ],
+    } as CaseContextSnapshot);
+
+    const menuPos = prompt.indexOf("[ẢNH CHUẨN MÓN TỪ THỰC ĐƠN");
+    const reporterPos = prompt.indexOf("[BÊN KHIẾU NẠI]");
+    expect(menuPos).toBeGreaterThan(-1);
+    expect(reporterPos).toBeGreaterThan(-1);
+    expect(menuPos).toBeLessThan(reporterPos);
+  });
+
+  it("liệt kê đúng URL ảnh ĐÃ TẢI (reporterImageUrls), không phải toàn bộ evidence", () => {
+    const base = snapshot();
+    const prompt = buildImagePrompt({
+      ...base,
+      imagesAttached: 2,
+      case: {
+        ...base.case,
+        evidence: ["http://img/hong-khong-tai-duoc", "http://img/that.jpg"],
+      },
+      reporterImageUrls: ["http://img/that.jpg"],
+      reporterImagesAttached: 1,
+    } as CaseContextSnapshot);
+
+    expect(prompt).toContain("[BÊN KHIẾU NẠI] http://img/that.jpg");
+    // Link hỏng (đã bị bỏ qua khi tải) không được gán nhãn ảnh.
+    expect(prompt).not.toContain("hong-khong-tai-duoc");
+  });
+
+  it("nhãn “[BÊN KHIẾU NẠI]” xuất hiện đúng số ảnh đã tải, kể cả URL không đuôi ảnh", () => {
+    const base = snapshot();
+    const prompt = buildImagePrompt({
+      ...base,
+      imagesAttached: 3,
+      case: {
+        ...base.case,
+        evidence: [
+          "https://cdn.local/api/v1/upload/complaints/1729000000-ab12cd",
+        ],
+      },
+      reporterImageUrls: [
+        "https://cdn.local/api/v1/upload/complaints/1729000000-ab12cd",
+      ],
+      reporterImagesAttached: 1,
+    } as CaseContextSnapshot);
+
+    const labels = prompt.match(/\[BÊN KHIẾU NẠI\]/g) ?? [];
+    expect(labels).toHaveLength(1);
+    expect(prompt).toContain(
+      "[BÊN KHIẾU NẠI] https://cdn.local/api/v1/upload/complaints/1729000000-ab12cd",
+    );
+  });
+});
+
+describe("buildUserPrompt — nhãn ảnh khớp đúng thứ tự ảnh đã gửi", () => {
+  it("sự cố món ăn: ảnh chuẩn món chen giữa ảnh giao hàng và ảnh khách, số thứ tự liền mạch", () => {
+    const base = snapshot();
+    const prompt = buildUserPrompt({
+      ...base,
+      imageOrder: [
+        "DELIVERY_PROOF",
+        "MENU_REFERENCE",
+        "REPORTER",
+        "RESPONDENT",
+        "REVIEW",
+      ],
+      imagePlan: {
+        deliveryProof: 1,
+        menuReference: 1,
+        reporter: 1,
+        respondent: 0,
+        review: 0,
+      },
+      imagesAttached: 3,
+    } as CaseContextSnapshot);
+
+    const proofPos = prompt.indexOf("1. [ẢNH HỆ THỐNG");
+    const menuPos = prompt.indexOf("2. [ẢNH CHUẨN MÓN TỪ THỰC ĐƠN — Cơm gà]");
+    const reporterPos = prompt.indexOf("3. [BÊN KHIẾU NẠI]");
+    expect(proofPos).toBeGreaterThan(-1);
+    expect(menuPos).toBeGreaterThan(proofPos);
+    expect(reporterPos).toBeGreaterThan(menuPos);
+    expect(prompt).toContain(
+      "2. [ẢNH CHUẨN MÓN TỪ THỰC ĐƠN — Cơm gà] http://img/menu.jpg",
+    );
+  });
+
+  it("không gán nhãn cho ảnh vượt quá số ảnh thực sự đính kèm", () => {
+    const base = snapshot();
+    const prompt = buildUserPrompt({
+      ...base,
+      imageOrder: ["DELIVERY_PROOF", "REPORTER", "RESPONDENT"],
+      imagePlan: {
+        deliveryProof: 1,
+        menuReference: 0,
+        reporter: 1,
+        respondent: 0,
+        review: 0,
+      },
+      imagesAttached: 1,
+    } as CaseContextSnapshot);
+
+    expect(prompt).toContain("1. [ẢNH HỆ THỐNG");
+    expect(prompt).not.toContain("2. [BÊN KHIẾU NẠI]");
+  });
+
+  it("bỏ qua URL tải hỏng (imagesSkipped) để nhãn không lệch ảnh đã gửi", () => {
+    const base = snapshot();
+    const context = {
+      ...base,
+      imagesSkipped: ["http://img/menu-a.jpg"],
+      imageOrder: ["DELIVERY_PROOF", "MENU_REFERENCE", "REPORTER"] as const,
+      imagePlan: {
+        deliveryProof: 1,
+        menuReference: 1,
+        reporter: 0,
+        respondent: 0,
+        review: 0,
+      },
+      imagesAttached: 2,
+      reporterImagesAttached: 0,
+      reporterImageUrls: [],
+      menuItems: [
+        {
+          ...base.menuItems![0],
+          menuItemId: "menu-a",
+          name: "Menu A",
+          imageUrl: "http://img/menu-a.jpg",
+        },
+        {
+          ...base.menuItems![0],
+          menuItemId: "menu-b",
+          name: "Menu B",
+          imageUrl: "http://img/menu-b.jpg",
+        },
+      ],
+    } as unknown as CaseContextSnapshot;
+
+    const imagePrompt = buildImagePrompt(context);
+    const userPrompt = buildUserPrompt(context);
+
+    // Ảnh menu-a tải hỏng ⇒ không được gán nhãn; menu-b nhận đúng số 2.
+    expect(imagePrompt).not.toContain("menu-a.jpg");
+    expect(imagePrompt).toContain("2. [ẢNH CHUẨN MÓN TỪ THỰC ĐƠN — Menu B]");
+    expect(imagePrompt).toContain("http://img/menu-b.jpg");
+    // `<THUC_DON>` vẫn nêu URL ảnh chuẩn của món A (dữ liệu), nhưng KHÔNG được
+    // gán nhãn ảnh vì ảnh đó không được gửi.
+    expect(userPrompt).not.toContain("[ẢNH CHUẨN MÓN TỪ THỰC ĐƠN — Menu A]");
+    expect(userPrompt).toContain("2. [ẢNH CHUẨN MÓN TỪ THỰC ĐƠN — Menu B]");
   });
 });

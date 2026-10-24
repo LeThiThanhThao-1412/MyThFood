@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -19,6 +20,7 @@ import {
   CreateDriverDto,
   UpdateDriverProfileDto,
   UpdateLocationDto,
+  UpdateLocationBatchDto,
   UpdateFatigueDto,
   RateDriverDto,
   PenalizeCancellationDto,
@@ -68,6 +70,43 @@ export class DriverController {
     return {
       statusCode: HttpStatus.OK,
       data: drivers.map((d) => this.toResponse(d)),
+    };
+  }
+
+  /**
+   * Tài xế khả dụng gần một toạ độ, sắp xếp gần → xa (kèm `distanceKm`).
+   *
+   * dispatch-service gọi endpoint này thay cho việc tải toàn bộ danh sách rồi
+   * tự tính Haversine. driver-service dùng Redis GEOSEARCH khi có, fallback DB.
+   */
+  @Get("available/nearby")
+  async getAvailableNearby(
+    @Query("latitude") latitude?: string,
+    @Query("longitude") longitude?: string,
+    @Query("radiusKm") radiusKm?: string,
+    @Query("includeStackable") includeStackable?: string,
+    @Query("limit") limit?: string,
+  ) {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new BadRequestException("latitude and longitude are required");
+    }
+
+    const results = await this.driverService.getAvailableDriversNearby({
+      latitude: lat,
+      longitude: lng,
+      radiusKm: radiusKm != null ? Number(radiusKm) : undefined,
+      includeStackable: includeStackable === "true",
+      limit: limit != null ? Number(limit) : undefined,
+    });
+
+    return {
+      statusCode: HttpStatus.OK,
+      data: results.map((result) => ({
+        ...this.toResponse(result.driver),
+        distanceKm: result.distanceKm,
+      })),
     };
   }
 
@@ -207,6 +246,31 @@ export class DriverController {
   ) {
     const driver = await this.driverService.updateLocation(id, dto);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  /**
+   * Ghi **lô** điểm GPS (1–100 điểm/lần) trong 1 UPDATE + 1 INSERT.
+   * App tài xế dùng endpoint này để gửi bù khi mất mạng hoặc gom nhiều mẫu
+   * `watchPosition` vào một request.
+   */
+  @Post(":id/location/batch")
+  @Roles("DRIVER", "ADMIN")
+  @HttpCode(HttpStatus.OK)
+  async updateLocationBatch(
+    @Param("id") id: string,
+    @Body() dto: UpdateLocationBatchDto,
+  ) {
+    const result = await this.driverService.updateLocationsBatch(
+      id,
+      dto.points,
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        accepted: result.accepted,
+        driver: this.toResponse(result.driver),
+      },
+    };
   }
 
   @Get(":id/location/history")

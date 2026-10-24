@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -191,7 +192,7 @@ export class CaseService {
     void this.integration.notify(
       dto.respondentId,
       "Bạn có khiếu nại mới",
-      `${dto.subject} — hãy cung cấp bằng chứng trong 48h.`,
+      `${dto.subject} — mở mục "Khiếu nại" trong ứng dụng để phản hồi và gửi ảnh minh chứng trước hạn.`,
     );
 
     // Trợ lý AI phân tích **nền** ngay khi khiếu nại được tạo: admin mở vụ việc
@@ -222,12 +223,42 @@ export class CaseService {
     return this.repo.getTimeline(id);
   }
 
+  /**
+   * Bổ sung ảnh bằng chứng cho vụ việc — **cả hai bên** đều gọi được.
+   *
+   * Trước đây endpoint này chỉ mở cho người khiếu nại (và admin): `@Roles` loại
+   * `MERCHANT_OWNER`/`DRIVER`, rồi `assertReporterOrAdmin()` chặn tiếp. Hệ quả:
+   * nhà hàng **không có chỗ gửi ảnh minh chứng** — chỉ còn cách viết phản hồi
+   * kèm ảnh, nhưng phản hồi chỉ mở lúc vụ việc còn `OPEN` và mỗi lần gửi lại ghi
+   * đè nội dung cũ. Vì vậy AI luôn kết luận "Bên bị khiếu nại: không có ảnh".
+   *
+   * Nay ảnh được ghi vào đúng bên:
+   * - người khiếu nại → `evidence` (bằng chứng của bên tố)
+   * - bên bị khiếu nại → `respondentEvidence` (bằng chứng của bên bị tố)
+   *
+   * Tách trường để AI vẫn phân tích đúng "bên khiếu nại" / "bên bị khiếu nại" và
+   * timeline ghi đúng người gửi (`actorType` suy ra từ role, không hard-code).
+   */
   async addEvidence(id: string, dto: AddEvidenceDto, user: AuthUser) {
+    if (!dto.urls?.length) {
+      throw new BadRequestException("Cần ít nhất 1 ảnh bằng chứng");
+    }
     const c = await this.repo.findByIdOrFail(id);
-    this.assertReporterOrAdmin(c, user, dto.actorId);
     const from = c.caseStatus;
+    const isAdmin = user.roles.includes("ADMIN") || user.userId === "service";
+    const callerId = dto.actorId || user.userId;
+    const isRespondent =
+      !isAdmin &&
+      (c.caseRespondentId === callerId || c.caseRespondentId === user.userId);
 
-    c.addEvidence(dto.urls);
+    if (isRespondent) {
+      c.addRespondentEvidence(dto.urls);
+    } else {
+      // Admin, hoặc người khiếu nại: chỉ hai nhóm này được ghi vào `evidence`.
+      this.assertReporterOrAdmin(c, user, dto.actorId);
+      c.addEvidence(dto.urls);
+    }
+
     // Đang chờ bổ sung mà đã có bằng chứng mới ⇒ quay lại "đang xem xét".
     if (c.caseStatus === CaseStatus.WAITING_EVIDENCE) {
       c.review();
@@ -238,8 +269,10 @@ export class CaseService {
       fromStatus: from,
       toStatus: c.caseStatus,
       actorId: user.userId,
-      actorType: "CONSUMER",
-      note: `Người khiếu nại bổ sung ${dto.urls.length} bằng chứng`,
+      actorType: this.mapRoleToActorType(user.roles),
+      note: isRespondent
+        ? `Bên bị khiếu nại bổ sung ${dto.urls.length} ảnh minh chứng`
+        : `Người khiếu nại bổ sung ${dto.urls.length} bằng chứng`,
     });
 
     // Bằng chứng mới ⇒ AI phân tích lại (không await: người gửi không phải chờ).
@@ -247,12 +280,20 @@ export class CaseService {
       void this.assistant.triggerAutoAnalysis(id);
     }
 
-    // Bên bị khiếu nại cần biết có bằng chứng mới để kịp phản hồi.
-    void this.integration.notify(
-      c.caseRespondentId,
-      "Bên khiếu nại đã bổ sung bằng chứng",
-      `Vụ việc ${c.caseNumberValue} — vui lòng xem lại và phản hồi nếu cần.`,
-    );
+    // Bên còn lại cần biết có bằng chứng mới để kịp phản hồi.
+    if (isRespondent) {
+      void this.integration.notify(
+        c.caseReporterId,
+        "Bên bị khiếu nại đã bổ sung ảnh minh chứng",
+        `Vụ việc ${c.caseNumberValue} — vui lòng xem lại và bổ sung nếu cần.`,
+      );
+    } else {
+      void this.integration.notify(
+        c.caseRespondentId,
+        "Bên khiếu nại đã bổ sung bằng chứng",
+        `Vụ việc ${c.caseNumberValue} — vui lòng xem lại và phản hồi nếu cần.`,
+      );
+    }
 
     return this.getEntityOrFail(id);
   }
@@ -540,7 +581,7 @@ export class CaseService {
       fromStatus: from,
       toStatus: c.caseStatus,
       actorId: user.userId,
-      actorType: "CONSUMER",
+      actorType: this.mapRoleToActorType(user.roles),
       note: "Respondent responded",
     });
 
@@ -573,7 +614,7 @@ export class CaseService {
       fromStatus: from,
       toStatus: c.caseStatus,
       actorId: user.userId,
-      actorType: "CONSUMER",
+      actorType: this.mapRoleToActorType(user.roles),
       note: "Respondent confirmed fault",
     });
     if (c.caseOrderId) {
@@ -620,24 +661,6 @@ export class CaseService {
       );
     }
     return expired.length;
-  }
-
-  private computeFineAmount(severity: string, total: number): number {
-    const table: Record<
-      string,
-      { rate: number; floor: number; ceiling: number }
-    > = {
-      LOW: { rate: 0, floor: 0, ceiling: 0 },
-      MEDIUM: { rate: 0.15, floor: 20000, ceiling: 200000 },
-      HIGH: { rate: 0.25, floor: 40000, ceiling: 500000 },
-      CRITICAL: { rate: 0.4, floor: 80000, ceiling: 1500000 },
-    };
-    const cfg = table[severity] ?? { rate: 0, floor: 0, ceiling: 0 };
-    if (cfg.rate === 0) return 0;
-    return Math.min(
-      cfg.ceiling,
-      Math.max(cfg.floor, Math.round(cfg.rate * total)),
-    );
   }
 
   /** Ghi hình phạt đúng như AI đề xuất (admin đã duyệt), có chặn trần tiền. */
@@ -691,12 +714,16 @@ export class CaseService {
           ? Math.round(action.durationDays)
           : null;
 
+      // Chính sách mới: không phạt tiền khi giao thất bại ⇒ mọi đề xuất FINE
+      // (mô hình cũ) được hạ thành WARNING, bỏ số tiền.
+      const isLegacyFine = action.type === "FINE";
+
       await this.penaltyService.recordPenalty({
         caseId: c.id.toString(),
-        type: action.type as PenaltyType,
+        type: isLegacyFine ? PenaltyType.WARNING : (action.type as PenaltyType),
         targetId,
         targetType,
-        amount,
+        amount: isLegacyFine ? null : amount,
         durationDays,
         reason: action.reason,
       });
@@ -713,8 +740,8 @@ export class CaseService {
   }
 
   /**
-   * Ghi nhận hình phạt (FINE cho bên lỗi + COMPENSATION cho bên khiếu nại)
-   * để cả hai bên thấy được trên UI (penalties tab).
+   * Ghi nhận hình phạt (WARNING không số tiền cho bên lỗi + COMPENSATION cho bên
+   * khiếu nại) để cả hai bên thấy được trên UI (penalties tab).
    *
    * @returns số hình phạt đã ghi.
    */
@@ -739,15 +766,17 @@ export class CaseService {
       const total = Number(order?.totalAmount) || 0;
       const shippingFee = Number(order?.deliveryFee) || 0;
 
-      const fine = this.computeFineAmount(c.caseSeverity, total);
-      if (fine > 0 && targetId) {
+      // CHÍNH SÁCH MỚI: không phạt tiền khi đơn giao thất bại. Bên có lỗi chỉ
+      // nhận hình phạt dạng WARNING (không số tiền) — app hiển thị banner vàng,
+      // tiền do order-service/wallet-service route theo từng dòng nợ riêng.
+      if (targetId) {
         await this.penaltyService.recordPenalty({
           caseId: c.id.toString(),
-          type: PenaltyType.FINE,
+          type: PenaltyType.WARNING,
           targetId,
           targetType,
-          amount: fine,
-          reason: `Phạt do lỗi ${fault} — ${c.caseCategory}`,
+          amount: null,
+          reason: `Cảnh báo lỗi ${fault} — ${c.caseCategory}`,
         });
         created += 1;
       }

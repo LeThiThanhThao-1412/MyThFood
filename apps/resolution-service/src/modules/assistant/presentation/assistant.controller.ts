@@ -78,6 +78,8 @@ export class AssistantController {
     return {
       statusCode: HttpStatus.OK,
       data: await this.assistantService.getAnalysis(id),
+      // Chẩn đoán: lần tự phân tích gần nhất chạy/ lỗi vì sao (chỉ trong RAM).
+      auto: this.assistantService.getAutoStatus(id),
     };
   }
 

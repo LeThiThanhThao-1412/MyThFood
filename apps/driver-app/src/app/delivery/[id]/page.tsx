@@ -1063,7 +1063,7 @@ export default function DeliveryPage() {
             >
               {simulating
                 ? "⏹ Dừng mô phỏng GPS"
-                : "▶ Mô phỏng GPS (di chuyển quán → khách, mỗi 5s)"}
+                : "▶ Mô phỏng GPS (quán → khách)"}
             </button>
           )}
           <button

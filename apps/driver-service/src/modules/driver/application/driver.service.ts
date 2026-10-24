@@ -18,14 +18,38 @@ import {
   DriverStatus,
 } from "../domain/driver.aggregate";
 import { DriverId } from "../domain/driver-id";
+import { DriverGeoService } from "../../geo/driver-geo.service";
 import {
   CreateDriverDto,
   UpdateDriverProfileDto,
   UpdateLocationDto,
+  LocationPointDto,
   UpdateFatigueDto,
   RateDriverDto,
   DriverComplianceDto,
 } from "./dtos/driver.dto";
+
+/**
+ * Sự kiện "đã lưu vị trí tài xế" — gateway realtime (`/tracking`) đăng ký
+ * listener để fan-out cho app khách/điều phối. Dùng interface thay vì import
+ * ngược gateway để tránh vòng phụ thuộc module.
+ */
+export interface LocationBroadcast {
+  driverId: string;
+  orderId: string | null;
+  latitude: number;
+  longitude: number;
+  recordedAt: Date;
+  source: "HTTP" | "WS";
+}
+
+export type LocationListener = (update: LocationBroadcast) => void;
+
+/** Tài xế khả dụng + khoảng cách tới điểm tìm kiếm. */
+export interface NearbyDriverResult {
+  driver: Driver;
+  distanceKm: number;
+}
 
 @Injectable()
 export class DriverService implements OnModuleInit, OnModuleDestroy {
@@ -46,7 +70,17 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
     private readonly driverRepo: DriverRepository,
     private readonly locationHistoryRepo: DriverLocationHistoryRepository,
     private readonly httpService: HttpService,
+    private readonly geoService: DriverGeoService,
   ) {}
+
+  // ---- Realtime location listeners (gateway /tracking) ----
+
+  private readonly locationListeners: LocationListener[] = [];
+
+  /** Đăng ký nhận sự kiện vị trí (gateway realtime). */
+  registerLocationListener(listener: LocationListener): void {
+    this.locationListeners.push(listener);
+  }
 
   onModuleInit(): void {
     // Heartbeat: app tài xế gửi vị trí mỗi 5 giây (đóng vai trò "nhịp tim").
@@ -107,6 +141,101 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
 
   async getAvailableDrivers(includeStackable = false): Promise<Driver[]> {
     return this.driverRepo.findAvailableDrivers(includeStackable);
+  }
+
+  /**
+   * Tài xế khả dụng trong bán kính `radiusKm`, sắp xếp gần → xa.
+   *
+   * Pipeline: Redis `GEOSEARCH` (hot cache, O(log N + M)) → lọc lại theo danh
+   * sách tài xế khả dụng trong DB (nguồn sự thật về trạng thái/đơn đang giữ).
+   * Tài xế chưa có trong Redis (ví dụ Redis restart) vẫn được tính bằng
+   * Haversine trên toạ độ lưu trong DB → không mất tài xế nào.
+   */
+  async getAvailableDriversNearby(params: {
+    latitude: number;
+    longitude: number;
+    radiusKm?: number;
+    includeStackable?: boolean;
+    limit?: number;
+  }): Promise<NearbyDriverResult[]> {
+    const latitude = Number(params.latitude);
+    const longitude = Number(params.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
+    if (
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      return [];
+    }
+
+    const radiusKm = Math.min(
+      9999,
+      Math.max(0.1, Number(params.radiusKm ?? 5) || 5),
+    );
+    const limit = Math.min(
+      50,
+      Math.max(1, Math.trunc(Number(params.limit ?? 20) || 20)),
+    );
+
+    const available = await this.driverRepo.findAvailableDrivers(
+      params.includeStackable === true,
+    );
+    const geoMatches = await this.geoService.nearby(
+      latitude,
+      longitude,
+      radiusKm,
+      limit * 4,
+    );
+    const geoDistances = new Map(
+      geoMatches.map((match) => [match.driverId, match.distanceKm]),
+    );
+
+    const results: NearbyDriverResult[] = [];
+    for (const driver of available) {
+      const driverId = driver.id.toString();
+      const geoDistance = geoDistances.get(driverId);
+
+      let distanceKm: number;
+      if (geoDistance != null) {
+        distanceKm = geoDistance;
+      } else {
+        const driverLat = driver.driverCurrentLatitude;
+        const driverLng = driver.driverCurrentLongitude;
+        if (driverLat == null || driverLng == null) continue;
+        distanceKm = DriverService.haversineKm(
+          latitude,
+          longitude,
+          driverLat,
+          driverLng,
+        );
+      }
+
+      if (radiusKm < 9999 && distanceKm > radiusKm) continue;
+      results.push({ driver, distanceKm });
+    }
+
+    results.sort((a, b) => a.distanceKm - b.distanceKm);
+    return results.slice(0, limit);
+  }
+
+  private static haversineKm(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+  ): number {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   async updateProfile(
@@ -344,6 +473,8 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
     driver.goOffline();
     await this.driverRepo.save(driver);
+    // Rời tập "nóng" ngay để matching không trả về tài xế vừa tắt online.
+    await this.removeFromGeoCache(driver.id.toString());
     return driver;
   }
 
@@ -356,7 +487,11 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
 
   // ---- GPS Real-time Location ----
 
-  async updateLocation(id: string, dto: UpdateLocationDto): Promise<Driver> {
+  async updateLocation(
+    id: string,
+    dto: UpdateLocationDto,
+    source: "HTTP" | "WS" = "HTTP",
+  ): Promise<Driver> {
     const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
     driver.updateLocation(dto.latitude, dto.longitude);
     await this.driverRepo.save(driver);
@@ -374,7 +509,125 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`Failed to persist location history: ${err?.message}`);
     }
 
+    await this.publishLocation(
+      driver,
+      {
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+      },
+      source,
+    );
+
     return driver;
+  }
+
+  /**
+   * Ghi **lô** điểm GPS (tối đa 100) trong 1 lần UPDATE + 1 INSERT.
+   *
+   * App tài xế lấy mẫu bằng `watchPosition` rồi gom lô → giảm mạnh số query so
+   * với PATCH từng điểm mỗi 5 giây. Toạ độ vẫn được domain validate từng điểm
+   * (tài xế phải ONLINE, toạ độ hợp lệ); vị trí hiện tại lấy theo điểm cuối.
+   */
+  async updateLocationsBatch(
+    id: string,
+    points: LocationPointDto[],
+  ): Promise<{ driver: Driver; accepted: number }> {
+    if (!Array.isArray(points) || points.length === 0) {
+      throw new BusinessRuleViolationError(
+        "At least one location point is required",
+      );
+    }
+
+    const driver = await this.driverRepo.findByIdOrFail(DriverId.from(id));
+    for (const point of points) {
+      driver.updateLocation(point.latitude, point.longitude);
+    }
+    await this.driverRepo.save(driver);
+
+    const last = points[points.length - 1]!;
+    const driverId = driver.id.toString();
+    const orderId = driver.driverCurrentOrderId ?? null;
+
+    try {
+      await this.locationHistoryRepo.savePoints(
+        points.map((point) => ({
+          driverId,
+          orderId,
+          latitude: point.latitude,
+          longitude: point.longitude,
+          recordedAt: this.parseRecordedAt(point.recordedAt),
+        })),
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to persist ${points.length} location point(s): ${err?.message}`,
+      );
+    }
+
+    await this.publishLocation(driver, {
+      latitude: last.latitude,
+      longitude: last.longitude,
+      recordedAt: this.parseRecordedAt(last.recordedAt),
+    });
+
+    return { driver, accepted: points.length };
+  }
+
+  /**
+   * Sau khi vị trí đã lưu DB: cập nhật Redis GEO + phát sự kiện realtime.
+   * Best-effort — lỗi cache/fan-out không được làm hỏng request GPS.
+   */
+  private async publishLocation(
+    driver: Driver,
+    point: { latitude: number; longitude: number; recordedAt?: Date },
+    source: "HTTP" | "WS" = "HTTP",
+  ): Promise<void> {
+    const driverId = driver.id.toString();
+    try {
+      await this.geoService.upsertPosition(
+        driverId,
+        point.latitude,
+        point.longitude,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to update GEO cache for driver ${driverId}: ${err?.message}`,
+      );
+    }
+
+    const update: LocationBroadcast = {
+      driverId,
+      orderId: driver.driverCurrentOrderId ?? null,
+      latitude: point.latitude,
+      longitude: point.longitude,
+      recordedAt: point.recordedAt ?? new Date(),
+      source,
+    };
+
+    for (const listener of this.locationListeners) {
+      try {
+        listener(update);
+      } catch (err: any) {
+        this.logger.warn(`Location listener failed: ${err?.message}`);
+      }
+    }
+  }
+
+  private parseRecordedAt(value?: string): Date | undefined {
+    if (!value) return undefined;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+
+  /** Best-effort xoá khỏi Redis GEO — lỗi cache không chặn nghiệp vụ. */
+  private async removeFromGeoCache(driverId: string): Promise<void> {
+    try {
+      await this.geoService.removeDriver(driverId);
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to remove driver ${driverId} from GEO cache: ${err?.message}`,
+      );
+    }
   }
 
   /** Lấy lịch sử vị trí GPS của tài xế (mới nhất trước, giới hạn `limit`). */
@@ -589,6 +842,7 @@ export class DriverService implements OnModuleInit, OnModuleDestroy {
       try {
         driver.goOffline();
         await this.driverRepo.save(driver);
+        await this.removeFromGeoCache(driver.id.toString());
         count += 1;
         this.logger.log(
           `Auto-offline driver ${driver.id.toString()} (heartbeat timeout)`,

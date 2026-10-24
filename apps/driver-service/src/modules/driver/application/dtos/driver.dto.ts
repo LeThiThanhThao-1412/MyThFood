@@ -4,9 +4,15 @@ import {
   IsEmail,
   IsNumber,
   IsInt,
+  IsArray,
+  IsISO8601,
+  ArrayMaxSize,
+  ArrayMinSize,
   Min,
   Max,
+  ValidateNested,
 } from "class-validator";
+import { Type } from "class-transformer";
 
 export class CreateDriverDto {
   @IsString()
@@ -66,6 +72,42 @@ export class UpdateLocationDto {
   @Min(-180)
   @Max(180)
   longitude!: number;
+}
+
+/**
+ * Một điểm GPS trong lô gửi bù (`POST /drivers/:id/location/batch`).
+ *
+ * `recordedAt` là thời điểm **thiết bị** ghi nhận — giữ nguyên khi client gửi
+ * bù sau khi mất mạng, nhờ đó lịch sử GPS không bị dồn về thời điểm flush.
+ */
+export class LocationPointDto {
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude!: number;
+
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude!: number;
+
+  @IsOptional()
+  @IsISO8601()
+  recordedAt?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  accuracy?: number;
+}
+
+export class UpdateLocationBatchDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => LocationPointDto)
+  points!: LocationPointDto[];
 }
 
 export class AssignOrderDto {

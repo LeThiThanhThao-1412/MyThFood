@@ -117,6 +117,38 @@ export class DriverComplianceService {
     }
   }
 
+  /**
+   * OrderId tài xế đã chủ động từ chối (nguồn bền vững theo order).
+   * Dispatch-service dùng để không hiển thị / không gộp lại đơn đã từ chối.
+   */
+  async getDeclinedOrderIds(driverId: string): Promise<string[]> {
+    if (!driverId) return [];
+    try {
+      return await this.repository.findDeclinedOrderIds(driverId);
+    } catch (err: any) {
+      this.logger.warn(
+        `getDeclinedOrderIds failed for driver ${driverId}: ${err?.message}`,
+      );
+      return [];
+    }
+  }
+
+  /**
+   * DriverId đã chủ động từ chối một đơn (nguồn bền vững theo order).
+   * Matching engine dùng để không ghép lại đơn đã bị từ chối.
+   */
+  async getDeclinedDriverIds(orderId: string): Promise<string[]> {
+    if (!orderId) return [];
+    try {
+      return await this.repository.findDeclinedDriverIds(orderId);
+    } catch (err: any) {
+      this.logger.warn(
+        `getDeclinedDriverIds failed for order ${orderId}: ${err?.message}`,
+      );
+      return [];
+    }
+  }
+
   // ===================== Đánh giá & khiếu nại =====================
 
   /**

@@ -24,6 +24,7 @@ import {
 } from "./dtos/order.dto";
 import { buildInvoicePdf } from "./invoice-pdf";
 import { OrderChangeService } from "./order-change.service";
+import { OrderWarningService } from "./order-warning.service";
 import { OrderAdjustmentRepository } from "../infrastructure/order-adjustment.repository";
 import { splitFlashSaleLines } from "../domain/flash-sale-pricing";
 import {
@@ -53,6 +54,7 @@ export class OrderService {
     private readonly orderChangeService: OrderChangeService,
     private readonly orderAdjustmentRepository: OrderAdjustmentRepository,
     private readonly shippingService: ShippingService,
+    private readonly orderWarningService: OrderWarningService,
   ) {}
 
   // ===================== Order Placement =====================
@@ -988,6 +990,10 @@ export class OrderService {
           `Wallet refund failed for no-driver order ${id}: ${err.message}`,
         );
       }
+
+      // Đơn online đã hoàn tiền vào ví ⇒ chốt PaymentIntent để không treo HELD
+      // vĩnh viễn (GAP G3). Best-effort: lỗi chỉ log, không hủy đơn.
+      await this.closeStoreCreditPayment(id, Number(order.orderTotalAmount));
     }
 
     // Gửi thông báo in-app cho khách (best-effort).
@@ -1214,32 +1220,35 @@ export class OrderService {
     return order;
   }
 
-  private computeFine(severity: string, total: number): number {
-    const table: Record<
-      string,
-      { rate: number; floor: number; ceiling: number }
-    > = {
-      LOW: { rate: 0, floor: 0, ceiling: 0 },
-      MEDIUM: { rate: 0.15, floor: 20000, ceiling: 200000 },
-      HIGH: { rate: 0.25, floor: 40000, ceiling: 500000 },
-      CRITICAL: { rate: 0.4, floor: 80000, ceiling: 1500000 },
-    };
-    const cfg = table[severity] ?? { rate: 0, floor: 0, ceiling: 0 };
-    if (cfg.rate === 0) return 0;
-    return Math.min(
-      cfg.ceiling,
-      Math.max(cfg.floor, Math.round(cfg.rate * total)),
-    );
-  }
-
-  private async walletPost(path: string, body: unknown): Promise<void> {
+  /**
+   * Gọi wallet-service (service-to-service) và trả về payload đã bóc envelope.
+   */
+  private async walletRequest<T = any>(
+    path: string,
+    method: "get" | "post" | "patch" = "post",
+    body?: unknown,
+  ): Promise<T> {
     const walletUrl =
       process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
-    await firstValueFrom(
-      this.httpService.post(`${walletUrl}${path}`, body, {
-        headers: { "x-service-key": this.serviceKey },
-      }),
-    );
+    const headers = { "x-service-key": this.serviceKey };
+    const res =
+      method === "get"
+        ? await firstValueFrom(
+            this.httpService.get(`${walletUrl}${path}`, { headers }),
+          )
+        : method === "patch"
+          ? await firstValueFrom(
+              this.httpService.patch(`${walletUrl}${path}`, body ?? {}, {
+                headers,
+              }),
+            )
+          : await firstValueFrom(
+              this.httpService.post(`${walletUrl}${path}`, body ?? {}, {
+                headers,
+              }),
+            );
+    const data: any = res.data;
+    return (data?.data ?? data) as T;
   }
 
   private async freezeConsumer(consumerId: string): Promise<void> {
@@ -1271,26 +1280,23 @@ export class OrderService {
     }
   }
 
-  private async reservePay(
-    recipientId: string,
-    recipientType: string,
-    amount: number,
-    description: string,
-  ): Promise<void> {
-    const walletUrl =
-      process.env.WALLET_SERVICE_URL || "http://wallet-service:3009";
-    await firstValueFrom(
-      this.httpService.post(
-        `${walletUrl}/api/v1/wallets/reserve/disburse`,
-        { recipientId, recipientType, amount, description },
-        { headers: { "x-service-key": this.serviceKey } },
-      ),
-    );
-  }
-
   /**
    * Route tiền khi đơn giao thất bại đã có phán quyết cuối cùng.
    * Theo ma trận docs/TIEN_THEO_TRANG_THAI.md (COD vs online × bên lỗi).
+   *
+   * FIX P1 (chống thất thoát):
+   *  - Toàn bộ bút toán được đẩy sang wallet-service trong MỘT request
+   *    `/wallets/failure-settlement` ⇒ idempotent theo orderId (trước đây là 5-7
+   *    lệnh walletPost rời rạc, gọi lại từ 4 call-site ⇒ trả tiền nhiều lần).
+   *  - Wallet-service lấy escrow của chính đơn làm nguồn tiền. Lỗi nhà hàng:
+   *    CHỈ VOID dòng phí ship của tài xế — tiền món vẫn được quyết toán như thu
+   *    nhập bình thường (không netting), nợ ghi thành 2 dòng có nhãn
+   *    (hoàn tiền khách + bồi thường tài xế).
+   *  - KHÔNG phạt tiền khi giao thất bại: chỉ tạo cảnh báo (`order_warnings`)
+   *    hiển thị banner vàng trong chi tiết đơn cho nhà hàng.
+   *  - Bồi thường tài xế = phần net (đã trừ hoa hồng), không phải full phí ship.
+   *  - Đơn online: refund vào ví khách (store credit) + chốt payment HELD →
+   *    COMPLETED để không còn payment treo vĩnh viễn (GAP G3).
    */
   async settleFailureMoney(
     id: string,
@@ -1310,152 +1316,129 @@ export class OrderService {
     const customerId = order.orderConsumerId;
     const driverId = order.orderDriverId;
     const merchantId = order.orderMerchantId;
-    const fine = this.computeFine(severity, total);
     const short = id.slice(0, 8);
-    const safe = (fn: () => Promise<void>) =>
-      fn().catch((err) =>
-        this.logger.warn(`Settle failure money step failed: ${err?.message}`),
-      );
 
-    switch (faultParty) {
-      case "CUSTOMER": {
-        if (isOnline) {
-          // WALLET đã trừ / CREDIT_CARD HELD: giữ nguyên để settle trả các bên.
-        } else {
-          if (driverId && shippingFee > 0)
-            await safe(() =>
-              this.reservePay(
-                driverId,
-                "DRIVER",
-                shippingFee,
-                `Ứng trả phí ship do khách lỗi #${short}`,
-              ),
-            );
-          if (merchantId && foodTotal > 0)
-            await safe(() =>
-              this.reservePay(
-                merchantId,
-                "MERCHANT",
-                foodTotal,
-                `Ứng trả món do khách lỗi #${short}`,
-              ),
-            );
-          if (customerId && foodTotal + shippingFee > 0)
-            await safe(() =>
-              this.walletPost("/api/v1/wallets/penalty/debit", {
-                ownerId: customerId,
-                ownerType: "CONSUMER",
-                amount: foodTotal + shippingFee,
-                description: `Nợ giao thất bại do khách lỗi #${short}`,
-              }),
-            );
-          if (customerId) await safe(() => this.freezeConsumer(customerId));
-        }
-        if (fine > 0 && customerId)
-          await safe(() =>
-            this.walletPost("/api/v1/wallets/penalty/debit", {
-              ownerId: customerId,
-              ownerType: "CONSUMER",
-              amount: fine,
-              description: `Phạt lỗi khách #${short}`,
-            }),
-          );
-        break;
+    const settlement = await this.walletRequest<{
+      duplicated: boolean;
+      refundAmount: number;
+      driverCompensation: number;
+      merchantDebit: number;
+      merchantClawback: number;
+      driverDebit: number;
+      fine: number;
+      reserveDisbursed: number;
+      platformFunding: number;
+      escrowReleased: number;
+      escrowVoided: number;
+    }>("/api/v1/wallets/failure-settlement", "post", {
+      orderId: id,
+      faultParty,
+      severity,
+      isOnline,
+      consumerId: customerId,
+      merchantId,
+      driverId,
+      total,
+      foodTotal,
+      shippingFee,
+    });
+
+    this.logger.log(
+      `Settle failure #${short} (${faultParty}/${severity}${
+        settlement.duplicated ? ", duplicated" : ""
+      }): refund=${settlement.refundAmount}, driverComp=${settlement.driverCompensation}, ` +
+        `merchantDebit=${settlement.merchantDebit} (clawback ${settlement.merchantClawback}), ` +
+        `driverDebit=${settlement.driverDebit}, platformFunding=${settlement.platformFunding}`,
+    );
+
+    // Lỗi nhà hàng: KHÔNG phạt tiền — ghi banner vàng trong chi tiết đơn để
+    // nhà hàng biết và tự khắc phục (idempotent theo orderId + type).
+    if (faultParty === "MERCHANT") {
+      await this.orderWarningService.createMerchantFaultWarning({
+        orderId: id,
+        merchantId,
+        total,
+        foodTotal,
+        shippingFee,
+        refundAmount: settlement.refundAmount,
+        driverCompensation: settlement.driverCompensation,
+        severity,
+      });
+    }
+
+    // COD + lỗi khách: đóng băng tài khoản để thu hồi khoản nợ đã ghi.
+    if (faultParty === "CUSTOMER" && !isOnline && customerId) {
+      try {
+        await this.freezeConsumer(customerId);
+      } catch (err: any) {
+        this.logger.warn(
+          `Freeze consumer ${customerId} failed for order ${short}: ${err?.message}`,
+        );
       }
-      case "DRIVER": {
-        if (isOnline && customerId && total > 0)
-          await safe(() =>
-            this.walletPost("/api/v1/wallets/refund", {
-              ownerId: customerId,
-              ownerType: "CONSUMER",
-              amount: total,
-              orderId: id,
-            }),
-          );
-        if (merchantId && foodTotal > 0)
-          await safe(() =>
-            this.walletPost("/api/v1/wallets/penalty/credit", {
-              ownerId: merchantId,
-              ownerType: "MERCHANT",
-              amount: foodTotal,
-              description: `Tài xế bồi thường tiền món #${short}`,
-            }),
-          );
-        if (driverId) {
-          const driverCharge = foodTotal + shippingFee + fine;
-          if (driverCharge > 0)
-            await safe(() =>
-              this.walletPost("/api/v1/wallets/penalty/debit", {
-                ownerId: driverId,
-                ownerType: "DRIVER",
-                amount: driverCharge,
-                description: `Tài xế bồi thường + mất phí ship + phạt #${short}`,
-              }),
-            );
-        }
-        break;
+    }
+
+    // Đơn online ⇒ phải chốt PaymentIntent để không treo HELD vĩnh viễn:
+    //  - có hoàn tiền (lỗi tài xế/nhà hàng) → tiền đã thu để bù store credit
+    //  - lỗi khách → capture để trả nhà hàng + tài xế
+    if (
+      isOnline &&
+      (settlement.refundAmount > 0 || faultParty === "CUSTOMER")
+    ) {
+      await this.closeStoreCreditPayment(id, settlement.refundAmount);
+    }
+  }
+
+  /**
+   * Chốt payment của đơn đã được hoàn bằng store credit.
+   * PaymentIntent tạo với capture_method=automatic nên tiền đã thu; bước này chỉ
+   * đóng vòng đời payment để không treo HELD (GAP G3). Lỗi ở đây không được làm
+   * hỏng luồng phán quyết — chỉ log để cron đối soát xử lý.
+   */
+  private async closeStoreCreditPayment(
+    orderId: string,
+    refundAmount: number,
+  ): Promise<void> {
+    const paymentUrl =
+      process.env.PAYMENT_SERVICE_URL || "http://payment-service:3006";
+    const headers = { "x-service-key": this.serviceKey };
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(`${paymentUrl}/api/v1/payments/order/${orderId}`, {
+          headers,
+        }),
+      );
+      const raw: any = res.data;
+      const payment = raw?.data ?? raw;
+      const paymentId = payment?.id;
+      if (!paymentId) {
+        this.logger.warn(`Không tìm thấy payment cho đơn ${orderId}`);
+        return;
       }
-      case "MERCHANT": {
-        if (isOnline && customerId && total > 0)
-          await safe(() =>
-            this.walletPost("/api/v1/wallets/refund", {
-              ownerId: customerId,
-              ownerType: "CONSUMER",
-              amount: total,
-              orderId: id,
-            }),
-          );
-        if (driverId && shippingFee > 0)
-          await safe(() =>
-            this.walletPost("/api/v1/wallets/compensate-driver", {
-              driverId,
-              orderId: id,
-              shippingFee,
-            }),
-          );
-        if (merchantId && fine > 0)
-          await safe(() =>
-            this.walletPost("/api/v1/wallets/penalty/debit", {
-              ownerId: merchantId,
-              ownerType: "MERCHANT",
-              amount: fine,
-              description: `Phạt lỗi nhà hàng #${short}`,
-            }),
-          );
-        break;
+      // Chỉ chốt khi còn HELD (idempotent, tránh 400 khi payment đã COMPLETED).
+      if (payment?.status !== "HELD") {
+        this.logger.log(
+          `Payment ${paymentId} đang ${payment?.status} — không cần chốt`,
+        );
+        return;
       }
-      case "SYSTEM": {
-        if (isOnline && customerId && total > 0)
-          await safe(() =>
-            this.walletPost("/api/v1/wallets/refund", {
-              ownerId: customerId,
-              ownerType: "CONSUMER",
-              amount: total,
-              orderId: id,
-            }),
-          );
-        if (merchantId && foodTotal > 0)
-          await safe(() =>
-            this.reservePay(
-              merchantId,
-              "MERCHANT",
-              foodTotal,
-              `Platform bồi thường món #${short}`,
-            ),
-          );
-        if (driverId && shippingFee > 0)
-          await safe(() =>
-            this.reservePay(
-              driverId,
-              "DRIVER",
-              shippingFee,
-              `Platform bồi thường phí ship #${short}`,
-            ),
-          );
-        break;
-      }
-      default:
-        break;
+      await firstValueFrom(
+        this.httpService.patch(
+          `${paymentUrl}/api/v1/payments/${paymentId}/close-store-credit`,
+          {
+            reason: refundAmount
+              ? `Hoàn store credit ${refundAmount}đ do giao thất bại #${orderId.slice(0, 8)}`
+              : `Capture theo phán quyết lỗi khách #${orderId.slice(0, 8)}`,
+          },
+          { headers },
+        ),
+      );
+      this.logger.log(
+        `Đã chốt payment ${paymentId} (store credit) cho đơn ${orderId.slice(0, 8)}`,
+      );
+    } catch (err: any) {
+      this.logger.warn(
+        `Chốt payment store-credit thất bại cho đơn ${orderId}: ${err?.message}`,
+      );
     }
   }
 

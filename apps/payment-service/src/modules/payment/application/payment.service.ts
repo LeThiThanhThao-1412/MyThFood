@@ -231,6 +231,35 @@ export class PaymentService {
     return this.toResponseDto(payment);
   }
 
+  /**
+   * Chốt payment khi đơn đã được xử lý bằng store credit (hoàn vào ví khách).
+   *
+   * Idempotent: payment không ở trạng thái HELD thì trả nguyên trạng — nhờ vậy
+   * order-service gọi lại nhiều lần (4 call-site fire-and-forget) vẫn an toàn.
+   * Đây là mắt còn thiếu của GAP G3: trước đây payment CREDIT_CARD treo HELD
+   * vĩnh viễn dù khách đã được hoàn tiền vào ví.
+   */
+  async closeAsStoreCredit(
+    paymentId: string,
+    reason: string,
+  ): Promise<PaymentResponseDto> {
+    const payment = await this.findByIdOrFail(paymentId);
+    if (!payment.isHeld()) {
+      this.logger.log(
+        `Payment ${paymentId} status=${payment.paymentStatus} — bỏ qua close store credit (${reason})`,
+      );
+      return this.toResponseDto(payment);
+    }
+
+    payment.closeAsStoreCredit(
+      payment.paymentStripePaymentIntentId ||
+        `store-credit-${payment.paymentOrderId}`,
+    );
+    await this.paymentRepository.save(payment);
+    this.logger.log(`Payment ${paymentId} closed as store credit: ${reason}`);
+    return this.toResponseDto(payment);
+  }
+
   // ===================== Wallet Operations (delegated to wallet-service) =====================
 
   async getWallet(ownerId: string): Promise<WalletResponseDto | null> {

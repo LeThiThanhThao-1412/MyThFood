@@ -26,6 +26,7 @@ import {
   DriverCancelDto,
   DeliveryFailedDto,
   RecordDriverDeclineDto,
+  DriverAcceptDto,
 } from "../application/dtos/dispatch.dto";
 
 @Controller("dispatches")
@@ -129,7 +130,13 @@ export class DispatchController {
   ) {
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
-    const radius = radiusKm ? parseFloat(radiusKm) : 5;
+    // Không truyền radiusKm → dùng bán kính nhận đơn cấu hình
+    // (DISPATCH_MAX_RADIUS_KM, mặc định 5km) giống luật nhận đơn.
+    const parsedRadius = radiusKm != null ? parseFloat(radiusKm) : NaN;
+    const radius =
+      Number.isFinite(parsedRadius) && parsedRadius > 0
+        ? parsedRadius
+        : undefined;
 
     if (isNaN(lat) || isNaN(lng)) {
       return {
@@ -138,7 +145,7 @@ export class DispatchController {
       };
     }
 
-    const dispatches = await this.dispatchService.getNearbyDispatches(
+    const nearby = await this.dispatchService.getNearbyDispatches(
       lat,
       lng,
       radius,
@@ -147,8 +154,11 @@ export class DispatchController {
       statusCode: HttpStatus.OK,
       data: {
         driverLocation: { latitude: lat, longitude: lng },
-        nearbyDispatches: dispatches.map((d) => this._toResponse(d)),
-        total: dispatches.length,
+        nearbyDispatches: nearby.map(({ dispatch, distanceKm }) => ({
+          ...this._toResponse(dispatch),
+          distanceFromDriverKm: Number(distanceKm.toFixed(2)),
+        })),
+        total: nearby.length,
       },
     };
   }
@@ -283,8 +293,8 @@ export class DispatchController {
 
   @Patch(":id/driver-accept")
   @Roles("DRIVER", "ADMIN")
-  async driverAccept(@Param("id") id: string) {
-    const dispatch = await this.dispatchService.driverAccept(id);
+  async driverAccept(@Param("id") id: string, @Body() dto: DriverAcceptDto) {
+    const dispatch = await this.dispatchService.driverAccept(id, dto);
     return {
       statusCode: HttpStatus.OK,
       data: this._toResponse(dispatch),

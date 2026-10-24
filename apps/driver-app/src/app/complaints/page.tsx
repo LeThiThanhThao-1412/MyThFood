@@ -108,6 +108,14 @@ const FAULT_PARTY_LABEL: Record<string, string> = {
   INCONCLUSIVE: "Không xác định",
 };
 
+/**
+ * Trạng thái còn cho phép bổ sung bằng chứng / phản hồi.
+ *
+ * Tách thành hằng số để nút "Phản hồi" và khối "Bổ sung ảnh minh chứng" không
+ * lệch nhau (trước đây merchant-app chỉ mở nút phản hồi khi case còn `OPEN`).
+ */
+const ACTIVE_STATUSES = ["OPEN", "UNDER_REVIEW", "WAITING_EVIDENCE"];
+
 function timeAgo(s?: string): string {
   if (!s) return "-";
   const d = Math.floor((Date.now() - new Date(s).getTime()) / 60000);
@@ -148,6 +156,9 @@ export default function ComplaintsPage() {
   const [respondText, setRespondText] = useState("");
   const [respondEvidence, setRespondEvidence] = useState<string[]>([]);
   const [respondBusy, setRespondBusy] = useState(false);
+  /** Ảnh minh chứng gửi bổ sung — không cần kèm văn bản phản hồi. */
+  const [extraEvidence, setExtraEvidence] = useState<string[]>([]);
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -251,6 +262,8 @@ export default function ComplaintsPage() {
   async function openCaseDetail(c: any) {
     setSelectedCase(c);
     setCasePenalties([]);
+    // Ảnh đang chờ gửi của vụ việc trước không được mang sang vụ việc khác.
+    setExtraEvidence([]);
     try {
       const ids: string[] = c.penaltyIds || [];
       if (ids.length) {
@@ -419,6 +432,52 @@ export default function ComplaintsPage() {
       setMsg(`❌ ${err?.message || "Không thể gửi phản hồi"}`);
     } finally {
       setRespondBusy(false);
+    }
+  }
+
+  async function uploadExtraEvidence(e: any) {
+    const files = Array.from(e.target.files || []) as File[];
+    if (!files.length) return;
+    try {
+      for (const file of files) {
+        const res: any = await uploadApi.uploadImage(file, "complaints");
+        const url = res?.data?.url || res?.url;
+        if (url) setExtraEvidence((prev) => [...prev, url]);
+      }
+    } catch {
+      setMsg("❌ Tải ảnh thất bại");
+    } finally {
+      e.target.value = "";
+    }
+  }
+
+  /**
+   * Bổ sung ảnh minh chứng mà không phải viết lại phản hồi.
+   *
+   * Backend nhận ra người gọi là bên bị khiếu nại nên ghi ảnh vào
+   * `respondentEvidence` (đúng trường AI đọc cho "Bên bị khiếu nại").
+   */
+  async function submitExtraEvidence(id: string) {
+    if (!extraEvidence.length) {
+      setMsg("❌ Vui lòng chọn ít nhất 1 ảnh minh chứng");
+      return;
+    }
+    setEvidenceBusy(true);
+    setMsg("");
+    try {
+      await resolutionApi.addEvidence(id, {
+        urls: extraEvidence,
+        actorId: profileId || undefined,
+      });
+      setMsg("✅ Đã gửi ảnh minh chứng — AI sẽ phân tích lại vụ việc");
+      setExtraEvidence([]);
+      const fresh: any = await resolutionApi.getCase(id);
+      setSelectedCase(fresh?.data ?? fresh);
+      await load();
+    } catch (err: any) {
+      setMsg(`❌ ${err?.message || "Không gửi được ảnh minh chứng"}`);
+    } finally {
+      setEvidenceBusy(false);
     }
   }
 
@@ -752,18 +811,51 @@ export default function ComplaintsPage() {
             </div>
             <p className="text-sm text-gray-700">{selectedCase.description}</p>
             {selectedCase.evidence?.length > 0 && (
-              <div className="flex gap-2 flex-wrap">
-                {selectedCase.evidence.map((url: string, i: number) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={i}
-                    src={url}
-                    alt="Bằng chứng"
-                    className="h-20 w-20 object-cover rounded-lg border border-gray-200"
-                  />
-                ))}
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-gray-500">
+                  Ảnh bằng chứng của bên khiếu nại
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {selectedCase.evidence.map((url: string, i: number) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={i}
+                      src={url}
+                      alt="Bằng chứng"
+                      className="h-20 w-20 object-cover rounded-lg border border-gray-200"
+                    />
+                  ))}
+                </div>
               </div>
             )}
+            {selectedCase.respondentEvidence?.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-gray-500">
+                  Ảnh minh chứng của bên bị khiếu nại
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  {selectedCase.respondentEvidence.map(
+                    (url: string, i: number) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={i}
+                        src={url}
+                        alt="Ảnh minh chứng"
+                        className="h-20 w-20 object-cover rounded-lg border border-gray-200"
+                      />
+                    ),
+                  )}
+                </div>
+              </div>
+            )}
+            {!selectedCase.respondentResponse &&
+              selectedCase.respondentType === "DRIVER" &&
+              ACTIVE_STATUSES.includes(selectedCase.status) && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1">
+                  Bạn chưa phản hồi vụ việc này — hãy gửi giải trình và ảnh minh
+                  chứng để AI có căn cứ đối chiếu.
+                </p>
+              )}
             {selectedCase.respondentResponse && (
               <div className="bg-gray-50 rounded-xl p-3 text-sm">
                 <p className="font-semibold text-gray-700">Phản hồi:</p>
@@ -919,6 +1011,68 @@ export default function ComplaintsPage() {
                       </button>
                     </div>
                   )}
+                </div>
+              )}
+
+            {/*
+              Bổ sung ảnh minh chứng KHÔNG cần viết lại phản hồi (backend ghi vào
+              `respondentEvidence` khi người gọi là bên bị khiếu nại). Chỉ mở ở
+              trạng thái còn xử lý — case đã chốt thì API trả 400.
+            */}
+            {ACTIVE_STATUSES.includes(selectedCase.status) &&
+              (selectedCase.respondentType === "DRIVER" ||
+                (!!selectedCase.reporterId &&
+                  [profileId, user?.id]
+                    .filter(Boolean)
+                    .includes(selectedCase.reporterId))) && (
+                <div className="space-y-2 border-t border-gray-100 pt-3">
+                  <p className="text-sm font-semibold text-gray-700">
+                    📷 Bổ sung ảnh minh chứng
+                  </p>
+                  <p className="text-[11px] text-gray-400">
+                    {selectedCase.respondentType === "DRIVER"
+                      ? "Ảnh chụp lúc lấy hàng/giao hàng, biên nhận hoặc ảnh camera — AI dùng để đối chiếu với ảnh khách gửi."
+                      : "Ảnh bổ sung cho khiếu nại của bạn — AI sẽ phân tích lại ngay sau khi nhận."}
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={uploadExtraEvidence}
+                    className="text-xs text-gray-500 file:mr-2 file:rounded-lg file:border-0 file:bg-gray-100 file:px-3 file:py-1.5"
+                  />
+                  {extraEvidence.length > 0 && (
+                    <div className="flex gap-2 flex-wrap">
+                      {extraEvidence.map((url, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          title="Bấm để xoá ảnh này"
+                          onClick={() =>
+                            setExtraEvidence((prev) =>
+                              prev.filter((_, idx) => idx !== i),
+                            )
+                          }
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={url}
+                            alt="Ảnh minh chứng"
+                            className="h-16 w-16 object-cover rounded-lg border border-gray-200"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => submitExtraEvidence(selectedCase.id)}
+                    disabled={evidenceBusy || extraEvidence.length === 0}
+                    className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-gray-800 text-white hover:bg-gray-900 disabled:opacity-50"
+                  >
+                    {evidenceBusy
+                      ? "Đang gửi..."
+                      : `Gửi ${extraEvidence.length} ảnh minh chứng`}
+                  </button>
                 </div>
               )}
           </div>

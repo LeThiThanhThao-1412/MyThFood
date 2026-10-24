@@ -26,6 +26,9 @@ import { MerchantComplianceService } from "./application/merchant-compliance.ser
 import { MerchantComplianceRepository } from "./infrastructure/merchant-compliance.repository";
 import { MerchantComplianceStateEntity } from "./infrastructure/merchant-compliance-state.entity";
 import { MerchantCompliancePenaltyEntity } from "./infrastructure/merchant-compliance-penalty.entity";
+import { OrderWarningEntity } from "./infrastructure/order-warning.entity";
+import { OrderWarningRepository } from "./infrastructure/order-warning.repository";
+import { OrderWarningService } from "./application/order-warning.service";
 import { AuthModule } from "../auth/auth.module";
 import { CacheModule } from "../cache/cache.module";
 import { ShippingModule } from "../shipping/shipping.module";
@@ -41,6 +44,7 @@ import { IdempotencyInterceptor } from "../cache/idempotency.interceptor";
       OrderAdjustmentEntity,
       MerchantComplianceStateEntity,
       MerchantCompliancePenaltyEntity,
+      OrderWarningEntity,
     ]),
     CqrsModule,
     AuthModule,
@@ -66,8 +70,15 @@ import { IdempotencyInterceptor } from "../cache/idempotency.interceptor";
     OrderAdjustmentRepository,
     MerchantComplianceService,
     MerchantComplianceRepository,
+    OrderWarningService,
+    OrderWarningRepository,
     IdempotencyInterceptor,
   ],
-  exports: [OrderService, OrderChangeService, OrderGateway],
+  exports: [
+    OrderService,
+    OrderChangeService,
+    OrderGateway,
+    OrderWarningService,
+  ],
 })
 export class OrderModule {}

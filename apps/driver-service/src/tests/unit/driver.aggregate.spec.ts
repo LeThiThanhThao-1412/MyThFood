@@ -146,6 +146,25 @@ describe("Driver Aggregate", () => {
         "Cannot update location when offline",
       );
     });
+
+    it("should reject invalid GPS coordinates", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.activate();
+      driver.goOnline();
+
+      expect(() => driver.updateLocation(Number.NaN, 106.7)).toThrow(
+        "Invalid GPS coordinates",
+      );
+      expect(() => driver.updateLocation(91, 106.7)).toThrow(
+        "Invalid GPS coordinates",
+      );
+      expect(() => driver.updateLocation(10.775, -181)).toThrow(
+        "Invalid GPS coordinates",
+      );
+      // Toạ độ rác không được ghi đè vị trí hợp lệ trước đó.
+      expect(driver.driverCurrentLatitude).not.toBe(91);
+    });
   });
 
   describe("driverLastHeartbeatAt (auto-offline heartbeat)", () => {

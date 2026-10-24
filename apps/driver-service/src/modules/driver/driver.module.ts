@@ -8,11 +8,13 @@ import { DriverMapper } from "./infrastructure/driver.mapper";
 import { DriverEntity } from "./infrastructure/driver.entity";
 import { DriverLocationHistoryEntity } from "./infrastructure/driver-location-history.entity";
 import { DriverLocationHistoryRepository } from "./infrastructure/driver-location-history.repository";
+import { GeoModule } from "../geo/geo.module";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([DriverEntity, DriverLocationHistoryEntity]),
     HttpModule,
+    GeoModule,
   ],
   controllers: [DriverController],
   providers: [

@@ -46,6 +46,17 @@ export type { DeliveryOptionMeta } from "./constants/delivery-options";
 
 // Utils
 export { haversineKm, formatDistance } from "./utils/distance";
+export {
+  DRIVER_SAMPLING_PROFILES,
+  distanceMeters,
+  isValidFix,
+  shouldSendFix,
+} from "./utils/location-sampling";
+export type {
+  GeoFix,
+  GeoFixState,
+  SamplingProfile,
+} from "./utils/location-sampling";
 export { fetchRoute, fetchRouteThrough } from "./utils/route";
 export type { RouteInfo, RoutePoint } from "./utils/route";
 export { searchAddress, reverseGeocodeAddress } from "./utils/geocoding";

@@ -461,6 +461,34 @@ export interface Order {
   updatedAt: string;
 }
 
+/**
+ * Cảnh báo gắn với đơn hàng (thay cho tiền phạt khi giao thất bại).
+ * Nhà hàng đọc banner vàng rồi bấm "Đã hiểu" ⇒ `dismissedAt` được lưu.
+ */
+export interface OrderWarning {
+  id: string;
+  orderId: string;
+  merchantId: string | null;
+  /** MERCHANT_FAULT_DELIVERY_FAILED | ... */
+  type: string;
+  /** WARNING | CRITICAL */
+  severity: string;
+  title: string;
+  message: string;
+  detail: {
+    total?: number;
+    foodTotal?: number;
+    shippingFee?: number;
+    refundAmount?: number;
+    driverCompensation?: number;
+    fine?: number;
+    severity?: string | null;
+  } | null;
+  dismissedAt: string | null;
+  dismissedBy: string | null;
+  createdAt: string;
+}
+
 export interface PlaceOrderRequest {
   consumerId: string;
   userId?: string;
@@ -764,6 +792,35 @@ export interface UpdateLocationRequest {
   longitude: number;
 }
 
+/**
+ * Một điểm trong lô GPS gửi lên `POST /drivers/:id/location/batch`.
+ *
+ * Client gom các điểm đã lấy mẫu (adaptive `watchPosition`) rồi gửi theo lô để
+ * giảm số request. `recordedAt` giữ nguyên thời điểm thiết bị ghi nhận, nhờ đó
+ * lịch sử GPS không bị "dồn cục" khi client gửi bù sau khi mất mạng.
+ */
+export interface DriverLocationBatchPoint {
+  latitude: number;
+  longitude: number;
+  /** ISO-8601 (mặc định: thời điểm server nhận). */
+  recordedAt?: string;
+  /** Bán kính sai số do thiết bị báo (mét) — chỉ để chẩn đoán. */
+  accuracy?: number;
+}
+
+/**
+ * Payload realtime phát trên namespace `/tracking` (event `tracking:update`).
+ * Client (app khách / điều phối) subscribe room `order:<orderId>` để nhận.
+ */
+export interface TrackingUpdate {
+  driverId: string;
+  orderId: string | null;
+  latitude: number;
+  longitude: number;
+  recordedAt: string;
+  source: "HTTP" | "WS";
+}
+
 // --- Dispatch ---
 /** Trạng thái dispatch (khớp `DispatchStatus` enum của dispatch-service). */
 export type DispatchStatus =
@@ -793,6 +850,11 @@ export interface Dispatch {
   /** Toạ độ nhà hàng — dùng để vẽ tuyến “tài xế → quán”. */
   merchantLatitude?: number;
   merchantLongitude?: number;
+  /**
+   * Khoảng cách từ GPS tài xế tới quán (km) — chỉ có trong phản hồi
+   * `GET /dispatches/nearby`.
+   */
+  distanceFromDriverKm?: number;
   deliveryAddress: string;
   deliveryLatitude?: number;
   deliveryLongitude?: number;
@@ -1402,6 +1464,38 @@ export interface AiSideImageAnalysis {
   analysis: string;
 }
 
+/**
+ * Vì sao lượt phân tích vừa rồi không đọc được ảnh (hoặc đọc bình thường).
+ *
+ * - `OK` — model đã đọc ảnh.
+ * - `NO_IMAGES` — vụ việc không có ảnh nào.
+ * - `DOWNLOAD_FAILED` — có ảnh nhưng tải hỏng (404 / DNS / quá dung lượng).
+ * - `VISION_OVERLOADED` — model đọc ảnh quá tải (429/1302/1305): đợi 30–60 giây
+ *   rồi bấm "Phân tích lại".
+ * - `VISION_DISABLED` — chưa bật model ảnh (`GLM_VISION_MODEL=none`).
+ * - `VISION_ERROR` — model ảnh lỗi khác (404/1210/JSON hỏng).
+ */
+export type AiImageReadStatus =
+  | "OK"
+  | "NO_IMAGES"
+  | "DOWNLOAD_FAILED"
+  | "VISION_OVERLOADED"
+  | "VISION_DISABLED"
+  | "VISION_ERROR";
+
+/** Chẩn đoán lượt đọc ảnh của AI (banner trong panel trợ lý). */
+export interface AiImageReadDiagnostics {
+  status: AiImageReadStatus;
+  attached: number;
+  analyzed: number;
+  /** Model đã thử ở lượt ảnh, theo thứ tự gọi. */
+  modelsTried: string[];
+  /** Lý do kỹ thuật ngắn (`429/1305`, `404`, `mạng`…) — null khi OK. */
+  detail: string | null;
+  /** Việc admin nên làm — null khi không cần làm gì. */
+  hint: string | null;
+}
+
 /** Một phát hiện chi tiết của AI (tầng phân tích sâu). */
 export interface AiDetailedFinding {
   signal: string;
@@ -1442,6 +1536,8 @@ export interface CaseAiSuggestion {
   summary: string;
   /** Tổng số ảnh bằng chứng đã gửi cho model (0 = không có ảnh). */
   imagesAnalyzed: number;
+  /** Chẩn đoán lượt đọc ảnh: model đã thử, vì sao mất ảnh, admin nên làm gì. */
+  imageDiagnostics?: AiImageReadDiagnostics;
   /** Số ảnh chuẩn món từ thực đơn đã gửi cho model. */
   menuImagesAnalyzed?: number;
   /** Phân tích ảnh của bên khiếu nại. */
@@ -1545,6 +1641,21 @@ export interface CaseAiContext {
   criticalMissingSourceIds: string[];
   imagesAttached: number;
   imagesSkipped: string[];
+  /**
+   * Nguyên nhân từng ảnh không gửi được cho AI (song song với `imagesSkipped`).
+   *
+   * Giúp admin trả lời "khách bảo đã gửi ảnh mà AI bảo không có ảnh?": ảnh 404,
+   * quá dung lượng, content-type không phải ảnh, redirect S3 lỗi…
+   */
+  imageSkipReasons?: AiImageSkipReason[];
+  /** URL ảnh hai bên đã tải thành công (đúng thứ tự gửi model vision). */
+  reporterImageUrls?: string[];
+  respondentImageUrls?: string[];
+  /**
+   * Ảnh **có sẵn** theo từng nhóm (đếm URL, không tải) — dùng cho màn xem
+   * trước ngữ cảnh, nơi `imagePlan` luôn bằng 0 vì không tải ảnh.
+   */
+  imagesAvailable?: Record<string, number>;
   /** Ảnh món ăn tài xế chụp lúc giao cho khách (bằng chứng hệ thống của đơn). */
   deliveryProofPhotoUrl?: string | null;
   /** Ảnh giao hàng của tài xế có được gửi cho AI phân tích hay không. */
@@ -1578,6 +1689,8 @@ export interface CaseAiContext {
   };
   /** Kế hoạch ảnh đã gửi theo loại. */
   imagePlan?: Record<string, number>;
+  /** Thứ tự ảnh thực tế đã gửi (theo danh mục). */
+  imageOrder?: string[];
   menuImagesAttached?: number;
   reviewImagesAttached?: number;
 }
@@ -1609,6 +1722,29 @@ export interface AssistantHealth {
 
 export type AiAnalysisSource = "AUTO" | "MANUAL";
 export type AiReviewDecision = "ACCEPTED" | "REJECTED";
+
+/** Một ảnh bằng chứng không gửi được cho AI, kèm lý do. */
+export interface AiImageSkipReason {
+  /** URL gốc lưu trong vụ việc. */
+  url: string;
+  /** Nguyên nhân: `404 File not found`, `6.2MB > 5.0MB`, `application/json (không phải ảnh)`… */
+  reason: string;
+}
+
+/**
+ * Trạng thái lần AI tự phân tích gần nhất của vụ việc.
+ *
+ * Chỉ là thông tin chẩn đoán (giữ trong RAM của resolution-service): khi tự phân
+ * tích lỗi, panel hiển thị lý do và gợi ý bấm "Phân tích lại" thay vì chỉ nói
+ * "Chưa có bản phân tích nào".
+ */
+export interface CaseAiAutoStatus {
+  caseId: string;
+  autoAnalyze: boolean;
+  status: "PENDING" | "RUNNING" | "DONE" | "FAILED" | "SKIPPED";
+  attemptedAt: string | null;
+  detail: string | null;
+}
 
 /** Kết quả sau khi admin duyệt gợi ý (áp dụng phán quyết/hình phạt/thông báo). */
 export interface AiDecisionOutcome {

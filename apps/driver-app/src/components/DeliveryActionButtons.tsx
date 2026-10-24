@@ -94,7 +94,7 @@ export default function DeliveryActionButtons({
                 : "bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100"
           }`}
         >
-          {simulating ? "⏹ Dừng mô phỏng GPS" : "▶ Mô phỏng GPS (mỗi 5s)"}
+          {simulating ? "⏹ Dừng mô phỏng GPS" : "▶ Mô phỏng GPS"}
         </button>
       )}
 

@@ -244,7 +244,13 @@ export class Case extends AggregateRoot<CaseId> {
       throw new BusinessRuleViolationError("Response text is required");
     }
     this.respondentResponse = text;
-    this.respondentEvidence = evidence ?? [];
+    // Ảnh đã gửi trước đó (qua `addRespondentEvidence`) phải được giữ lại:
+    // phản hồi bằng lời không được xoá ảnh minh chứng đã nộp.
+    const merged = [...this.respondentEvidence];
+    for (const url of evidence ?? []) {
+      if (!merged.includes(url)) merged.push(url);
+    }
+    this.respondentEvidence = merged;
     this.respondentRespondedAt = new Date();
     this.status = CaseStatus.UNDER_REVIEW;
     this.markUpdated();
@@ -303,6 +309,23 @@ export class Case extends AggregateRoot<CaseId> {
   public addEvidence(urls: string[]): void {
     this.assertActive("add evidence");
     this.evidence = [...this.evidence, ...urls];
+    this.markUpdated();
+  }
+
+  /**
+   * Bên bị khiếu nại bổ sung ảnh minh chứng (không kèm văn bản phản hồi).
+   *
+   * Ghi vào `respondentEvidence` — trường riêng của bên bị khiếu nại, để AI vẫn
+   * tách được "bên khiếu nại" (`evidence`) và "bên bị khiếu nại"
+   * (`respondentEvidence`). Không đụng `respondentResponse` nên nhà hàng/tài xế
+   * có thể gửi thêm ảnh sau khi đã phản hồi mà không phải viết lại giải trình.
+   */
+  public addRespondentEvidence(urls: string[]): void {
+    this.assertActive("add respondent evidence");
+    if (!urls?.length) {
+      throw new BusinessRuleViolationError("Evidence urls are required");
+    }
+    this.respondentEvidence = [...this.respondentEvidence, ...urls];
     this.markUpdated();
   }
 

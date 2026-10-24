@@ -36,6 +36,7 @@ import { RoadDistanceService } from "./road-distance.service";
 import {
   CreateDispatchDto,
   AssignDriverDto,
+  DriverAcceptDto,
   DriverDeclineDto,
   CancelDispatchDto,
   UpdateDispatchNotesDto,
@@ -50,6 +51,9 @@ const ORDER_SERVICE_URL =
 const DRIVER_SERVICE_URL =
   process.env.DRIVER_SERVICE_URL || "http://driver-service:3007";
 const MIN_COD_BALANCE = 2_000_000;
+
+/** Bán kính mặc định (km) từ GPS tài xế tới quán để được nhận đơn. */
+const DEFAULT_ACCEPT_RADIUS_KM = 5;
 
 @Injectable()
 export class DispatchService implements OnModuleInit, OnModuleDestroy {
@@ -273,6 +277,10 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     const driver = await this.fetchDriver(driverId);
     if (!driver) return [];
 
+    const maxRadiusKm = this.acceptRadiusKm();
+    // Đơn tài xế đã chủ động từ chối (bền vững theo order, kể cả khi dispatch
+    // bị xoá/tạo lại) → không bao giờ hiện lại để bấm nhận/gộp.
+    const declinedOrderIds = await this.declinedOrderIdsFor(driverId);
     const activeDispatches =
       await this.dispatchRepo.findActiveByDriverId(driverId);
     const matchingDispatches = await this.dispatchRepo.findMatchingDispatches();
@@ -294,6 +302,12 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
         continue;
       }
 
+      // Đơn tài xế đã từ chối trước đó (kể cả dispatch đã được tạo lại với
+      // matchedDriverIds rỗng) → không hiện lại.
+      if (declinedOrderIds.has(dispatch.dispatchOrderId)) {
+        continue;
+      }
+
       // Đơn từng được offer cho tài xế này rồi quay lại MATCHING (từ chối /
       // không phản hồi) → không hiện lại trong phiên.
       if (
@@ -302,6 +316,12 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       ) {
         continue;
       }
+
+      // Điều kiện khoảng cách: chỉ hiển thị đơn nằm trong bán kính nhận đơn
+      // tính từ GPS hiện tại của tài xế tới quán (thiếu GPS → bỏ qua, để
+      // tài xế vừa bật ONLINE vẫn thấy đơn trong lúc chờ tick GPS đầu tiên).
+      const distanceKm = this.pickupDistanceKm(driver, dispatch);
+      if (distanceKm != null && distanceKm > maxRadiusKm) continue;
 
       const eligible = await this.checkDriverAvailability(
         driverId,
@@ -312,7 +332,21 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       if (eligible) available.push(dispatch);
     }
 
-    return available;
+    // Đơn đang chờ chính tài xế phản hồi luôn đứng đầu (tránh hết thời gian
+    // phản hồi), sau đó tới đơn gần quán nhất (“Đơn gần bạn”).
+    return available.sort((a, b) => {
+      const assignedA =
+        a.dispatchStatus === DispatchStatus.DRIVER_ASSIGNED ? 0 : 1;
+      const assignedB =
+        b.dispatchStatus === DispatchStatus.DRIVER_ASSIGNED ? 0 : 1;
+      if (assignedA !== assignedB) return assignedA - assignedB;
+
+      const distanceA =
+        this.pickupDistanceKm(driver, a) ?? Number.POSITIVE_INFINITY;
+      const distanceB =
+        this.pickupDistanceKm(driver, b) ?? Number.POSITIVE_INFINITY;
+      return distanceA - distanceB;
+    });
   }
 
   async updateNotes(
@@ -351,6 +385,19 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       dispatch.dispatchDriverId === dto.driverId
     ) {
       return dispatch;
+    }
+
+    // Tài xế đã chủ động từ chối đơn này trước đó → không được nhận lại.
+    // Kiểm tra theo order (không chỉ theo dispatch) vì driver-app có thể xoá
+    // dispatch cũ (EXPIRED/CANCELLED) và tạo dispatch mới với matchedDriverIds
+    // rỗng → nếu chỉ dựa vào aggregate thì đơn đã từ chối sẽ "sống lại".
+    if (dispatch.dispatchStatus === DispatchStatus.MATCHING) {
+      const declinedOrderIds = await this.declinedOrderIdsFor(dto.driverId);
+      if (declinedOrderIds.has(dispatch.dispatchOrderId)) {
+        throw new BusinessRuleViolationError(
+          "Bạn đã từ chối đơn này nên không thể nhận lại",
+        );
+      }
     }
 
     // Kiểm tra điều kiện nhận đơn TRƯỚC khi gán. Trước đây dispatch bị gán
@@ -488,7 +535,7 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async driverAccept(id: string): Promise<Dispatch> {
+  async driverAccept(id: string, dto?: DriverAcceptDto): Promise<Dispatch> {
     const dispatch = await this.dispatchRepo.findByIdOrFail(
       DispatchId.from(id),
     );
@@ -499,8 +546,29 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    // GPS gửi kèm lúc bấm “Nhận đơn” → cập nhật ngay để kiểm tra bán kính
+    // bằng toạ độ mới nhất (không phụ thuộc nhịp heartbeat 5 giây).
+    if (dto?.latitude != null && dto?.longitude != null) {
+      await this.updateDriverLocation(driverId, dto.latitude, dto.longitude);
+    }
+
+    // Điều kiện khoảng cách: tài xế phải ở trong bán kính nhận đơn tính từ
+    // GPS hiện tại tới điểm lấy hàng (quán).
+    const driver = await this.fetchDriver(driverId);
+    const distanceKm = this.pickupDistanceKm(driver, dispatch);
+    const maxRadiusKm = this.acceptRadiusKm();
+    if (distanceKm != null && distanceKm > maxRadiusKm) {
+      throw new BusinessRuleViolationError(
+        `Tài xế đang cách quán ${distanceKm.toFixed(1)} km — vượt bán kính nhận đơn ${maxRadiusKm} km`,
+      );
+    }
+
     // Case 5: tài xế đang bận / bị khóa / hết slot gộp thì không cho nhận.
-    const available = await this.checkDriverAvailability(driverId, dispatch);
+    const available = await this.checkDriverAvailability(
+      driverId,
+      dispatch,
+      driver ?? undefined,
+    );
     if (!available) {
       throw new BusinessRuleViolationError(
         "Tài xế đang có đơn khác, hết slot gộp hoặc bị tạm khóa nhận đơn",
@@ -683,7 +751,27 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
 
   /** Danh sách orderId mà tài xế đã từ chối (Case 4). */
   async getDeclinedOrderIds(driverId: string): Promise<string[]> {
-    return this.dispatchRepo.findDeclinedOrderIdsByDriver(driverId);
+    const declined = await this.declinedOrderIdsFor(driverId);
+    return [...declined];
+  }
+
+  /**
+   * Hợp nhất 2 nguồn "tài xế đã từ chối":
+   * - `dispatches.matchedDriverIds` (theo dispatch hiện tại),
+   * - `driver_dispatch_offers` (theo order, sống sót khi dispatch bị xoá/tạo lại).
+   */
+  private async declinedOrderIdsFor(driverId: string): Promise<Set<string>> {
+    const [fromDispatches, fromOffers] = await Promise.all([
+      this.dispatchRepo
+        .findDeclinedOrderIdsByDriver(driverId)
+        .catch(() => [] as string[]),
+      this.driverCompliance
+        .getDeclinedOrderIds(driverId)
+        .catch(() => [] as string[]),
+    ]);
+    return new Set(
+      [...(fromDispatches ?? []), ...(fromOffers ?? [])].filter(Boolean),
+    );
   }
 
   // ---- Dispatch Lifecycle ----
@@ -840,6 +928,41 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Cập nhật GPS mới nhất của tài xế sang driver-service ngay khi bấm nhận
+   * đơn. Best-effort: lỗi mạng/driver-service không chặn việc nhận đơn —
+   * khi đó hệ thống dùng toạ độ gần nhất đang lưu.
+   */
+  private async updateDriverLocation(
+    driverId: string,
+    latitude: number,
+    longitude: number,
+  ): Promise<void> {
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      const res = await fetch(
+        `${DRIVER_SERVICE_URL}/api/v1/drivers/${driverId}/location`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-service-key": serviceKey,
+          },
+          body: JSON.stringify({ latitude, longitude }),
+        },
+      );
+      if (!res.ok) {
+        this.logger.warn(
+          `updateDriverLocation ${driverId} failed: HTTP ${res.status}`,
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `updateDriverLocation failed for ${driverId}: ${err.message}`,
+      );
+    }
+  }
+
   private activeOrderIdsOf(driver: any): string[] {
     if (
       Array.isArray(driver?.currentOrderIds) &&
@@ -864,6 +987,68 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
   private saverMaxDetourKm(): number {
     const value = Number(process.env.SAVER_MAX_DETOUR_KM || 3);
     return Number.isFinite(value) && value >= 0 ? value : 3;
+  }
+
+  /**
+   * Bán kính tối đa (km) từ GPS hiện tại của tài xế tới quán để được nhận đơn.
+   * Cấu hình qua `DISPATCH_MAX_RADIUS_KM`, mặc định 5km.
+   */
+  private acceptRadiusKm(): number {
+    const value = Number(
+      process.env.DISPATCH_MAX_RADIUS_KM || DEFAULT_ACCEPT_RADIUS_KM,
+    );
+    return Number.isFinite(value) && value > 0
+      ? value
+      : DEFAULT_ACCEPT_RADIUS_KM;
+  }
+
+  /** Chuẩn hoá cặp toạ độ; null/undefined/NaN đều bị loại (tránh (0,0) giả). */
+  private parseCoordinates(
+    lat: unknown,
+    lng: unknown,
+  ): { lat: number; lng: number } | null {
+    if (lat == null || lng == null) return null;
+    const parsedLat = Number(lat);
+    const parsedLng = Number(lng);
+    if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) {
+      return null;
+    }
+    return { lat: parsedLat, lng: parsedLng };
+  }
+
+  /** GPS hiện tại của tài xế (null nếu chưa có / không hợp lệ). */
+  private driverCoordinates(driver: any): { lat: number; lng: number } | null {
+    return this.parseCoordinates(
+      driver?.currentLatitude,
+      driver?.currentLongitude,
+    );
+  }
+
+  /**
+   * Toạ độ điểm lấy hàng: ưu tiên toạ độ quán, fallback toạ độ giao hàng cho
+   * dispatch cũ chưa có toạ độ quán (trước đây matching đo tới khách).
+   */
+  private pickupCoordinates(
+    dispatch: Dispatch,
+  ): { lat: number; lng: number } | null {
+    return (
+      this.parseCoordinates(
+        dispatch.dispatchMerchantLatitude,
+        dispatch.dispatchMerchantLongitude,
+      ) ??
+      this.parseCoordinates(
+        dispatch.dispatchDeliveryLatitude,
+        dispatch.dispatchDeliveryLongitude,
+      )
+    );
+  }
+
+  /** Khoảng cách (km) từ GPS tài xế tới quán — null nếu thiếu toạ độ. */
+  private pickupDistanceKm(driver: any, dispatch: Dispatch): number | null {
+    const from = this.driverCoordinates(driver);
+    const to = this.pickupCoordinates(dispatch);
+    if (!from || !to) return null;
+    return this._haversineDistance(from.lat, from.lng, to.lat, to.lng);
   }
 
   private toRouteStop(dispatch: Dispatch): RouteStopInput {
@@ -1044,10 +1229,9 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
     driverId: string,
   ): Promise<{ lat: number; lng: number } | null> {
     const driver = await this.fetchDriver(driverId);
-    const lat = Number(driver?.currentLatitude);
-    const lng = Number(driver?.currentLongitude);
-    if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
-    return { lat, lng };
+    // Không dùng Number() trực tiếp: Number(null) === 0 sẽ biến "chưa có GPS"
+    // thành toạ độ (0,0) và làm lộ trình bắt đầu từ giữa đại dương.
+    return this.driverCoordinates(driver);
   }
 
   /**
@@ -1343,24 +1527,37 @@ export class DispatchService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ---- Nearby (B3) ----
+  /**
+   * Các dispatch đang tìm tài xế quanh một toạ độ, đo tới **điểm lấy hàng
+   * (quán)** — cùng điểm đo với điều kiện bán kính nhận đơn — và sắp xếp gần
+   * nhất trước. `radiusKm` bỏ trống → dùng `DISPATCH_MAX_RADIUS_KM` (5km).
+   */
   async getNearbyDispatches(
     lat: number,
     lng: number,
-    radiusKm: number,
-  ): Promise<Dispatch[]> {
+    radiusKm?: number,
+  ): Promise<{ dispatch: Dispatch; distanceKm: number }[]> {
+    const radius =
+      Number.isFinite(radiusKm) && (radiusKm as number) > 0
+        ? (radiusKm as number)
+        : this.acceptRadiusKm();
+
     const matching = await this.dispatchRepo.findMatchingDispatches();
-    return matching.filter((d) => {
-      if (!d.dispatchDeliveryLatitude || !d.dispatchDeliveryLongitude) {
-        return false;
-      }
-      const distance = this._haversineDistance(
+    const nearby: { dispatch: Dispatch; distanceKm: number }[] = [];
+
+    for (const dispatch of matching) {
+      const pickup = this.pickupCoordinates(dispatch);
+      if (!pickup) continue;
+      const distanceKm = this._haversineDistance(
         lat,
         lng,
-        d.dispatchDeliveryLatitude,
-        d.dispatchDeliveryLongitude,
+        pickup.lat,
+        pickup.lng,
       );
-      return distance <= radiusKm;
-    });
+      if (distanceKm <= radius) nearby.push({ dispatch, distanceKm });
+    }
+
+    return nearby.sort((a, b) => a.distanceKm - b.distanceKm);
   }
 
   // ---- Location (B3) ----

@@ -688,6 +688,120 @@ describe("AssistantService", () => {
       expect(result.respondentImages.support).toBe("NO_IMAGE");
       expect(result.warnings.join(" ")).toContain("Không phân tích 1 ảnh");
     });
+
+    it("provider báo 0 ảnh mà không nêu lý do ⇒ imageDiagnostics cảnh báo VISION_ERROR", async () => {
+      // Trường hợp thật: provider (Gemini/legacy) lặng lẽ lùi về đường chữ —
+      // không có `imageFailure`. Trước đây panel im lặng; nay phải hiện banner.
+      const { service, gemini, contextService } = makeService(VALID_RAW);
+      contextService.build.mockResolvedValue({
+        snapshot: makeSnapshot(),
+        images: [{ mimeType: "image/png", base64: "AAAA", kind: "REPORTER" }],
+      });
+      gemini.generateJson.mockResolvedValueOnce({
+        data: VALID_RAW,
+        rawText: JSON.stringify(VALID_RAW),
+        model: "glm-4.5-flash",
+        endpoint: "https://example.invalid/chat/completions",
+        usage: { promptTokens: 1, outputTokens: 1, totalTokens: 2 },
+        imagesUsed: 0,
+      });
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.imageDiagnostics).toMatchObject({
+        status: "VISION_ERROR",
+        attached: 1,
+        analyzed: 0,
+        modelsTried: [],
+      });
+      expect(result.imageDiagnostics?.hint).toMatch(/model vision/);
+    });
+
+    it("model vision quá tải ⇒ imageDiagnostics nói rõ phải chờ rồi bấm lại", async () => {
+      const { service, gemini, contextService } = makeService(VALID_RAW);
+      contextService.build.mockResolvedValue({
+        snapshot: makeSnapshot(),
+        images: [{ mimeType: "image/png", base64: "AAAA", kind: "REPORTER" }],
+      });
+      gemini.generateJson.mockResolvedValueOnce({
+        data: VALID_RAW,
+        rawText: JSON.stringify(VALID_RAW),
+        model: "glm-4.5-flash",
+        endpoint: "https://example.invalid/chat/completions",
+        usage: { promptTokens: 1, outputTokens: 1, totalTokens: 2 },
+        imagesUsed: 0,
+        notes: [
+          "Không phân tích 1 ảnh bằng chứng (model vision lỗi 429/1305) — gợi ý dưới đây chỉ dựa trên dữ liệu chữ.",
+        ],
+        imageFailure: {
+          reason: "VISION_OVERLOADED",
+          detail: "429/1305 该模型当前访问量过大",
+          modelsTried: ["glm-4.6v-flash", "glm-4.6v-flashx"],
+          retryable: true,
+        },
+      });
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.imagesAnalyzed).toBe(0);
+      expect(result.imageDiagnostics).toMatchObject({
+        status: "VISION_OVERLOADED",
+        attached: 1,
+        analyzed: 0,
+        modelsTried: ["glm-4.6v-flash", "glm-4.6v-flashx"],
+      });
+      // Mã lỗi gốc phải còn (không bị thay bằng "lỗi mạng").
+      expect(result.imageDiagnostics?.detail).toMatch(/429\/1305/);
+      expect(result.imageDiagnostics?.hint).toMatch(/Phân tích lại/);
+    });
+
+    it("ảnh có trong vụ việc nhưng tải hỏng ⇒ DOWNLOAD_FAILED (không phải 'không có ảnh')", async () => {
+      const { service } = makeService(
+        VALID_RAW,
+        makeSnapshot({
+          imagesAttached: 0,
+          reporterImagesAttached: 0,
+          imagesSkipped: ["http://img/reporter.jpg"],
+          imageSkipReasons: [
+            {
+              url: "http://img/reporter.jpg",
+              reason: "404 File not found",
+            },
+          ],
+        }),
+      );
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.imageDiagnostics).toMatchObject({
+        status: "DOWNLOAD_FAILED",
+        attached: 0,
+        analyzed: 0,
+      });
+      expect(result.imageDiagnostics?.hint).toMatch(/Dữ liệu AI nhận/);
+      expect(result.warnings.join(" ")).toContain("Không tải được ảnh");
+    });
+
+    it("không có ảnh nào ⇒ NO_IMAGES, không hiện gợi ý thừa", async () => {
+      const { service } = makeService(
+        VALID_RAW,
+        makeSnapshot({
+          imagesAttached: 0,
+          reporterImagesAttached: 0,
+          respondentImagesAttached: 0,
+          imagesSkipped: [],
+        }),
+      );
+
+      const result = await service.analyzeCase("case-1", {}, ADMIN_USER as any);
+
+      expect(result.imageDiagnostics).toMatchObject({
+        status: "NO_IMAGES",
+        attached: 0,
+        analyzed: 0,
+        hint: null,
+      });
+    });
   });
 
   describe("tự phân tích nền & duyệt gợi ý", () => {

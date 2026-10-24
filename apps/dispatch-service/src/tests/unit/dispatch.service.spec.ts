@@ -26,6 +26,7 @@ type Coords = {
 function makeRepoMock() {
   let active: Dispatch[] = [];
   let matching: Dispatch[] = [];
+  let declined: string[] = [];
   const save = jest.fn(async (_dispatch: Dispatch) => undefined);
   const acceptAtomic = jest.fn(async (_id: string) => true);
 
@@ -36,6 +37,9 @@ function makeRepoMock() {
       findByIdOrFail: jest.fn(),
       findActiveByDriverId: jest.fn(async (_driverId: string) => active),
       findMatchingDispatches: jest.fn(async () => matching),
+      findDeclinedOrderIdsByDriver: jest.fn(
+        async (_driverId: string) => declined,
+      ),
     } as unknown as DispatchRepository,
     save,
     setActive: (dispatches: Dispatch[]): void => {
@@ -43,6 +47,9 @@ function makeRepoMock() {
     },
     setMatching: (dispatches: Dispatch[]): void => {
       matching = dispatches;
+    },
+    setDeclined: (orderIds: string[]): void => {
+      declined = orderIds;
     },
   };
 }
@@ -68,19 +75,26 @@ describe("DispatchService - đơn hiển thị cho tài xế", () => {
   let repo: ReturnType<typeof makeRepoMock>;
   let service: DispatchService;
   let driverProfile: any;
+  let compliance: {
+    recordOffer: jest.Mock;
+    markAccepted: jest.Mock;
+    getDeclinedOrderIds: jest.Mock;
+  };
 
   beforeEach(() => {
     jest.spyOn(Logger.prototype, "log").mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
 
     repo = makeRepoMock();
+    compliance = {
+      recordOffer: jest.fn(async () => undefined),
+      markAccepted: jest.fn(async () => undefined),
+      getDeclinedOrderIds: jest.fn(async () => []),
+    };
     service = new DispatchService(
       repo.repo,
       {} as MatchingEngineService,
-      {
-        recordOffer: jest.fn(async () => undefined),
-        markAccepted: jest.fn(async () => undefined),
-      } as unknown as DriverComplianceService,
+      compliance as unknown as DriverComplianceService,
       {
         getMatrix: jest.fn(async () => null),
       } as unknown as RoadDistanceService,
@@ -146,6 +160,51 @@ describe("DispatchService - đơn hiển thị cho tài xế", () => {
       "order-fast",
       "order-saver",
     ]);
+  });
+
+  it("đơn đã từ chối không hiện lại dù dispatch được tạo lại (matchedDriverIds rỗng)", async () => {
+    // driver-app xoá dispatch EXPIRED rồi tạo dispatch mới → dấu từ chối
+    // trong aggregate mất; lịch sử offer theo order vẫn phải chặn hiển thị.
+    const revived = makeDispatch("order-declined", {
+      merchant: [10.771, 106.701],
+      delivery: [10.772, 106.702],
+    });
+    compliance.getDeclinedOrderIds.mockResolvedValue(["order-declined"]);
+    repo.setMatching([revived]);
+
+    const result = await service.getAvailableDispatchesForDriver(DRIVER_ID);
+
+    expect(result).toEqual([]);
+    expect(compliance.getDeclinedOrderIds).toHaveBeenCalledWith(DRIVER_ID);
+  });
+
+  it("getDeclinedOrderIds hợp nhất nguồn dispatch và lịch sử offer", async () => {
+    repo.setDeclined(["order-1"]);
+    compliance.getDeclinedOrderIds.mockResolvedValue(["order-2"]);
+
+    await expect(service.getDeclinedOrderIds(DRIVER_ID)).resolves.toEqual([
+      "order-1",
+      "order-2",
+    ]);
+  });
+
+  it("assignDriver chặn nhận lại đơn tài xế đã từ chối (dispatch tạo lại)", async () => {
+    const revived = makeDispatch("order-declined", {
+      merchant: [10.771, 106.701],
+      delivery: [10.772, 106.702],
+    });
+    compliance.getDeclinedOrderIds.mockResolvedValue(["order-declined"]);
+    (repo.repo.findByIdOrFail as jest.Mock).mockResolvedValue(revived);
+
+    await expect(
+      service.assignDriver(revived.id.value, {
+        driverId: DRIVER_ID,
+      } as AssignDriverDto),
+    ).rejects.toThrow(/đã từ chối đơn này/);
+
+    expect(repo.save).not.toHaveBeenCalled();
+    expect(revived.dispatchStatus).toBe(DispatchStatus.MATCHING);
+    expect(revived.dispatchDriverId).toBeNull();
   });
 
   it("tài xế đang giữ đơn SAVER chỉ thấy đơn SAVER cùng tuyến", async () => {
@@ -255,5 +314,134 @@ describe("DispatchService - đơn hiển thị cho tài xế", () => {
     expect(repo.save).not.toHaveBeenCalled();
     expect(candidate.dispatchStatus).toBe(DispatchStatus.MATCHING);
     expect(candidate.dispatchDriverId).toBeNull();
+  });
+
+  it("ẩn đơn ngoài bán kính nhận đơn tính từ GPS tài xế tới quán", async () => {
+    const near = makeDispatch("order-near", {
+      merchant: [10.771, 106.701],
+      delivery: [10.9, 106.9],
+    });
+    const far = makeDispatch("order-far", {
+      merchant: [10.9, 106.9],
+      delivery: [10.7705, 106.7005],
+    });
+    repo.setMatching([far, near]);
+
+    const result = await service.getAvailableDispatchesForDriver(DRIVER_ID);
+
+    expect(result.map((d) => d.dispatchOrderId)).toEqual(["order-near"]);
+  });
+
+  it("đo bán kính tới QUÁN chứ không phải điểm giao của khách", async () => {
+    // Khách ở ngay cạnh tài xế nhưng quán cách ~24km → không được hiển thị.
+    const farPickup = makeDispatch("order-far-pickup", {
+      merchant: [10.9, 106.9],
+      delivery: [10.7705, 106.7005],
+    });
+    repo.setMatching([farPickup]);
+
+    const result = await service.getAvailableDispatchesForDriver(DRIVER_ID);
+
+    expect(result).toEqual([]);
+  });
+
+  it("tài xế chưa có GPS vẫn thấy đơn (chờ tick GPS đầu tiên)", async () => {
+    driverProfile.currentLatitude = null;
+    driverProfile.currentLongitude = null;
+    const dispatch = makeDispatch("order-no-gps", {
+      merchant: [10.9, 106.9],
+      delivery: [10.91, 106.91],
+    });
+    repo.setMatching([dispatch]);
+
+    const result = await service.getAvailableDispatchesForDriver(DRIVER_ID);
+
+    expect(result.map((d) => d.dispatchOrderId)).toEqual(["order-no-gps"]);
+  });
+
+  it("driverAccept từ chối tài xế ngoài bán kính và giữ nguyên trạng thái", async () => {
+    const dispatch = makeDispatch("order-far", {
+      merchant: [10.9, 106.9],
+      delivery: [10.91, 106.91],
+    });
+    dispatch.assignDriver(DRIVER_ID);
+    (repo.repo.findByIdOrFail as jest.Mock).mockResolvedValue(dispatch);
+
+    await expect(service.driverAccept(dispatch.id.value)).rejects.toThrow(
+      /vượt bán kính nhận đơn/,
+    );
+
+    expect(repo.repo.acceptAtomic).not.toHaveBeenCalled();
+    expect(dispatch.dispatchStatus).toBe(DispatchStatus.DRIVER_ASSIGNED);
+  });
+
+  it("driverAccept cập nhật GPS gửi kèm trước khi kiểm tra bán kính", async () => {
+    // Vị trí đang lưu thì xa quán, nhưng GPS mới gửi kèm lại ở cạnh quán.
+    driverProfile.currentLatitude = 10.9;
+    driverProfile.currentLongitude = 106.9;
+
+    (globalThis.fetch as jest.Mock).mockImplementation(
+      async (input: any, init?: any) => {
+        const url = String(input);
+        if (url.endsWith(`/drivers/${DRIVER_ID}/location`)) {
+          const body = JSON.parse(init?.body ?? "{}");
+          driverProfile.currentLatitude = body.latitude;
+          driverProfile.currentLongitude = body.longitude;
+          return {
+            ok: true,
+            json: async () => ({ data: driverProfile }),
+          } as any;
+        }
+        if (url.includes(`/drivers/${DRIVER_ID}`)) {
+          return {
+            ok: true,
+            json: async () => ({ data: driverProfile }),
+          } as any;
+        }
+        return { ok: false, json: async () => ({}) } as any;
+      },
+    );
+
+    const dispatch = makeDispatch("order-near", {
+      merchant: [10.771, 106.701],
+      delivery: [10.9, 106.9],
+    });
+    dispatch.assignDriver(DRIVER_ID);
+    (repo.repo.findByIdOrFail as jest.Mock).mockResolvedValue(dispatch);
+
+    await service.driverAccept(dispatch.id.value, {
+      latitude: 10.77,
+      longitude: 106.7,
+    });
+
+    const locationCall = (globalThis.fetch as jest.Mock).mock.calls.find(
+      ([url]) => String(url).endsWith(`/drivers/${DRIVER_ID}/location`),
+    );
+    expect(locationCall).toBeDefined();
+    expect(JSON.parse(locationCall![1].body)).toEqual({
+      latitude: 10.77,
+      longitude: 106.7,
+    });
+    expect(repo.repo.acceptAtomic).toHaveBeenCalledWith(dispatch.id.value);
+  });
+
+  it("dispatches/nearby đo tới quán và sắp xếp gần nhất trước", async () => {
+    const nearPickup = makeDispatch("order-near", {
+      merchant: [10.771, 106.701],
+      delivery: [10.9, 106.9],
+    });
+    const farPickup = makeDispatch("order-far", {
+      merchant: [10.79, 106.72],
+      delivery: [10.7705, 106.7005],
+    });
+    repo.setMatching([farPickup, nearPickup]);
+
+    const nearby = await service.getNearbyDispatches(10.77, 106.7);
+
+    expect(nearby.map((n) => n.dispatch.dispatchOrderId)).toEqual([
+      "order-near",
+      "order-far",
+    ]);
+    expect(nearby[0]!.distanceKm).toBeLessThan(nearby[1]!.distanceKm);
   });
 });

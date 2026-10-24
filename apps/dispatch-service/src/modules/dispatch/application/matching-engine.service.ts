@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { DispatchRepository } from "../infrastructure/dispatch.repository";
 import { Dispatch } from "../domain/dispatch.aggregate";
 import { RouteStopInput, isRouteCompatible } from "../domain/route-planner";
+import { DriverComplianceService } from "./driver-compliance.service";
 
 /**
  * Matching Engine - tìm tài xế theo vòng tròn bán kính mở rộng
@@ -44,7 +45,10 @@ const MAX_RETRY_ATTEMPTS = 3;
 export class MatchingEngineService {
   private readonly logger = new Logger(MatchingEngineService.name);
 
-  constructor(private readonly dispatchRepo: DispatchRepository) {}
+  constructor(
+    private readonly dispatchRepo: DispatchRepository,
+    private readonly driverCompliance: DriverComplianceService,
+  ) {}
 
   /**
    * Execute one round of matching for a dispatch.
@@ -92,10 +96,19 @@ export class MatchingEngineService {
       };
     }
 
-    // Filter out previously matched drivers
+    // Filter out previously matched drivers.
+    // Ngoài `matchedDriverIds` (gắn với 1 row dispatch), loại thêm các tài xế
+    // đã chủ động từ chối đơn này theo `driver_dispatch_offers` — dữ liệu này
+    // tồn tại qua order nên vẫn đúng khi driver-app xoá dispatch cũ và tạo
+    // dispatch mới với matchedDriverIds rỗng (tránh "ghép lại" đơn đã từ chối).
     const previouslyMatched = dispatch.dispatchMatchedDriverIds;
+    const declinedDriverIds = await this.declinedDriverIdsFor(
+      dispatch.dispatchOrderId,
+    );
     let eligibleDrivers = drivers.filter(
-      (d) => !previouslyMatched.includes(d.driverId),
+      (d) =>
+        !previouslyMatched.includes(d.driverId) &&
+        !declinedDriverIds.has(d.driverId),
     );
 
     if (eligibleDrivers.length === 0) {
@@ -233,6 +246,19 @@ export class MatchingEngineService {
       incentiveMultiplier: ring.incentive,
       attemptsRemaining: MAX_RETRY_ATTEMPTS - retryCount,
     };
+  }
+
+  /**
+   * Tài xế đã chủ động từ chối đơn này (đọc từ `driver_dispatch_offers`).
+   * Lỗi đọc dữ liệu → trả về rỗng để không chặn matching (fail-open).
+   */
+  private async declinedDriverIdsFor(orderId: string): Promise<Set<string>> {
+    try {
+      const ids = await this.driverCompliance.getDeclinedDriverIds(orderId);
+      return new Set((ids ?? []).filter(Boolean));
+    } catch {
+      return new Set();
+    }
   }
 
   /**

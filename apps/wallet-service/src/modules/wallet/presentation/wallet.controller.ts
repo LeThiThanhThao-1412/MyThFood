@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  BadRequestException,
 } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
 import { Roles, RolesGuard } from "@mythfood/common";
@@ -16,6 +17,7 @@ import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { Request } from "express";
 import { WalletService } from "../application/wallet.service";
 import { OwnerType } from "../domain/owner-type.enum";
+import { FailureSettlementInput } from "../domain/settlement.types";
 import { StripeService } from "../../stripe/stripe.service";
 
 @Controller("wallets")
@@ -247,6 +249,9 @@ export class WalletController {
       ownerType?: OwnerType;
       amount: number;
       orderId: string;
+      /** Cho phép nhiều lần hoàn khác nhau trên cùng đơn (mặc định REFUND + orderId). */
+      referenceType?: string;
+      referenceId?: string;
     },
   ) {
     return this.walletService.refundCredit(
@@ -254,6 +259,7 @@ export class WalletController {
       (body.ownerType as OwnerType) || OwnerType.CONSUMER,
       body.amount,
       body.orderId,
+      { referenceType: body.referenceType, referenceId: body.referenceId },
     );
   }
 
@@ -291,15 +297,19 @@ export class WalletController {
   @Post("compensate-driver")
   @UseGuards(ServiceKeyOrJwtGuard)
   async compensateDriver(
-    @Body() body: { driverId: string; orderId: string; shippingFee: number },
+    @Body()
+    body: {
+      driverId: string;
+      orderId: string;
+      shippingFee?: number;
+    },
   ) {
-    return this.walletService.credit(
+    // shippingFee chỉ là fallback: nếu đơn có dòng DRIVER_SHIPPING_FEE thì
+    // service trả đúng phần NET (đã trừ hoa hồng) chứ không trả full phí ship.
+    return this.walletService.compensateDriver(
       body.driverId,
-      OwnerType.DRIVER,
-      body.shippingFee,
-      `Bồi thường phí ship đơn giao thất bại #${body.orderId.slice(0, 8)}`,
-      "DELIVERY_FAILED_COMPENSATION",
       body.orderId,
+      body.shippingFee ?? 0,
     );
   }
 
@@ -327,6 +337,9 @@ export class WalletController {
       ownerType: string;
       amount: number;
       description: string;
+      referenceType?: string;
+      referenceId?: string;
+      transferToPlatform?: boolean;
     },
   ) {
     return this.walletService.penaltyDebit(
@@ -334,6 +347,11 @@ export class WalletController {
       body.ownerType as OwnerType,
       body.amount,
       body.description,
+      {
+        referenceType: body.referenceType,
+        referenceId: body.referenceId,
+        transferToPlatform: body.transferToPlatform,
+      },
     );
   }
 
@@ -346,6 +364,8 @@ export class WalletController {
       ownerType: string;
       amount: number;
       description: string;
+      referenceType?: string;
+      referenceId?: string;
     },
   ) {
     return this.walletService.penaltyCredit(
@@ -353,7 +373,18 @@ export class WalletController {
       body.ownerType as OwnerType,
       body.amount,
       body.description,
+      { referenceType: body.referenceType, referenceId: body.referenceId },
     );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Route tiền khi đơn giao thất bại đã có phán quyết (VALID)
+  // 1 request duy nhất, idempotent theo orderId, không tạo tiền từ thin air.
+  // ═══════════════════════════════════════════════════════
+  @Post("failure-settlement")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async settleFailure(@Body() body: FailureSettlementInput) {
+    return this.walletService.settleFailure(body);
   }
 
   @Get("reserve/balance")
@@ -560,9 +591,43 @@ export class WalletController {
       sourceBatchId?: string;
       refundId?: string;
       amount: number;
+      /** Nhãn khoản nợ: CUSTOMER_REFUND | DRIVER_COMPENSATION | PLATFORM_FUND. */
+      category?: string;
+      /** Diễn giải hiển thị cho chủ ví. */
+      description?: string;
     },
   ) {
     return this.walletService.createClawback(body);
+  }
+
+  // Thu hồi nợ tự động — quét các ví đã đủ tiền trả nợ (chạy tay/giám sát)
+  @Post("settlement/clawback/sweep")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async sweepClawback(
+    @Body()
+    body?: {
+      limit?: number;
+      ownerId?: string;
+      ownerType?: string;
+    },
+  ) {
+    return this.walletService.recoverAllCoveredDebts(body ?? {});
+  }
+
+  // Thu hồi nợ ngay cho một ví cụ thể (CSKH/admin bấm thu)
+  @Post("settlement/clawback/recover")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async recoverClawback(@Body() body: { ownerId: string; ownerType?: string }) {
+    if (!body?.ownerId) {
+      throw new BadRequestException("ownerId is required");
+    }
+    return this.walletService.recoverDebts(
+      body.ownerId,
+      (body.ownerType || "DRIVER") as OwnerType,
+      { source: "MANUAL" },
+    );
   }
 
   // Lịch sử lô quyết toán
@@ -652,7 +717,7 @@ export class WalletController {
   // Transaction History (wildcard - must come AFTER static routes)
   // ═══════════════════════════════════════════════════════
   @Get(":ownerId/transactions")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(ServiceKeyOrJwtGuard)
   async getTransactions(
     @Param("ownerId") ownerId: string,
     @Query("ownerType") ownerType: string,

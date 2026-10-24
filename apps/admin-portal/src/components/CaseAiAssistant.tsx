@@ -4,9 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { resolutionApi } from "@mythfood/api-client";
 import type {
   AiDecisionOutcome,
+  AiImageReadDiagnostics,
+  AiImageReadStatus,
   AiSideImageAnalysis,
   AssistantHealth,
   CaseAiAnalysisRecord,
+  CaseAiAutoStatus,
   CaseAiContext,
   CaseAiSuggestion,
 } from "@mythfood/api-client";
@@ -69,6 +72,25 @@ const IMAGE_SUPPORT_TONE: Record<string, string> = {
   NO_IMAGE: "bg-gray-50 text-gray-500",
 };
 
+/**
+ * Tiêu đề banner chẩn đoán ảnh theo từng trạng thái.
+ *
+ * `OK`/`NO_IMAGES` không hiện banner (không có gì để báo).
+ */
+const IMAGE_READ_TITLE: Partial<Record<AiImageReadStatus, string>> = {
+  VISION_OVERLOADED: "⏳ Model đọc ảnh đang quá tải — chưa phân tích được ảnh",
+  VISION_DISABLED: "⚠️ Chưa bật model đọc ảnh",
+  VISION_ERROR: "⚠️ Model đọc ảnh lỗi — chưa phân tích được ảnh",
+  DOWNLOAD_FAILED: "⚠️ Không tải được ảnh bằng chứng để gửi AI",
+};
+
+const IMAGE_READ_TONE: Partial<Record<AiImageReadStatus, string>> = {
+  VISION_OVERLOADED: "bg-amber-50 border-amber-200 text-amber-800",
+  DOWNLOAD_FAILED: "bg-red-50 border-red-200 text-red-700",
+  VISION_DISABLED: "bg-orange-50 border-orange-200 text-orange-800",
+  VISION_ERROR: "bg-orange-50 border-orange-200 text-orange-800",
+};
+
 /** AI chạy nền khi khiếu nại được tạo — chờ bao lâu thì ngừng hỏi lại. */
 const POLL_INTERVAL_MS = 8000;
 // Auto-analysis giờ chạy 2 lượt (đọc ảnh → suy luận) nên chờ tối đa ~5 phút.
@@ -101,6 +123,8 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
   /** Kết quả sau khi duyệt: đã áp dụng phán quyết/hình phạt/thông báo gì. */
   const [outcome, setOutcome] = useState<AiDecisionOutcome | null>(null);
   const [error, setError] = useState("");
+  /** Chẩn đoán lần tự phân tích gần nhất (backend giữ trong RAM). */
+  const [auto, setAuto] = useState<CaseAiAutoStatus | null>(null);
   const pollRef = useRef<number | null>(null);
 
   const canAnalyze =
@@ -127,6 +151,8 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
 
   const loadStored = useCallback(async () => {
     const res = await resolutionApi.getCaseAiAnalysis(caseId);
+    // Trạng thái lần tự phân tích gần nhất: nói rõ vì sao chưa có bản phân tích.
+    setAuto(res?.auto ?? null);
     return res?.data ?? null;
   }, [caseId]);
 
@@ -363,14 +389,33 @@ export default function CaseAiAssistant({ caseId }: { caseId: string }) {
       )}
 
       {!autoRunning && analysisState === "ready" && !record && (
-        <p className="text-[11px] text-gray-600 bg-white border border-gray-100 rounded-lg px-2 py-1">
-          Chưa có bản phân tích nào cho vụ việc này.
-          {health?.autoAnalyze
-            ? canAnalyze
-              ? " AI sẽ tự phân tích khi có khiếu nại mới, hoặc bấm “Phân tích lại”."
-              : " Bật trợ lý AI để phân tích."
-            : " Tự phân tích đang tắt (AI_AUTO_ANALYZE=false) — bấm “Phân tích lại”."}
-        </p>
+        <div className="text-[11px] text-gray-600 bg-white border border-gray-100 rounded-lg px-2 py-1 space-y-1">
+          <p>
+            Chưa có bản phân tích nào cho vụ việc này.
+            {auto?.status === "RUNNING"
+              ? " AI đang phân tích (chạy nền) — chờ thêm rồi tải lại."
+              : auto?.status === "FAILED"
+                ? " Lượt tự phân tích gần nhất bị lỗi — bấm “Phân tích lại”."
+                : health?.autoAnalyze
+                  ? canAnalyze
+                    ? " AI sẽ tự phân tích khi có khiếu nại mới, hoặc bấm “Phân tích lại”."
+                    : " Bật trợ lý AI để phân tích."
+                  : " Tự phân tích đang tắt (AI_AUTO_ANALYZE=false) — bấm “Phân tích lại”."}
+          </p>
+          {auto?.detail && auto.status !== "PENDING" && (
+            <p
+              className={
+                auto.status === "FAILED" ? "text-red-600" : "text-amber-700"
+              }
+            >
+              {auto.status === "FAILED" ? "Lỗi: " : "Ghi chú: "}
+              {auto.detail}
+              {auto.attemptedAt
+                ? ` · lúc ${formatDateTime(auto.attemptedAt)}`
+                : ""}
+            </p>
+          )}
+        </div>
       )}
 
       {record && (
@@ -433,6 +478,20 @@ function AnalysisCard({
     !!suggestion.reporterImages && !!suggestion.respondentImages;
   /** Bản cũ gộp chung ảnh hai bên (trước khi tách theo bên). */
   const legacyImageAnalysis: string = (suggestion as any).imageAnalysis ?? "";
+  /**
+   * Vì sao ảnh giao hàng **có trên hệ thống** nhưng không được gửi cho model
+   * (404, quá dung lượng, content-type không phải ảnh…).
+   *
+   * Trước đây panel chỉ nói "Ảnh có nhưng chưa gửi được cho AI" mà không nêu
+   * lý do, admin không biết ảnh hỏng hay do giới hạn gửi model. Lý do lấy từ
+   * `context.imageSkipReasons` do backend ghi lại khi tải ảnh.
+   */
+  const proofPhotoUrl = suggestion.deliveryProof?.photoUrl ?? "";
+  const proofSkipReason =
+    !suggestion.deliveryProof?.analyzed && proofPhotoUrl
+      ? (context?.imageSkipReasons?.find((item) => item.url === proofPhotoUrl)
+          ?.reason ?? "")
+      : "";
 
   const copyNote = useCallback(async () => {
     const text = suggestion.suggestedResolutionNote ?? "";
@@ -519,6 +578,9 @@ function AnalysisCard({
         </p>
       )}
 
+      {/* Vì sao mất ảnh: quá tải model vision (chờ bấm lại) ≠ tải ảnh hỏng. */}
+      <ImageReadBanner data={suggestion.imageDiagnostics} />
+
       {suggestion.evidenceWeight && (
         <div>
           <div className="flex items-center justify-between text-[11px] text-gray-500">
@@ -596,6 +658,11 @@ function AnalysisCard({
                   ? "✅ Đã gửi cho AI phân tích"
                   : "⚠️ Ảnh có nhưng chưa gửi được cho AI"}
               </p>
+              {proofSkipReason && (
+                <p className="text-[10px] text-gray-500">
+                  Lý do: {proofSkipReason}
+                </p>
+              )}
               {suggestion.deliveryProof.analyzed &&
                 suggestion.deliveryProof.matchesOrder && (
                   <p
@@ -898,11 +965,49 @@ function AnalysisCard({
                     {formatVnd(item.orderUnitPrice ?? 0)}
                     {item.priceMismatch ? " · ⚠ lệch giá" : ""}
                     {item.isAvailable === false ? " · hết hàng" : ""}
+                    {item.imageUrl ? " · có ảnh chuẩn" : " · không có ảnh"}
                   </li>
                 ))}
               </ul>
             </div>
           )}
+          {context?.imagesAvailable && (
+            <p>
+              <span className="font-semibold text-indigo-600">Ảnh có sẵn:</span>{" "}
+              proof {context.imagesAvailable.deliveryProof ?? 0} · món{" "}
+              {context.imagesAvailable.menuReference ?? 0} · khách{" "}
+              {context.imagesAvailable.reporter ?? 0} · quán{" "}
+              {context.imagesAvailable.respondent ?? 0} · review{" "}
+              {context.imagesAvailable.review ?? 0}
+              {context.imagesAttached === 0
+                ? " (chưa tải — bấm “Xem ngữ cảnh”/“Phân tích lại” để gửi cho AI)"
+                : ` · đã gửi ${context.imagesAttached}`}
+            </p>
+          )}
+          {context?.imagePlan &&
+            (context.imagesAvailable?.reporter ?? 0) === 0 && (
+              <p className="text-amber-600">
+                ⚠ Bên khiếu nại không có ảnh bằng chứng nào (không có URL
+                http(s) trong vụ việc).
+              </p>
+            )}
+          {context?.imagePlan && (
+            <p>
+              <span className="font-semibold text-indigo-600">Ảnh đã gửi:</span>{" "}
+              proof {context.imagePlan.deliveryProof ?? 0} · món{" "}
+              {context.imagePlan.menuReference ?? 0} · khách{" "}
+              {context.imagePlan.reporter ?? 0} · quán{" "}
+              {context.imagePlan.respondent ?? 0} · review{" "}
+              {context.imagePlan.review ?? 0}
+            </p>
+          )}
+          {context?.imagePlan &&
+            (context.imagePlan.menuReference ?? 0) === 0 &&
+            (context.menuItems ?? []).some((item) => !!item.imageUrl) && (
+              <p className="text-red-500">
+                ⚠ Chưa gửi được ảnh chuẩn món — xem cảnh báo phía trên.
+              </p>
+            )}
           {context?.pii && (
             <p>
               <span className="font-semibold text-indigo-600">Ẩn danh:</span>{" "}
@@ -942,6 +1047,42 @@ function AnalysisCard({
   );
 }
 
+/**
+ * Banner chẩn đoán lượt đọc ảnh.
+ *
+ * Vì sao cần: trước đây mọi trường hợp đều chỉ hiện "N ảnh đã gửi nhưng model
+ * không đọc" ⇒ admin bấm "Phân tích lại" liên tục trong khi model vision đang
+ * quá tải (GLM 429/1305) — càng bấm càng bị 1302. Banner tách rõ:
+ * - quá tải ⇒ chờ 30–60 giây rồi bấm lại (hoặc đổi `GLM_VISION_MODEL`);
+ * - tải ảnh hỏng ⇒ xem URL lỗi trong "Dữ liệu AI nhận" (bấm lại không giúp).
+ */
+function ImageReadBanner({ data }: { data?: AiImageReadDiagnostics }) {
+  if (!data || data.status === "OK" || data.status === "NO_IMAGES") return null;
+
+  const tone =
+    IMAGE_READ_TONE[data.status] ??
+    "bg-amber-50 border-amber-200 text-amber-800";
+  const title = IMAGE_READ_TITLE[data.status] ?? "Chưa đọc được ảnh bằng chứng";
+
+  return (
+    <div
+      className={`text-[11px] rounded-lg border px-2 py-1 space-y-0.5 ${tone}`}
+    >
+      <p className="font-semibold">{title}</p>
+      <p>
+        {data.attached > 0
+          ? `${data.attached} ảnh đã gửi · model đọc được ${data.analyzed}`
+          : "0 ảnh gửi được cho model"}
+        {data.modelsTried.length > 0
+          ? ` · model: ${data.modelsTried.join(" → ")}`
+          : ""}
+        {data.detail ? ` · ${data.detail}` : ""}
+      </p>
+      {data.hint && <p>{data.hint}</p>}
+    </div>
+  );
+}
+
 /** Khối ảnh bằng chứng của MỘT bên (badge + số ảnh + nhận xét). */
 function SideImageBlock({
   label,
@@ -964,7 +1105,7 @@ function SideImageBlock({
           {data.analyzed > 0
             ? `${data.analyzed}/${data.attached} ảnh đã gửi AI`
             : data.attached > 0
-              ? "0 ảnh gửi AI (bị bỏ)"
+              ? `${data.attached} ảnh đã gửi nhưng model không đọc`
               : "không có ảnh"}
         </span>
       </div>
@@ -983,7 +1124,10 @@ function ContextViewer({ context }: { context: CaseAiContext }) {
     <div className="bg-white rounded-lg border border-gray-100 p-2 space-y-1 max-h-64 overflow-y-auto">
       <p className="text-[11px] font-semibold text-gray-400 uppercase">
         Nguồn dữ liệu ({available}/{sources.length} khả dụng ·{" "}
-        {context.imagesAttached} ảnh
+        {context.imagesAttached} ảnh đã gửi
+        {context.imagesAvailable
+          ? ` · khách ${context.imagesAvailable.reporter ?? 0} · quán ${context.imagesAvailable.respondent ?? 0} ảnh có sẵn`
+          : ""}
         {critical.length > 0
           ? ` · thiếu ${critical.length} nguồn trọng yếu`
           : ""}
@@ -1010,10 +1154,17 @@ function ContextViewer({ context }: { context: CaseAiContext }) {
         );
       })}
       {context.imagesSkipped?.length > 0 && (
-        <p className="text-[11px] text-amber-600">
-          Ảnh không gửi kèm: {context.imagesSkipped.length} (quá giới hạn hoặc
-          tải lỗi)
-        </p>
+        <div className="text-[11px] text-amber-600 space-y-0.5">
+          <p>
+            Ảnh không gửi kèm: {context.imagesSkipped.length} (quá giới hạn, quá
+            dung lượng hoặc tải lỗi)
+          </p>
+          {(context.imageSkipReasons ?? []).slice(0, 3).map((item) => (
+            <p key={item.url} className="text-[10px] text-amber-700 break-all">
+              • {item.url} — {item.reason}
+            </p>
+          ))}
+        </div>
       )}
     </div>
   );

@@ -235,10 +235,12 @@ export default function DriverDashboardPage() {
               dispatchApi.getAvailableForDriver(d.id).catch(() => null),
             ]);
           // Cập nhật danh sách đơn đã từ chối (tồn tại qua các lần refresh).
-          const declined = (declinedRes as any)?.data ?? [];
-          declinedOrderIds.current = new Set(
-            Array.isArray(declined) ? declined : [],
-          );
+          // API lỗi → giữ nguyên danh sách đang biết, tránh đơn vừa từ chối
+          // bị hiện lại chỉ vì 1 lần gọi mạng thất bại.
+          const declined = (declinedRes as any)?.data;
+          if (Array.isArray(declined)) {
+            declinedOrderIds.current = new Set(declined);
+          }
           const availItems = (availRes as any).items || [];
           // activeRes may return all orders assigned to this driver (including DELIVERED)
           const allDriverOrders = Array.isArray(activeRes) ? activeRes : [];
@@ -296,11 +298,12 @@ export default function DriverDashboardPage() {
             (o: any) =>
               !hiddenOrderIds.current.has(o.id) &&
               !handledOrderIds.has(o.id) &&
-              // Backend đã loại đơn đã từ chối/đã có tài xế khác; chỉ dùng
-              // danh sách declined làm fallback khi API đủ điều kiện lỗi.
-              (eligibleDispatches == null
-                ? !declinedOrderIds.current.has(o.id)
-                : eligibleOrderIds.has(o.id)),
+              // Đơn đã từ chối luôn bị ẩn — kể cả khi backend trả về danh
+              // sách đủ điều kiện (phòng trường hợp dispatch được tạo lại).
+              !declinedOrderIds.current.has(o.id) &&
+              // Chỉ hiển thị đơn backend xác nhận đủ điều kiện; nếu API lỗi
+              // thì giữ hành vi cũ (vẫn cho bấm nhận, backend sẽ chặn nếu sai).
+              (eligibleDispatches == null || eligibleOrderIds.has(o.id)),
           );
           const seen = firstSeen.current;
           for (const o of availList) {
@@ -408,7 +411,12 @@ export default function DriverDashboardPage() {
         }
       }
 
-      await acceptDispatchOrder(order, driver.id);
+      await acceptDispatchOrder(
+        order,
+        driver.id,
+        undefined,
+        location ?? undefined,
+      );
       // Chuyển ngay đơn sang danh sách “Đơn đang giao” để hiển thị nút trạng thái kế tiếp
       if (order) {
         setActiveOrders((prev) => [
@@ -430,6 +438,7 @@ export default function DriverDashboardPage() {
   async function declineOrder(orderId: string) {
     // Xóa khỏi danh sách ngay (optimistic UI) và ẩn trong phiên
     hiddenOrderIds.current.add(orderId);
+    declinedOrderIds.current.add(orderId);
     setAvailableOrders((prev) => prev.filter((o) => o.id !== orderId));
 
     if (!driver) return;
@@ -441,6 +450,20 @@ export default function DriverDashboardPage() {
         // Case 4: luôn ghi nhận tài xế đã từ chối → backend không gán lại đơn này
         // cho tài xế nữa (dù dispatch đang MATCHING hay gán cho người khác).
         await dispatchApi.recordDriverDecline(dispatch.id, driver.id);
+
+        // Đồng bộ lại danh sách từ chối từ backend (nguồn bền vững, không mất
+        // khi dispatch bị xoá/tạo lại). Lỗi mạng → giữ danh sách cục bộ.
+        try {
+          const declinedRes: any = await dispatchApi.getDeclinedOrderIds(
+            driver.id,
+          );
+          const declined = declinedRes?.data;
+          if (Array.isArray(declined)) {
+            declinedOrderIds.current = new Set(declined);
+          }
+        } catch {
+          /* giữ danh sách cục bộ */
+        }
 
         // Nếu đơn đang gán cho chính tài xế này và chờ phản hồi → từ chối
         // để backend tìm tài xế khác ngay lập tức.

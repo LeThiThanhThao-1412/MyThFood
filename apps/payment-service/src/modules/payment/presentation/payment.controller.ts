@@ -153,6 +153,22 @@ export class PaymentController {
     return this.paymentService.refund(id, dto.reason, dto.refundAmount);
   }
 
+  /**
+   * Chốt payment bằng store credit (dùng cho service-to-service: order-service
+   * gọi sau khi đã hoàn tiền vào ví khách ở luồng giao thất bại).
+   */
+  @Patch(":id/close-store-credit")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async closeAsStoreCredit(
+    @Param("id") id: string,
+    @Body() body: { reason?: string },
+  ): Promise<PaymentResponseDto> {
+    return this.paymentService.closeAsStoreCredit(
+      id,
+      body?.reason ?? "Store credit refund",
+    );
+  }
+
   // ===================== Stripe Connected Accounts =====================
 
   @Post("stripe/connected-account")
@@ -200,7 +216,7 @@ export class PaymentController {
   }
 
   @Get("order/:orderId")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(ServiceKeyOrJwtGuard)
   async findByOrderId(
     @Param("orderId") orderId: string,
   ): Promise<PaymentResponseDto | null> {

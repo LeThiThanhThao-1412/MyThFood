@@ -3,6 +3,32 @@ import { HttpService } from "@nestjs/axios";
 import { firstValueFrom } from "rxjs";
 
 /**
+ * Lỗi đọc dữ liệu từ service khác (dùng cho assistant).
+ *
+ * Trước đây mọi thất bại đều bị nuốt thành `null` nên admin chỉ thấy
+ * "service không phản hồi hoặc chưa có bản ghi" — không phân biệt được
+ * service chết, sai URL, 401 do thiếu service key hay 404 do sai id.
+ * Lỗi này mang theo path + từng lần thử để hiển thị đúng nguyên nhân.
+ */
+export class IntegrationReadError extends Error {
+  constructor(
+    readonly path: string,
+    readonly attempts: string[],
+  ) {
+    super(
+      `GET ${path} thất bại (${attempts.length || 1} lần thử): ` +
+        (attempts.join(" | ") || "không rõ nguyên nhân"),
+    );
+    this.name = "IntegrationReadError";
+  }
+}
+
+/** Cờ cho các lần đọc phục vụ AI: lỗi phải nổi lên thay vì trả null im lặng. */
+interface ReadOptions {
+  strict?: boolean;
+}
+
+/**
  * Best-effort cross-service HTTP integration.
  *
  * Every call is fire-and-forget: if the target service is unreachable or the
@@ -13,6 +39,20 @@ import { firstValueFrom } from "rxjs";
 @Injectable()
 export class IntegrationService {
   private readonly logger = new Logger(IntegrationService.name);
+
+  /**
+   * Cache ảnh bằng chứng đã tải (URL → bytes).
+   *
+   * Vì sao cần: mỗi lần admin bấm "Phân tích lại", 4–6 ảnh được tải lại từ
+   * upload-service/S3. Chỉ cần một lần DNS phân giải lỗi (`EAI_AGAIN`/`ENOTFOUND`
+   * khi container hỏi S3) là ảnh đó bị bỏ **vĩnh viễn** khỏi lượt phân tích ⇒
+   * AI kết luận "không có ảnh". Cache giữ ảnh đã tải thành công để lượt sau
+   * không phụ thuộc mạng ngoài nữa.
+   */
+  private readonly imageCache = new Map<
+    string,
+    { image: DownloadedImage; at: number }
+  >();
 
   constructor(private readonly httpService: HttpService) {}
 
@@ -101,7 +141,9 @@ export class IntegrationService {
     dockerUrl: string,
     localUrl: string,
     path: string,
+    options: ReadOptions = {},
   ): Promise<any> {
+    const attempts: string[] = [];
     for (const base of this.candidates(envKey, dockerUrl, localUrl)) {
       try {
         const res = await firstValueFrom(
@@ -112,10 +154,23 @@ export class IntegrationService {
         );
         return res.data;
       } catch (err: any) {
-        this.logger.warn(
-          `GET ${envKey}${path} failed against ${base}: ${err?.message}`,
-        );
+        const status =
+          err?.response?.status ??
+          err?.response?.statusCode ??
+          err?.status ??
+          err?.code;
+        const message =
+          err?.response?.data?.message ??
+          err?.response?.statusText ??
+          err?.message ??
+          "unknown";
+        const reason = `${base}${path} → ${status ?? "?"} ${String(message).slice(0, 160)}`;
+        attempts.push(reason);
+        this.logger.warn(`GET ${envKey}${path} failed: ${reason}`);
       }
+    }
+    if (options.strict) {
+      throw new IntegrationReadError(path, attempts);
     }
     return null;
   }
@@ -287,10 +342,27 @@ export class IntegrationService {
     dockerUrl: string,
     localUrl: string,
     path: string,
+    options: ReadOptions = {},
   ): Promise<any> {
-    const body = await this.get(envKey, dockerUrl, localUrl, path);
-    if (body && typeof body === "object" && "data" in body) {
-      return (body as { data: unknown }).data ?? null;
+    const body = await this.get(envKey, dockerUrl, localUrl, path, options);
+    if (body && typeof body === "object") {
+      // Một số service trả HTTP 200 kèm envelope lỗi (vd: `{statusCode: 401}`).
+      // Nếu bỏ qua, assistant sẽ coi nguồn đó là "CÓ" với payload rỗng.
+      const status = (body as { statusCode?: unknown }).statusCode;
+      if (typeof status === "number" && status >= 400) {
+        if (options.strict) {
+          const message = String(
+            (body as { message?: unknown }).message ?? "",
+          ).slice(0, 160);
+          throw new IntegrationReadError(path, [
+            `${path} → HTTP ${status} trong envelope: ${message || "không có message"}`,
+          ]);
+        }
+        return null;
+      }
+      if ("data" in body) {
+        return (body as { data: unknown }).data ?? null;
+      }
     }
     return body;
   }
@@ -303,6 +375,7 @@ export class IntegrationService {
       "http://order-service:3004",
       "http://localhost:3004",
       `/api/v1/orders/${orderId}/timeline`,
+      { strict: true },
     );
   }
 
@@ -314,6 +387,7 @@ export class IntegrationService {
       "http://order-service:3004",
       "http://localhost:3004",
       `/api/v1/orders/consumer/${consumerId}`,
+      { strict: true },
     );
     return data ?? [];
   }
@@ -326,6 +400,7 @@ export class IntegrationService {
       "http://order-service:3004",
       "http://localhost:3004",
       `/api/v1/orders/driver/${driverId}`,
+      { strict: true },
     );
     return data ?? [];
   }
@@ -338,6 +413,7 @@ export class IntegrationService {
       "http://dispatch-service:3008",
       "http://localhost:3008",
       `/api/v1/dispatches/order/${orderId}`,
+      { strict: true },
     );
   }
 
@@ -369,6 +445,7 @@ export class IntegrationService {
       "http://driver-service:3007",
       "http://localhost:3007",
       `/api/v1/drivers/${driverId}/location/history?${params.toString()}`,
+      { strict: true },
     );
     return data ?? [];
   }
@@ -381,6 +458,7 @@ export class IntegrationService {
       "http://driver-service:3007",
       "http://localhost:3007",
       `/api/v1/drivers/${driverId}/public-profile`,
+      { strict: true },
     );
   }
 
@@ -392,6 +470,7 @@ export class IntegrationService {
       "http://review-service:3011",
       "http://localhost:3011",
       `/api/v1/reviews/order/${orderId}`,
+      { strict: true },
     );
     return data ?? [];
   }
@@ -416,6 +495,7 @@ export class IntegrationService {
       "http://review-service:3011",
       "http://localhost:3011",
       `/api/v1/reviews/merchant/${merchantId}?skip=0&take=${Math.min(50, Math.max(1, take))}`,
+      { strict: true },
     );
     if (!body || typeof body !== "object") return null;
     return {
@@ -442,6 +522,7 @@ export class IntegrationService {
       "http://review-service:3011",
       "http://localhost:3011",
       `/api/v1/reviews/driver/${driverId}?skip=0&take=${Math.min(50, Math.max(1, take))}`,
+      { strict: true },
     );
     if (!body || typeof body !== "object") return null;
     return {
@@ -464,6 +545,7 @@ export class IntegrationService {
       "http://merchant-service:3003",
       "http://localhost:3003",
       `/api/v1/merchants/${merchantId}/menu?includeUnavailable=true`,
+      { strict: true },
     );
     return Array.isArray(data) ? data : [];
   }
@@ -476,6 +558,7 @@ export class IntegrationService {
       "http://promotion-service:3012",
       "http://localhost:3012",
       `/api/v1/promotions/merchant/${merchantId}`,
+      { strict: true },
     );
     return Array.isArray(data) ? data : [];
   }
@@ -488,6 +571,7 @@ export class IntegrationService {
       "http://promotion-service:3012",
       "http://localhost:3012",
       `/api/v1/promotions/flash-sales/merchant/${merchantId}`,
+      { strict: true },
     );
     if (Array.isArray(body)) return body;
     return Array.isArray(body?.items) ? body.items : [];
@@ -501,6 +585,7 @@ export class IntegrationService {
       "http://promotion-service:3012",
       "http://localhost:3012",
       `/api/v1/promotions/usages/order/${orderId}`,
+      { strict: true },
     );
   }
 
@@ -512,6 +597,7 @@ export class IntegrationService {
       "http://driver-service:3007",
       "http://localhost:3007",
       `/api/v1/drivers/${driverId}/analytics-profile`,
+      { strict: true },
     );
   }
 
@@ -523,6 +609,7 @@ export class IntegrationService {
       "http://payment-service:3006",
       "http://localhost:3006",
       `/api/v1/payments/order/${orderId}`,
+      { strict: true },
     );
   }
 
@@ -534,19 +621,43 @@ export class IntegrationService {
       "http://chat-service:3015",
       "http://localhost:3015",
       `/api/v1/chat/conversations/order/${orderId}/messages`,
+      { strict: true },
     );
     return data ?? [];
   }
 
-  /** D13 — Hồ sơ khách hàng theo identity userId (consumer-service). */
-  async getConsumerByUserId(userId: string): Promise<any> {
-    if (!userId) return null;
-    return this.getData(
-      "CONSUMER_SERVICE_URL",
-      "http://consumer-service:3002",
-      "http://localhost:3002",
-      `/api/v1/consumers/user/${userId}`,
-    );
+  /**
+   * D13 — Hồ sơ khách hàng (consumer-service).
+   *
+   * `reporterId` của vụ việc là **consumer profile id** (bảng `consumers`), còn
+   * `/consumers/user/:userId` nhận identity userId. Trước đây chỉ gọi endpoint
+   * user-id nên phần lớn vụ việc trả 404 ⇒ D13 luôn bị ghi "KHÔNG CÓ".
+   * Thử profile id trước, chỉ fallback sang user id khi profile id không có.
+   */
+  async getConsumerProfile(id: string): Promise<any> {
+    if (!id) return null;
+    try {
+      return await this.getData(
+        "CONSUMER_SERVICE_URL",
+        "http://consumer-service:3002",
+        "http://localhost:3002",
+        `/api/v1/consumers/${id}`,
+        { strict: true },
+      );
+    } catch (profileError) {
+      try {
+        return await this.getData(
+          "CONSUMER_SERVICE_URL",
+          "http://consumer-service:3002",
+          "http://localhost:3002",
+          `/api/v1/consumers/user/${id}`,
+          { strict: true },
+        );
+      } catch {
+        // Báo lỗi của lần thử đầu — đó mới là id thật của vụ việc.
+        throw profileError;
+      }
+    }
   }
 
   /** D12 — Hồ sơ nhà hàng (merchant-service). */
@@ -557,63 +668,310 @@ export class IntegrationService {
       "http://merchant-service:3003",
       "http://localhost:3003",
       `/api/v1/merchants/${merchantId}`,
+      { strict: true },
     );
   }
 
-  /** D8 — Lịch sử giao dịch ví (wallet-service), dùng cho COD_THEFT. */
-  async getWalletTransactions(ownerId: string): Promise<any> {
+  /**
+   * D8 — Lịch sử giao dịch ví (wallet-service), dùng cho COD_THEFT.
+   *
+   * `ownerType` là **bắt buộc về mặt nghiệp vụ**: wallet-service mặc định
+   * `DRIVER`, nên ví của khách/nhà hàng sẽ không bao giờ được tìm thấy nếu chỉ
+   * truyền ownerId.
+   */
+  async getWalletTransactions(
+    ownerId: string,
+    ownerType: "CONSUMER" | "DRIVER" | "MERCHANT" = "DRIVER",
+  ): Promise<any> {
     if (!ownerId) return [];
+    const params = new URLSearchParams({ ownerType });
     const data = await this.getData(
       "WALLET_SERVICE_URL",
       "http://wallet-service:3009",
       "http://localhost:3009",
-      `/api/v1/wallets/${ownerId}/transactions`,
+      `/api/v1/wallets/${ownerId}/transactions?${params.toString()}`,
+      { strict: true },
     );
     return data ?? [];
   }
 
   /**
-   * Ảnh lưu ở chế độ local trỏ về `http://localhost:3010/...` nên khi chạy
-   * trong docker phải đổi sang `UPLOAD_SERVICE_URL`.
+   * Các URL có thể thử tải cho một ảnh đã lưu.
+   *
+   * Ảnh upload qua upload-service được lưu với host của **client** (mặc định
+   * `http://localhost:3010`), nên khi resolution-service chạy trong docker phải
+   * đổi sang `UPLOAD_SERVICE_URL`. Thử lần lượt nhiều host (upload-service →
+   * URL gốc → localhost) để ảnh vẫn tải được cả khi chạy docker lẫn chạy tay,
+   * và ghi lại từng lần thử khi hỏng.
    */
-  private resolveImageUrl(url: string): string {
-    const uploadBase = process.env.UPLOAD_SERVICE_URL;
-    if (!uploadBase) return url;
+  private imageUrlCandidates(url: string): string[] {
+    const trimmed = url.trim();
     const marker = "/api/v1/upload/";
-    const idx = url.indexOf(marker);
-    return idx === -1 ? url : `${uploadBase}${url.slice(idx)}`;
+    const idx = trimmed.indexOf(marker);
+    const candidates = new Set<string>();
+
+    if (idx !== -1) {
+      const path = trimmed.slice(idx);
+      const uploadBase = (process.env.UPLOAD_SERVICE_URL ?? "").replace(
+        /\/+$/,
+        "",
+      );
+      if (uploadBase) candidates.add(`${uploadBase}${path}`);
+      candidates.add(`http://upload-service:3010${path}`);
+      candidates.add(`http://localhost:3010${path}`);
+    }
+    candidates.add(trimmed);
+    return [...candidates];
+  }
+
+  /** Đoán MIME từ đuôi file — nhiều URL ảnh không có content-type chuẩn. */
+  private mimeFromUrl(url: string): string {
+    const clean = url.split("?")[0]?.split("#")[0] ?? url;
+    const ext = clean.slice(clean.lastIndexOf(".") + 1).toLowerCase();
+    const map: Record<string, string> = {
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      webp: "image/webp",
+      gif: "image/gif",
+      heic: "image/heic",
+      heif: "image/heif",
+    };
+    return map[ext] ?? "";
   }
 
   /**
-   * Tải ảnh bằng chứng về dạng base64 để đưa vào prompt vision của Gemini.
-   * Trả về null nếu URL không phải ảnh hoặc không tải được.
+   * Lý do thất bại ngắn gọn của một lượt tải (status + message của service).
+   *
+   * `responseType: "arraybuffer"` ⇒ body lỗi là Buffer, phải đổi sang chuỗi rồi
+   * thử đọc `message` trong JSON (upload-service trả `{message: "File not found"}`).
    */
-  async downloadImage(
-    url: string,
-  ): Promise<{ mimeType: string; base64: string; url: string } | null> {
-    if (!url) return null;
-    try {
-      const res = await firstValueFrom(
-        this.httpService.get(this.resolveImageUrl(url), {
-          responseType: "arraybuffer",
-          timeout: 15000,
-          headers: { "x-service-key": this.serviceKey },
-        }),
-      );
-      const rawType = String(res.headers?.["content-type"] ?? "");
-      const mimeType = rawType.split(";")[0]?.trim() || "image/jpeg";
-      if (!mimeType.startsWith("image/")) {
-        this.logger.warn(`downloadImage skipped (not an image): ${mimeType}`);
-        return null;
+  private describeDownloadError(err: any): string {
+    const status =
+      err?.response?.status ?? err?.response?.statusCode ?? err?.code ?? "?";
+    const body = err?.response?.data;
+    let message = "";
+    if (Buffer.isBuffer(body)) message = body.toString("utf8");
+    else if (typeof body === "string") message = body;
+    else if (body && typeof body === "object")
+      message = String(body.message ?? "");
+    if (message) {
+      try {
+        const parsed = JSON.parse(message);
+        message = String(parsed?.message ?? message);
+      } catch {
+        // Không phải JSON (HTML/XML của S3, trang lỗi…) — giữ nguyên.
       }
-      return {
-        mimeType,
-        base64: Buffer.from(res.data as ArrayBuffer).toString("base64"),
-        url,
-      };
-    } catch (err: any) {
-      this.logger.warn(`downloadImage failed for ${url}: ${err?.message}`);
+    }
+    if (!message) message = err?.message ?? "unknown";
+    return `${status} ${message.replace(/\s+/g, " ").trim().slice(0, 140)}`;
+  }
+
+  /**
+   * Giới hạn dung lượng 1 ảnh đưa vào prompt vision.
+   *
+   * Ảnh chụp từ app điện thoại thường 3–8MB; gửi nhiều ảnh cỡ đó làm request
+   * model vượt hạn mức (và tăng latency) ⇒ cả lượt phân tích thất bại. Ảnh quá
+   * lớn bị bỏ qua và được ghi vào `imagesSkipped` thay vì làm hỏng lượt gọi.
+   */
+  private get maxImageBytes(): number {
+    const raw = Number(process.env.AI_MAX_IMAGE_BYTES);
+    return Number.isFinite(raw) && raw > 0 ? raw : 5 * 1024 * 1024;
+  }
+
+  /** Thời gian giữ ảnh trong cache (mặc định 10 phút — đủ cho vài lượt phân tích lại). */
+  private get imageCacheTtlMs(): number {
+    const raw = Number(process.env.AI_IMAGE_CACHE_TTL_MS);
+    return Number.isFinite(raw) && raw >= 0 ? raw : 10 * 60 * 1000;
+  }
+
+  /** Số URL tối đa giữ trong cache (mỗi entry ~1 ảnh base64). */
+  private get imageCacheMax(): number {
+    const raw = Number(process.env.AI_IMAGE_CACHE_MAX);
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 12;
+  }
+
+  /** Số lần thử tải 1 URL ảnh khi lỗi **tạm thời** (DNS/timeout/5xx). */
+  private get imageDownloadAttempts(): number {
+    const raw = Number(process.env.AI_IMAGE_DOWNLOAD_ATTEMPTS);
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 3;
+  }
+
+  /**
+   * Lỗi tải ảnh có khả năng tự khỏi khi thử lại.
+   *
+   * `EAI_AGAIN`/`ENOTFOUND` xảy ra khi container phân giải DNS tới S3 trượt —
+   * đây chính là lý do "4 ảnh còn 1 ảnh" ở lần phân tích lại. 404/403 thì
+   * **không** thử lại (tải lại chỉ tốn 15s timeout của mỗi URL).
+   */
+  private isTransientDownloadError(err: any): boolean {
+    const status = Number(err?.response?.status);
+    if (Number.isFinite(status) && status > 0) {
+      return status === 408 || status === 429 || status >= 500;
+    }
+    return true;
+  }
+
+  /** GET ảnh có thử lại khi lỗi mạng tạm thời (DNS/socket/timeout). */
+  private async fetchImage(url: string): Promise<any> {
+    const attempts = this.imageDownloadAttempts;
+    let lastError: any = null;
+
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await firstValueFrom(
+          this.httpService.get(url, {
+            responseType: "arraybuffer",
+            timeout: 15000,
+            maxRedirects: 5,
+            headers: { "x-service-key": this.serviceKey },
+          }),
+        );
+      } catch (err: any) {
+        lastError = err;
+        if (!this.isTransientDownloadError(err) || attempt === attempts) {
+          throw err;
+        }
+        const waitMs = 200 * 3 ** (attempt - 1);
+        this.logger.warn(
+          `downloadImage lỗi tạm thời (${this.describeDownloadError(err)}) — ` +
+            `thử lại ${attempt + 1}/${attempts} sau ${waitMs}ms: ${url}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+    }
+
+    throw lastError;
+  }
+
+  /** Đọc cache ảnh còn hạn; tự xoá entry hết hạn. */
+  private readImageCache(url: string): DownloadedImage | null {
+    const cached = this.imageCache.get(url);
+    if (!cached) return null;
+    if (Date.now() - cached.at > this.imageCacheTtlMs) {
+      this.imageCache.delete(url);
       return null;
     }
+    return cached.image;
+  }
+
+  /** Ghi cache ảnh, loại entry cũ nhất khi vượt hạn mức. */
+  private writeImageCache(url: string, image: DownloadedImage): void {
+    if (this.imageCacheTtlMs <= 0) return;
+    this.imageCache.set(url, { image, at: Date.now() });
+    while (this.imageCache.size > this.imageCacheMax) {
+      const oldest = this.imageCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.imageCache.delete(oldest);
+    }
+  }
+
+  /**
+   * Tải ảnh bằng chứng **kèm nguyên nhân** khi hỏng.
+   *
+   * `downloadImage()` chỉ trả `null` nên trước đây admin thấy "0 ảnh gửi AI" mà
+   * không biết ảnh 404, quá dung lượng hay là redirect S3 lỗi. Kết quả ở đây
+   * được lưu vào `snapshot.imageSkipReasons` và hiển thị lên admin-portal.
+   */
+  async downloadImageDetailed(
+    url: string,
+  ): Promise<{ image: DownloadedImage | null; reason: string }> {
+    if (!url) return { image: null, reason: "URL rỗng" };
+
+    // Lượt "Phân tích lại" dùng lại ảnh đã tải thành công — không phụ thuộc
+    // DNS/S3 nữa (nguồn gốc của cảnh "4 ảnh còn 1 ảnh").
+    const cached = this.readImageCache(url);
+    if (cached) return { image: cached, reason: "" };
+
+    const attempts: string[] = [];
+
+    for (const candidate of this.imageUrlCandidates(url)) {
+      try {
+        const res = await this.fetchImage(candidate);
+        const declared = String(res.headers?.["content-type"] ?? "")
+          .split(";")[0]
+          ?.trim()
+          .toLowerCase();
+        // upload-service trả `application/octet-stream` cho đuôi lạ (vd .HEIC):
+        // đoán lại từ URL thay vì loại ảnh một cách âm thầm.
+        const mimeType = declared?.startsWith("image/")
+          ? declared
+          : this.mimeFromUrl(candidate) || this.mimeFromUrl(url);
+
+        if (!mimeType.startsWith("image/")) {
+          attempts.push(
+            `${candidate} → ${declared || "không rõ content-type"} (không phải ảnh)`,
+          );
+          continue;
+        }
+        if (!VISION_SAFE_MIME.has(mimeType)) {
+          attempts.push(
+            `${candidate} → ${mimeType} (định dạng chưa hỗ trợ, cần JPG/PNG/WebP)`,
+          );
+          continue;
+        }
+
+        const buffer = Buffer.from(res.data as ArrayBuffer);
+        if (buffer.byteLength === 0) {
+          attempts.push(`${candidate} → 200 nhưng nội dung rỗng`);
+          continue;
+        }
+        if (buffer.byteLength > this.maxImageBytes) {
+          attempts.push(
+            `${candidate} → ${formatBytes(buffer.byteLength)} > ` +
+              `${formatBytes(this.maxImageBytes)}`,
+          );
+          continue;
+        }
+
+        const image: DownloadedImage = {
+          mimeType,
+          base64: buffer.toString("base64"),
+          url,
+        };
+        this.writeImageCache(url, image);
+        return { image, reason: "" };
+      } catch (err: any) {
+        attempts.push(`${candidate} → ${this.describeDownloadError(err)}`);
+      }
+    }
+
+    const reason = attempts.join(" | ") || "không rõ nguyên nhân";
+    this.logger.warn(`downloadImage failed for ${url}: ${reason}`);
+    return { image: null, reason };
+  }
+
+  /**
+   * Tải ảnh bằng chứng về dạng base64 để đưa vào prompt vision.
+   * Trả về null nếu URL không phải ảnh hoặc không tải được.
+   */
+  async downloadImage(url: string): Promise<DownloadedImage | null> {
+    return (await this.downloadImageDetailed(url)).image;
   }
 }
+
+/** Ảnh đã tải xong, sẵn sàng gửi model vision. */
+export interface DownloadedImage {
+  mimeType: string;
+  base64: string;
+  url: string;
+}
+
+/**
+ * Định dạng ảnh model vision thực sự đọc được.
+ *
+ * HEIC/HEIF (mặc định của iPhone) bị loại sớm kèm lý do rõ ràng thay vì gửi lên
+ * model rồi nhận lỗi 1210 mơ hồ.
+ */
+const VISION_SAFE_MIME = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
+/** Dung lượng dễ đọc cho thông báo lỗi ("0.0MB" vô nghĩa với ảnh nhỏ). */
+const formatBytes = (bytes: number): string =>
+  bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)}MB`
+    : `${Math.max(1, Math.round(bytes / 1024))}KB`;

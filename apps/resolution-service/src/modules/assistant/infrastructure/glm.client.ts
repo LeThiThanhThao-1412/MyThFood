@@ -33,6 +33,41 @@ const GLM_MODEL_MISSING = "1211";
 const GLM_BAD_CONTENT_TYPE = "1210";
 
 /**
+ * Mã lỗi "model đang quá tải" của GLM — **tạm thời**, khác hẳn 1113 (không có
+ * gói/quota). Đo thật 10/2026: model vision free trả liên tục
+ *
+ * - `1305` `该模型当前访问量过大，请您稍后再试` (model free đông người dùng)
+ * - `1302` `您的账户已达到速率限制` (bấm "Phân tích" quá nhanh)
+ *
+ * Backoff mũ vài giây KHÔNG đủ cho hai mã này ⇒ phải chờ dài (`GLM_OVERLOAD_RETRY_MS`)
+ * rồi thử lại, trước khi bỏ ảnh.
+ */
+const GLM_OVERLOAD_CODES = ["1302", "1305"];
+
+/**
+ * Model vision dự phòng mặc định khi model chính quá tải.
+ *
+ * `glm-4.6v-flash` là bản **free** ⇒ hay 1305; `glm-4.6v-flashx` là bản trả phí
+ * rẻ cùng thế hệ (nhanh, ít nghẽn). Nếu tài khoản không có gói cho flashx, GLM
+ * trả 1113 và client tự chuyển tiếp model kế tiếp trong chuỗi.
+ */
+const DEFAULT_VISION_FALLBACKS = ["glm-4.6v-flashx", "glm-4.5v"];
+
+/** Bytes thật của ảnh từ chuỗi base64 (base64 ≈ 4/3 bytes gốc). */
+function estimateBase64Bytes(base64: string): number {
+  const clean = (base64 ?? "").length;
+  const padding = base64?.endsWith("==") ? 2 : base64?.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((clean * 3) / 4) - padding);
+}
+
+/** Dung lượng dễ đọc cho log ("3.4MB", "820KB"). */
+function formatBytes(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)}MB`
+    : `${Math.max(1, Math.round(bytes / 1024))}KB`;
+}
+
+/**
  * Client gọi GLM của Zhipu/Z.ai qua API tương thích OpenAI:
  * `POST {apiBase}/chat/completions` + header `Authorization: Bearer <key>`.
  *
@@ -147,6 +182,45 @@ export class GlmClient implements AssistantLlmClient {
       .filter((m) => m.length > 0);
   }
 
+  /**
+   * Model **đọc ảnh** dự phòng — chỉ dùng cho lượt có ảnh.
+   *
+   * Vì sao tách khỏi `GLM_FALLBACK_MODELS`: model chữ KHÔNG nhận ảnh (trả 1210),
+   * nên không thể nằm chung chuỗi với model vision. Mặc định
+   * `glm-4.6v-flashx,glm-4.5v`; đặt `none` để tắt (chỉ dùng đúng
+   * `GLM_VISION_MODEL`).
+   */
+  get visionFallbackModels(): string[] {
+    const raw = (process.env.GLM_VISION_FALLBACK_MODELS ?? "").trim();
+    if (raw.toLowerCase() === "none") return [];
+    const list = raw
+      ? raw.split(",").map((m) => m.trim())
+      : [...DEFAULT_VISION_FALLBACKS];
+    return [...new Set(list.filter((m) => m.length > 0))];
+  }
+
+  /** Chuỗi model cho lượt đọc ảnh: model cấu hình trước, rồi model dự phòng. */
+  get visionModelChain(): string[] {
+    const primary = this.visionModel;
+    if (!primary) return [];
+    return [primary, ...this.visionFallbackModels.filter((m) => m !== primary)];
+  }
+
+  /**
+   * Chờ bao lâu trước khi thử lại khi model **quá tải** (1302/1305).
+   *
+   * Model free của GLM nghẽn theo từng đợt; chờ 8s (mặc định) hiệu quả hơn
+   * nhiều so với backoff 1.5s/3s — trước đây bỏ ảnh chỉ sau ~5s.
+   */
+  get overloadRetryMs(): number {
+    return envNumber("GLM_OVERLOAD_RETRY_MS", 8000, 0, 30000);
+  }
+
+  /** Số lần thử **thêm** khi gặp lỗi quá tải (mặc định 2 ⇒ tổng ~16s chờ). */
+  get overloadAttempts(): number {
+    return envNumber("GLM_OVERLOAD_ATTEMPTS", 2, 0, 4);
+  }
+
   /** Ném lỗi rõ ràng nếu assistant chưa được cấu hình. */
   assertReady(): void {
     if (!this.enabled) {
@@ -165,7 +239,7 @@ export class GlmClient implements AssistantLlmClient {
     this.assertReady();
 
     const images = request.images ?? [];
-    const visionModel = this.visionModel;
+    const visionChain = this.visionModelChain;
 
     // Không có ảnh ⇒ đường chữ thuần.
     if (images.length === 0) {
@@ -176,7 +250,7 @@ export class GlmClient implements AssistantLlmClient {
     }
 
     // Tắt hẳn phần ảnh (GLM_VISION_MODEL=none) ⇒ không gọi mạng vô ích.
-    if (!visionModel) {
+    if (visionChain.length === 0) {
       return this.withImageNote(
         {
           ...(await this.callWithJsonRetry<T>(
@@ -185,22 +259,56 @@ export class GlmClient implements AssistantLlmClient {
             false,
           )),
           imagesUsed: 0,
+          imageFailure: {
+            reason: "VISION_DISABLED",
+            detail: "GLM_VISION_MODEL=none",
+            modelsTried: [],
+            retryable: false,
+          },
         },
         images.length,
         "chưa bật model vision (GLM_VISION_MODEL=none)",
       );
     }
 
+    // Dung lượng thật gửi lên (base64 ≈ 4/3 bytes gốc) — ghi vào log khi lỗi để
+    // phân biệt "ảnh quá lớn" với "model quá tải".
+    const totalBytes = images.reduce(
+      (sum, image) => sum + estimateBase64Bytes(image.base64),
+      0,
+    );
+
     try {
       const response = await this.callWithJsonRetry<T>(request, images, true);
-      return { ...response, imagesUsed: images.length };
+      const notes = [...(response.notes ?? [])];
+      // Đọc ảnh bằng model dự phòng: nói rõ để admin biết model chính đang lỗi
+      // (nếu không, lần sau bấm lại vẫn thấy ảnh được đọc mà không hiểu vì sao
+      // lúc trước mất ảnh).
+      if (response.model !== visionChain[0]) {
+        notes.push(
+          `Ảnh bằng chứng được đọc bằng model dự phòng "${response.model}" ` +
+            `(model chính "${visionChain[0]}" đang quá tải/lỗi).`,
+        );
+      }
+      return { ...response, imagesUsed: images.length, notes };
     } catch (err: any) {
-      // Ảnh bằng chứng là phần *bổ trợ*: model vision hỏng (hết quota, bị gỡ,
-      // trả JSON lỗi...) không nên làm mất luôn cả kết quả phân tích.
+      // Ảnh bằng chứng là phần *bổ trợ*: model vision hỏng (quá tải, bị gỡ,
+      // trả JSON lỗi...) không nên làm mất luôn cả kết quả phân tích. Nhưng
+      // KHÔNG được im lặng: log mức `error` + trả `imageFailure` để UI hướng
+      // dẫn admin đúng cách (chờ rồi bấm lại / đổi model / kiểm tra cấu hình).
       if (this.isKeyProblem(err)) throw err;
 
-      this.logger.warn(
-        `GLM vision "${visionModel}" không dùng được — phân tích lại KHÔNG kèm ảnh bằng "${this.model}".`,
+      const detail = this.describeError(err);
+      const overloaded = this.isOverloadError(err);
+      const reason = overloaded ? "VISION_OVERLOADED" : "VISION_ERROR";
+      const waitHint = overloaded
+        ? ` — model đọc ảnh đang quá tải, đợi 30–60 giây rồi bấm "Phân tích lại"`
+        : ` — kiểm tra GLM_VISION_MODEL/GLM_VISION_FALLBACK_MODELS`;
+
+      this.logger.error(
+        `GLM vision thất bại — bỏ ${images.length} ảnh ` +
+          `(${formatBytes(totalBytes)}, models: ${visionChain.join(" → ")}, ` +
+          `lỗi ${detail}): ${shorten(err?.message ?? "unknown", 200)}`,
       );
 
       return this.withImageNote(
@@ -211,9 +319,18 @@ export class GlmClient implements AssistantLlmClient {
             false,
           )),
           imagesUsed: 0,
+          imageFailure: {
+            reason,
+            detail: `${detail}${
+              err?.message ? ` ${shorten(err.message, 160)}` : ""
+            }`,
+            modelsTried: visionChain,
+            retryable: overloaded,
+          },
         },
         images.length,
-        `model vision "${visionModel}" lỗi`,
+        `model vision "${visionChain.join(" → ")}" lỗi ${detail}` +
+          `${err?.message ? `: ${shorten(err.message)}` : ""}${waitHint}`,
       );
     }
   }
@@ -281,9 +398,13 @@ export class GlmClient implements AssistantLlmClient {
     options: { strictJson?: boolean; noThinking?: boolean } = {},
   ): Promise<LlmJsonResponse<T>> {
     const primary = useVision ? (this.visionModel ?? this.model) : this.model;
+    // Lượt ảnh dùng chuỗi **vision** (model chữ trả 1210 nếu nhận ảnh), lượt chữ
+    // dùng `GLM_FALLBACK_MODELS`.
     const chain = [
       primary,
-      ...this.fallbackModels.filter((m) => m !== primary),
+      ...(useVision ? this.visionModelChain : this.fallbackModels).filter(
+        (m) => m !== primary,
+      ),
     ];
     const endpoint = `${this.apiBase}/chat/completions`;
     let lastError: any = null;
@@ -304,12 +425,12 @@ export class GlmClient implements AssistantLlmClient {
 
         // Key sai/bị thu hồi ⇒ lỗi cấu hình: đổi model cũng vô ích.
         if (this.isKeyProblem(err)) {
-          throw this.toHttpException(err, chain.slice(0, index + 1));
+          throw this.toHttpException(err, chain.slice(0, index + 1), useVision);
         }
 
         const nextModelUsable = this.shouldTryNextModel(err);
         if (isLastModel || !nextModelUsable) {
-          throw this.toHttpException(err, chain.slice(0, index + 1));
+          throw this.toHttpException(err, chain.slice(0, index + 1), useVision);
         }
 
         this.logger.warn(
@@ -334,7 +455,7 @@ export class GlmClient implements AssistantLlmClient {
       };
     }
 
-    throw this.toHttpException(lastError, chain);
+    throw this.toHttpException(lastError, chain, useVision);
   }
 
   /** Dựng body theo chuẩn OpenAI chat/completions mà GLM đang dùng. */
@@ -533,10 +654,12 @@ export class GlmClient implements AssistantLlmClient {
     endpoint: string,
     body: Record<string, unknown>,
   ): Promise<any> {
-    const attempts = this.maxAttempts;
     let lastError: any = null;
+    let attempt = 0;
+    let overloadTries = 0;
 
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    for (;;) {
+      attempt += 1;
       try {
         return await firstValueFrom(
           this.httpService.post(endpoint, body, {
@@ -551,7 +674,27 @@ export class GlmClient implements AssistantLlmClient {
         lastError = err;
 
         if (this.isKeyProblem(err) || !this.isRetryable(err)) throw err;
-        if (attempt === attempts) break;
+
+        // Quá tải model (1302/1305): backoff mũ vài giây không đủ — nghẽn của
+        // model free kéo dài theo đợt. Chờ dài (`GLM_OVERLOAD_RETRY_MS`) rồi
+        // thử lại trước khi bỏ ảnh/đổi model.
+        if (this.isOverloadError(err)) {
+          if (overloadTries >= this.overloadAttempts) break;
+          overloadTries += 1;
+          const waitMs = Math.max(
+            this.overloadRetryMs,
+            retryDelayMs(this.retryBaseMs, attempt, this.headersOf(err)),
+          );
+          this.logger.warn(
+            `GLM "${model}" đang quá tải (${this.describeError(err)}) — ` +
+              `chờ ${waitMs}ms rồi thử lại ` +
+              `(quá tải ${overloadTries}/${this.overloadAttempts}).`,
+          );
+          await sleep(waitMs);
+          continue;
+        }
+
+        if (attempt >= this.maxAttempts) break;
 
         const waitMs = retryDelayMs(
           this.retryBaseMs,
@@ -560,7 +703,7 @@ export class GlmClient implements AssistantLlmClient {
         );
         this.logger.warn(
           `GLM "${model}" lỗi tạm thời (${this.describeError(err)}) — ` +
-            `thử lại ${attempt + 1}/${attempts} sau ${waitMs}ms.`,
+            `thử lại ${attempt + 1}/${this.maxAttempts} sau ${waitMs}ms.`,
         );
         await sleep(waitMs);
       }
@@ -618,14 +761,49 @@ export class GlmClient implements AssistantLlmClient {
     return code === undefined || code === null ? "" : String(code);
   }
 
+  /**
+   * Trạng thái/mã lỗi của GLM, đọc được cả khi lỗi đã bị bọc thành `HttpException`.
+   *
+   * Trước đây `describeError` chỉ đọc `err.response.status`, nên sau `toHttpException`
+   * mọi lỗi 429/1305 đều hiện thành **"lỗi mạng"** trong cảnh báo của admin — gây
+   * hiểu nhầm là mất mạng thay vì model quá tải.
+   */
+  private metaOf(err: any): { status: number | null; code: string } {
+    const meta = err?.llmMeta;
+    if (meta) {
+      return { status: meta.status ?? null, code: meta.code ?? "" };
+    }
+    const status = Number(err?.response?.status);
+    return {
+      status: Number.isFinite(status) && status > 0 ? status : null,
+      code: this.errorCodeOf(err),
+    };
+  }
+
   private describeError(err: any): string {
-    const status = err?.response?.status;
-    const code = this.errorCodeOf(err);
-    return `${status ?? "mạng"}${code ? `/${code}` : ""}`;
+    const { status, code } = this.metaOf(err);
+    if (status !== null) return `${status}${code ? `/${code}` : ""}`;
+    const message = String(err?.code ?? err?.message ?? "");
+    const transport =
+      /ECONN|EAI_AGAIN|ENOTFOUND|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|socket|timeout/i.test(
+        message,
+      );
+    return `${transport ? "mạng" : "lỗi"}${code ? `/${code}` : ""}`;
+  }
+
+  /** Model quá tải/hết hạn mức tạm thời ⇒ đáng chờ rồi thử lại. */
+  private isOverloadError(err: any): boolean {
+    const { status, code } = this.metaOf(err);
+    if (GLM_OVERLOAD_CODES.includes(code)) return true;
+    return status === 429 || (status !== null && status >= 500);
   }
 
   /** Chuyển lỗi HTTP/GLM thành exception đọc được cho admin. */
-  private toHttpException(err: any, triedModels: string[]): Error {
+  private toHttpException(
+    err: any,
+    triedModels: string[],
+    useVision = false,
+  ): Error {
     const status = Number(err?.response?.status);
     const error = err?.response?.data?.error;
     const code = this.errorCodeOf(err);
@@ -638,50 +816,79 @@ export class GlmClient implements AssistantLlmClient {
     );
 
     const offendingModel = triedModels[triedModels.length - 1] ?? this.model;
+    // Gắn metadata để tầng trên (generateJson) phân loại được "quá tải" và giữ
+    // đúng mã lỗi trong cảnh báo — HttpException của Nest không giữ `response`.
+    const withMeta = <T extends Error>(exception: T): T => {
+      (exception as any).llmMeta = {
+        status: Number.isFinite(status) && status > 0 ? status : null,
+        code,
+        modelsTried: triedModels,
+        useVision,
+      };
+      return exception;
+    };
 
     if (this.isKeyProblem(err)) {
-      return new ServiceUnavailableException(
-        `GLM_API_KEY không hợp lệ hoặc đã bị thu hồi: ${message}`,
+      return withMeta(
+        new ServiceUnavailableException(
+          `GLM_API_KEY không hợp lệ hoặc đã bị thu hồi: ${message}`,
+        ),
       );
     }
     if (code === GLM_NO_BALANCE) {
-      return new ServiceUnavailableException(
-        `Tài khoản GLM không có gói/quota cho model "${offendingModel}" (1113): ${message} ` +
-          `Model free đang dùng được: "${this.model}" (chữ) và "${this.visionModel}" (ảnh).`,
+      return withMeta(
+        new ServiceUnavailableException(
+          `Tài khoản GLM không có gói/quota cho model "${offendingModel}" (1113): ${message} ` +
+            `Model free đang dùng được: "${this.model}" (chữ) và "${this.visionModel}" (ảnh).`,
+        ),
       );
     }
     if (code === GLM_MODEL_MISSING || status === 404) {
-      return new ServiceUnavailableException(
-        `Không tìm thấy model "${offendingModel}" trên GLM (${code || 404}): ${message} — ` +
-          "kiểm tra GLM_MODEL/GLM_VISION_MODEL (model có thể đã bị gỡ như glm-4v-flash).",
+      return withMeta(
+        new ServiceUnavailableException(
+          `Không tìm thấy model "${offendingModel}" trên GLM (${code || 404}): ${message} — ` +
+            "kiểm tra GLM_MODEL/GLM_VISION_MODEL (model có thể đã bị gỡ như glm-4v-flash).",
+        ),
       );
     }
     if (code === GLM_BAD_CONTENT_TYPE) {
-      return new BadGatewayException(
-        `Model "${offendingModel}" không nhận loại nội dung này (1210): ${message}`,
+      return withMeta(
+        new BadGatewayException(
+          `Model "${offendingModel}" không nhận loại nội dung này (1210): ${message}`,
+        ),
       );
     }
     if (status === 429) {
-      return new ServiceUnavailableException(
-        `GLM vượt hạn mức (429): ${message}${this.retryHint(triedModels)}`,
+      return withMeta(
+        new ServiceUnavailableException(
+          `GLM vượt hạn mức (429): ${message}${this.retryHint(triedModels, useVision)}`,
+        ),
       );
     }
     if (status >= 500) {
-      return new ServiceUnavailableException(
-        `GLM tạm thời quá tải (${status}): ${message}${this.retryHint(triedModels)}`,
+      return withMeta(
+        new ServiceUnavailableException(
+          `GLM tạm thời quá tải (${status}): ${message}${this.retryHint(triedModels, useVision)}`,
+        ),
       );
     }
-    return new ServiceUnavailableException(`Không gọi được GLM: ${message}`);
+    return withMeta(
+      new ServiceUnavailableException(`Không gọi được GLM: ${message}`),
+    );
   }
 
   /**
    * Câu gợi ý thêm cho admin khi đã tự xử lý hết cách.
    *
    * Nói rõ đã thử bao nhiêu lần, bao nhiêu model để admin biết không phải lỗi
-   * thao tác của mình.
+   * thao tác của mình — và **đúng biến môi trường** cần đổi (lượt ảnh thì là
+   * `GLM_VISION_MODEL`, không phải `GLM_MODEL`).
    */
-  private retryHint(triedModels: string[]): string {
+  private retryHint(triedModels: string[], useVision = false): string {
     const attempts = this.maxAttempts;
+    const envHint = useVision
+      ? "GLM_VISION_MODEL/GLM_VISION_FALLBACK_MODELS"
+      : "GLM_MODEL";
     if (triedModels.length > 1) {
       return (
         ` Đã tự thử lại ${attempts} lần mỗi model và chuyển qua ${triedModels.length} model ` +
@@ -690,7 +897,7 @@ export class GlmClient implements AssistantLlmClient {
     }
     return (
       ` Đã tự thử lại ${attempts} lần — model "${triedModels[0]}" đang lỗi, ` +
-      `vui lòng đợi 30–60 giây rồi bấm "Phân tích" lại (hoặc đổi GLM_MODEL).`
+      `vui lòng đợi 30–60 giây rồi bấm "Phân tích" lại (hoặc đổi ${envHint}).`
     );
   }
 }

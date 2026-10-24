@@ -26,6 +26,30 @@ export class WalletScheduler {
   }
 
   /**
+   * Quét nợ clawback mỗi 30 phút: ví nào đã đủ tiền trả nợ thì thu hồi ngay
+   * (bắt cả các đường tiền vào không đi qua `WalletService.credit`).
+   *
+   * Tắt bằng `DEBT_RECOVERY_SWEEP_ENABLED=false`; đổi luật thu bằng
+   * `DEBT_RECOVERY_MODE=FULL_WHEN_COVERED|PARTIAL_ALWAYS|OFF`.
+   */
+  @Cron("*/30 * * * *", { timeZone: "Asia/Ho_Chi_Minh" })
+  async debtRecoveryCron(): Promise<void> {
+    if (String(process.env.DEBT_RECOVERY_SWEEP_ENABLED ?? "true") === "false") {
+      return;
+    }
+    try {
+      const result = await this.walletService.recoverAllCoveredDebts();
+      if (result.recovered > 0) {
+        this.logger.log(
+          `Thu hồi nợ tự động: ${result.recovered} VND trên ${result.wallets.length}/${result.scanned} ví có nợ`,
+        );
+      }
+    } catch (err: any) {
+      this.logger.error(`Quét thu hồi nợ thất bại: ${err.message}`);
+    }
+  }
+
+  /**
    * Quét nợ COD quá hạn (01:00) — đánh dấu chuyển bộ phận thu hồi.
    * Không tự xóa nợ; giữ khoá TK, chờ admin quyết định.
    */

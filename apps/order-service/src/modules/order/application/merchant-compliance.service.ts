@@ -35,7 +35,10 @@ export class MerchantComplianceService {
       warnRate: this.rate("MERCHANT_COMPLIANCE_WARN_RATE", 0.3),
       fineRate: this.rate("MERCHANT_COMPLIANCE_FINE_RATE", 0.5),
       suspendRate: this.rate("MERCHANT_COMPLIANCE_SUSPEND_RATE", 0.7),
-      fineAmount: this.positiveInt("MERCHANT_COMPLIANCE_FINE_AMOUNT", 200000),
+      fineAmount: this.nonNegativeInt(
+        "MERCHANT_COMPLIANCE_FINE_AMOUNT",
+        200000,
+      ),
       cooldownHours: this.positiveInt("MERCHANT_COMPLIANCE_COOLDOWN_HOURS", 24),
     };
   }
@@ -43,6 +46,12 @@ export class MerchantComplianceService {
   private positiveInt(key: string, fallback: number): number {
     const v = Number(process.env[key]);
     return Number.isFinite(v) && v > 0 ? v : fallback;
+  }
+
+  /** Như positiveInt nhưng cho phép 0 (dùng để TẮT hình phạt tiền). */
+  private nonNegativeInt(key: string, fallback: number): number {
+    const v = Number(process.env[key]);
+    return Number.isFinite(v) && v >= 0 ? v : fallback;
   }
 
   private rate(key: string, fallback: number): number {
@@ -129,13 +138,17 @@ export class MerchantComplianceService {
     fineAmount: number,
     windowDays: number,
   ): Promise<void> {
-    const amount = decision.type === "FINE" ? fineAmount : null;
-    const reason = this.buildReason(decision.type, stats, windowDays);
+    // Chính sách "cảnh báo thay phạt": FINE bị tắt (fineAmount = 0) ⇒ hạ bậc
+    // thành WARNING để không ghi khoản phạt tiền rỗng.
+    const type: CompliancePenaltyType =
+      decision.type === "FINE" && fineAmount <= 0 ? "WARNING" : decision.type;
+    const amount = type === "FINE" ? fineAmount : null;
+    const reason = this.buildReason(type, stats, windowDays);
 
     await this.complianceRepository.recordPenalty({
       merchantId,
       level: decision.level,
-      type: decision.type,
+      type,
       amount,
       reason,
     });
@@ -145,18 +158,18 @@ export class MerchantComplianceService {
       lastPenaltyAt: new Date(),
     });
 
-    await this.openCase(merchantId, decision.type, reason);
+    await this.openCase(merchantId, type, reason);
 
-    if (decision.type === "FINE" && amount) {
+    if (type === "FINE" && amount) {
       await this.debitMerchant(merchantId, amount, reason);
     }
-    if (decision.type === "SUSPEND") {
+    if (type === "SUSPEND") {
       await this.suspendMerchant(merchantId);
     }
-    await this.notifyMerchant(merchantId, decision.type, reason);
+    await this.notifyMerchant(merchantId, type, reason);
 
     this.logger.log(
-      `Escalated merchant ${merchantId} to level ${decision.level} (${decision.type}): ${reason}`,
+      `Escalated merchant ${merchantId} to level ${decision.level} (${type}): ${reason}`,
     );
   }
 

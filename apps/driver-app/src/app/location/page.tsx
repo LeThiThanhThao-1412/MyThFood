@@ -182,19 +182,43 @@ export default function DriverLocationPage() {
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLat(pos.coords.latitude);
-        setLng(pos.coords.longitude);
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setLat(latitude);
+        setLng(longitude);
         setLocation({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          address: `Vị trí ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`,
+          latitude,
+          longitude,
+          address: `Vị trí ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
           source: "gps",
         });
-        setStatus("✅ Đã lấy vị trí hiện tại");
+
+        // Gửi NGAY lên backend (không chỉ điền form): người dùng bấm "Lấy vị trí"
+        // thường để cập nhật vị trí nhận đơn → phải đồng bộ currentLat/Lng +
+        // lịch sử GPS, và đẩy dispatch realtime về app khách.
+        if (!driver?.id) {
+          setStatus("✅ Đã lấy vị trí hiện tại");
+          return;
+        }
+        setStatus("⏳ Đang gửi vị trí...");
+        try {
+          await driverApi.updateLocationBatch(driver.id, [
+            {
+              latitude,
+              longitude,
+              accuracy: pos.coords.accuracy,
+              recordedAt: new Date(pos.timestamp || Date.now()).toISOString(),
+            },
+          ]);
+          setStatus("✅ Đã lấy & gửi vị trí hiện tại");
+        } catch (err: any) {
+          setStatus(
+            `⚠️ Đã lấy vị trí nhưng chưa gửi được: ${err?.message || "lỗi mạng"}`,
+          );
+        }
       },
       () => setStatus("❌ Không thể lấy vị trí"),
-      { enableHighAccuracy: true, timeout: 10000 },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
   }
 
@@ -261,7 +285,10 @@ export default function DriverLocationPage() {
     try {
       // “Nhận đơn” → dispatch DRIVER_ACCEPTED (Đang đến quán)
       const order = await orderApi.getById(orderId);
-      const dispatch = await acceptDispatchOrder(order, driver.id);
+      const dispatch = await acceptDispatchOrder(order, driver.id, undefined, {
+        latitude: lat,
+        longitude: lng,
+      });
       setActiveDispatch(dispatch);
       setStatus("✅ Đã nhận đơn #" + orderId.slice(0, 8));
       setNearbyOrders((prev) => prev.filter((o) => o.id !== orderId));

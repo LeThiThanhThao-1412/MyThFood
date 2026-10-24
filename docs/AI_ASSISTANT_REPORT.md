@@ -490,3 +490,74 @@ Hoặc demo trực tiếp trên UI: mở admin-portal → `/cases` → chọn v�
 > `docs/AI_ASSISTANT_REPORT.md` (thư mục `docs/` cấp dự án, cùng chỗ với `RESOLUTION_SERVICE_DESIGN.md`) và
 > `mythfood/docs/AI_ASSISTANT_REPORT.md` (trong repo, được git theo dõi).
 > Khi sửa nội dung, cập nhật **cả hai** bản để tránh lệch.
+
+---
+
+## Cập nhật: ưu tiên ảnh món theo danh mục
+
+- **Sự cố món ăn** (`ORDER_QUALITY`, `MISSING_ITEM`, `WRONG_ITEM`, `DAMAGED_ITEM`, `FOOD_SAFETY`):
+  `DELIVERY_PROOF → MENU_REFERENCE (≤2) → REPORTER (≤2) → RESPONDENT (≤2) → REVIEW (≤1)`.
+- **Danh mục khác**: `DELIVERY_PROOF → REPORTER → RESPONDENT → MENU_REFERENCE → REVIEW`.
+- `snapshot.imageOrder` lưu thứ tự thật; `imageLabelEntries()` (domain) là nguồn nhãn DUY NHẤT cho cả `buildImagePrompt` và `buildUserPrompt`, nên số thứ tự/nhãn luôn khớp ảnh gửi model (URL nằm trong `imagesSkipped` bị loại khỏi danh sách nhãn); `normalize()` dùng lại `imageOrder` để phân bổ `imagesUsed`.
+- Khuyến nghị `AI_ASSISTANT_MAX_IMAGES=6` (tối đa 8), `AI_MAX_MENU_IMAGES=2`. Với `.env` đang 4, ảnh món thường bị 0 suất khi có ảnh bằng chứng.
+- Nếu có ảnh món nhưng không đính kèm được: `suggestion.warnings` nêu rõ; UI hiện `Ảnh: món 0` + cảnh báo đỏ.
+- Test: `image-plan.spec.ts`, `case-context.spec.ts` (menu-first max=4; default max=6), `prompt-extended.spec.ts`.
+
+---
+
+## Cập nhật: sửa lỗi nguồn dữ liệu 500 & ảnh bằng chứng bị bỏ
+
+**Hiện tượng:** panel "Dữ liệu AI nhận" báo D4/D10–D12/D15–D19 `KHÔNG … → 500
+Internal server error` với URL dạng `…/drivers/TX-2D8256/…`,
+`…/merchants/NH-805152/…`; ảnh khách gửi vẫn hiện "0 ảnh gửi AI"; tự phân tích
+không tạo bản ghi nào.
+
+| Nguyên nhân                                                                                                                                   | Cách sửa                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ID dùng gọi service nội bộ lấy từ payload **đã ẩn danh** ⇒ gửi `TX-2D8256`/`NH-805152` vào URL ⇒ Postgres lỗi cast UUID ⇒ service trả **500** | Lấy `driverId`/`merchantId`/`consumerId` từ `rawOrder` (payload gốc) + `resolvableId()` chặn mọi giá trị pseudonym `KH-/TX-/NH-/ND-`                                                                                            |
+| Nguồn bị bỏ qua (thiếu ID, sai danh mục) **biến mất** khỏi `snapshot.sources` ⇒ admin không biết vì sao "x/15 khả dụng"                       | Mọi nguồn trong `CASE_CONTEXT_SOURCES` luôn có mặt, kèm lý do (`Không xác định được tài xế…`, `Đã tắt bằng cờ cấu hình`)                                                                                                        |
+| `downloadImage()` chỉ trả `null` ⇒ không biết ảnh 404 / quá dung lượng / redirect S3 lỗi                                                      | `downloadImageDetailed()` trả `{ image, reason }`; thử nhiều host (`UPLOAD_SERVICE_URL` → docker → localhost → URL gốc), đoán MIME theo đuôi, loại HEIC sớm; lưu `snapshot.imageSkipReasons[]` và đưa vào `suggestion.warnings` |
+| Panel báo "0 ảnh gửi AI (bị bỏ)" gây hiểu nhầm là ảnh không được gửi                                                                          | Nhãn mới: `N ảnh đã gửi nhưng model không đọc`; lý do tải hỏng hiện ngay dưới danh sách nguồn                                                                                                                                   |
+| Tự phân tích lỗi nhưng UI chỉ nói "Chưa có bản phân tích nào"                                                                                 | `GET /assistant/cases/:id/analysis` trả thêm `auto` = `{ status, attemptedAt, detail }`; log lỗi ở mức `error`                                                                                                                  |
+
+**Lưu ý vận hành:** `UPLOAD_SERVICE_URL` phải đúng host trong docker; volume
+`upload_data` đã được mount vào `/app/uploads` để ảnh local không mất khi tạo lại
+container; ảnh > `AI_MAX_IMAGE_BYTES` (5MB) sẽ bị bỏ kèm lý do; HEIC cần đổi sang
+JPG/PNG/WebP.
+
+**Test:** `case-context.spec.ts` (+3 ca: ID gốc vs pseudonym, không gọi service
+bằng pseudonym, `imageSkipReasons`), `integration-image.spec.ts` (+7 ca: đổi host,
+fallback, MIME theo đuôi, JSON không phải ảnh, HEIC, giới hạn dung lượng).
+
+---
+
+## Cập nhật: bổ sung bằng chứng hai phía (nhà hàng/tài xế)
+
+**Hiện tượng:** panel AI báo **"Bên bị khiếu nại — Không có ảnh"** và
+**"Thiếu phản hồi từ nhà hàng (respondentResponse)"**, trong khi nhà hàng không
+tìm thấy chỗ nào để gửi ảnh minh chứng.
+
+| Nguyên nhân                                                                                                                                                                 | Cách sửa                                                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /cases/:id/evidence` chỉ mở cho `CONSUMER`/`ADMIN` **và** `assertReporterOrAdmin()` chặn tiếp ⇒ `MERCHANT_OWNER`/`DRIVER` nhận 403, không có API nào để gửi ảnh       | Controller mở `@Roles("CONSUMER","DRIVER","MERCHANT_OWNER","ADMIN")`; `CaseService.addEvidence()` tự nhận bên dựa trên người gọi (trùng `respondentId` ⇒ bên bị khiếu nại, còn lại ⇒ bên khiếu nại/admin)                 |
+| merchant-app chỉ hiện nút "Phản hồi" khi `status === "OPEN"`. Sau khi AI tự phân tích hoặc admin yêu cầu bổ sung, case sang `UNDER_REVIEW`/`WAITING_EVIDENCE` ⇒ **mất nút** | Nút "Phản hồi" mở ở cả 3 trạng thái (`ACTIVE_STATUSES`), kèm nhắc "Bạn chưa phản hồi vụ việc này…" và banner khi admin yêu cầu bổ sung                                                                                    |
+| Nếu chỉ mở endpoint mà không tách trường, ảnh nhà hàng sẽ ghi lẫn vào `evidence` (bằng chứng bên tố) ⇒ AI vẫn đọc sai bên                                                   | Thêm `Case.addRespondentEvidence(urls)` ghi vào `respondentEvidence`; **không** đụng `respondentResponse` nên gửi thêm ảnh không làm mất giải trình cũ và không bị coi là "đã phản hồi" (scheduler quá hạn vẫn tính đúng) |
+| UI các app chỉ hiển thị `evidence`, không hiển thị ảnh minh chứng của bên bị khiếu nại                                                                                      | merchant-app / driver-app / consumer-app hiện cả hai khối ảnh: "bên khiếu nại" và "bên bị khiếu nại"                                                                                                                      |
+| Ảnh giao hàng có trên hệ thống nhưng panel chỉ nói "chưa gửi được cho AI", không nêu lý do                                                                                  | admin-portal hiện thêm dòng `Lý do: …` lấy từ `context.imageSkipReasons` (404, quá dung lượng, content-type lạ…)                                                                                                          |
+
+**Luồng mới (không phải chờ admin):**
+
+1. Khách tạo khiếu nại → AI tự phân tích (D4/D10–D12/D15–D19 đã dùng ID thật).
+2. Nhà hàng mở app → tab Khiếu nại → chi tiết vụ việc → **📷 Bổ sung ảnh minh chứng** (ảnh món đã
+   chuẩn bị/đóng gói, hoá đơn, camera) và/hoặc **Phản hồi** (giải trình + ảnh).
+3. Backend ghi ảnh vào `respondentEvidence`, ghi timeline
+   "Bên bị khiếu nại bổ sung N ảnh minh chứng", báo cho người khiếu nại và
+   **kích hoạt lại AI** (nền) ⇒ lần phân tích sau không còn "Thiếu phản hồi từ nhà hàng".
+4. Nếu case đang `WAITING_EVIDENCE`, có bằng chứng mới ⇒ tự quay lại `UNDER_REVIEW`.
+
+**Giới hạn đã biết:** case đã `RESOLVED`/`REJECTED`/`WITHDRAWN`/`CLOSED` thì
+domain từ chối thêm bằng chứng (HTTP 400) — UI ẩn khối upload ở các trạng thái này.
+
+**Test:** `case-evidence.spec.ts` (5 ca: nhà hàng → `respondentEvidence`, nhận diện
+qua `userId`, khách → `evidence`, admin → `evidence`, người ngoài bị 403),
+`case.aggregate.spec.ts` (+2 ca `addRespondentEvidence`).

@@ -13,6 +13,18 @@ function toNum(v: unknown): number {
   return 0;
 }
 
+/** Nhãn từng dòng nợ (khớp `clawback_liabilities.category` của wallet-service). */
+const DEBT_CATEGORY_LABEL: Record<string, string> = {
+  CUSTOMER_REFUND: "Hoàn tiền cho khách",
+  DRIVER_COMPENSATION: "Bồi thường tài xế",
+  PLATFORM_FUND: "Bù quỹ nền tảng",
+  UNCATEGORIZED: "Khoản nợ khác",
+};
+
+function debtCategoryLabel(category?: string | null): string {
+  return DEBT_CATEGORY_LABEL[category || "UNCATEGORIZED"] ?? "Khoản nợ khác";
+}
+
 export default function MerchantWalletPage() {
   const router = useRouter();
   const { isAuthenticated, clearAuth, user } = useAuthStore();
@@ -23,6 +35,7 @@ export default function MerchantWalletPage() {
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletTx, setWalletTx] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
+  const [clawback, setClawback] = useState<any>(null);
 
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [withdrawStatus, setWithdrawStatus] = useState("");
@@ -45,6 +58,14 @@ export default function MerchantWalletPage() {
             const wallet = await walletApi.getWallet(m.id, "MERCHANT");
             setWalletBalance(wallet.balance);
             setWalletTx(wallet.transactions || []);
+          } catch {
+            /* wallet service may not be running */
+          }
+
+          // Nợ clawback đang mở (kê theo từng dòng: hoàn khách / bồi thường tài xế)
+          try {
+            const debt = await walletApi.getOpenClawback(m.id, "MERCHANT");
+            setClawback(debt);
           } catch {
             /* wallet service may not be running */
           }
@@ -100,6 +121,48 @@ export default function MerchantWalletPage() {
           </p>
         </div>
       </div>
+
+      {/* Debt card — nợ phải kê rõ từng dòng, tách khỏi doanh thu */}
+      {clawback && Number(clawback.totalOpenClawback) > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm p-5 border border-red-100">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="font-bold text-[#1a1a2e]">🧾 Nợ cần thanh toán</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Trừ tự động từ doanh thu khi ví đủ tiền
+              </p>
+            </div>
+            <span className="text-xl font-extrabold text-red-500 whitespace-nowrap">
+              {Number(clawback.totalOpenClawback).toLocaleString("vi-VN")}₫
+            </span>
+          </div>
+          <div className="mt-3 space-y-1.5">
+            {(clawback.byCategory || []).map((c: any) => (
+              <div
+                key={c.category}
+                className="flex justify-between text-sm border-b border-gray-50 last:border-0 pb-1.5"
+              >
+                <span className="text-gray-600">
+                  {debtCategoryLabel(c.category)}
+                </span>
+                <span className="font-semibold text-red-500">
+                  {Number(c.amount).toLocaleString("vi-VN")}₫
+                </span>
+              </div>
+            ))}
+            {(clawback.items || []).slice(0, 5).map((it: any) => (
+              <p key={it.id} className="text-xs text-gray-400">
+                {it.description || `Nợ đơn #${it.sourceOrderId?.slice(0, 8)}`} —
+                còn {Number(it.remainingAmount).toLocaleString("vi-VN")}₫
+              </p>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mt-3">
+            Doanh thu mỗi đơn vẫn được quyết toán đầy đủ vào ví; khoản nợ được
+            trừ thành bút toán riêng nên luôn đối soát được.
+          </p>
+        </div>
+      )}
 
       {/* Settlement Formula */}
       <div className="bg-[#f8fafb] rounded-2xl p-4 border border-gray-200 text-sm text-gray-600">

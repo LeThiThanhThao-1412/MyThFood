@@ -367,6 +367,22 @@ async function ensureDispatch(order: any, merchant?: any): Promise<any> {
 }
 
 /**
+ * GPS gửi kèm khi nhận đơn (nếu có) để dispatch-service cập nhật vị trí tài xế
+ * trước khi kiểm tra bán kính nhận đơn. Toạ độ không hợp lệ → bỏ qua.
+ */
+function acceptLocationPayload(
+  location?: LatLng,
+): { latitude: number; longitude: number } | undefined {
+  if (!location) return undefined;
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return undefined;
+  }
+  return { latitude, longitude };
+}
+
+/**
  * Bước 1 — “Nhận đơn”: gán tài xế + driver-accept → DRIVER_ACCEPTED
  * (hệ thống chuyển sang “Đang đến quán”) và thông báo cho khách.
  */
@@ -374,6 +390,7 @@ export async function acceptOrder(
   order: any,
   driverId: string,
   merchant?: any,
+  driverLocation?: LatLng,
 ): Promise<any> {
   if (!order?.id) throw new Error("Không tìm thấy thông tin đơn hàng.");
   let dispatch = await ensureDispatch(order, merchant);
@@ -402,7 +419,12 @@ export async function acceptOrder(
     );
   }
   if (dispatch.status === "DRIVER_ASSIGNED") {
-    dispatch = unwrap<any>(await dispatchApi.driverAccept(dispatch.id));
+    dispatch = unwrap<any>(
+      await dispatchApi.driverAccept(
+        dispatch.id,
+        acceptLocationPayload(driverLocation),
+      ),
+    );
   }
 
   if (

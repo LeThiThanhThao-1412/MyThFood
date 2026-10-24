@@ -190,6 +190,7 @@ Body của `analyze` (tuỳ chọn): `{ "skipImages": true, "maxImages": 2 }`.
 | `GEMINI_RETRY_BASE_MS`    | `1500`                                      | Chờ giữa 2 lần thử (backoff mũ + jitter, tôn trọng `Retry-After`)                                                                                        |
 | `GEMINI_FALLBACK_MODELS`  | `gemini-3.6-flash,gemini-3.5-flash`         | Model dự phòng, tự chuyển khi model chính 503/429/404. Đo thật 10/2026: `2.5-flash`/`2.5-pro` trả **404** (Google khoá với tài khoản mới) nên không dùng |
 | `UPLOAD_SERVICE_URL`      | —                                           | Để đổi `localhost:3010` → địa chỉ upload-service khi chạy docker                                                                                         |
+| `AI_MAX_IMAGE_BYTES`      | `5242880` (5MB)                             | Ảnh tải về lớn hơn mức này bị bỏ (log warn + ghi vào `imagesSkipped`) thay vì gửi model                                                                  |
 | `CHAT_SERVICE_URL`        | `http://chat-service:3015`                  | Nguồn D11                                                                                                                                                |
 | `DISPATCH_SERVICE_URL`    | `http://dispatch-service:3008`              | Nguồn D3                                                                                                                                                 |
 | `REVIEW_SERVICE_URL`      | `http://review-service:3011`                | Nguồn D5                                                                                                                                                 |
@@ -361,3 +362,181 @@ npx jest --config apps/resolution-service/jest.config.js --rootDir apps/resoluti
   chưa được nối — xem ghi chú "phase 2" trong `docs/RESOLUTION_SERVICE_DESIGN.md`.
 - Model + key phải được xác nhận bằng một lệnh gọi thật (`/assistant/health`
   chỉ kiểm tra cấu hình, không gọi model).
+
+---
+
+## Cập nhật: ưu tiên ảnh món theo danh mục
+
+- **Sự cố món ăn** (`ORDER_QUALITY`, `MISSING_ITEM`, `WRONG_ITEM`, `DAMAGED_ITEM`, `FOOD_SAFETY`):
+  `DELIVERY_PROOF → MENU_REFERENCE (≤2) → REPORTER (≤2) → RESPONDENT (≤2) → REVIEW (≤1)`.
+- **Danh mục khác**: `DELIVERY_PROOF → REPORTER → RESPONDENT → MENU_REFERENCE → REVIEW`.
+- `snapshot.imageOrder` lưu thứ tự thật; `imageLabelEntries()` (domain) là nguồn nhãn DUY NHẤT cho cả `buildImagePrompt` và `buildUserPrompt`, nên số thứ tự/nhãn luôn khớp ảnh gửi model (URL nằm trong `imagesSkipped` bị loại khỏi danh sách nhãn); `normalize()` dùng lại `imageOrder` để phân bổ `imagesUsed`.
+- Khuyến nghị `AI_ASSISTANT_MAX_IMAGES=6` (tối đa 8), `AI_MAX_MENU_IMAGES=2`. Với `.env` đang 4, ảnh món thường bị 0 suất khi có ảnh bằng chứng.
+- Nếu có ảnh món nhưng không đính kèm được: `suggestion.warnings` nêu rõ; UI hiện `Ảnh: món 0` + cảnh báo đỏ.
+- Test: `image-plan.spec.ts`, `case-context.spec.ts` (menu-first max=4; default max=6), `prompt-extended.spec.ts`.
+
+---
+
+## Cập nhật: sửa lỗi "nguồn dữ liệu trả 500" & "khách gửi ảnh mà AI bảo không có ảnh"
+
+Hiện tượng gặp trên môi trường chạy thật:
+
+```
+KHÔNG D4  · GET /api/v1/drivers/TX-2D8256/location/history … → 500 Internal server error
+KHÔNG D10 · GET /api/v1/orders/driver/TX-2D8256            → 500 Internal server error
+KHÔNG D12 · GET /api/v1/merchants/NH-805152                → 500 Internal server error
+KHÔNG D15 · GET /api/v1/merchants/NH-805152/menu           → 500 Internal server error
+```
+
+### Nguyên nhân 1 — gọi service nội bộ bằng **mã ẩn danh**
+
+`collect()` trả payload **đã redact**. Trước đây `driverId`/`merchantId`/`consumerId`
+được suy ra từ `order` (payload đã redact) nên mang giá trị `TX-2D8256`,
+`NH-805152`, `KH-…`. Các service kia nhận `id` kiểu UUID ⇒ Postgres báo
+`invalid input syntax for type uuid` ⇒ trả **500**. Vì vậy mọi nguồn phụ thuộc
+ID (D4, D10–D12, D15–D19) đều "KHÔNG CÓ", kéo theo AI kết luận thiếu bằng chứng.
+
+Cách sửa (`case-context.service.ts`):
+
+- ID dùng để gọi service lấy từ **`rawOrder`** (payload gốc, giữ trong `onRaw`),
+  không lấy từ `order` đã redact.
+- Thêm `resolvableId()`: trả `null` cho mọi giá trị khớp
+  `/^(KH|TX|NH|ND)-[0-9A-F]{6}$/` ⇒ pseudonym **không bao giờ** được đưa vào URL.
+- Nguồn bị bỏ qua (thiếu tài xế/quán/khách, sai danh mục, tắt bằng cờ rollout)
+  vẫn xuất hiện trong `snapshot.sources` kèm lý do, thay vì biến mất khỏi danh
+  sách "x/15 khả dụng".
+
+### Nguyên nhân 2 — ảnh không tải được nhưng không nói vì sao
+
+`downloadImage()` cũ chỉ trả `null`, nên panel hiện "0 ảnh gửi AI" mà admin
+không biết ảnh 404, quá dung lượng, hay `application/json (không phải ảnh)`.
+
+Cách sửa:
+
+- `IntegrationService.downloadImageDetailed()` trả `{ image, reason }`; thử lần
+  lượt `UPLOAD_SERVICE_URL` → `upload-service:3010` → `localhost:3010` → URL gốc
+  (ảnh lưu bằng host của client nên rất dễ lệch host khi chạy docker).
+- Đoán MIME từ đuôi file khi service trả `application/octet-stream`; loại sớm
+  HEIC/HEIF (model vision không đọc được) với lý do rõ ràng.
+- `snapshot.imageSkipReasons[]` lưu `{ url, reason }` (song song `imagesSkipped`),
+  hiển thị ở khối "Dữ liệu AI nhận" và ghi vào `suggestion.warnings`
+  (`Không tải được ảnh của bên khiếu nại: …`).
+- UI đổi nhãn `0 ảnh gửi AI (bị bỏ)` → `N ảnh đã gửi nhưng model không đọc` để
+  phân biệt "không tải được ảnh" với "model vision không đọc ảnh".
+
+### Nguyên nhân 3 — "Chưa có bản phân tích nào" dù AI đang bật
+
+`GET /assistant/cases/:id/analysis` trả thêm `auto` (chẩn đoán, giữ trong RAM):
+`{ status: PENDING | RUNNING | DONE | FAILED | SKIPPED, attemptedAt, detail }`.
+Khi tự phân tích lỗi, panel hiện **lỗi + lý do** (model quá tải, thiếu key,
+`AI_AUTO_ANALYZE=false`…) và gợi ý bấm "Phân tích lại". Log tự phân tích lỗi
+chuyển sang mức `error` để thấy ngay trong `docker logs`.
+
+### Cấu hình cần kiểm tra
+
+- `AI_ASSISTANT_ENABLED=true` + key provider (nếu không, `auto.status=SKIPPED`).
+- `UPLOAD_SERVICE_URL` đúng host trong docker (mặc định `http://upload-service:3010`).
+- Volume `upload_data` đã được mount vào `/app/uploads` (xem `docker-compose.yml`)
+  — nếu chạy `STORAGE_DRIVER=local` mà không mount, ảnh bằng chứng mất khi
+  container được tạo lại.
+- Ảnh > `AI_MAX_IMAGE_BYTES` (mặc định 5MB) bị bỏ — nguyên nhân hiện trong
+  `imageSkipReasons`.
+- Test: `case-context.spec.ts` (ID gốc vs pseudonym, skip reasons),
+  `integration-image.spec.ts` (đổi host, MIME, HEIC, dung lượng).
+
+---
+
+## Cập nhật: ảnh bằng chứng **không còn bị mất âm thầm**
+
+Hiện tượng: vụ việc **có** ảnh, `imagePlan` vẫn ghi `reporter: 1`, nhưng panel
+báo "N ảnh đã gửi nhưng model không đọc" mà không nói vì sao — admin chỉ còn
+cách bấm "Phân tích lại" liên tục.
+
+Ba nguyên nhân độc lập, sửa riêng từng cái:
+
+### 1. Model vision quá tải ⇒ trước đây **rơi thẳng xuống model chữ** (mất hết ảnh)
+
+`glm-4.6v-flash` (bản free) nghẽn theo đợt: trả `1305` (quá tải) hoặc `1302`
+(tần suất). Code cũ gặp lỗi ⇒ gọi lại model **chữ** (`GLM_MODEL`, không nhận
+ảnh) ⇒ `imagesUsed = 0`.
+
+Cách sửa (`glm.client.ts`):
+
+- Thêm **chuỗi model vision riêng** cho lượt có ảnh: `GLM_VISION_MODEL` →
+  `GLM_VISION_FALLBACK_MODELS` (mặc định `glm-4.6v-flashx,glm-4.5v`; đặt `none`
+  để chỉ dùng đúng model chính). Đường chữ vẫn dùng `GLM_FALLBACK_MODELS` —
+  hai chuỗi **không** trộn vì model chữ trả `1210` khi nhận ảnh.
+- `1305`/`1302` được retry **dài** trước khi đổi model: `GLM_OVERLOAD_RETRY_MS`
+  (mặc định 8000ms) × `GLM_OVERLOAD_ATTEMPTS` (mặc định 2) ⇒ ~16s/model thay vì
+  1.5s/3s như trước.
+- Đọc ảnh thành công bằng model dự phòng ⇒ thêm ghi chú vào `notes` để admin
+  biết model chính đang lỗi (nếu không sẽ tưởng là "tự nhiên hết lỗi").
+- Chỉ khi **toàn bộ** chuỗi vision thất bại mới lùi về chữ, và lúc đó trả
+  `imageFailure = { reason: VISION_OVERLOADED | VISION_ERROR | VISION_DISABLED,
+detail, modelsTried, retryable }` thay vì im lặng.
+
+### 2. Lỗi DNS tạm thời khi tải ảnh ⇒ mất ảnh vĩnh viễn
+
+`integration.service.ts` trước đây gọi `axios` **một lần**; `EAI_AGAIN`
+(DNS trong docker chưa sẵn sàng) làm ảnh bị bỏ dù URL hoàn toàn đúng.
+
+Cách sửa:
+
+- `fetchImage()` thử lại tối đa `AI_IMAGE_DOWNLOAD_ATTEMPTS` (mặc định 3) với
+  backoff, **chỉ** cho lỗi tạm thời: `EAI_AGAIN`/`ENOTFOUND`/`ECONNRESET`/
+  `ETIMEDOUT`/timeout/5xx. `404`/`403` **không** retry (link hỏng thật).
+- Cache ảnh trong RAM: `AI_IMAGE_CACHE_TTL_MS` (mặc định 10 phút) và
+  `AI_IMAGE_CACHE_MAX` (mặc định 12 ảnh) — bấm "Phân tích lại" không tải lại
+  từng ảnh, nên lượt phân tích lại nhanh và ít gặp DNS hơn.
+
+### 3. Ảnh "menu tham chiếu" chiếm hết slot ⇒ một bên còn 0 ảnh
+
+`reserveSlots()` chỉ giữ chỗ cho bên **khiếu nại**; nếu ảnh menu đứng trước bên
+**bị khiếu nại** thì bên đó không còn slot nào (AI so sánh hai bên mà một bên
+trắng ảnh).
+
+Cách sửa (`case-context.service.ts`): giữ 1 slot cho **mỗi bên** khi phía trước
+có ảnh tham chiếu (menu/đánh giá), tối thiểu 1 slot cho nhóm ảnh thật.
+
+### 4. Panel nói **rõ vì sao** ảnh không được đọc
+
+`CaseAiSuggestion.imageDiagnostics` (mới, lưu cùng `payload` nên xem lại vẫn còn):
+
+```ts
+{
+  status: "OK" | "NO_IMAGES" | "DOWNLOAD_FAILED" | "VISION_OVERLOADED"
+        | "VISION_DISABLED" | "VISION_ERROR";
+  attached: number;   // số ảnh đã gửi lên model
+  analyzed: number;   // số ảnh model khai đã đọc
+  modelsTried: string[];
+  detail: string | null;
+  hint: string | null; // việc admin nên làm
+}
+```
+
+`admin-portal` hiện banner tương ứng ngay dưới ghi chú "độ tự tin thấp":
+
+| `status`            | Lời khuyên trên UI                                            |
+| ------------------- | ------------------------------------------------------------- |
+| `DOWNLOAD_FAILED`   | xem "Dữ liệu AI nhận" để biết URL lỗi rồi bấm "Phân tích lại" |
+| `VISION_OVERLOADED` | đợi 30–60s rồi bấm lại; lặp nhiều ⇒ đổi `GLM_VISION_MODEL`    |
+| `VISION_DISABLED`   | đặt `GLM_VISION_MODEL` khác `none` rồi restart service        |
+| `VISION_ERROR`      | kiểm tra model vision (có thể bị gỡ) rồi bấm lại              |
+| `NO_IMAGES`/`OK`    | không hiện banner                                             |
+
+Log kèm `imageStatus=<status>` trong dòng `analyze` để đối chiếu `docker logs`.
+
+### Cấu hình mới (đều có mặc định, không cần đặt)
+
+| Biến                         | Mặc định                   | Ý nghĩa                                 |
+| ---------------------------- | -------------------------- | --------------------------------------- |
+| `GLM_VISION_FALLBACK_MODELS` | `glm-4.6v-flashx,glm-4.5v` | model vision dự phòng (`none` = tắt)    |
+| `GLM_OVERLOAD_RETRY_MS`      | `8000`                     | chờ giữa 2 lần thử khi 1305/1302        |
+| `GLM_OVERLOAD_ATTEMPTS`      | `2`                        | số lần thử thêm khi quá tải (mỗi model) |
+| `AI_IMAGE_DOWNLOAD_ATTEMPTS` | `3`                        | số lần tải ảnh khi lỗi tạm thời         |
+| `AI_IMAGE_CACHE_TTL_MS`      | `600000`                   | TTL cache ảnh (0 = tắt cache)           |
+| `AI_IMAGE_CACHE_MAX`         | `12`                       | số ảnh giữ trong cache                  |
+
+- Test: `glm.client.spec.ts` (fallback vision, overload ⇒ `imageFailure`, `VISION_MODEL=none`),
+  `assistant.spec.ts` (chẩn đoán theo từng `status`), `integration-image.spec.ts`
+  (retry DNS, không retry 404, cache bật/tắt), `case-context.spec.ts` (giữ slot cả hai bên).

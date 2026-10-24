@@ -18,6 +18,7 @@ import {
   AiEvidenceWeight,
   AiFindingWeight,
   AiImageFindings,
+  AiImageReadDiagnostics,
   AiImageSupport,
   AiReviewDecision,
   AiSideImageAnalysis,
@@ -29,6 +30,7 @@ import {
   AssistantHealth,
   CASE_CONTEXT_SOURCES,
   CaseAiAnalysisRecord,
+  CaseAiAutoStatus,
   CaseAiListSummary,
   CaseAiReviewResult,
   CaseAiSuggestion,
@@ -42,7 +44,11 @@ import {
   buildImagePrompt,
   buildUserPrompt,
 } from "../domain/assistant.prompt";
-import { ASSISTANT_LLM, AssistantLlmClient } from "../infrastructure/llm.types";
+import {
+  ASSISTANT_LLM,
+  AssistantLlmClient,
+  LlmImageFailure,
+} from "../infrastructure/llm.types";
 import { CaseAiAnalysisRepository } from "../infrastructure/analysis.repository";
 import { CaseRepository } from "../../case/infrastructure/case.repository";
 import {
@@ -50,6 +56,7 @@ import {
   AiDecisionOutcome,
 } from "../../case/application/case.service";
 import { CaseContextService } from "./case-context.service";
+import { allocateImagesByKind, DEFAULT_IMAGE_ORDER } from "./image-plan";
 import {
   createPiiContext,
   redactPayload,
@@ -218,6 +225,16 @@ const SEVERITY_VALUES = Object.values(Severity);
 export class AssistantService {
   private readonly logger = new Logger(AssistantService.name);
 
+  /**
+   * Trạng thái lần tự phân tích gần nhất theo vụ việc (chẩn đoán, giữ trong RAM).
+   *
+   * Không lưu DB vì đây chỉ là thông tin vận hành: khi tự phân tích lỗi, admin cần
+   * biết ngay lý do (model quá tải, thiếu key, `AI_AUTO_ANALYZE=false`…) thay vì
+   * chỉ thấy "Chưa có bản phân tích nào". Mất khi restart — chấp nhận được, vì
+   * lúc đó admin bấm "Phân tích lại" là có kết quả mới.
+   */
+  private readonly autoStatus = new Map<string, CaseAiAutoStatus>();
+
   constructor(
     private readonly contextService: CaseContextService,
     @Inject(ASSISTANT_LLM) private readonly llm: AssistantLlmClient,
@@ -238,6 +255,34 @@ export class AssistantService {
     return (
       (process.env.AI_AUTO_ANALYZE ?? "true").trim().toLowerCase() !== "false"
     );
+  }
+
+  /** Trạng thái lần tự phân tích gần nhất của vụ việc (mặc định `PENDING`). */
+  getAutoStatus(caseId: string): CaseAiAutoStatus {
+    return (
+      this.autoStatus.get(caseId) ?? {
+        caseId,
+        autoAnalyze: this.autoAnalyze,
+        status: this.autoAnalyze ? "PENDING" : "SKIPPED",
+        attemptedAt: null,
+        detail: this.autoAnalyze
+          ? null
+          : "AI_AUTO_ANALYZE=false — chỉ phân tích khi admin bấm tay.",
+      }
+    );
+  }
+
+  /** Ghi nhận trạng thái tự phân tích (best-effort, chỉ để hiển thị). */
+  private setAutoStatus(
+    caseId: string,
+    patch: Partial<Omit<CaseAiAutoStatus, "caseId" | "autoAnalyze">>,
+  ): void {
+    this.autoStatus.set(caseId, {
+      ...this.getAutoStatus(caseId),
+      ...patch,
+      caseId,
+      autoAnalyze: this.autoAnalyze,
+    });
   }
 
   getHealth(): AssistantHealth {
@@ -288,16 +333,31 @@ export class AssistantService {
       this.logger.log(
         `Bỏ qua tự phân tích (AI_AUTO_ANALYZE=false) — case ${caseId}`,
       );
+      this.setAutoStatus(caseId, {
+        status: "SKIPPED",
+        detail: "AI_AUTO_ANALYZE=false — chỉ phân tích khi admin bấm tay.",
+      });
       return;
     }
     if (!this.llm.enabled || !this.llm.hasApiKey) {
       this.logger.log(
         `Bỏ qua tự phân tích vì trợ lý AI chưa sẵn sàng (enabled=${this.llm.enabled}, cóKey=${this.llm.hasApiKey})`,
       );
+      this.setAutoStatus(caseId, {
+        status: "SKIPPED",
+        detail:
+          `AI chưa sẵn sàng (AI_ASSISTANT_ENABLED=${this.llm.enabled}, ` +
+          `có ${this.llm.apiKeyEnv}=${this.llm.hasApiKey})`,
+      });
       return;
     }
 
     const startedAt = Date.now();
+    this.setAutoStatus(caseId, {
+      status: "RUNNING",
+      attemptedAt: new Date().toISOString(),
+      detail: null,
+    });
     try {
       const suggestion = await this.analyzeCase(
         caseId,
@@ -309,10 +369,18 @@ export class AssistantService {
         `AI tự phân tích ${suggestion.caseNumber} | verdict=${suggestion.suggestedVerdict} ` +
           `confidence=${suggestion.confidence} model=${suggestion.model} ms=${Date.now() - startedAt}`,
       );
+      this.setAutoStatus(caseId, {
+        status: "DONE",
+        detail: `model=${suggestion.model}`,
+      });
     } catch (err: any) {
-      this.logger.warn(
-        `AI tự phân tích thất bại (case ${caseId}) sau ${Date.now() - startedAt}ms: ${err?.message ?? err}`,
+      const detail = String(err?.message ?? err).slice(0, 400);
+      // `error` (không phải `warn`): tự phân tích lỗi là sự cố vận hành — admin
+      // mở vụ việc không thấy bản phân tích nào và cần biết vì sao.
+      this.logger.error(
+        `AI tự phân tích thất bại (case ${caseId}) sau ${Date.now() - startedAt}ms: ${detail}`,
       );
+      this.setAutoStatus(caseId, { status: "FAILED", detail });
     }
   }
 
@@ -473,7 +541,118 @@ export class AssistantService {
     );
   }
 
-  /** Trả về đúng ngữ cảnh sẽ gửi cho model (không tốn token, để debug). */
+  /**
+   * Ghi chú cho các ảnh bằng chứng **không** tải được, gắn nhãn bên gửi.
+   *
+   * Chỉ nêu tối đa 3 ảnh để không làm loãng `warnings`; phần còn lại gộp thành
+   * một dòng. Nguyên nhân lấy từ `snapshot.imageSkipReasons` (404, quá dung
+   * lượng, content-type không phải ảnh, redirect S3 lỗi…).
+   */
+  private describeSkippedImages(snapshot: CaseContextSnapshot): string[] {
+    const reasons = snapshot.imageSkipReasons ?? [];
+    if (reasons.length === 0) return [];
+
+    const reporter = new Set(snapshot.case.evidence ?? []);
+    const respondent = new Set(snapshot.case.respondentEvidence ?? []);
+    const notes = reasons.slice(0, 3).map((item) => {
+      const side = reporter.has(item.url)
+        ? "bên khiếu nại"
+        : respondent.has(item.url)
+          ? "bên bị khiếu nại"
+          : "ảnh bằng chứng";
+      return `Không tải được ảnh của ${side}: ${item.reason}`;
+    });
+    if (reasons.length > 3) {
+      notes.push(
+        `Còn ${reasons.length - 3} ảnh khác cũng không tải được — xem "Dữ liệu AI nhận".`,
+      );
+    }
+    return notes;
+  }
+
+  /**
+   * Dựng chẩn đoán lượt đọc ảnh cho panel: **vì sao** ảnh không được đọc và
+   * admin nên làm gì.
+   *
+   * Vì sao cần: trước đây mọi trường hợp đều chỉ hiện "N ảnh đã gửi nhưng model
+   * không đọc", khiến admin bấm "Phân tích lại" liên tục trong lúc model vision
+   * đang quá tải (429/1305) — vừa không được việc, vừa làm tài khoản bị 1302.
+   */
+  private describeImageRead(
+    snapshot: CaseContextSnapshot,
+    attached: number,
+    analyzed: number,
+    failure: LlmImageFailure | null,
+  ): AiImageReadDiagnostics {
+    const base = {
+      attached,
+      analyzed,
+      modelsTried: failure?.modelsTried ?? [],
+      detail: failure?.detail ?? null,
+    };
+
+    if (attached === 0) {
+      // Có ảnh trong vụ việc nhưng không tải/gửi được ảnh nào ⇒ lỗi tải ảnh,
+      // không phải lỗi model.
+      const available =
+        (snapshot.imagesAvailable?.reporter ?? 0) +
+        (snapshot.imagesAvailable?.respondent ?? 0) +
+        (snapshot.imagesAvailable?.deliveryProof ?? 0);
+      const downloadFailed =
+        available > 0 ||
+        (snapshot.imagesSkipped ?? []).length > 0 ||
+        (snapshot.imageSkipReasons ?? []).length > 0;
+      return {
+        ...base,
+        status: downloadFailed ? "DOWNLOAD_FAILED" : "NO_IMAGES",
+        hint: downloadFailed
+          ? "Ảnh có trong vụ việc nhưng tải về không được (DNS/404/quá dung lượng) — " +
+            'xem "Dữ liệu AI nhận" để biết URL lỗi, rồi bấm "Phân tích lại".'
+          : null,
+      };
+    }
+
+    if (!failure) {
+      if (analyzed > 0) return { ...base, status: "OK", hint: null };
+      // Đã gửi ảnh nhưng provider báo đọc 0 ảnh mà không nêu lý do (vd. provider
+      // lùi về đường chữ) ⇒ vẫn phải báo để admin kiểm tra, không im lặng.
+      return {
+        ...base,
+        status: "VISION_ERROR",
+        detail: base.detail ?? "provider báo 0 ảnh đã đọc",
+        hint: 'Provider không đọc ảnh ở lượt này — kiểm tra model vision rồi bấm "Phân tích lại".',
+      };
+    }
+
+    switch (failure.reason) {
+      case "VISION_OVERLOADED":
+        return {
+          ...base,
+          status: "VISION_OVERLOADED",
+          hint:
+            "Model đọc ảnh đang quá tải (429/1302/1305) — đợi 30–60 giây rồi bấm " +
+            '"Phân tích lại". Nếu lặp lại nhiều lần, đổi GLM_VISION_MODEL sang ' +
+            '"glm-4.6v-flashx" (bản trả phí rẻ, ít nghẽn hơn bản free).',
+        };
+      case "VISION_DISABLED":
+        return {
+          ...base,
+          status: "VISION_DISABLED",
+          hint:
+            "Chưa bật model đọc ảnh (GLM_VISION_MODEL=none) — đặt GLM_VISION_MODEL=" +
+            "glm-4.6v-flash rồi restart resolution-service.",
+        };
+      default:
+        return {
+          ...base,
+          status: "VISION_ERROR",
+          hint:
+            "Model đọc ảnh lỗi — kiểm tra GLM_VISION_MODEL/GLM_VISION_FALLBACK_MODELS " +
+            '(model có thể bị gỡ) rồi bấm "Phân tích lại".',
+        };
+    }
+  }
+
   async getContext(caseId: string): Promise<CaseContextSnapshot> {
     const { snapshot } = await this.contextService.build(caseId, 0);
     return snapshot;
@@ -510,7 +689,34 @@ export class AssistantService {
     let imageFindings: AiImageFindings | null = null;
     let imagesUsed: number | null = null;
     let imageUsage: CaseAiSuggestion["usage"] | null = null;
+    /**
+     * Lý do provider phải bỏ ảnh (quá tải model vision, tắt vision, lỗi model).
+     * Giữ lại để dựng `imageDiagnostics` — admin cần biết *vì sao* mất ảnh chứ
+     * không chỉ thấy câu "model không đọc ảnh".
+     */
+    let imageFailure: LlmImageFailure | null = null;
     const notes: string[] = [];
+
+    // Ảnh chuẩn món là dữ liệu đối chiếu quan trọng với sự cố món ăn. Nếu có
+    // ảnh nhưng không đính kèm được suất nào, phải nói rõ cho admin thay vì im lặng.
+    const menuWithImage = (snapshot.menuItems ?? []).filter(
+      (item) => !!item.imageUrl,
+    ).length;
+    const menuAttached = snapshot.imagePlan?.menuReference ?? 0;
+    if (menuWithImage > 0 && menuAttached === 0) {
+      notes.push(
+        `Không đính kèm được ảnh chuẩn món (${menuWithImage} món có ảnh). ` +
+          `Ngân sách ảnh hiện tại = ${maxImages} — ảnh bằng chứng đã dùng hết suất` +
+          (snapshot.imagesSkipped.length > 0
+            ? ` hoặc tải ảnh lỗi (${snapshot.imagesSkipped.length} URL bị bỏ)`
+            : "") +
+          `. Tăng AI_ASSISTANT_MAX_IMAGES nếu cần đối chiếu món.`,
+      );
+    }
+
+    // Ảnh bằng chứng KHÔNG tải được: nói rõ bên nào + nguyên nhân, thay vì để
+    // admin đoán "khách bảo có gửi ảnh mà AI bảo không có ảnh".
+    notes.push(...this.describeSkippedImages(snapshot));
 
     if (images.length > 0) {
       try {
@@ -525,6 +731,7 @@ export class AssistantService {
         imageFindings = imageResponse.data ?? null;
         imagesUsed = imageResponse.imagesUsed ?? images.length;
         imageUsage = imageResponse.usage;
+        imageFailure = imageResponse.imageFailure ?? null;
         notes.push(...(imageResponse.notes ?? []));
         if (imagesUsed === 0) {
           // Provider tự lùi về model chữ ⇒ output không phải kết quả nhìn ảnh.
@@ -534,9 +741,15 @@ export class AssistantService {
           );
         }
       } catch (err: any) {
-        this.logger.warn(
-          `Đọc ảnh bằng chứng thất bại (case ${caseId}): ${err?.message ?? err}`,
+        this.logger.error(
+          `Đọc ${images.length} ảnh bằng chứng thất bại (case ${caseId}): ${err?.message ?? err}`,
         );
+        imageFailure = {
+          reason: "VISION_ERROR",
+          detail: String(err?.message ?? "lỗi model vision").slice(0, 200),
+          modelsTried: this.llm.visionModel ? [this.llm.visionModel] : [],
+          retryable: false,
+        };
         notes.push(
           `Không đọc được ${images.length} ảnh bằng chứng (${err?.message ?? "lỗi model vision"}) — phân tích chỉ dựa trên dữ liệu chữ.`,
         );
@@ -584,10 +797,17 @@ export class AssistantService {
       ),
     };
 
+    const imageDiagnostics = this.describeImageRead(
+      snapshot,
+      images.length,
+      imagesUsed,
+      imageFailure,
+    );
+
     this.logger.log(
       `AI analyzed ${snapshot.case.caseNumber} | model=${response.model} ` +
         `tokens=${usage.totalTokens ?? "n/a"} images=${imagesUsed}/${images.length} ` +
-        `ms=${Date.now() - startedAt} by=${user.userId}`,
+        `imageStatus=${imageDiagnostics.status} ms=${Date.now() - startedAt} by=${user.userId}`,
     );
 
     const suggestion: CaseAiSuggestion = {
@@ -597,6 +817,7 @@ export class AssistantService {
       model: response.model,
       summary: normalized.summary,
       imagesAnalyzed: imagesUsed,
+      imageDiagnostics,
       reporterImages: normalized.reporterImages,
       respondentImages: normalized.respondentImages,
       deliveryProof: {
@@ -751,10 +972,10 @@ export class AssistantService {
 
     const allowedTargets = this.allowedTargetTypes(snapshot);
 
-    // Ảnh gửi cho model theo thứ tự: ảnh hệ thống (tài xế chụp lúc giao) →
-    // bên khiếu nại → bên bị khiếu nại → ảnh chuẩn món → ảnh đánh giá.
-    // Provider chỉ báo TỔNG số ảnh đã dùng nên phải phân bổ lại theo kế hoạch
-    // (`snapshot.imagePlan`) để không tính nhầm ảnh của bên nào.
+    // Ảnh gửi cho model theo thứ tự đã dùng khi tải ảnh (`snapshot.imageOrder`).
+    // Provider chỉ báo TỔNG số ảnh đã dùng nên phải phân bổ lại theo đúng thứ
+    // tự đó, nếu không số ảnh "đã đọc" của từng bên sẽ sai (nhất là khi ảnh món
+    // được ưu tiên trước ảnh hai bên).
     const plan = snapshot.imagePlan ?? {
       deliveryProof: snapshot.deliveryProofImageAttached ? 1 : 0,
       menuReference: snapshot.menuImagesAttached ?? 0,
@@ -762,17 +983,15 @@ export class AssistantService {
       respondent: snapshot.respondentImagesAttached,
       review: snapshot.reviewImagesAttached ?? 0,
     };
-    let remainingImages = Math.max(0, imagesUsed);
-    const takeImages = (wanted: number): number => {
-      const used = Math.min(Math.max(0, wanted), remainingImages);
-      remainingImages -= used;
-      return used;
-    };
-    const proofAnalyzed = takeImages(plan.deliveryProof);
-    const reporterAnalyzed = takeImages(plan.reporter);
-    const respondentAnalyzed = takeImages(plan.respondent);
-    const menuImagesAnalyzed = takeImages(plan.menuReference);
-    takeImages(plan.review);
+    const usedByKind = allocateImagesByKind(
+      plan,
+      snapshot.imageOrder ?? DEFAULT_IMAGE_ORDER,
+      imagesUsed,
+    );
+    const proofAnalyzed = usedByKind.DELIVERY_PROOF;
+    const reporterAnalyzed = usedByKind.REPORTER;
+    const respondentAnalyzed = usedByKind.RESPONDENT;
+    const menuImagesAnalyzed = usedByKind.MENU_REFERENCE;
 
     const reporterImages = this.normalizeSideImages(
       src.reporterImages,

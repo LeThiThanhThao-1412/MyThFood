@@ -7,6 +7,7 @@ import {
   reviewApi,
   uploadApi,
   merchantApi,
+  driverApi,
 } from "@mythfood/api-client";
 import { Drawer, deliveryOptionMeta } from "@mythfood/frontend-shared";
 
@@ -22,6 +23,15 @@ const STATUS_LABELS: Record<string, string> = {
   DELIVERY_FAILED: "❌ Giao hàng thất bại",
   REJECTED: "🚫 Từ chối",
 };
+
+/** Gợi ý đánh giá tích cực cho tài xế (giống trang /orders/[id]). */
+const DRIVER_POSITIVE_PHRASES = [
+  "Tài xế thân thiện 🤝",
+  "Giao hàng nhanh ⚡",
+  "Lái xe an toàn 🛵",
+  "Gọi điện chu đáo 📞",
+  "Rất nhiệt tình 👍",
+];
 
 function toNum(v: unknown): number {
   if (typeof v === "number") return v;
@@ -48,13 +58,31 @@ export default function OrderDetailDrawer({
   const [uploadingImages, setUploadingImages] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [pendingChange, setPendingChange] = useState<any>(null);
+  const [driverProfile, setDriverProfile] = useState<any>(null);
+  const [driverRating, setDriverRating] = useState(5);
+  const [driverComment, setDriverComment] = useState("");
 
   useEffect(() => {
     if (!orderId) {
       setOrder(null);
       setExistingReview(null);
+      setDriverProfile(null);
+      setDriverRating(5);
+      setDriverComment("");
+      setReviewRating(5);
+      setReviewComment("");
+      setReviewImages([]);
+      setReviewStatus("");
       return;
     }
+    // Reset form đánh giá khi chuyển sang đơn khác
+    setDriverProfile(null);
+    setDriverRating(5);
+    setDriverComment("");
+    setReviewRating(5);
+    setReviewComment("");
+    setReviewImages([]);
+    setReviewStatus("");
     setLoading(true);
     (async () => {
       try {
@@ -66,6 +94,15 @@ export default function OrderDetailDrawer({
             .getById(o.merchantId)
             .catch(() => null);
           setMerchant((mRes as any)?.data ?? mRes ?? null);
+        }
+        // Lấy hồ sơ công khai của tài xế (tên hiển thị khi đánh giá tài xế)
+        if (o?.driverId) {
+          const pRes = await driverApi
+            .getPublicProfile(o.driverId)
+            .catch(() => null);
+          setDriverProfile((pRes as any)?.data ?? null);
+        } else {
+          setDriverProfile(null);
         }
         try {
           const r: any = await reviewApi.getByOrder(orderId);
@@ -99,6 +136,7 @@ export default function OrderDetailDrawer({
     setSubmitting(true);
     setReviewStatus("");
     try {
+      const driverId = order.driverId || driverProfile?.id;
       const created: any = await reviewApi.create({
         orderId: order.id,
         consumerId: order.consumerId,
@@ -106,12 +144,25 @@ export default function OrderDetailDrawer({
         rating: reviewRating,
         comment: reviewComment.trim() || undefined,
         images: reviewImages.length ? reviewImages : undefined,
+        ...(driverId
+          ? {
+              driverId,
+              driverRating,
+              driverComment: driverComment.trim() || undefined,
+            }
+          : {}),
       });
       setExistingReview(
         created?.data ?? {
           rating: reviewRating,
           comment: reviewComment.trim(),
           images: reviewImages,
+          ...(driverId
+            ? {
+                driverRating,
+                driverComment: driverComment.trim() || undefined,
+              }
+            : {}),
         },
       );
       setReviewStatus("✅ Đã gửi đánh giá");
@@ -312,6 +363,21 @@ export default function OrderDetailDrawer({
                   {existingReview.comment && (
                     <p className="text-gray-700">{existingReview.comment}</p>
                   )}
+                  {existingReview.driverRating != null && (
+                    <div className="mt-2 border-t border-gray-100 pt-2">
+                      <p className="text-gray-500 text-xs mb-1">🛵 Tài xế:</p>
+                      <p className="text-yellow-500 mb-1">
+                        {"⭐".repeat(
+                          Math.max(0, Math.min(5, existingReview.driverRating)),
+                        )}
+                      </p>
+                      {existingReview.driverComment && (
+                        <p className="text-gray-700">
+                          {existingReview.driverComment}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {existingReview.images?.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2">
                       {existingReview.images.map((img: string, i: number) => (
@@ -391,6 +457,54 @@ export default function OrderDetailDrawer({
                       </span>
                     )}
                   </div>
+
+                  {/* 🛵 Đánh giá tài xế (không cần ảnh) */}
+                  {(order.driverId || driverProfile) && (
+                    <div className="mt-4 border-t border-gray-100 pt-3">
+                      <p className="text-sm font-semibold text-gray-700 mb-1">
+                        🛵 Đánh giá tài xế
+                        {driverProfile?.fullName
+                          ? `: ${driverProfile.fullName}`
+                          : ""}
+                      </p>
+                      <div className="flex items-center gap-1 mb-2">
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setDriverRating(n)}
+                            className={`text-2xl ${n <= driverRating ? "" : "opacity-30"}`}
+                          >
+                            ⭐
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {DRIVER_POSITIVE_PHRASES.map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() =>
+                              setDriverComment((prev) =>
+                                prev ? `${prev} ${p}` : p,
+                              )
+                            }
+                            className="text-xs px-2.5 py-1.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:border-[#ff6b35] hover:text-[#ff6b35] transition"
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                      <textarea
+                        value={driverComment}
+                        onChange={(e) => setDriverComment(e.target.value)}
+                        placeholder="Nhận xét về tài xế..."
+                        rows={2}
+                        className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+                      />
+                    </div>
+                  )}
+
                   <button
                     onClick={submitReview}
                     disabled={submitting}

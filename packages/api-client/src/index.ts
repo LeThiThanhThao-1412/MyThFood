@@ -1,5 +1,9 @@
 export { httpClient, ApiError } from "./http-client";
-export { socketClient, chatSocketClient } from "./socket-client";
+export {
+  socketClient,
+  chatSocketClient,
+  trackingSocketClient,
+} from "./socket-client";
 export {
   authApi,
   consumerApi,
@@ -76,6 +80,7 @@ export type {
   OrderStatus,
   OrderItem,
   Order,
+  OrderWarning,
   PlaceOrderRequest,
   CancelOrderRequest,
   RejectOrderRequest,
@@ -111,6 +116,8 @@ export type {
   DriverPublicProfile,
   RegisterDriverRequest,
   UpdateLocationRequest,
+  DriverLocationBatchPoint,
+  TrackingUpdate,
   DispatchStatus,
   DispatchDeclineReason,
   DriverCancelRequest,
@@ -177,14 +184,18 @@ export type {
   AiTargetType,
   AiImageSupport,
   AiSideImageAnalysis,
+  AiImageReadStatus,
+  AiImageReadDiagnostics,
   AiDeliveryMatch,
   AiSuggestedAction,
   CaseAiSuggestion,
   CaseAiContextSource,
   CaseAiContext,
+  AiImageSkipReason,
   AssistantHealth,
   CaseAiAnalysisRecord,
   CaseAiAnalysisReview,
+  CaseAiAutoStatus,
   CaseAiListSummary,
   CaseAiReviewResult,
   AiDecisionOutcome,

@@ -4,6 +4,7 @@ import type { HttpService } from "@nestjs/axios";
 import { DriverService } from "../../modules/driver/application/driver.service";
 import type { DriverRepository } from "../../modules/driver/infrastructure/driver.repository";
 import type { DriverLocationHistoryRepository } from "../../modules/driver/infrastructure/driver-location-history.repository";
+import type { DriverGeoService } from "../../modules/geo/driver-geo.service";
 import {
   Driver,
   DriverOnlineStatus,
@@ -79,6 +80,7 @@ describe("DriverService.sweepStaleOnlineDrivers", () => {
       repo.repository,
       {} as DriverLocationHistoryRepository,
       {} as HttpService,
+      {} as DriverGeoService,
     );
   });
 

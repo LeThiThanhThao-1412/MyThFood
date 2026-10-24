@@ -97,8 +97,32 @@ export class AssignDriverDto {
 }
 
 export class DriverAcceptDto {
+  /**
+   * Giữ lại để tương thích payload cũ; server luôn lấy tài xế từ dispatch
+   * (không tin driverId do client gửi lên).
+   */
+  @IsOptional()
   @IsUUID("4")
-  driverId!: string;
+  driverId?: string;
+
+  /**
+   * GPS hiện tại của app tài xế ngay lúc bấm “Nhận đơn”. Nếu có, dispatch-service
+   * cập nhật vị trí tài xế sang driver-service TRƯỚC khi kiểm tra bán kính nhận
+   * đơn — tránh dùng toạ độ cũ (nhịp GPS 5 giây có thể bị trễ/mất mạng).
+   */
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  @Type(() => Number)
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  @Type(() => Number)
+  longitude?: number;
 }
 
 export class DriverDeclineDto {

@@ -91,6 +91,45 @@ export class DriverComplianceRepository {
     );
   }
 
+  /**
+   * Danh sách orderId mà tài xế đã **chủ động từ chối**.
+   *
+   * Khác với `dispatches.matchedDriverIds` (gắn với 1 row dispatch và mất khi
+   * dispatch bị xoá/tạo lại), bảng offer lưu theo `order_id` nên vẫn còn giá
+   * trị sau khi dispatch cũ bị thay thế → dùng để không gợi ý/gộp lại đơn mà
+   * tài xế vừa từ chối.
+   */
+  async findDeclinedOrderIds(driverId: string): Promise<string[]> {
+    if (!driverId) return [];
+    const rows: Array<{ order_id: string }> = await this.offerRepo.query(
+      `SELECT DISTINCT order_id
+         FROM driver_dispatch_offers
+        WHERE driver_id = $1::uuid
+          AND outcome = 'DECLINED'`,
+      [driverId],
+    );
+    return (rows ?? []).map((r) => r.order_id).filter(Boolean);
+  }
+
+  /**
+   * Danh sách driverId đã **chủ động từ chối** một đơn cụ thể.
+   *
+   * Dùng cho matching engine: khi dispatch bị xoá & tạo lại (matchedDriverIds
+   * rỗng) thì lịch sử từ chối theo `order_id` vẫn còn → không ghép lại đơn đó
+   * cho tài xế đã từ chối.
+   */
+  async findDeclinedDriverIds(orderId: string): Promise<string[]> {
+    if (!orderId) return [];
+    const rows: Array<{ driver_id: string }> = await this.offerRepo.query(
+      `SELECT DISTINCT driver_id
+         FROM driver_dispatch_offers
+        WHERE order_id = $1::uuid
+          AND outcome = 'DECLINED'`,
+      [orderId],
+    );
+    return (rows ?? []).map((r) => r.driver_id).filter(Boolean);
+  }
+
   /** Tổng hợp số offer / từ chối / không phản hồi theo tài xế trong cửa sổ. */
   async getStats(since: Date): Promise<DriverOfferStats[]> {
     const rows: Array<{

@@ -54,6 +54,14 @@ export class WalletRepository {
     return this.walletRepo.save(walletEntity);
   }
 
+  /** Chỉ đọc ví — không tạo mới (dùng cho endpoint tra cứu). */
+  async findByOwner(
+    ownerId: string,
+    ownerType: string,
+  ): Promise<WalletEntity | null> {
+    return this.walletRepo.findOne({ where: { ownerId, ownerType } });
+  }
+
   async recordTransaction(params: {
     id: string;
     walletId: string;
@@ -117,6 +125,23 @@ export class WalletRepository {
   ): Promise<WalletTransactionEntity | null> {
     return this.txRepo.findOne({
       where: { referenceType, referenceId },
+      order: { createdAt: "DESC" },
+    });
+  }
+
+  /**
+   * Idempotency theo (owner, referenceType, referenceId) — dùng cho các bút
+   * toán mà nhiều bên cùng tham chiếu một reference (vd phạt đơn #X: bên bị
+   * phạt và quỹ nền tảng).
+   */
+  async findTransactionByOwnerReference(
+    ownerId: string,
+    ownerType: string,
+    referenceType: string,
+    referenceId: string,
+  ): Promise<WalletTransactionEntity | null> {
+    return this.txRepo.findOne({
+      where: { ownerId, ownerType, referenceType, referenceId },
       order: { createdAt: "DESC" },
     });
   }

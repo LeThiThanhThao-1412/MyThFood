@@ -79,8 +79,13 @@ export class CaseController {
     };
   }
 
+  /**
+   * Bổ sung ảnh bằng chứng — mở cho **cả hai bên** (người khiếu nại và bên bị
+   * khiếu nại). Service tự xác định ảnh thuộc bên nào dựa trên người gọi, nên
+   * nhà hàng/tài xế có chỗ gửi ảnh minh chứng mà không phải viết lại phản hồi.
+   */
   @Post(":id/evidence")
-  @Roles("CONSUMER", "ADMIN")
+  @Roles("CONSUMER", "DRIVER", "MERCHANT_OWNER", "ADMIN")
   async addEvidence(
     @Param("id") id: string,
     @Body() dto: AddEvidenceDto,

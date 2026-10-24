@@ -20,6 +20,7 @@ import { Roles, RolesGuard, Idempotency } from "@mythfood/common";
 import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { IdempotencyInterceptor } from "../../cache/idempotency.interceptor";
 import { OrderService } from "../application/order.service";
+import { OrderWarningService } from "../application/order-warning.service";
 import { MerchantComplianceService } from "../application/merchant-compliance.service";
 import {
   PlaceOrderDto,
@@ -39,6 +40,7 @@ export class OrderController {
   constructor(
     private readonly orderService: OrderService,
     private readonly merchantComplianceService: MerchantComplianceService,
+    private readonly orderWarningService: OrderWarningService,
   ) {}
 
   // ===================== Order Placement =====================
@@ -229,6 +231,40 @@ export class OrderController {
       body.severity,
     );
     return { statusCode: 200, data: { ok: true } };
+  }
+
+  // ============ Cảnh báo đơn hàng (thay cho phạt tiền) ============
+
+  /** Danh sách cảnh báo của đơn (banner vàng trong chi tiết đơn). */
+  @Get(":id/warnings")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  @Roles("MERCHANT_OWNER", "ADMIN", "SERVICE")
+  async listWarnings(@Param("id") id: string) {
+    return this.orderWarningService.listByOrder(id);
+  }
+
+  /** Nhà hàng bấm "Đã hiểu" ⇒ ẩn cảnh báo (idempotent). */
+  @Post(":id/warnings/:warningId/dismiss")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  @Roles("MERCHANT_OWNER", "ADMIN", "SERVICE")
+  @HttpCode(HttpStatus.OK)
+  async dismissWarning(
+    @Param("id") id: string,
+    @Param("warningId") warningId: string,
+    @Req() req: any,
+  ) {
+    const dismissedBy = String(
+      req?.user?.userId ?? req?.user?.sub ?? req?.user?.id ?? "UNKNOWN",
+    );
+    return this.orderWarningService.dismiss(id, warningId, dismissedBy);
+  }
+
+  /** Cảnh báo còn hiệu lực của một nhà hàng (dùng cho dashboard). */
+  @Get("merchant/:merchantId/warnings/active")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  @Roles("MERCHANT_OWNER", "ADMIN", "SERVICE")
+  async listActiveWarnings(@Param("merchantId") merchantId: string) {
+    return this.orderWarningService.listActiveByMerchant(merchantId);
   }
 
   // ===================== Timeline (B6) =====================

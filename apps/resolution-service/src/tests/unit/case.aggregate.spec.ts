@@ -132,6 +132,42 @@ describe("Case Aggregate", () => {
       expect(c.caseEvidence).toHaveLength(2);
     });
 
+    it("addRespondentEvidence ghi vào respondentEvidence, không lẫn với bên khiếu nại", () => {
+      const c = Case.create({ ...validProps, evidence: ["reporter-1.jpg"] });
+      c.addRespondentEvidence(["merchant-1.jpg"]);
+      expect(c.caseEvidence).toEqual(["reporter-1.jpg"]);
+      expect(c.caseRespondentEvidence).toEqual(["merchant-1.jpg"]);
+      // Không được coi là đã phản hồi: chỉ thêm ảnh, chưa có giải trình.
+      expect(c.caseRespondentResponse).toBeNull();
+      expect(c.caseRespondentRespondedAt).toBeNull();
+    });
+
+    it("addRespondentEvidence từ chối danh sách rỗng", () => {
+      const c = Case.create(validProps);
+      expect(() => c.addRespondentEvidence([])).toThrow(
+        BusinessRuleViolationError,
+      );
+    });
+
+    it("respond không được xoá ảnh minh chứng đã gửi trước đó", () => {
+      const c = Case.create(validProps);
+      c.addRespondentEvidence(["merchant-1.jpg"]);
+      c.respond("Nhà hàng đã chuẩn bị đúng món trong ảnh", ["merchant-2.jpg"]);
+      expect(c.caseRespondentEvidence).toEqual([
+        "merchant-1.jpg",
+        "merchant-2.jpg",
+      ]);
+      expect(c.caseRespondentResponse).toContain("đúng món");
+      expect(c.caseRespondentRespondedAt).not.toBeNull();
+    });
+
+    it("respond không nhân đôi ảnh đã có", () => {
+      const c = Case.create(validProps);
+      c.addRespondentEvidence(["merchant-1.jpg"]);
+      c.respond("Giải trình", ["merchant-1.jpg"]);
+      expect(c.caseRespondentEvidence).toEqual(["merchant-1.jpg"]);
+    });
+
     it("addPenaltyId should dedupe", () => {
       const c = Case.create(validProps);
       c.addPenaltyId("p1");

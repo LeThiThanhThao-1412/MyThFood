@@ -61,6 +61,15 @@ describe("CaseContextService — ngữ cảnh mở rộng & ẩn danh", () => {
         options: [{ optionName: "Lớn", priceDelta: 10000 }],
         specialInstructions: "Ít cay, gọi 0901234567",
       },
+      {
+        menuItemId: "menu-2",
+        name: "Trà đá",
+        quantity: 1,
+        unitPrice: 5000,
+        imageUrl: "http://img/menu2.jpg",
+        options: [],
+        specialInstructions: null,
+      },
     ],
   };
 
@@ -139,7 +148,7 @@ describe("CaseContextService — ngữ cảnh mở rộng & ẩn danh", () => {
       status: "ACTIVE",
       isOpen: true,
     }),
-    getConsumerByUserId: jest.fn().mockResolvedValue({
+    getConsumerProfile: jest.fn().mockResolvedValue({
       full_name: "Nguyễn Văn A",
       phone: "0901234567",
       addresses: ["12 Nguyễn Huệ"],
@@ -172,6 +181,21 @@ describe("CaseContextService — ngữ cảnh mở rộng & ẩn danh", () => {
             options: [{ name: "Lớn", priceDelta: 10000 }],
           },
         ],
+      },
+      {
+        id: "menu-2",
+        merchantId: "merchant-uuid",
+        name: "Trà đá",
+        description: null,
+        price: 5000,
+        originalPrice: null,
+        imageUrl: "http://img/menu2.jpg",
+        isAvailable: true,
+        availabilityStatus: "AVAILABLE",
+        outOfStockUntil: null,
+        preparationTime: 2,
+        isFeatured: false,
+        optionGroups: [],
       },
     ]),
     getMerchantPromotions: jest.fn().mockResolvedValue([
@@ -260,11 +284,10 @@ describe("CaseContextService — ngữ cảnh mở rộng & ẩn danh", () => {
       maxConcurrentOrders: 3,
       createdAt: "2024-01-01T00:00:00.000Z",
     }),
-    downloadImage: jest.fn().mockImplementation((url: string) =>
+    downloadImageDetailed: jest.fn().mockImplementation((url: string) =>
       Promise.resolve({
-        mimeType: "image/jpeg",
-        base64: "AAAA",
-        url,
+        image: { mimeType: "image/jpeg", base64: "AAAA", url },
+        reason: "",
       }),
     ),
   };
@@ -326,14 +349,22 @@ describe("CaseContextService — ngữ cảnh mở rộng & ẩn danh", () => {
     expect(snapshot.imagePlan).toMatchObject({
       deliveryProof: 1,
       reporter: 1,
-      menuReference: 1,
+      menuReference: 2,
       review: 1,
       respondent: 0,
     });
-    expect(images).toHaveLength(4);
+    expect(snapshot.imageOrder).toEqual([
+      "DELIVERY_PROOF",
+      "REPORTER",
+      "RESPONDENT",
+      "MENU_REFERENCE",
+      "REVIEW",
+    ]);
+    expect(images).toHaveLength(5);
     expect(images.map((image) => image.kind)).toEqual([
       "DELIVERY_PROOF",
       "REPORTER",
+      "MENU_REFERENCE",
       "MENU_REFERENCE",
       "REVIEW",
     ]);
@@ -352,5 +383,284 @@ describe("CaseContextService — ngữ cảnh mở rộng & ẩn danh", () => {
     expect(prompt).not.toContain("0901234567");
     expect(prompt).not.toContain("Nguyễn Văn A");
     expect(prompt).not.toContain("10.7769");
+  });
+
+  it("sự cố món ăn: ảnh chuẩn món đứng trước nhưng vẫn chừa 1 suất cho mỗi bên", async () => {
+    const itemRepoMock: any = {
+      findById: jest.fn().mockResolvedValue({
+        ...caseMock,
+        caseCategory: CaseCategory.MISSING_ITEM,
+        caseRespondentEvidence: [
+          "http://img/respondent1.jpg",
+          "http://img/respondent2.jpg",
+        ],
+      }),
+      findAndCount: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+    const service = new CaseContextService(itemRepoMock, integrationMock);
+    const { snapshot, images } = await service.build("case-1", 4);
+
+    expect(snapshot.imageOrder).toEqual([
+      "DELIVERY_PROOF",
+      "MENU_REFERENCE",
+      "REPORTER",
+      "RESPONDENT",
+      "REVIEW",
+    ]);
+    // Limit 4: proof 1 + món tối đa 2, nhưng phải chừa 1 suất cho MỖI bên có ảnh
+    // ⇒ món chỉ còn 1. Trước đây món lấy 2 ⇒ bên bị khiếu nại bị 0 ảnh.
+    expect(snapshot.imagePlan).toMatchObject({
+      deliveryProof: 1,
+      menuReference: 1,
+      reporter: 1,
+      respondent: 1,
+      review: 0,
+    });
+    expect(images.map((image) => image.kind)).toEqual([
+      "DELIVERY_PROOF",
+      "MENU_REFERENCE",
+      "REPORTER",
+      "RESPONDENT",
+    ]);
+  });
+
+  it("tải được ảnh của bên khiếu nại dù URL không có đuôi ảnh", async () => {
+    const repo: any = {
+      findById: jest.fn().mockResolvedValue({
+        ...caseMock,
+        caseEvidence: [
+          "https://cdn.example.com/api/v1/upload/complaints/1729000000-ab12cd",
+          "https://cdn.example.com/api/v1/upload/complaints/1729000001-ef34gh.jpg",
+        ],
+      }),
+      findAndCount: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+    const integration: any = {
+      ...integrationMock,
+      downloadImageDetailed: jest.fn().mockResolvedValue({
+        image: { mimeType: "image/jpeg", base64: "AAAA" },
+        reason: "",
+      }),
+    };
+
+    const service = new CaseContextService(repo, integration);
+    const { snapshot, images } = await service.build("case-1", 3);
+
+    const reporterImages = images.filter((image) => image.kind === "REPORTER");
+    expect(reporterImages).toHaveLength(2);
+    // URL không đuôi vẫn được tải (trước đây bị lọc bằng IMAGE_EXT).
+    expect(integration.downloadImageDetailed).toHaveBeenCalledWith(
+      "https://cdn.example.com/api/v1/upload/complaints/1729000000-ab12cd",
+    );
+    expect(snapshot.imagePlan?.reporter).toBe(2);
+    expect(snapshot.imagesSkipped).toHaveLength(0);
+  });
+
+  it("vụ món ăn: ảnh chuẩn món không được chiếm hết suất của ảnh bên khiếu nại", async () => {
+    const repo: any = {
+      findById: jest.fn().mockResolvedValue({
+        ...caseMock,
+        caseCategory: CaseCategory.MISSING_ITEM,
+        caseEvidence: ["http://img/reporter.jpg"],
+      }),
+      findAndCount: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+
+    const service = new CaseContextService(repo, integrationMock);
+    // Chỉ 2 suất: 1 cho ảnh giao hàng ⇒ phải chừa 1 suất cho ảnh khách.
+    const { snapshot, images } = await service.build("case-1", 2);
+
+    expect(snapshot.imageOrder?.[1]).toBe("MENU_REFERENCE");
+    expect(images.map((image) => image.kind)).toEqual([
+      "DELIVERY_PROOF",
+      "REPORTER",
+    ]);
+    expect(snapshot.imagePlan?.reporter).toBe(1);
+    expect(snapshot.imagePlan?.menuReference).toBe(0);
+  });
+
+  it("xem trước ngữ cảnh (maxImages = 0) vẫn báo ảnh CÓ SẴN của hai bên", async () => {
+    const repo: any = {
+      findById: jest.fn().mockResolvedValue({
+        ...caseMock,
+        caseEvidence: ["http://img/reporter.webp", "ghi chú: ảnh bị mờ"],
+        caseRespondentEvidence: ["http://img/respondent.jpg"],
+      }),
+      findAndCount: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+    const integration: any = {
+      ...integrationMock,
+      downloadImageDetailed: jest.fn(),
+    };
+
+    const service = new CaseContextService(repo, integration);
+    const { snapshot, images } = await service.build("case-1", 0);
+
+    expect(images).toHaveLength(0);
+    expect(snapshot.imagesAttached).toBe(0);
+    expect(snapshot.imagePlan).toMatchObject({ reporter: 0, respondent: 0 });
+    // Ảnh tồn tại ⇒ admin thấy được, không phải "không có ảnh".
+    expect(snapshot.imagesAvailable).toMatchObject({
+      reporter: 1,
+      respondent: 1,
+      deliveryProof: 1,
+    });
+    expect(integration.downloadImageDetailed).not.toHaveBeenCalled();
+  });
+
+  it("nguồn lỗi ghi rõ nguyên nhân (401/404) thay vì thông báo chung", async () => {
+    const repo: any = {
+      findById: jest.fn().mockResolvedValue({
+        ...caseMock,
+        caseCategory: CaseCategory.CHARGEBACK_FRAUD,
+      }),
+      findAndCount: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+    const integration: any = {
+      ...integrationMock,
+      getPaymentByOrder: jest
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            "GET /api/v1/payments/order/order-1 thất bại (1 lần thử): http://localhost:3006/api/v1/payments/order/order-1 → 401 Unauthorized",
+          ),
+        ),
+    };
+
+    const service = new CaseContextService(repo, integration);
+    const { snapshot } = await service.build("case-1", 0);
+
+    const paymentSource = snapshot.sources.find((s) => s.id === "D6");
+    expect(paymentSource?.available).toBe(false);
+    expect(paymentSource?.detail).toContain("401");
+    expect(paymentSource?.detail).toContain("/api/v1/payments/order/order-1");
+  });
+
+  it("D8 truyền ownerType của chủ ví (wallet mặc định DRIVER)", async () => {
+    const repo: any = {
+      findById: jest.fn().mockResolvedValue({
+        ...caseMock,
+        caseCategory: CaseCategory.COD_THEFT,
+        caseRespondentId: "consumer-uuid",
+        caseRespondentType: "CONSUMER",
+      }),
+      findAndCount: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+    const integration: any = {
+      ...integrationMock,
+      getWalletTransactions: jest
+        .fn()
+        .mockResolvedValue([{ id: "tx-1", amount: 50000 }]),
+    };
+
+    const service = new CaseContextService(repo, integration);
+    await service.build("case-1", 0);
+
+    expect(integration.getWalletTransactions).toHaveBeenCalledWith(
+      "consumer-uuid",
+      "CONSUMER",
+    );
+  });
+
+  it("gọi service nội bộ bằng ID gốc, không dùng mã ẩn danh TX-/NH-", async () => {
+    const repo: any = {
+      findById: jest.fn().mockResolvedValue({
+        ...caseMock,
+        caseCategory: CaseCategory.WRONG_ITEM,
+      }),
+      findAndCount: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+
+    const service = new CaseContextService(repo, integrationMock);
+    const { snapshot } = await service.build("case-1", 0);
+
+    // Snapshot đã ẩn danh cho model…
+    expect(snapshot.case.respondentId).toMatch(/^NH-/);
+    // …nhưng driver-service/merchant-service phải nhận UUID. Gửi TX-/NH- vào URL
+    // làm Postgres lỗi cast uuid ⇒ mọi nguồn D4/D10–D12/D15–D19 trả 500.
+    expect(integrationMock.getDriverLocationHistory).toHaveBeenCalledWith(
+      "driver-uuid",
+      expect.objectContaining({ orderId: "order-1" }),
+    );
+    expect(integrationMock.getDriverProfile).toHaveBeenCalledWith(
+      "driver-uuid",
+    );
+    expect(integrationMock.getOrdersByDriver).toHaveBeenCalledWith(
+      "driver-uuid",
+    );
+    expect(integrationMock.getDriverReviews).toHaveBeenCalledWith(
+      "driver-uuid",
+      expect.any(Number),
+    );
+    expect(integrationMock.getDriverAnalyticsProfile).toHaveBeenCalledWith(
+      "driver-uuid",
+    );
+    expect(integrationMock.getMerchant).toHaveBeenCalledWith("merchant-uuid");
+    expect(integrationMock.getMerchantMenu).toHaveBeenCalledWith(
+      "merchant-uuid",
+    );
+    expect(integrationMock.getMerchantReviews).toHaveBeenCalledWith(
+      "merchant-uuid",
+      expect.any(Number),
+    );
+  });
+
+  it("không gọi service bằng mã ẩn danh khi không có ID thật của tài xế", async () => {
+    const repo: any = {
+      findById: jest.fn().mockResolvedValue({
+        ...caseMock,
+        caseOrderId: null,
+        caseCategory: CaseCategory.DRIVER_BEHAVIOR,
+        caseRespondentType: "DRIVER",
+        caseRespondentId: "TX-2D8256",
+      }),
+      findAndCount: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+    const integration: any = {
+      ...integrationMock,
+      getDriverLocationHistory: jest.fn(),
+      getDriverProfile: jest.fn(),
+      getOrdersByDriver: jest.fn(),
+      getDriverAnalyticsProfile: jest.fn(),
+    };
+
+    const service = new CaseContextService(repo, integration);
+    const { snapshot } = await service.build("case-1", 0);
+
+    expect(integration.getDriverLocationHistory).not.toHaveBeenCalled();
+    expect(integration.getDriverProfile).not.toHaveBeenCalled();
+    const d4 = snapshot.sources.find((s) => s.id === "D4");
+    expect(d4?.available).toBe(false);
+    expect(d4?.detail).toContain("Không xác định được tài xế");
+  });
+
+  it("ghi nguyên nhân ảnh không tải được (imageSkipReasons)", async () => {
+    const evidenceUrl = "http://localhost:3010/api/v1/upload/complaints/abc";
+    const repo: any = {
+      findById: jest.fn().mockResolvedValue({
+        ...caseMock,
+        caseCategory: CaseCategory.WRONG_ITEM,
+        caseEvidence: [evidenceUrl],
+        caseRespondentEvidence: [],
+      }),
+      findAndCount: jest.fn().mockResolvedValue({ items: [], total: 0 }),
+    };
+    const integration: any = {
+      ...integrationMock,
+      downloadImageDetailed: jest.fn().mockResolvedValue({
+        image: null,
+        reason: `http://upload-service:3010/api/v1/upload/complaints/abc → 404 File not found`,
+      }),
+    };
+
+    const service = new CaseContextService(repo, integration);
+    const { snapshot, images } = await service.build("case-1", 3);
+
+    expect(images.filter((image) => image.kind === "REPORTER")).toHaveLength(0);
+    expect(snapshot.imagesSkipped).toContain(evidenceUrl);
+    const entry = (snapshot.imageSkipReasons ?? []).find(
+      (item) => item.url === evidenceUrl,
+    );
+    expect(entry?.reason).toContain("404 File not found");
   });
 });

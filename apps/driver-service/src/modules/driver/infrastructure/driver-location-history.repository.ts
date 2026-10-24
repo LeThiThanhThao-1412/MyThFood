@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository as TypeOrmRepo } from "typeorm";
+import { v4 as uuidv4 } from "uuid";
 import { DriverLocationHistoryEntity } from "./driver-location-history.entity";
 
 export interface DriverLocationPoint {
@@ -33,6 +34,48 @@ export class DriverLocationHistoryRepository {
     });
     const saved = await this.repository.save(entity);
     return this.toPoint(saved);
+  }
+
+  /**
+   * Ghi nhiều điểm GPS trong **1 INSERT** — dùng cho lô gửi từ app tài xế.
+   *
+   * Dùng `INSERT ... SELECT UNNEST(...)` thay vì `repository.save(rows)` vì cột
+   * `recordedAt` là `@CreateDateColumn`: TypeORM có thể tự ghi đè thời điểm insert,
+   * trong khi yêu cầu ở đây là **giữ nguyên thời điểm thiết bị ghi nhận** (điểm
+   * gửi bù sau khi mất mạng). `id` được sinh ở client để không phụ thuộc default
+   * của DB.
+   */
+  async savePoints(
+    inputs: {
+      driverId: string;
+      orderId?: string | null;
+      latitude: number;
+      longitude: number;
+      recordedAt?: Date;
+    }[],
+  ): Promise<number> {
+    if (inputs.length === 0) return 0;
+
+    const ids = inputs.map(() => uuidv4());
+    const driverIds = inputs.map((input) => input.driverId);
+    const orderIds = inputs.map((input) => input.orderId ?? null);
+    const latitudes = inputs.map((input) => input.latitude);
+    const longitudes = inputs.map((input) => input.longitude);
+    const recordedAts = inputs.map((input) =>
+      input.recordedAt ? input.recordedAt.toISOString() : null,
+    );
+
+    await this.repository.query(
+      `INSERT INTO driver_location_history
+         ("id", "driverId", "orderId", "latitude", "longitude", "recordedAt")
+       SELECT * FROM UNNEST(
+         $1::uuid[], $2::uuid[], $3::uuid[],
+         $4::numeric[], $5::numeric[], $6::timestamptz[]
+       )`,
+      [ids, driverIds, orderIds, latitudes, longitudes, recordedAts],
+    );
+
+    return inputs.length;
   }
 
   async findByDriver(

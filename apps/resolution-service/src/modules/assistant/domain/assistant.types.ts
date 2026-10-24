@@ -223,6 +223,39 @@ export interface CaseImagePlan {
 }
 
 /**
+ * Một ảnh **không** gửi được cho model, kèm nguyên nhân.
+ *
+ * Trước đây chỉ có `imagesSkipped` (danh sách URL) nên admin thấy "0 ảnh gửi AI"
+ * mà không biết vì sao: ảnh khách gửi bị 404, quá dung lượng, hay upload-service
+ * trả redirect S3 lỗi. Ghi lý do ngay tại chỗ tải để UI hiển thị được.
+ */
+export interface CaseImageSkipReason {
+  /** URL gốc lưu trong vụ việc (không phải URL đã đổi host). */
+  url: string;
+  /** Nguyên nhân: `http://… → 404 File not found`, `2.1MB > 5MB`… */
+  reason: string;
+}
+
+/**
+ * Trạng thái lần tự phân tích gần nhất của một vụ việc (chẩn đoán, không lưu DB).
+ *
+ * `CaseService.create()` gọi AI chạy **nền**; nếu lượt đó lỗi (model quá tải,
+ * timeout, thiếu key…) admin chỉ thấy "Chưa có bản phân tích nào" và không biết
+ * lý do. Trạng thái này được trả kèm `GET /assistant/cases/:id/analysis` để UI
+ * nói rõ nguyên nhân và gợi ý bấm "Phân tích lại".
+ */
+export interface CaseAiAutoStatus {
+  caseId: string;
+  /** `AI_AUTO_ANALYZE` có bật không. */
+  autoAnalyze: boolean;
+  /** `PENDING` = chưa chạy lần nào kể từ khi service khởi động. */
+  status: "PENDING" | "RUNNING" | "DONE" | "FAILED" | "SKIPPED";
+  attemptedAt: string | null;
+  /** Lý do khi `FAILED`/`SKIPPED`, hoặc model đã dùng khi `DONE`. */
+  detail: string | null;
+}
+
+/**
  * Báo cáo ẩn danh PII của một lần dựng ngữ cảnh.
  *
  * `shadow` = chỉ ghi nhận những gì *sẽ* bị ẩn (dữ liệu gửi model vẫn như cũ);
@@ -425,8 +458,32 @@ export interface CaseContextSnapshot {
   /** Số ảnh (đã tải được) của bên khiếu nại / bên bị khiếu nại. */
   reporterImagesAttached: number;
   respondentImagesAttached: number;
+  /**
+   * URL ảnh hai bên **đã tải thành công**, đúng thứ tự gửi cho model vision.
+   *
+   * Prompt phải liệt kê đúng danh sách này (không phải `case.evidence` gốc) để
+   * số thứ tự/nhãn ảnh khớp với ảnh thật: URL hỏng bị bỏ qua, URL không đuôi
+   * ảnh vẫn được tính, và thứ tự là thứ tự tải (xem `sortImageCandidates`).
+   */
+  reporterImageUrls?: string[];
+  respondentImageUrls?: string[];
   /** Ảnh bị bỏ qua (không tải được). */
   imagesSkipped: string[];
+  /**
+   * Nguyên nhân từng ảnh bị bỏ (song song với `imagesSkipped`, cùng độ dài).
+   *
+   * UI dùng để trả lời câu hỏi "khách đã gửi ảnh mà AI bảo không có ảnh?" —
+   * ví dụ `404 File not found`, `application/json (không phải ảnh)`,
+   * `6.2MB > 5MB`.
+   */
+  imageSkipReasons?: CaseImageSkipReason[];
+  /**
+   * Ảnh **có sẵn** theo từng nhóm (đếm URL, KHÔNG tải).
+   *
+   * Dùng cho màn xem trước ngữ cảnh (`build(caseId, 0)`): `imagePlan` toàn 0 vì
+   * không tải ảnh, còn trường này cho biết bên khiếu nại có gửi ảnh hay không.
+   */
+  imagesAvailable?: CaseImagePlan;
   /**
    * Món khách đã đặt (D1) — dùng làm mốc đối chiếu "giao đúng/sai món".
    * Không có D1 ⇒ undefined (prompt sẽ cảnh báo thiếu dữ liệu gốc).
@@ -452,6 +509,11 @@ export interface CaseContextSnapshot {
   contextStats?: CaseContextStats;
   /** Kế hoạch ảnh đã gửi (theo loại). */
   imagePlan?: CaseImagePlan;
+  /**
+   * Thứ tự ảnh thực tế đã gửi (theo danh mục): sự cố món ăn ưu tiên ảnh chuẩn
+   * món trước ảnh hai bên; các danh mục khác ưu tiên ảnh bằng chứng.
+   */
+  imageOrder?: AiImageKind[];
   /** Số ảnh chuẩn món đã tải được. */
   menuImagesAttached?: number;
   /** Số ảnh đánh giá của khách đã tải được. */
@@ -590,6 +652,44 @@ export interface AiSideImageAnalysis {
 }
 
 /**
+ * Vì sao lượt phân tích vừa rồi **không đọc được ảnh** (hoặc đọc bình thường).
+ *
+ * Tách khỏi `support`/`analyzed`: hai trường đó nói *kết luận*, còn đây nói
+ * *nguyên nhân kỹ thuật* để panel hướng dẫn admin đúng việc cần làm:
+ *
+ * - `OK` — model đã đọc ảnh.
+ * - `NO_IMAGES` — vụ việc không có ảnh nào để gửi.
+ * - `DOWNLOAD_FAILED` — có ảnh nhưng tải về hỏng (404 / DNS / quá dung lượng);
+ *   bấm lại **không** chắc khắc phục, phải xem `imageSkipReasons`.
+ * - `VISION_OVERLOADED` — model đọc ảnh quá tải/hết hạn mức (429/1302/1305);
+ *   đợi 30–60 giây rồi bấm "Phân tích lại" là được.
+ * - `VISION_DISABLED` — chưa bật model ảnh (`GLM_VISION_MODEL=none`).
+ * - `VISION_ERROR` — model ảnh lỗi khác (404/1210/JSON hỏng) ⇒ kiểm tra cấu hình.
+ */
+export type AiImageReadStatus =
+  | "OK"
+  | "NO_IMAGES"
+  | "DOWNLOAD_FAILED"
+  | "VISION_OVERLOADED"
+  | "VISION_DISABLED"
+  | "VISION_ERROR";
+
+/** Chẩn đoán lượt đọc ảnh — hiển thị thành banner trong panel trợ lý AI. */
+export interface AiImageReadDiagnostics {
+  status: AiImageReadStatus;
+  /** Số ảnh đã tải & gửi cho model trong lượt này. */
+  attached: number;
+  /** Số ảnh model thực sự đọc. */
+  analyzed: number;
+  /** Model đã thử ở lượt ảnh (theo thứ tự gọi). */
+  modelsTried: string[];
+  /** Lý do kỹ thuật ngắn (`429/1305`, `404`, `mạng`…) — null khi OK. */
+  detail: string | null;
+  /** Việc admin nên làm — null khi không cần làm gì. */
+  hint: string | null;
+}
+
+/**
  * Trọng số bằng chứng (%) của một lần phân tích — ảnh & dữ liệu hệ thống quyết
  * định, lời khai chỉ định hướng.
  *
@@ -620,6 +720,11 @@ export interface CaseAiSuggestion {
   summary: string;
   /** Tổng số ảnh bằng chứng đã thực sự gửi cho model (0 = không có ảnh). */
   imagesAnalyzed: number;
+  /**
+   * Chẩn đoán lượt đọc ảnh: model nào đã thử, vì sao ảnh không được đọc, và
+   * admin nên làm gì (bấm lại / đổi model / xem lý do tải hỏng).
+   */
+  imageDiagnostics?: AiImageReadDiagnostics;
   /** Phân tích ảnh của **bên khiếu nại**. */
   reporterImages: AiSideImageAnalysis;
   /** Phân tích ảnh của **bên bị khiếu nại**. */

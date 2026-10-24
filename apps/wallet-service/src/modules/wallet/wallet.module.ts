@@ -11,6 +11,7 @@ import { SettlementEntryEntity } from "./infrastructure/settlement-entry.entity"
 import { SettlementBatchEntity } from "./infrastructure/settlement-batch.entity";
 import { ClawbackLiabilityEntity } from "./infrastructure/clawback-liability.entity";
 import { ClawbackDeductionEntity } from "./infrastructure/clawback-deduction.entity";
+import { FailureSettlementEntity } from "./infrastructure/failure-settlement.entity";
 
 /**
  * FIX #8: Now using WalletRepository (encapsulates TypeORM) instead of injecting
@@ -26,6 +27,7 @@ import { ClawbackDeductionEntity } from "./infrastructure/clawback-deduction.ent
       SettlementBatchEntity,
       ClawbackLiabilityEntity,
       ClawbackDeductionEntity,
+      FailureSettlementEntity,
     ]),
   ],
   controllers: [WalletController],

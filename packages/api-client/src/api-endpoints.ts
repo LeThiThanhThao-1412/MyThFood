@@ -34,6 +34,7 @@ import type {
   UpdateCapacityRequest,
   PlaceOrderRequest,
   Order,
+  OrderWarning,
   DeliveryOption,
   CancelOrderRequest,
   RejectOrderRequest,
@@ -59,6 +60,7 @@ import type {
   Driver,
   DriverPublicProfile,
   UpdateLocationRequest,
+  DriverLocationBatchPoint,
   DriverLocationPoint,
   CreateReviewRequest,
   Review,
@@ -95,6 +97,7 @@ import type {
   SendMessageRequest,
   AssistantHealth,
   CaseAiAnalysisRecord,
+  CaseAiAutoStatus,
   CaseAiContext,
   CaseAiListSummary,
   CaseAiSuggestion,
@@ -655,6 +658,23 @@ export const orderApi = {
   getTimeline: (id: string) =>
     httpClient.get<any>(PORTS.ORDER, `/orders/${id}/timeline`),
 
+  // ---- Cảnh báo đơn hàng (thay cho phạt tiền khi giao thất bại) ---- //
+  listWarnings: (orderId: string) =>
+    httpClient.get<OrderWarning[]>(PORTS.ORDER, `/orders/${orderId}/warnings`),
+
+  dismissWarning: (orderId: string, warningId: string) =>
+    httpClient.post<OrderWarning>(
+      PORTS.ORDER,
+      `/orders/${orderId}/warnings/${warningId}/dismiss`,
+      {},
+    ),
+
+  listActiveWarnings: (merchantId: string) =>
+    httpClient.get<OrderWarning[]>(
+      PORTS.ORDER,
+      `/orders/merchant/${merchantId}/warnings/active`,
+    ),
+
   // ---- Order change requests (nhà hàng đổi món, khách xác nhận) ---- //
   createChangeRequest: (orderId: string, body: CreateOrderChangeRequest) =>
     httpClient.post<OrderChangeRequest>(
@@ -916,6 +936,32 @@ export const driverApi = {
       body,
     ),
 
+  /**
+   * Gửi lô điểm GPS (tối đa 100 điểm/lần). Dùng cho pipeline realtime: client
+   * lấy mẫu bằng `watchPosition` rồi gửi theo lô để giảm tải DB.
+   */
+  updateLocationBatch: (id: string, points: DriverLocationBatchPoint[]) =>
+    httpClient.post<{
+      statusCode: number;
+      data: { accepted: number; driver: Driver };
+    }>(PORTS.DRIVER, `/drivers/${id}/location/batch`, { points }),
+
+  /**
+   * Tài xế khả dụng gần một toạ độ. driver-service ưu tiên Redis GEO
+   * (GEOSEARCH) và tự fallback sang quét DB + Haversine khi Redis không sẵn sàng.
+   */
+  getNearbyAvailableDrivers: (params: {
+    latitude: number;
+    longitude: number;
+    radiusKm?: number;
+    includeStackable?: boolean;
+    limit?: number;
+  }) =>
+    httpClient.get<{
+      statusCode: number;
+      data: (Driver & { distanceKm: number })[];
+    }>(PORTS.DRIVER, "/drivers/available/nearby", { params }),
+
   getLocationHistory: (id: string, limit?: number) =>
     httpClient.get<{ statusCode: number; data: DriverLocationPoint[] }>(
       PORTS.DRIVER,
@@ -1146,10 +1192,18 @@ export const dispatchApi = {
   // ---- Vòng đời giao hàng của tài xế ----
 
   /** Bấm “Nhận đơn” → DRIVER_ACCEPTED (Đang đến quán). */
-  driverAccept: (id: string) =>
+  /**
+   * Bấm “Nhận đơn”. Gửi kèm GPS hiện tại (nếu có) để server cập nhật vị trí
+   * tài xế trước khi kiểm tra bán kính nhận đơn.
+   */
+  driverAccept: (
+    id: string,
+    location?: { latitude?: number; longitude?: number },
+  ) =>
     httpClient.patch<DispatchEnvelope>(
       PORTS.DISPATCH,
       `/dispatches/${id}/driver-accept`,
+      location ?? {},
     ),
 
   driverDecline: (id: string, body: import("./types").DeclineDispatchRequest) =>
@@ -1571,7 +1625,26 @@ export const walletApi = {
       ownerId: string;
       ownerType: string;
       totalOpenClawback: number;
-      items: any[];
+      balance?: number;
+      heldBalance?: number;
+      availableBalance?: number;
+      canRecoverNow?: boolean;
+      recoveryMode?: string;
+      /** Tổng nợ theo nhãn: CUSTOMER_REFUND | DRIVER_COMPENSATION | ... */
+      byCategory?: { category: string; amount: number }[];
+      items: {
+        id: string;
+        sourceOrderId: string | null;
+        sourceBatchId?: string | null;
+        refundId?: string | null;
+        originalAmount: number;
+        remainingAmount: number;
+        category?: string | null;
+        description?: string | null;
+        status: string;
+        createdAt: string;
+        settledAt?: string | null;
+      }[];
     }>(PORTS.WALLET, "/wallets/settlement/clawback", {
       params: { ownerId, ownerType },
     }),
@@ -2044,7 +2117,12 @@ export const resolutionApi = {
       body,
     ),
 
-  addEvidence: (id: string, body: { urls: string[] }) =>
+  /**
+   * Bổ sung ảnh bằng chứng — dùng được cho **cả hai bên**: người khiếu nại
+   * (ảnh vào `evidence`) và bên bị khiếu nại (ảnh vào `respondentEvidence`).
+   * Backend tự xác định bên dựa trên người gọi.
+   */
+  addEvidence: (id: string, body: { urls: string[]; actorId?: string }) =>
     httpClient.post<{ statusCode: number; data: any }>(
       PORTS.RESOLUTION,
       `/cases/${id}/evidence`,
@@ -2218,10 +2296,12 @@ export const resolutionApi = {
 
   /** Bản phân tích AI đã lưu (AI tự chạy nền khi khiếu nại được tạo). */
   getCaseAiAnalysis: (caseId: string) =>
-    httpClient.get<{ statusCode: number; data: CaseAiAnalysisRecord | null }>(
-      PORTS.RESOLUTION,
-      `/assistant/cases/${caseId}/analysis`,
-    ),
+    httpClient.get<{
+      statusCode: number;
+      data: CaseAiAnalysisRecord | null;
+      /** Chẩn đoán lần tự phân tích gần nhất (chỉ có ở resolution-service mới). */
+      auto?: CaseAiAutoStatus;
+    }>(PORTS.RESOLUTION, `/assistant/cases/${caseId}/analysis`),
 
   /** Badge AI cho nhiều vụ việc cùng lúc (lưới vụ việc) — 1 request thay vì N. */
   listCaseAiSummaries: (caseIds: string[]) =>

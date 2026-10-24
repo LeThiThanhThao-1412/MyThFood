@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@mythfood/frontend-shared";
 import DriverLocationTracker from "@/components/DriverLocationTracker";
+import GpsSimulatorPanel from "@/components/GpsSimulatorPanel";
 
 const inter = Inter({ subsets: ["latin", "vietnamese"] });
 export const metadata: Metadata = {
@@ -20,6 +21,7 @@ export default function RootLayout({
         <AuthProvider>
           <DriverLocationTracker />
           {children}
+          <GpsSimulatorPanel />
         </AuthProvider>
       </body>
     </html>
