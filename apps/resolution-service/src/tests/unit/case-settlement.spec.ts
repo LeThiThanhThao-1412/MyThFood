@@ -306,6 +306,26 @@ describe("CaseService.resolve — quyết toán tiền & escrow theo chính sác
     expect(integration.releaseSettlement).toHaveBeenCalledWith(ORDER_ID);
   });
 
+  it("ví báo duplicated (retry) → KHÔNG ghi thêm COMPENSATION dù amount > 0", async () => {
+    const { penalty } = await resolveValid({
+      category: CaseCategory.DELIVERY_LATE,
+      faultParty: FaultParty.DRIVER,
+      respondentType: "DRIVER",
+      compensation: {
+        settled: true,
+        amount: SHIP_FEE,
+        charged: 0,
+        clawback: 0,
+        duplicated: true,
+        skipped: null,
+      },
+    });
+
+    // `amount` ở đây là số đã chuyển ở lần trước, không phải dòng tiền mới ⇒
+    // ghi COMPENSATION nữa là bút toán ảo (đúng lỗi cũ của nhánh `skipped`).
+    expect(compensationRows(penalty)).toHaveLength(0);
+  });
+
   it("đơn đã quyết toán giao thất bại (duplicated) → không ghi thêm bồi thường", async () => {
     const { penalty, integration } = await resolveValid({
       category: CaseCategory.MISSING_ITEM,

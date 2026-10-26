@@ -97,3 +97,118 @@ WHERE c.status IN ('OPEN', 'PARTIAL')
 GROUP BY w."ownerType", w."ownerId", w.balance, w."heldBalance"
 HAVING (w.balance - w."heldBalance") >= SUM(c."remainingAmount")
 ORDER BY debt DESC;
+
+-- (8) Khách nhận HAI lần cho cùng một đơn: vừa hoàn 100% (REFUND) vừa được
+--     bồi thường qua case (CASE_COMPENSATION). Sau khi vá, settleFailure netting
+--     với CASE_COMPENSATION và settleCaseCompensation bỏ qua khi đã có REFUND,
+--     nên query này chỉ còn bắt được dữ liệu lịch sử.
+SELECT r."ownerType", r."ownerId", r."referenceId" AS "orderId",
+       r.amount AS refunded, cc.amount AS compensated, r."createdAt"
+FROM wallet_transactions r
+JOIN wallet_transactions cc
+  ON cc."ownerId" = r."ownerId"
+ AND cc."ownerType" = r."ownerType"
+ AND cc."referenceId" = r."referenceId"
+WHERE r.type = 'CREDIT'
+  AND r."referenceType" = 'REFUND'
+  AND cc.type = 'CREDIT'
+  AND cc."referenceType" = 'CASE_COMPENSATION'
+ORDER BY r."createdAt" DESC;
+
+-- (9) Đơn COD: tài xế ĐÃ nộp tiền món lúc giao (`COD_SETTLEMENT`) nên khoản
+--     `FAILURE_DRIVER_LIABILITY` không được vượt quá phần thu nhập ship tài xế
+--     đang giữ tiền mặt (REVENUE `SETTLEMENT`) — nếu vượt là thu tiền món lần 2.
+SELECT t."ownerId" AS "driverId", t."referenceId" AS "orderId",
+       t.amount AS failure_debit,
+       COALESCE(r.ship_cash, 0) AS allowed_ship_income, t."createdAt"
+FROM wallet_transactions t
+LEFT JOIN (
+  SELECT "ownerId", "referenceId", SUM(amount) AS ship_cash
+  FROM wallet_transactions
+  WHERE "ownerType" = 'DRIVER' AND type = 'REVENUE'
+  GROUP BY 1, 2
+) r ON r."ownerId" = t."ownerId" AND r."referenceId" = t."referenceId"
+WHERE t."ownerType" = 'DRIVER'
+  AND t.type = 'DEBIT'
+  AND t."referenceType" = 'FAILURE_DRIVER_LIABILITY'
+  AND t.amount > 0
+  AND EXISTS (
+    SELECT 1 FROM wallet_transactions c
+    WHERE c."ownerId" = t."ownerId"
+      AND c."ownerType" = 'DRIVER'
+      AND c."referenceId" = t."referenceId"
+      AND c."referenceType" = 'COD_SETTLEMENT'
+  )
+  AND t.amount > COALESCE(r.ship_cash, 0)
+ORDER BY t."createdAt" DESC;
+
+-- (10) Nhà hàng nhận tiền món HAI lần: escrow đã quyết toán 23:00
+--      (CREDIT `SETTLEMENT`) rồi phán quyết vẫn credit `FAILURE_MERCHANT_PAYOUT`.
+SELECT p."ownerType", p."ownerId", p."referenceId" AS "orderId",
+       p.amount AS payout, s.amount AS settlement, p."createdAt"
+FROM wallet_transactions p
+JOIN wallet_transactions s
+  ON s."ownerId" = p."ownerId"
+ AND s."ownerType" = p."ownerType"
+ AND s."referenceId" = p."referenceId"
+WHERE p.type = 'CREDIT'
+  AND p."referenceType" = 'FAILURE_MERCHANT_PAYOUT'
+  AND s.type = 'CREDIT'
+  AND s."referenceType" = 'SETTLEMENT'
+ORDER BY p."createdAt" DESC;
+
+-- (11) Sổ phán quyết và ví lệch nhau: `failure_settlements.refundAmount` phải
+--      bằng đúng tổng CREDIT `REFUND` đã vào ví khách của đơn đó.
+SELECT f."orderId", f."refundAmount", COALESCE(r.credited, 0) AS credited
+FROM failure_settlements f
+LEFT JOIN (
+  SELECT "referenceId", SUM(amount) AS credited
+  FROM wallet_transactions
+  WHERE type = 'CREDIT' AND "referenceType" = 'REFUND'
+  GROUP BY 1
+) r ON r."referenceId" = f."orderId"
+WHERE COALESCE(f."refundAmount", 0) <> COALESCE(r.credited, 0)
+ORDER BY f."createdAt" DESC;
+
+-- (12) Tài xế bị trừ OAN: DEBIT `FAILURE_DRIVER_LIABILITY` lớn hơn phần tiền
+--      thực sự đã/đang chuyển cho người khác của đơn đó.
+--        • đơn COD (escrow không có dòng ship)   ⇒ tối đa = thu nhập ship (tiền mặt đã giữ)
+--        • đơn online, dòng ship chưa quyết toán ⇒ tối đa = merchantShare
+--        • đơn online, dòng ship đã SETTLED     ⇒ tối đa = merchantShare + shipIncome
+--      Đơn không có escrow lẫn không có REVENUE COD ⇒ bỏ qua (không đủ dữ kiện).
+WITH driver_debit AS (
+  SELECT "ownerId", "referenceId" AS "orderId", amount
+  FROM wallet_transactions
+  WHERE type = 'DEBIT'
+    AND "ownerType" = 'DRIVER'
+    AND "referenceType" = 'FAILURE_DRIVER_LIABILITY'
+), escrow AS (
+  SELECT "orderId",
+         SUM(CASE WHEN kind = 'MERCHANT_FOOD_REVENUE' THEN amount ELSE 0 END) AS merchant_revenue,
+         SUM(CASE WHEN kind = 'DRIVER_SHIPPING_FEE' AND status = 'SETTLED' THEN amount ELSE 0 END) AS ship_paid,
+         COUNT(*) FILTER (WHERE kind = 'DRIVER_SHIPPING_FEE') AS ship_rows,
+         COUNT(*) AS entry_rows
+  FROM settlement_entries
+  GROUP BY 1
+), cod_revenue AS (
+  SELECT "referenceId" AS "orderId", SUM(amount) AS ship_cash
+  FROM wallet_transactions
+  WHERE "ownerType" = 'DRIVER' AND type = 'REVENUE'
+  GROUP BY 1
+), allowed AS (
+  SELECT COALESCE(e."orderId", c."orderId") AS "orderId",
+         CASE
+           WHEN COALESCE(e.entry_rows, 0) = 0 AND c.ship_cash IS NULL THEN NULL
+           WHEN COALESCE(e.ship_rows, 0) = 0 THEN COALESCE(c.ship_cash, 0)
+           ELSE e.merchant_revenue + e.ship_paid
+         END AS max_charge
+  FROM escrow e
+  FULL JOIN cod_revenue c ON c."orderId" = e."orderId"
+)
+SELECT d."orderId", d."ownerId" AS "driverId", d.amount AS driver_debit,
+       a.max_charge
+FROM driver_debit d
+LEFT JOIN allowed a ON a."orderId" = d."orderId"
+WHERE a.max_charge IS NOT NULL
+  AND d.amount > a.max_charge
+ORDER BY d."orderId";

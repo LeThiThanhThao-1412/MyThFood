@@ -194,6 +194,38 @@ const escrow = (): Entry[] => [
   },
 ];
 
+// Escrow của đơn COD cùng giá trị: KHÔNG có dòng DRIVER_SHIPPING_FEE (tài xế giữ
+// tiền mặt phí ship và đã nộp tiền món qua COD_SETTLEMENT lúc giao).
+const codEscrow = (): Entry[] => [
+  {
+    id: "e1",
+    orderId: ORDER_ID,
+    ownerId: MERCHANT,
+    ownerType: "MERCHANT",
+    amount: 48750,
+    kind: "MERCHANT_FOOD_REVENUE",
+    status: "HELD_BY_DISPUTE",
+  },
+  {
+    id: "e3",
+    orderId: ORDER_ID,
+    ownerId: "PLATFORM_DEFAULT",
+    ownerType: "PLATFORM",
+    amount: 28473,
+    kind: "PLATFORM_COMMISSION",
+    status: "HELD_BY_DISPUTE",
+  },
+  {
+    id: "e4",
+    orderId: ORDER_ID,
+    ownerId: "RESERVE_FUND",
+    ownerType: "PLATFORM",
+    amount: 510,
+    kind: "RESERVE_FUND_CONTRIBUTION",
+    status: "HELD_BY_DISPUTE",
+  },
+];
+
 const baseInput = {
   orderId: ORDER_ID,
   severity: "LOW",
@@ -319,6 +351,92 @@ describe("WalletService.settleFailure (đơn giao thất bại - VALID)", () => 
     expect(h.balance("MERCHANT", MERCHANT)).toBe(48750);
     expect(result.escrowVoided).toBe(4);
     expect(h.getEntries().every((e) => e.status === "VOID")).toBe(true);
+  });
+
+  it("DRIVER fault (escrow PENDING): tài xế CHỈ chịu tiền món, không bị trừ thu nhập ship chưa nhận", async () => {
+    const h = buildHarness();
+    h.setEntries(escrow());
+
+    const result = await h.service.settleFailure({
+      ...baseInput,
+      faultParty: "DRIVER",
+    });
+
+    // Dòng ship bị VOID ⇒ tài xế không nhận 24.131 nên không bị trừ khoản đó
+    // (trước đây trừ 48.750 + 24.131 = 72.881 ⇒ tài xế mất tiền hai lần).
+    expect(result.driverDebit).toBe(0);
+    expect(result.driverClawback).toBe(48750);
+    expect(h.clawbacks).toHaveLength(1);
+    expect(h.clawbacks[0].category).toBe("CUSTOMER_REFUND");
+    expect(h.clawbacks[0].remainingAmount).toBe(48750);
+    expect(h.clawbacks[0].description).toContain("giao thất bại");
+  });
+
+  it("DRIVER fault (escrow đã quyết toán 23:00): không trả nhà hàng lần hai, tài xế chịu tiền món + ship đã nhận", async () => {
+    const h = buildHarness();
+    h.setEntries(escrow().map((e) => ({ ...e, status: "SETTLED" })));
+
+    const result = await h.service.settleFailure({
+      ...baseInput,
+      faultParty: "DRIVER",
+    });
+
+    expect(result.refundAmount).toBe(101864);
+    // Nhà hàng đã nhận 48.750 lúc 23:00 ⇒ không credit thêm lần nữa.
+    expect(h.balance("MERCHANT", MERCHANT)).toBe(0);
+    expect(
+      h.txs.some((t) => t.referenceType === "FAILURE_MERCHANT_PAYOUT"),
+    ).toBe(false);
+    // Tài xế đã nhận 24.131 ⇒ phải trả lại cả tiền món lẫn thu nhập ship.
+    expect(result.driverClawback).toBe(48750 + 24131);
+    expect(result.escrowVoided).toBe(0);
+  });
+
+  it("DRIVER fault (COD): khách vẫn được hoàn 100%, tài xế chỉ chịu thu nhập ship", async () => {
+    const h = buildHarness();
+    h.setEntries(codEscrow());
+
+    const result = await h.service.settleFailure({
+      ...baseInput,
+      isOnline: false,
+      faultParty: "DRIVER",
+    });
+
+    // Trước đây chặn `isOnline` ⇒ khách không nhận được đồng nào dù phán quyết
+    // ghi "hoàn 100%", trong khi nhà hàng vẫn được trả.
+    expect(result.refundAmount).toBe(101864);
+    expect(h.balance("CONSUMER", CONSUMER)).toBe(101864);
+    // Nhà hàng vẫn nhận tiền món từ khoản COD nền tảng đang giữ.
+    expect(h.balance("MERCHANT", MERCHANT)).toBe(48750);
+    // Tài xế đã nộp tiền món lúc giao (COD_SETTLEMENT) ⇒ chỉ còn nợ phần ship
+    // đã giữ tiền mặt; trước đây thu thêm 48.750 nữa (trả tiền món hai lần).
+    expect(result.driverDebit).toBe(0);
+    expect(result.driverClawback).toBe(24131);
+  });
+
+  it("khách đã được bồi thường phí ship trước đó ⇒ hoàn phần còn thiếu, không trừ tài xế hai lần", async () => {
+    const h = buildHarness();
+    h.setEntries(escrow());
+    // Lần trước: case DELIVERY_LATE đã bồi thường 21.862 từ ví tài xế.
+    h.txs.push({
+      ownerId: CONSUMER,
+      ownerType: "CONSUMER",
+      type: "CREDIT",
+      amount: 21862,
+      referenceType: "CASE_COMPENSATION",
+      referenceId: ORDER_ID,
+    });
+
+    const result = await h.service.settleFailure({
+      ...baseInput,
+      faultParty: "DRIVER",
+    });
+
+    expect(result.refundAmount).toBe(101864 - 21862);
+    expect(h.balance("CONSUMER", CONSUMER)).toBe(80002);
+    // Bất biến: tổng khách nhận = 100% đơn, tổng tài xế chịu = tiền món.
+    expect(21862 + h.balance("CONSUMER", CONSUMER)).toBe(101864);
+    expect(result.driverClawback).toBe(48750 - 21862);
   });
 
   it("CUSTOMER fault (online): không hoàn tiền, escrow được giải tỏa để trả đủ các bên", async () => {

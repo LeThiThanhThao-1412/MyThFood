@@ -819,10 +819,16 @@ export class CaseService {
     if (res.skipped) return { settledAmount: 0, settlementNote: res.skipped };
 
     const credited = Math.max(0, Math.round(Number(res.amount) || 0));
+    // `duplicated` ⇒ ví đã chuyển khoản này ở lần trước (retry / case trùng):
+    // lần này KHÔNG có đồng nào vào ví khách nên không được ghi COMPENSATION,
+    // nếu không tab hình phạt lại hiện một khoản bồi thường ảo (đúng lỗi cũ của
+    // nhánh `skipped`).
+    if (res.duplicated) {
+      return { settledAmount: 0, settlementNote: "DUPLICATED" };
+    }
     return {
       settledAmount: credited,
-      settlementNote:
-        credited > 0 ? (res.duplicated ? "DUPLICATED" : null) : "NO_CREDIT",
+      settlementNote: credited > 0 ? null : "NO_CREDIT",
     };
   }
 

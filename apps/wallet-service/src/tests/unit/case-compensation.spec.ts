@@ -255,6 +255,27 @@ describe("WalletService.settleCaseCompensation — bồi thường phí ship", (
     expect(h.balance("DRIVER", DRIVER)).toBe(69990);
   });
 
+  it("bỏ qua khi đơn đã được hoàn 100% qua ví (REFUND) dù chưa có failure settlement", async () => {
+    const h = buildHarness({ balances: { [`DRIVER:${DRIVER}`]: 69990 } });
+    h.txs.push({
+      ownerId: CONSUMER,
+      ownerType: "CONSUMER",
+      type: "CREDIT",
+      amount: TOTAL,
+      referenceType: "REFUND",
+      referenceId: ORDER_ID,
+    });
+
+    const result = await h.service.settleCaseCompensation({ ...baseInput });
+
+    // Chiều ngược lại của FAILURE_ALREADY_SETTLED: hoàn rồi thì không bồi thêm,
+    // nếu không khách nhận 93.262 + 21.862 và tài xế bị trừ hai lần.
+    expect(result.skipped).toBe("REFUND_ALREADY_ISSUED");
+    expect(result.amount).toBe(0);
+    expect(h.txs).toHaveLength(1);
+    expect(h.balance("DRIVER", DRIVER)).toBe(69990);
+  });
+
   it("bỏ qua khi số tiền = 0 hoặc hai bên trùng nhau", async () => {
     const h = buildHarness();
 

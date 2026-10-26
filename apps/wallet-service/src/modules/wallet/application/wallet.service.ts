@@ -1141,6 +1141,28 @@ export class WalletService {
     }
   }
 
+  /**
+   * Số tiền khách đã nhận qua luồng bồi thường CASE cho đơn này
+   * (`settleCaseCompensation` ghi credit `CASE_COMPENSATION`).
+   *
+   * Dùng để netting khi sau đó đơn được hoàn 100%: khách chỉ nhận phần còn
+   * thiếu và bên lỗi chỉ bị trừ phần còn thiếu. Trước đây hai luồng cộng dồn
+   * nên khách nhận hai lần còn tài xế bị trừ hai lần.
+   */
+  private async findPriorCaseCompensation(
+    consumerId: string | null,
+    orderId: string,
+  ): Promise<number> {
+    if (!consumerId) return 0;
+    const tx = await this.walletRepo.findTransactionByOwnerReference(
+      consumerId,
+      OwnerType.CONSUMER,
+      "CASE_COMPENSATION",
+      orderId,
+    );
+    return Math.max(0, Math.round(Number(tx?.amount) || 0));
+  }
+
   private async routeFailureMoney(ctx: {
     orderId: string;
     faultParty: string;
@@ -1171,28 +1193,52 @@ export class WalletService {
     // Snapshot escrow TRƯỚC khi void/giải tỏa: đây là phần các bên đã được
     // earmark, dùng làm số tiền "công bằng" khi phải trả trực tiếp qua ví.
     const entries = await this.settlementRepo.findEntriesByOrderId(orderId);
-    const active = entries.filter(
-      (e) => e.status === "PENDING" || e.status === "HELD_BY_DISPUTE",
-    );
-    const shareOf = (kind: string) =>
-      active
+    // Số tiền của dòng escrow — đọc TẤT CẢ trạng thái (kể cả SETTLED) vì đó là
+    // số thật đã/đang chuyển cho chủ ví; `active` chỉ dùng để biết có dòng
+    // tương ứng hay chưa (quyết định có dùng công thức ước tính không).
+    const amountOf = (kind: string) =>
+      entries
         .filter((e) => e.kind === kind)
         .reduce((s, e) => s + Number(e.amount), 0);
+    const hasKind = (kind: string) => entries.some((e) => e.kind === kind);
+
+    // Trạng thái quyết toán 23:00: dòng SETTLED là tiền ĐÃ vào ví chủ sở hữu.
+    // Dùng để không trả lần hai và chỉ thu lại phần thực sự đã chuyển.
+    const settledKinds = new Set(
+      entries.filter((e) => e.status === "SETTLED").map((e) => e.kind),
+    );
+    const merchantRevenueSettled = settledKinds.has("MERCHANT_FOOD_REVENUE");
+    const driverIncomeSettled = settledKinds.has("DRIVER_SHIPPING_FEE");
+    // COD: tài xế đã nộp tiền món cho nền tảng lúc giao (`COD_SETTLEMENT`) và
+    // giữ tiền mặt phí ship ⇒ chỉ còn nợ đúng phần thu nhập ship.
+    const isCod = !isOnline;
 
     const { merchantCommissionPct, driverCommissionPct } =
       this.getCommissionRates();
-    const merchantShare =
-      shareOf("MERCHANT_FOOD_REVENUE") ||
-      Math.max(
-        0,
-        foodTotal - Math.round((foodTotal * merchantCommissionPct) / 100),
-      );
-    const driverIncome =
-      shareOf("DRIVER_SHIPPING_FEE") ||
-      Math.max(
-        0,
-        shippingFee - Math.round((shippingFee * driverCommissionPct) / 100),
-      );
+    // Chỉ dùng công thức ước tính khi escrow KHÔNG có dòng tương ứng (đơn cũ
+    // chưa accrue). Có dòng rồi thì tôn trọng số thật của escrow, kể cả 0.
+    const merchantShare = hasKind("MERCHANT_FOOD_REVENUE")
+      ? amountOf("MERCHANT_FOOD_REVENUE")
+      : Math.max(
+          0,
+          foodTotal - Math.round((foodTotal * merchantCommissionPct) / 100),
+        );
+    const driverIncome = hasKind("DRIVER_SHIPPING_FEE")
+      ? amountOf("DRIVER_SHIPPING_FEE")
+      : Math.max(
+          0,
+          shippingFee - Math.round((shippingFee * driverCommissionPct) / 100),
+        );
+
+    // Khách đã được bồi thường qua luồng case (`settleCaseCompensation`) cho đơn
+    // này chưa? Nếu có thì phần hoàn tiếp theo phải TRỪ đi khoản đã nhận, và bên
+    // lỗi cũng chỉ bị trừ phần còn thiếu — trước đây hai luồng cộng dồn nên
+    // khách nhận hai lần còn tài xế bị trừ hai lần.
+    const priorCompensation = await this.findPriorCaseCompensation(
+      consumerId,
+      orderId,
+    );
+    const refundDue = Math.max(0, total - priorCompensation);
 
     const result: FailureSettlementResult = {
       orderId,
@@ -1218,6 +1264,8 @@ export class WalletService {
     let collected = 0;
     /** Phần ghi nợ của bên không phải nhà hàng/tài xế (vd nợ của khách). */
     let otherClawback = 0;
+    /** Số tiền THỰC trả nhà hàng trong lần settle này (0 nếu 23:00 đã trả). */
+    let merchantPayout = 0;
 
     switch (faultParty) {
       case "CUSTOMER": {
@@ -1267,17 +1315,22 @@ export class WalletService {
       }
 
       case "DRIVER": {
-        if (isOnline && consumerId && total > 0) {
+        // Khách hoàn 100% cho CẢ đơn COD: tiền món COD nền tảng đã thu từ tài xế
+        // lúc giao (`COD_SETTLEMENT`) nên có đủ tiền hoàn. Trước đây chặn bằng
+        // `isOnline` khiến khách không nhận được đồng nào dù phán quyết ghi
+        // "hoàn 100%" — và tiền vẫn bị thu ở tài xế.
+        if (consumerId && refundDue > 0) {
           const r = await this.refundCredit(
             consumerId,
             OwnerType.CONSUMER,
-            total,
+            refundDue,
             orderId,
           );
           result.refundAmount += r.amount;
         }
-        // Nhà hàng không có lỗi → vẫn được trả tiền món (net hoa hồng).
-        if (merchantId && merchantShare > 0) {
+        // Nhà hàng không có lỗi → vẫn được trả tiền món (net hoa hồng), TRỪ KHI
+        // escrow đã được quyết toán 23:00 (đã trả rồi thì không trả lần hai).
+        if (merchantId && merchantShare > 0 && !merchantRevenueSettled) {
           await this.penaltyCredit(
             merchantId,
             OwnerType.MERCHANT,
@@ -1285,15 +1338,27 @@ export class WalletService {
             `Nền tảng trả tiền món đơn #${short} (lỗi tài xế)`,
             { referenceType: "FAILURE_MERCHANT_PAYOUT", referenceId: orderId },
           );
+          merchantPayout = merchantShare;
         }
         // Escrow bị đảo: khách đã được hoàn 100% tiền của đơn.
         result.escrowVoided += await this.settlementRepo.voidEntriesByOrderId(
           orderId,
           kinds,
         );
-        // Tài xế chịu: tiền món + phí ship không được hưởng (không còn phạt tiền).
+        // Tài xế chịu ĐÚNG phần tiền đã/đang chuyển cho người khác:
+        //  - Tiền món: COD đã bị trừ lúc giao nên không thu lại (nếu thu nữa là
+        //    tài xế trả tiền món hai lần); đơn online thì thu để hoàn lại khoản
+        //    vừa trả nhà hàng (hoặc khoản 23:00 đã trả).
+        //  - Thu nhập ship: chỉ thu khi tài xế ĐÃ nhận (dòng ship SETTLED) hoặc
+        //    đã giữ tiền mặt (COD). Đơn online còn PENDING thì dòng ship bị VOID
+        //    ⇒ tài xế không nhận được đồng nào, trừ nữa là phạt hai lần.
         if (driverId) {
-          const driverCharge = merchantShare + driverIncome;
+          const driverCharge = Math.max(
+            0,
+            (isCod ? 0 : merchantShare) +
+              (isCod || driverIncomeSettled ? driverIncome : 0) -
+              priorCompensation,
+          );
           if (driverCharge > 0) {
             const d = await this.penaltyDebit(
               driverId,
@@ -1303,6 +1368,8 @@ export class WalletService {
               {
                 referenceType: "FAILURE_DRIVER_LIABILITY",
                 referenceId: orderId,
+                clawbackCategory: "CUSTOMER_REFUND",
+                clawbackDescription: `Hoàn tiền đơn giao thất bại #${short} (lỗi tài xế)`,
               },
             );
             result.driverDebit += d.platformCredit;
@@ -1314,11 +1381,12 @@ export class WalletService {
       }
 
       case "MERCHANT": {
-        if (isOnline && consumerId && total > 0) {
+        // Hoàn 100% cho khách kể cả đơn COD (nền tảng đang giữ tiền mặt COD).
+        if (consumerId && refundDue > 0) {
           const r = await this.refundCredit(
             consumerId,
             OwnerType.CONSUMER,
-            total,
+            refundDue,
             orderId,
           );
           result.refundAmount += r.amount;
@@ -1389,11 +1457,11 @@ export class WalletService {
 
       default: {
         // SYSTEM: nền tảng tự chịu — hoàn khách, trả nhà hàng/tài xế từ quỹ dự phòng.
-        if (isOnline && consumerId && total > 0) {
+        if (consumerId && refundDue > 0) {
           const r = await this.refundCredit(
             consumerId,
             OwnerType.CONSUMER,
-            total,
+            refundDue,
             orderId,
           );
           result.refundAmount += r.amount;
@@ -1427,9 +1495,7 @@ export class WalletService {
     // Lỗ thực tế của nền tảng = tiền chi ra mà không thu lại được (kể cả phần
     // đã ghi nợ clawback — khoản đó vẫn là tài sản có thể thu hồi).
     const cashOut =
-      result.driverCompensation +
-      result.reserveDisbursed +
-      (faultParty === "DRIVER" ? merchantShare : 0);
+      result.driverCompensation + result.reserveDisbursed + merchantPayout;
     const recovered =
       collected +
       result.merchantClawback +
@@ -1497,6 +1563,18 @@ export class WalletService {
     const settledFailure =
       await this.settlementRepo.findFailureSettlement(orderId);
     if (settledFailure) return skip("FAILURE_ALREADY_SETTLED");
+
+    // Chiều ngược lại: đơn đã được hoàn 100% qua ví (REFUND) mà không có
+    // `failure_settlements` (đơn cũ / hoàn tay) — bồi thêm phí ship nữa là trả
+    // hai lần cho cùng một đơn và trừ bên lỗi hai lần.
+    const alreadyRefunded =
+      await this.walletRepo.findTransactionByOwnerReference(
+        creditorId,
+        creditorType as OwnerType,
+        "REFUND",
+        orderId,
+      );
+    if (alreadyRefunded) return skip("REFUND_ALREADY_ISSUED");
 
     // 1) Trừ bên lỗi trước (ví thiếu ⇒ ghi nợ), rồi mới cộng cho khách. Thứ tự
     //    này khiến lần retry không thể cộng tiền hai lần.
