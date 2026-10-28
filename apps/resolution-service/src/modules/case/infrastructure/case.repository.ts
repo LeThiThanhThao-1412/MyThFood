@@ -141,6 +141,22 @@ export class CaseRepository {
     return entities.map((e) => this.toDomain(e));
   }
 
+  /**
+   * Case **đã kết thúc** trong khoảng `since` và có gắn đơn hàng — nguồn cho
+   * cron read-repair mở khoá escrow còn treo (`repairHeldEscrows`).
+   */
+  async findResolvedWithOrderSince(since: Date, limit = 200): Promise<Case[]> {
+    const entities = await this.repo
+      .createQueryBuilder("c")
+      .where("c.orderId IS NOT NULL")
+      .andWhere("c.resolvedAt IS NOT NULL")
+      .andWhere("c.resolvedAt >= :since", { since })
+      .orderBy("c.resolvedAt", "DESC")
+      .take(Math.max(1, Math.min(Math.round(limit) || 200, 500)))
+      .getMany();
+    return entities.map((e) => this.toDomain(e));
+  }
+
   async findHeavyRespondents(
     minCases: number,
     days: number,

@@ -172,9 +172,12 @@ ORDER BY f."createdAt" DESC;
 
 -- (12) Tài xế bị trừ OAN: DEBIT `FAILURE_DRIVER_LIABILITY` lớn hơn phần tiền
 --      thực sự đã/đang chuyển cho người khác của đơn đó.
---        • đơn COD (escrow không có dòng ship)   ⇒ tối đa = thu nhập ship (tiền mặt đã giữ)
---        • đơn online, dòng ship chưa quyết toán ⇒ tối đa = merchantShare
---        • đơn online, dòng ship đã SETTLED     ⇒ tối đa = merchantShare + shipIncome
+--        • đơn giao THẤT BẠI (luật cũ):
+--            - đơn COD (escrow không có dòng ship)   ⇒ tối đa = thu nhập ship (tiền mặt đã giữ)
+--            - đơn online, dòng ship chưa quyết toán ⇒ tối đa = merchantShare
+--            - đơn online, dòng ship đã SETTLED     ⇒ tối đa = merchantShare + shipIncome
+--        • đơn ĐÃ GIAO XONG (luật mới): tài xế chịu ĐÚNG số khách được hoàn
+--          (`failure_settlements.refundAmount`) ⇒ trần = GREATEST(luật cũ, refundAmount).
 --      Đơn không có escrow lẫn không có REVENUE COD ⇒ bỏ qua (không đủ dữ kiện).
 WITH driver_debit AS (
   SELECT "ownerId", "referenceId" AS "orderId", amount
@@ -195,6 +198,9 @@ WITH driver_debit AS (
   FROM wallet_transactions
   WHERE "ownerType" = 'DRIVER' AND type = 'REVENUE'
   GROUP BY 1
+), refunded AS (
+  SELECT "orderId", COALESCE("refundAmount", 0) AS refund_amount
+  FROM failure_settlements
 ), allowed AS (
   SELECT COALESCE(e."orderId", c."orderId") AS "orderId",
          CASE
@@ -206,9 +212,10 @@ WITH driver_debit AS (
   FULL JOIN cod_revenue c ON c."orderId" = e."orderId"
 )
 SELECT d."orderId", d."ownerId" AS "driverId", d.amount AS driver_debit,
-       a.max_charge
+       GREATEST(a.max_charge, COALESCE(r.refund_amount, 0)) AS max_charge
 FROM driver_debit d
 LEFT JOIN allowed a ON a."orderId" = d."orderId"
+LEFT JOIN refunded r ON r."orderId" = d."orderId"
 WHERE a.max_charge IS NOT NULL
-  AND d.amount > a.max_charge
+  AND d.amount > GREATEST(a.max_charge, COALESCE(r.refund_amount, 0))
 ORDER BY d."orderId";

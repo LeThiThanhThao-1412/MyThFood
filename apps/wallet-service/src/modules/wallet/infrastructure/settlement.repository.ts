@@ -8,9 +8,33 @@ import { ClawbackDeductionEntity } from "./clawback-deduction.entity";
 import { WalletTransactionEntity } from "./wallet-transaction.entity";
 import { FailureSettlementEntity } from "./failure-settlement.entity";
 
+/** Dấu vết case ghi lên dòng escrow khi giữ / mở khoá doanh thu. */
+export interface SettlementEntryStamp {
+  /** Vụ việc đã gây ra việc giữ/mở khoá. */
+  caseId?: string | null;
+  /** Mốc quyết toán — 23:00 của ngày phán quyết. */
+  settleOn?: Date | null;
+}
+
 @Injectable()
 export class SettlementRepository {
   private readonly logger = new Logger(SettlementRepository.name);
+
+  /**
+   * Dấu vết vụ việc ghi lên dòng escrow khi giữ / mở khoá.
+   *
+   * `settleOn` = mốc 23:00 của **ngày case được giải quyết**. Nhờ đó dòng doanh
+   * thu bị giữ lâu ngày vẫn được quyết toán đúng ngày phán quyết, kể cả khi lô
+   * chạy tay/dry-run lọc theo `settleOn` thay vì `deliveredAt` đã cũ.
+   */
+  static stampPatch(
+    stamp?: SettlementEntryStamp,
+  ): Partial<SettlementEntryEntity> {
+    const patch: Partial<SettlementEntryEntity> = {};
+    if (stamp?.caseId) patch.caseId = stamp.caseId;
+    if (stamp?.settleOn) patch.settleOn = stamp.settleOn;
+    return patch;
+  }
 
   constructor(
     @InjectRepository(SettlementEntryEntity)
@@ -41,11 +65,17 @@ export class SettlementRepository {
     return this.entryRepo.find({ where: { orderId } });
   }
 
-  async holdByOrderId(orderId: string): Promise<number> {
+  async holdByOrderId(
+    orderId: string,
+    stamp?: SettlementEntryStamp,
+  ): Promise<number> {
     const res = await this.entryRepo
       .createQueryBuilder()
       .update(SettlementEntryEntity)
-      .set({ status: "HELD_BY_DISPUTE" })
+      .set({
+        status: "HELD_BY_DISPUTE",
+        ...SettlementRepository.stampPatch(stamp),
+      })
       .where('"orderId" = :orderId AND "status" = :status', {
         orderId,
         status: "PENDING",
@@ -54,11 +84,27 @@ export class SettlementRepository {
     return res.affected ?? 0;
   }
 
-  async releaseByOrderId(orderId: string): Promise<number> {
+  /**
+   * Mở khoá doanh thu (HELD_BY_DISPUTE → PENDING) và đóng dấu ngày quyết toán.
+   *
+   * `settleOn` mặc định = thời điểm mở khoá (chính là ngày phán quyết): dòng
+   * tiền được tính vào lô 23:00 của ngày đó thay vì mãi mãi nằm ngoài cửa sổ
+   * `deliveredAt` cũ.
+   */
+  async releaseByOrderId(
+    orderId: string,
+    stamp?: SettlementEntryStamp,
+  ): Promise<number> {
     const res = await this.entryRepo
       .createQueryBuilder()
       .update(SettlementEntryEntity)
-      .set({ status: "PENDING" })
+      .set({
+        status: "PENDING",
+        ...SettlementRepository.stampPatch({
+          caseId: stamp?.caseId,
+          settleOn: stamp?.settleOn ?? new Date(),
+        }),
+      })
       .where('"orderId" = :orderId AND "status" = :status', {
         orderId,
         status: "HELD_BY_DISPUTE",
@@ -77,12 +123,13 @@ export class SettlementRepository {
   async voidEntriesByOrderId(
     orderId: string,
     kinds: string[],
+    stamp?: SettlementEntryStamp,
   ): Promise<number> {
     if (!kinds.length) return 0;
     const res = await this.entryRepo
       .createQueryBuilder()
       .update(SettlementEntryEntity)
-      .set({ status: "VOID" })
+      .set({ status: "VOID", ...SettlementRepository.stampPatch(stamp) })
       .where('"orderId" = :orderId', { orderId })
       .andWhere('"kind" IN (:...kinds)', { kinds })
       .andWhere('"status" IN (:...statuses)', {
@@ -99,12 +146,19 @@ export class SettlementRepository {
   async releaseEntriesByOrderId(
     orderId: string,
     kinds: string[],
+    stamp?: SettlementEntryStamp,
   ): Promise<number> {
     if (!kinds.length) return 0;
     const res = await this.entryRepo
       .createQueryBuilder()
       .update(SettlementEntryEntity)
-      .set({ status: "PENDING" })
+      .set({
+        status: "PENDING",
+        ...SettlementRepository.stampPatch({
+          caseId: stamp?.caseId,
+          settleOn: stamp?.settleOn ?? new Date(),
+        }),
+      })
       .where('"orderId" = :orderId', { orderId })
       .andWhere('"kind" IN (:...kinds)', { kinds })
       .andWhere('"status" = :status', { status: "HELD_BY_DISPUTE" })
@@ -165,13 +219,23 @@ export class SettlementRepository {
     start: Date,
     end: Date,
   ): Promise<SettlementEntryEntity[]> {
-    return this.entryRepo
-      .createQueryBuilder("e")
-      .where("e.status = :status", { status: "PENDING" })
-      .andWhere('COALESCE(e."deliveredAt", e."createdAt") >= :start', { start })
-      .andWhere('COALESCE(e."deliveredAt", e."createdAt") < :end', { end })
-      .orderBy('e."createdAt"', "ASC")
-      .getMany();
+    return (
+      this.entryRepo
+        .createQueryBuilder("e")
+        .where("e.status = :status", { status: "PENDING" })
+        // Dòng bị giữ vì khiếu nại mang `settleOn` = ngày phán quyết ⇒ được quyết
+        // toán đúng ngày đó, dù `deliveredAt` đã cũ hơn cửa sổ rất nhiều.
+        .andWhere(
+          'COALESCE(e."settleOn", e."deliveredAt", e."createdAt") >= :start',
+          { start },
+        )
+        .andWhere(
+          'COALESCE(e."settleOn", e."deliveredAt", e."createdAt") < :end',
+          { end },
+        )
+        .orderBy('e."createdAt"', "ASC")
+        .getMany()
+    );
   }
 
   /**

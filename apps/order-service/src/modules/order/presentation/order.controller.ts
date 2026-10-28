@@ -223,12 +223,20 @@ export class OrderController {
   @Roles("ADMIN", "SERVICE")
   async settleFailureMoney(
     @Param("id") id: string,
-    @Body() body: { faultParty: string; severity: string },
+    @Body()
+    body: {
+      faultParty: string;
+      severity: string;
+      caseId?: string;
+      resolvedAt?: string;
+    },
   ) {
     const data = await this.orderService.settleFailureMoney(
       id,
       body.faultParty,
       body.severity,
+      body.caseId,
+      body.resolvedAt,
     );
     return { statusCode: 200, data: { ok: true, ...data } };
   }

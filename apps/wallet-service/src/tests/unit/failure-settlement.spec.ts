@@ -141,6 +141,15 @@ function buildHarness() {
     txs,
     clawbacks,
     balance,
+    /** Nạp sẵn số dư ví để kiểm tra bên lỗi bị trừ ĐÚNG bao nhiêu. */
+    setBalance: (ownerType: string, ownerId: string, value: number) => {
+      wallets.set(`${ownerType}:${ownerId}`, {
+        id: `w-${ownerType}:${ownerId}`,
+        ownerId,
+        ownerType,
+        balance: value,
+      });
+    },
     setEntries: (rows: Entry[]) => {
       entries = rows;
     },
@@ -472,5 +481,122 @@ describe("WalletService.settleFailure (đơn giao thất bại - VALID)", () => 
       .reduce((s, t) => s + Number(t.amount), 0);
 
     expect(debits).toBe(platformCredits);
+  });
+});
+
+/**
+ * Đơn ĐÃ GIAO XONG rồi mới phát sinh khiếu nại (DAMAGED_ITEM, WRONG_ITEM…):
+ * luật tiền khác hẳn đơn giao thất bại —
+ *  - bên lỗi chịu ĐÚNG số tiền khách được hoàn (ví không đủ thì ghi nợ),
+ *  - escrow KHÔNG bị huỷ ⇒ 23:00 nhà hàng nhận tiền món, tài xế nhận ship,
+ *  - nền tảng không ứng khoản nào ⇒ `platformFunding` = 0.
+ *
+ * Đây là hai lỗi thật đã xảy ra trên hệ thống:
+ *  - lỗi tài xế: khách nhận 271.551đ nhưng ví tài xế chỉ bị trừ 191.250đ;
+ *  - lỗi nhà hàng: nợ ghi 194.006đ (> giá trị đơn 184.848đ) trong khi 23:00
+ *    vẫn trả nhà hàng 127.500đ tiền món.
+ */
+describe("WalletService.settleFailure (đơn ĐÃ GIAO XONG — khiếu nại sau giao)", () => {
+  beforeEach(() => {
+    process.env.DRIVER_COMMISSION_PERCENT = "20";
+    process.env.MERCHANT_COMMISSION_PERCENT = "30";
+  });
+
+  it("DRIVER fault: tài xế bị trừ đúng số khách nhận, escrow vẫn quyết toán 23:00", async () => {
+    const h = buildHarness();
+    h.setEntries(escrow());
+    h.setBalance("DRIVER", DRIVER, 150000);
+
+    const result = await h.service.settleFailure({
+      ...baseInput,
+      faultParty: "DRIVER",
+      orderDelivered: true,
+    });
+
+    // Khách nhận 100% đơn.
+    expect(result.refundAmount).toBe(101864);
+    expect(h.balance("CONSUMER", CONSUMER)).toBe(101864);
+
+    // Bất biến: số bên lỗi bị trừ === số khách nhận.
+    expect(result.driverDebit).toBe(101864);
+    expect(result.driverClawback).toBe(0);
+    expect(h.balance("DRIVER", DRIVER)).toBe(150000 - 101864);
+
+    // Nhà hàng KHÔNG được trả tay — tiền món về ví lúc 23:00 từ escrow.
+    expect(h.balance("MERCHANT", MERCHANT)).toBe(0);
+    expect(
+      h.txs.some((t) => t.referenceType === "FAILURE_MERCHANT_PAYOUT"),
+    ).toBe(false);
+
+    // Escrow được GIẢI TOẢ, không huỷ: cả 4 dòng chờ lô 23:00.
+    expect(result.escrowReleased).toBe(4);
+    expect(result.escrowVoided).toBe(0);
+    expect(h.getEntries().every((e) => e.status === "PENDING")).toBe(true);
+
+    // Nền tảng không bỏ đồng nào (đã thu đủ từ tài xế).
+    expect(result.platformFunding).toBe(0);
+  });
+
+  it("DRIVER fault (ví rỗng): ghi nợ đúng số khách nhận, không thu phần tiền món đã huỷ", async () => {
+    const h = buildHarness();
+    h.setEntries(escrow());
+
+    const result = await h.service.settleFailure({
+      ...baseInput,
+      faultParty: "DRIVER",
+      orderDelivered: true,
+    });
+
+    expect(result.driverDebit).toBe(0);
+    expect(result.driverClawback).toBe(101864);
+    expect(h.clawbacks).toHaveLength(1);
+    expect(h.clawbacks[0].category).toBe("CUSTOMER_REFUND");
+    expect(h.clawbacks[0].remainingAmount).toBe(101864);
+    expect(result.escrowReleased).toBe(4);
+    expect(result.platformFunding).toBe(0);
+  });
+
+  it("MERCHANT fault: chỉ chịu đúng số khách nhận (không cộng thêm bồi thường tài xế)", async () => {
+    const h = buildHarness();
+    h.setEntries(escrow());
+
+    const result = await h.service.settleFailure({
+      ...baseInput,
+      faultParty: "MERCHANT",
+      orderDelivered: true,
+    });
+
+    expect(result.refundAmount).toBe(101864);
+    // Trước đây: 101.864 + 24.131 = 125.995 ⇒ nợ vượt giá trị đơn.
+    expect(result.merchantClawback).toBe(101864);
+    expect(h.clawbacks).toHaveLength(1);
+    expect(h.clawbacks[0].category).toBe("CUSTOMER_REFUND");
+    expect(
+      h.txs.some((t) => t.referenceType === "FAILURE_MERCHANT_LIABILITY"),
+    ).toBe(false);
+
+    // Tài xế không nhận bồi thường tay: dòng ship còn hiệu lực, 23:00 trả.
+    expect(result.driverCompensation).toBe(0);
+    expect(h.balance("DRIVER", DRIVER)).toBe(0);
+
+    // Toàn bộ escrow (món, ship, hoa hồng, trích quỹ) về lô 23:00.
+    expect(result.escrowReleased).toBe(4);
+    expect(result.escrowVoided).toBe(0);
+    expect(h.getEntries().every((e) => e.status === "PENDING")).toBe(true);
+  });
+
+  it("SYSTEM fault: platformFunding ghi nhận đúng phần nền tảng bỏ ra (gồm tiền hoàn khách)", async () => {
+    const h = buildHarness();
+    h.setEntries(escrow());
+
+    const result = await h.service.settleFailure({
+      ...baseInput,
+      faultParty: "SYSTEM",
+    });
+
+    // Hoàn khách 101.864 + bồi thường tài xế 24.131 + trả nhà hàng 48.750
+    // = 174.745 chi ra; nền tảng đang giữ 101.864 của khách ⇒ tự chịu 72.881.
+    expect(result.refundAmount).toBe(101864);
+    expect(result.platformFunding).toBe(72881);
   });
 });

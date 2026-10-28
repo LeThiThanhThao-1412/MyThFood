@@ -68,6 +68,32 @@ try {
     Write-Host '    "UPDATE users SET roles = ''CONSUMER,ADMIN'' WHERE phone_number = ''+84901112233'';" | docker exec -i mythfood-postgres psql -U mythfood -d mythfood_identity'
 }
 
+# Seed the admin (platform) wallet with 100,000,000 VND so the admin portal
+# dashboard has money to work with (settlement / compensation flows).
+# Idempotent: running this twice keeps the balance at exactly 100,000,000.
+Write-Host "`n[4] Seeding admin wallet balance (100,000,000 VND)..." -ForegroundColor Yellow
+$seedWalletSql = Join-Path $PSScriptRoot "seed-admin-wallet.sql"
+$seedWalletRemote = "/tmp/seed-admin-wallet.sql"
+try {
+    if (-not (Test-Path $seedWalletSql)) {
+        throw "SQL file not found: $seedWalletSql"
+    }
+    # Byte-safe loading (see scripts/README.md): copy into container, then psql -f
+    docker cp $seedWalletSql "mythfood-postgres:$seedWalletRemote" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker cp exited with code $LASTEXITCODE"
+    }
+    docker exec -i mythfood-postgres psql -U mythfood -d mythfood_wallet -v ON_ERROR_STOP=1 -f $seedWalletRemote
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker exec psql exited with code $LASTEXITCODE"
+    }
+    Write-Host "  Admin wallet balance = 100,000,000 VND" -ForegroundColor Green
+} catch {
+    Write-Host "  [WARN] Could not seed admin wallet: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "  Manual fix (copy-paste into PowerShell):" -ForegroundColor Yellow
+    Write-Host '    docker cp scripts\seed-admin-wallet.sql mythfood-postgres:/tmp/seed-admin-wallet.sql; docker exec -i mythfood-postgres psql -U mythfood -d mythfood_wallet -v ON_ERROR_STOP=1 -f /tmp/seed-admin-wallet.sql'
+}
+
 # Summary
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "  ADMIN ACCOUNT READY" -ForegroundColor Cyan
@@ -76,6 +102,7 @@ Write-Host ""
 Write-Host "  Phone: $adminPhone" -ForegroundColor Green
 Write-Host "  Pass:  $adminPass" -ForegroundColor Green
 Write-Host "  Role:  ADMIN" -ForegroundColor Gray
+Write-Host "  Wallet: PLATFORM_DEFAULT (PLATFORM) = 100,000,000 VND" -ForegroundColor Gray
 Write-Host "  App:   http://localhost:4004" -ForegroundColor Gray
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan

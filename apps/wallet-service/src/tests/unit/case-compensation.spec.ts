@@ -310,4 +310,25 @@ describe("WalletService.settleCaseCompensation — bồi thường phí ship", (
     expect(driverDebit).toBe(SHIP_FEE);
     expect(platformCredit).toBe(SHIP_FEE);
   });
+
+  it("case thứ hai trên cùng đơn: bỏ qua để không trả khách hai lần", async () => {
+    const h = buildHarness({ balances: { [`DRIVER:${DRIVER}`]: 69990 } });
+
+    const first = await h.service.settleCaseCompensation({ ...baseInput });
+    const txCount = h.txs.length;
+
+    // Cùng đơn nhưng vụ việc khác (vd thêm case "thái độ tài xế"): mỗi case đều
+    // muốn hoàn 100% phí ship ⇒ phải chặn, nếu không khách nhận gấp đôi và tài
+    // xế bị trừ gấp đôi trên cùng một khoản phí ship.
+    const second = await h.service.settleCaseCompensation({
+      ...baseInput,
+      caseId: "case-khac",
+    });
+
+    expect(first.skipped).toBeNull();
+    expect(second.skipped).toBe("COMPENSATION_ALREADY_ISSUED");
+    expect(second.amount).toBe(0);
+    expect(h.txs.length).toBe(txCount);
+    expect(h.balance("CONSUMER", CONSUMER)).toBe(SHIP_FEE);
+  });
 });

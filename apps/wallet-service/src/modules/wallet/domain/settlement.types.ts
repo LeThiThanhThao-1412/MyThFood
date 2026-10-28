@@ -8,6 +8,21 @@ export interface FailureSettlementInput {
   /** CUSTOMER | DRIVER | MERCHANT | SYSTEM */
   faultParty: string;
   severity: string;
+  /** Vụ việc đã dẫn tới phán quyết — ghi lên escrow để đối soát (tùy chọn). */
+  caseId?: string | null;
+  /**
+   * `true` khi đơn **đã giao xong** (khiếu nại sau giao: DAMAGED_ITEM, WRONG_ITEM…).
+   *
+   * Khác biệt cốt lõi: escrow của đơn đã giao xong vẫn còn hiệu lực ⇒ phải GIẢI
+   * TOẢ để 23:00 trả tiền món cho nhà hàng và thu nhập ship cho tài xế. Bên lỗi
+   * chịu ĐÚNG số tiền khách được hoàn; nền tảng không trả trước khoản nào.
+   *
+   * Bỏ trống/`false` = luồng đơn giao THẤT BẠI (không ai nhận được hàng): escrow
+   * bị VOID và nền tảng ứng tiền trả nhà hàng/tài xế.
+   */
+  orderDelivered?: boolean;
+  /** Thời điểm phán quyết — đóng dấu `settleOn` = 23:00 của ngày đó. */
+  resolvedAt?: Date | string | null;
   isOnline?: boolean;
   consumerId?: string | null;
   merchantId?: string | null;

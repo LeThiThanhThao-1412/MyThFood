@@ -321,14 +321,29 @@ export class WalletController {
   // ═══════════════════════════════════════════════════════
   @Post("settlement/hold")
   @UseGuards(ServiceKeyOrJwtGuard)
-  async holdSettlement(@Body() body: { orderId: string }) {
-    return this.walletService.holdSettlement(body.orderId);
+  async holdSettlement(
+    @Body() body: { orderId: string; caseId?: string | null },
+  ) {
+    return this.walletService.holdSettlement(body.orderId, {
+      caseId: body.caseId ?? null,
+    });
   }
 
   @Post("settlement/release")
   @UseGuards(ServiceKeyOrJwtGuard)
-  async releaseSettlement(@Body() body: { orderId: string }) {
-    return this.walletService.releaseSettlement(body.orderId);
+  async releaseSettlement(
+    @Body()
+    body: {
+      orderId: string;
+      caseId?: string | null;
+      /** Ngày phán quyết — dòng tiền vào lô 23:00 của ngày này. */
+      resolvedAt?: string | null;
+    },
+  ) {
+    return this.walletService.releaseSettlement(body.orderId, {
+      caseId: body.caseId ?? null,
+      resolvedAt: body.resolvedAt ?? null,
+    });
   }
 
   @Post("penalty/debit")

@@ -58,4 +58,5 @@ SELECT count(*) FROM penalties WHERE reason LIKE '%?%';
 | `fix-a13aae84-second-case.sql`            | Mở khoá escrow treo + huỷ bút toán bồi thường ảo của CASE-2026-000002 |
 | `fix-883f25a8-late-delivery-ship-fee.sql` | Đưa đơn giao trễ về đúng chính sách "chỉ hoàn 100% phí ship"          |
 | `fix-mojibake-utf8.sql`                   | Sửa chữ tiếng Việt bị `?` do nạp SQL qua PowerShell pipe              |
+| `seed-admin-wallet.sql`                   | Nạp 100.000.000 VND vào ví admin (`PLATFORM_DEFAULT` / `PLATFORM`)    |
 | `verify_money_invariants.sql`             | 7 bất biến tiền (số dư = sổ, escrow treo, nợ khấu trừ, …)             |

@@ -621,6 +621,42 @@ describe("WalletService — thu hồi nợ tự động (auto clawback recovery)
     });
   });
 
+  it("regression 23:00 (nợ LỚN HƠN doanh thu): vẫn khấu trừ tối đa phần vừa trả, không cho bên nợ vay tiền", async () => {
+    const h = buildHarness();
+    // Đúng ca thật: nhà hàng nợ 194.006 (hoàn khách 184.848 + bồi thường tài xế
+    // 9.158) nhưng lô 23:00 chỉ trả 127.500 tiền món. Chế độ mặc định
+    // FULL_WHEN_COVERED sẽ bỏ qua ⇒ nhà hàng giữ tiền và nền tảng thành chủ nợ
+    // treo. Lô quyết toán phải khấu trừ phần vừa trả.
+    h.setWallet("MERCHANT", MERCHANT, 0);
+    const debt = h.addClawback("MERCHANT", MERCHANT, 194006);
+    h.setSettlementEntries([
+      {
+        id: "e1",
+        orderId: ORDER_OLD,
+        ownerId: MERCHANT,
+        ownerType: "MERCHANT",
+        amount: 127500,
+        kind: "MERCHANT_FOOD_REVENUE",
+        status: "PENDING",
+      },
+    ]);
+
+    const result = await h.service.settleDaily({ triggeredBy: "TEST" });
+
+    // Vẫn ghi nhận doanh thu đầy đủ (sổ doanh thu minh bạch)...
+    expect(result.summary.totalCredit).toBe(127500);
+    // ...nhưng tiền vừa vào ví bị trừ ngay vào nợ.
+    expect(result.summary.totalRecovered).toBe(127500);
+    expect(h.balance("MERCHANT", MERCHANT)).toBe(0);
+    expect(debt.remainingAmount).toBe(194006 - 127500);
+    expect(debt.status).toBe("PARTIAL");
+    expect(h.deductions).toHaveLength(1);
+    expect(h.deductions[0]).toMatchObject({
+      source: "AUTO_CREDIT",
+      amount: 127500,
+    });
+  });
+
   it("getOpenClawback cho biết ví đã đủ tiền thu hồi hay chưa", async () => {
     const h = buildHarness();
     h.setWallet("MERCHANT", MERCHANT, 40000);

@@ -249,25 +249,44 @@ export class IntegrationService {
     );
   }
 
-  async holdSettlement(orderId: string): Promise<void> {
+  async holdSettlement(orderId: string, caseId?: string | null): Promise<void> {
     if (!orderId) return;
     await this.post(
       "WALLET_SERVICE_URL",
       "http://wallet-service:3009",
       "http://localhost:3009",
       "/api/v1/wallets/settlement/hold",
-      { orderId },
+      { orderId, caseId: caseId ?? undefined },
     );
   }
 
-  async releaseSettlement(orderId: string): Promise<void> {
+  /**
+   * Mở khoá doanh thu của đơn và đóng dấu **ngày phán quyết** để dòng tiền vào
+   * đúng lô quyết toán 23:00 của ngày đó (`settleOn`).
+   *
+   * Ví chỉ đổi các dòng đang HELD_BY_DISPUTE ⇒ gọi lại nhiều lần vẫn an toàn;
+   * đây là cơ sở cho cron "read-repair" của resolution-service.
+   */
+  async releaseSettlement(
+    orderId: string,
+    options?: { caseId?: string | null; resolvedAt?: Date | string | null },
+  ): Promise<void> {
     if (!orderId) return;
+    const resolvedAt = options?.resolvedAt
+      ? new Date(options.resolvedAt)
+      : new Date();
     await this.post(
       "WALLET_SERVICE_URL",
       "http://wallet-service:3009",
       "http://localhost:3009",
       "/api/v1/wallets/settlement/release",
-      { orderId },
+      {
+        orderId,
+        caseId: options?.caseId ?? undefined,
+        resolvedAt: Number.isNaN(resolvedAt.getTime())
+          ? new Date().toISOString()
+          : resolvedAt.toISOString(),
+      },
     );
   }
 
@@ -275,6 +294,8 @@ export class IntegrationService {
     orderId: string,
     faultParty: string,
     severity: string,
+    caseId?: string | null,
+    resolvedAt?: Date | string | null,
   ): Promise<SettlementResponse | null> {
     if (!orderId) return null;
     const { data } = await this.postForData(
@@ -282,7 +303,17 @@ export class IntegrationService {
       "http://order-service:3004",
       "http://localhost:3004",
       `/api/v1/orders/${orderId}/settle-failure-money`,
-      { faultParty, severity },
+      {
+        faultParty,
+        severity,
+        caseId: caseId ?? undefined,
+        // Mốc phán quyết: ví đóng `settleOn` = 23:00 của ngày này lên các dòng
+        // escrow vừa giải toả, để doanh thu vào đúng lô quyết toán.
+        resolvedAt:
+          resolvedAt instanceof Date
+            ? resolvedAt.toISOString()
+            : (resolvedAt ?? undefined),
+      },
     );
     return data;
   }

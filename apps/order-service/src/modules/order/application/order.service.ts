@@ -1332,10 +1332,12 @@ export class OrderService {
    *  - Toàn bộ bút toán được đẩy sang wallet-service trong MỘT request
    *    `/wallets/failure-settlement` ⇒ idempotent theo orderId (trước đây là 5-7
    *    lệnh walletPost rời rạc, gọi lại từ 4 call-site ⇒ trả tiền nhiều lần).
-   *  - Wallet-service lấy escrow của chính đơn làm nguồn tiền. Lỗi nhà hàng:
-   *    CHỈ VOID dòng phí ship của tài xế — tiền món vẫn được quyết toán như thu
-   *    nhập bình thường (không netting), nợ ghi thành 2 dòng có nhãn
-   *    (hoàn tiền khách + bồi thường tài xế).
+   *  - Phân nhánh theo trạng thái đơn (`orderDelivered`):
+   *      • Đơn **giao thất bại**: huỷ escrow, nền tảng trả nhà hàng/tài xế,
+   *        bên lỗi chịu phần đã chuyển.
+   *      • Đơn **đã giao xong** (khiếu nại sau giao): GIỮ escrow để 23:00 quyết
+   *        toán tiền món + thu nhập ship như bình thường; bên lỗi chịu ĐÚNG số
+   *        tiền khách được hoàn (ví thiếu thì ghi nợ clawback).
    *  - KHÔNG phạt tiền khi giao thất bại: chỉ tạo cảnh báo (`order_warnings`)
    *    hiển thị banner vàng trong chi tiết đơn cho nhà hàng.
    *  - Bồi thường tài xế = phần net (đã trừ hoa hồng), không phải full phí ship.
@@ -1346,6 +1348,8 @@ export class OrderService {
     id: string,
     faultParty: string,
     severity: string,
+    caseId?: string,
+    resolvedAt?: string,
   ): Promise<FailureSettlementOutcome> {
     const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
     const foodTotal = Math.max(
@@ -1361,6 +1365,12 @@ export class OrderService {
     const driverId = order.orderDriverId;
     const merchantId = order.orderMerchantId;
     const short = id.slice(0, 8);
+    /**
+     * Đơn đã giao xong ⇒ ví phải giữ escrow để 23:00 quyết toán tiền món cho
+     * nhà hàng và thu nhập ship cho tài xế, đồng thời bên lỗi chịu đúng số
+     * tiền khách được hoàn. Chỉ đơn giao THẤT BẠI mới huỷ escrow.
+     */
+    const orderDelivered = order.orderStatus === "DELIVERED";
 
     const settlement = await this.walletRequest<{
       duplicated: boolean;
@@ -1378,7 +1388,10 @@ export class OrderService {
       orderId: id,
       faultParty,
       severity,
+      caseId,
       isOnline,
+      orderDelivered,
+      resolvedAt,
       consumerId: customerId,
       merchantId,
       driverId,
@@ -1478,8 +1491,8 @@ export class OrderService {
       reason,
     });
 
-    const amount = Math.max(0, Math.round(Number(input.amount) || 0));
-    if (amount <= 0) return skipped("AMOUNT_ZERO");
+    const requested = Math.max(0, Math.round(Number(input.amount) || 0));
+    if (requested <= 0) return skipped("AMOUNT_ZERO");
 
     const order = await this.orderRepository.findByIdOrFail(OrderId.from(id));
     const faultParty = String(input.faultParty || "").toUpperCase();
@@ -1508,6 +1521,18 @@ export class OrderService {
         `Bỏ bồi thường phí ship #${short}: không xác định được bên chịu thiệt/bên lỗi (fault=${faultParty || "?"})`,
       );
       return skipped("INVALID_PARTIES");
+    }
+
+    // Chặn trần ở phía server: `input.amount` đến từ resolution-service (hoặc
+    // admin gọi tay) nên không được tin tuyệt đối. Trần = phí ship khách THỰC
+    // TRẢ (đã trừ phần khuyến mãi phân bổ cho ship) và không vượt tổng đơn.
+    const shippingFeePaid = this.paidShippingFeeOf(order);
+    const amount = Math.min(requested, shippingFeePaid);
+    if (amount <= 0) {
+      this.logger.warn(
+        `Bỏ bồi thường phí ship #${short}: yêu cầu ${requested}đ vượt phí ship thực trả ${shippingFeePaid}đ`,
+      );
+      return skipped("EXCEEDS_PAID_SHIPPING_FEE");
     }
 
     const result = await this.walletRequest<{
@@ -1548,6 +1573,34 @@ export class OrderService {
       duplicated: result.duplicated,
       reason: null,
     };
+  }
+
+  /**
+   * Phí ship mà khách **thực trả** sau khi phân bổ khuyến mãi của đơn.
+   *
+   * `orderDeliveryFee` là giá niêm yết; khuyến mãi (`orderDiscount`) được trừ
+   * vào tổng đơn nên nếu không phân bổ lại thì bồi thường theo giá niêm yết sẽ
+   * trả khách số tiền họ chưa hề bỏ ra (và trừ oan tài xế/nhà hàng).
+   *
+   * Cách chia: theo trọng số `subtotal : deliveryFee`, phần làm tròn dồn về tiền
+   * món — cùng công thức với `allocateDiscount()` ở resolution-service. Kết quả
+   * không bao giờ âm và không vượt tổng tiền khách đã trả cho đơn.
+   */
+  private paidShippingFeeOf(order: Order): number {
+    const deliveryFee = Math.max(0, Number(order.orderDeliveryFee) || 0);
+    const subtotal = Math.max(0, Number(order.orderSubtotal) || 0);
+    const discount = Math.max(0, Number(order.orderDiscount) || 0);
+    const total = Math.max(0, Number(order.orderTotalAmount) || 0);
+    if (deliveryFee <= 0) return 0;
+
+    const base = subtotal + deliveryFee;
+    const rawShare =
+      discount > 0 && base > 0
+        ? Math.round((discount * deliveryFee) / base)
+        : 0;
+    const shippingDiscountShare = Math.min(rawShare, deliveryFee, discount);
+    const paid = Math.max(0, deliveryFee - shippingDiscountShare);
+    return total > 0 ? Math.min(paid, total) : paid;
   }
 
   /**

@@ -101,7 +101,7 @@ describe("CaseService.resolve — quyết toán tiền & escrow theo chính sác
       releaseSettlement: jest.fn(async () => undefined),
       notify: jest.fn(async () => undefined),
     };
-    const penalty = { recordPenalty: jest.fn(async () => undefined) };
+    const penalty = { recordPenalty: jest.fn(async (_arg: any) => undefined) };
     const service = new CaseService(
       repo as any,
       integration as any,
@@ -245,7 +245,13 @@ describe("CaseService.resolve — quyết toán tiền & escrow theo chính sác
         row.releaseEscrow ? 1 : 0,
       );
       if (row.releaseEscrow) {
-        expect(integration.releaseSettlement).toHaveBeenCalledWith(ORDER_ID);
+        expect(integration.releaseSettlement).toHaveBeenCalledWith(
+          ORDER_ID,
+          expect.objectContaining({
+            caseId: expect.any(String),
+            resolvedAt: expect.any(Date),
+          }),
+        );
       }
       if (row.route === "SHIP_COMPENSATION") {
         expect(integration.settleCaseCompensation).toHaveBeenCalledWith(
@@ -303,7 +309,13 @@ describe("CaseService.resolve — quyết toán tiền & escrow theo chính sác
       "WARNING",
     );
     // Escrow vẫn phải được mở khoá — nếu không sẽ treo HELD_BY_DISPUTE.
-    expect(integration.releaseSettlement).toHaveBeenCalledWith(ORDER_ID);
+    expect(integration.releaseSettlement).toHaveBeenCalledWith(
+      ORDER_ID,
+      expect.objectContaining({
+        caseId: expect.any(String),
+        resolvedAt: expect.any(Date),
+      }),
+    );
   });
 
   it("ví báo duplicated (retry) → KHÔNG ghi thêm COMPENSATION dù amount > 0", async () => {
@@ -358,7 +370,13 @@ describe("CaseService.resolve — quyết toán tiền & escrow theo chính sác
     });
 
     expect(compensationRows(penalty)).toHaveLength(0);
-    expect(integration.releaseSettlement).toHaveBeenCalledWith(ORDER_ID);
+    expect(integration.releaseSettlement).toHaveBeenCalledWith(
+      ORDER_ID,
+      expect.objectContaining({
+        caseId: expect.any(String),
+        resolvedAt: expect.any(Date),
+      }),
+    );
   });
 
   it("route tiền ném lỗi mạng → resolve không hỏng, không ghi bồi thường", async () => {

@@ -396,6 +396,55 @@
 | 1    | Đơn `HELD_BY_DISPUTE` >72h | Auto-`ESCALATED` + alert                                        |
 | 2    | >15 ngày chưa phán quyết   | GC Force-Release (trả tiền nhà hàng/tài xế, rủi ro → nợ nội bộ) |
 
+### RS-H18 — Bồi thường giao trễ trên đơn CÓ khuyến mãi
+
+**Actor:** CONSUMER (khiếu nại) · ADMIN (phán quyết)
+
+Đơn: `subtotal = 60.000đ`, `deliveryFee = 20.000đ`, `discount = 30.000đ`, `totalAmount = 50.000đ`.
+
+| Bước | Hành động / Input              | Kết quả mong đợi                                                                   |
+| ---- | ------------------------------ | ---------------------------------------------------------------------------------- |
+| 1    | `POST /cases` (DELIVERY_LATE)  | Escrow `HELD_BY_DISPUTE` + `caseId` trên từng dòng                                 |
+| 2    | Admin duyệt `VALID` / `DRIVER` | `allocateDiscount()`: khuyến mãi chia 7.500đ cho ship, 22.500đ cho món             |
+| 3    | Hệ thống                       | Bồi thường = `20.000 − 7.500 = 12.500đ` (KHÔNG phải 20.000đ niêm yết)              |
+| 4    | Ví                             | Khách `+12.500`, tài xế `−12.500` (thiếu tiền ⇒ phần còn lại thành clawback)       |
+| 5    | order-service                  | Nếu request vượt trần ⇒ `EXCEEDS_PAID_SHIPPING_FEE`, không gọi ví                  |
+| 6    | Ví                             | Đã có `CASE_COMPENSATION` cho đơn ⇒ case thứ hai trả `COMPENSATION_ALREADY_ISSUED` |
+| 7    | Escrow                         | Mở khoá, `settleOn` = 23:00 ngày phán quyết; tiền món của nhà hàng vào lô 23:00    |
+
+### RS-H19 — Case kết thúc sau khi đơn đã cũ (escrow treo) + release lỗi mạng
+
+**Actor:** SYSTEM (cron read-repair)
+
+| Bước | Hành động / Input                                         | Kết quả mong đợi                                                                                                         |
+| ---- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 1    | Đơn giao 3 ngày trước, case mở ⇒ escrow `HELD_BY_DISPUTE` | Chưa vào lô quyết toán nào                                                                                               |
+| 2    | Case chốt `VALID` + `SHIP_COMPENSATION` (hôm nay)         | `releaseSettlement(orderId, { caseId, resolvedAt })`                                                                     |
+| 3    | Wallet                                                    | `HELD_BY_DISPUTE → PENDING`, đóng `settleOn` = 23:00 **hôm nay**                                                         |
+| 4    | Lô 23:00 hôm nay                                          | Quyết toán dòng vừa mở khoá (cron lấy mọi dòng `PENDING`)                                                                |
+| 5    | (Giả lập) lời gọi `release` chết lúc phán quyết           | Retry 1 lần → vẫn lỗi ⇒ log `ERROR`                                                                                      |
+| 6    | Cron `repairHeldEscrows` (30 phút/lần, 72h)               | Gọi lại `release` cho case đã kết thúc ⇒ escrow được mở khoá                                                             |
+| 7    | Case `FULL_REFUND`                                        | Read-repair **gọi lại** `settle-failure-money` (idempotent, ví tự giải toả escrow) — không release tay ⇒ không trả 2 lần |
+
+### RS-H20 — Hoàn 100% trên đơn ĐÃ GIAO XONG (khiếu nại hàng hỏng / sai món)
+
+**Actor:** CONSUMER (khiếu nại) · ADMIN (phán quyết) · **Preconditions:** đơn `DELIVERED`, escrow còn hiệu lực
+
+Đơn mẫu `f05d978c`: món 255.000 + ship 11.451 + serviceFee 5.100 = **271.551đ** (lỗi TÀI XẾ). Escrow: nhà hàng 191.250 · tài xế 9.161 · hoa hồng nền tảng 69.610 · trích quỹ 1.530.
+
+| Bước | Hành động / Input                          | Kết quả mong đợi                                                                                   |
+| ---- | ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| 1    | `POST /cases` (DAMAGED_ITEM, lỗi DRIVER)   | Escrow `HELD_BY_DISPUTE` + `caseId` trên cả 4 dòng                                                 |
+| 2    | Admin duyệt `VALID` → policy `FULL_REFUND` | `settle-failure-money` nhận `orderDelivered = true` + `resolvedAt`                                 |
+| 3    | Ví — khách                                 | `+271.551` (100% `totalPaid`, có credit `REFUND`)                                                  |
+| 4    | Ví — tài xế                                | `−271.551` (ĐÚNG số khách nhận; ví thiếu ⇒ phần thiếu thành clawback `CUSTOMER_REFUND`)            |
+| 5    | Escrow                                     | **Không VOID**: 4 dòng → `PENDING`, `settleOn` = 23:00 ngày phán quyết                             |
+| 6    | Nhà hàng                                   | KHÔNG nhận trả tay (`FAILURE_MERCHANT_PAYOUT` = 0). 23:00 nhận `+191.250` từ escrow                |
+| 7    | Tài xế (lô 23:00)                          | Nhận `+9.161` thu nhập ship; nền tảng nhận hoa hồng 69.610 + trích quỹ 1.530                       |
+| 8    | `failure_settlements`                      | `refundAmount = driverDebit = 271.551`, `escrowVoided = 0`, `platformFunding = 0`                  |
+| 9    | Lỗi NHÀ HÀNG (đơn `a9eb12ea`, 184.848)     | Nhà hàng chỉ bị trừ `184.848` (KHÔNG cộng 9.158 bồi thường tài xế) ⇒ nợ ≤ giá trị đơn              |
+| 10   | Ví nhà hàng còn nợ, lô 23:00 trả 127.500   | Khấu trừ `PARTIAL_ALWAYS`: nhận 127.500 rồi bị trừ ngay vào nợ ⇒ không còn cảnh "cho nhà hàng vay" |
+
 ---
 
 ## Tổng kết
@@ -409,10 +458,10 @@
 | E. Gian lận — Nhà hàng         | RS-C11 → RS-C12 | 2                |
 | F. Gian lận — Khách hàng       | RS-C13 → RS-C14 | 2                |
 | G. Thông đồng & leo thang      | RS-C15 → RS-C17 | 3                |
-| H. Hủy đơn, Bom hàng & mở rộng | RS-H1 → RS-H17  | 17               |
-| **Tổng**                       | **34**          | **34**           |
+| H. Hủy đơn, Bom hàng & mở rộng | RS-H1 → RS-H20  | 20               |
+| **Tổng**                       | **37**          | **37**           |
 
 | Trạng thái                                                             | Count         |
 | ---------------------------------------------------------------------- | ------------- |
 | ✅ Đã unit-test (domain rules)                                         | 23 tests PASS |
-| 🔲 Chờ e2e/API test (cần endpoint wallet/driver/merchant/notification) | 34 case       |
+| 🔲 Chờ e2e/API test (cần endpoint wallet/driver/merchant/notification) | 37 case       |

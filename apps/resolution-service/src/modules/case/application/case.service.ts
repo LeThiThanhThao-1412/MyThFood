@@ -211,7 +211,7 @@ export class CaseService {
     });
 
     if (c.caseOrderId) {
-      void this.integration.holdSettlement(c.caseOrderId);
+      void this.integration.holdSettlement(c.caseOrderId, c.id.toString());
     }
     void this.integration.notify(
       dto.respondentId,
@@ -384,7 +384,7 @@ export class CaseService {
     });
 
     if (input.verdict === Verdict.INVALID && c.caseOrderId) {
-      void this.integration.releaseSettlement(c.caseOrderId);
+      void this.releaseEscrow(c.caseOrderId, c);
     }
     // Quyết toán tiền theo chính sách (đơn đã giao ⇒ chỉ hoàn phí ship).
     let decision: CaseSettlement | undefined;
@@ -513,7 +513,7 @@ export class CaseService {
     });
 
     if (dto.verdict === Verdict.INVALID && c.caseOrderId) {
-      void this.integration.releaseSettlement(c.caseOrderId);
+      void this.releaseEscrow(c.caseOrderId, c);
     }
     let decision: CaseSettlement | undefined;
     if (dto.verdict === Verdict.VALID) {
@@ -545,7 +545,7 @@ export class CaseService {
       note: "Case withdrawn",
     });
     if (c.caseOrderId) {
-      void this.integration.releaseSettlement(c.caseOrderId);
+      void this.releaseEscrow(c.caseOrderId, c);
     }
     return this.getEntityOrFail(id);
   }
@@ -749,8 +749,15 @@ export class CaseService {
   }
 
   /**
-   * Hoàn 100% qua luồng "giao thất bại" — escrow do order-service/wallet huỷ,
-   * nên ở đây KHÔNG được release (sẽ trả tiền hai lần).
+   * Hoàn 100% qua luồng chuyển tiền của ví.
+   *
+   * - Đơn **giao thất bại**: ví huỷ escrow + nền tảng ứng tiền trả nhà hàng/tài xế.
+   * - Đơn **đã giao xong** (khiếu nại sau giao): ví GIẢI TOẢ escrow để 23:00 quyết
+   *   toán bình thường và trừ đúng bên lỗi đúng số tiền khách được hoàn.
+   *
+   * Vì vậy ở đây KHÔNG được release tay: việc giải toả nằm trong cùng một lời gọi
+   * (idempotent theo orderId), nếu release trước rồi ví chết giữa đường thì tiền
+   * đã về lô 23:00 mà khách chưa được hoàn.
    */
   private async settleFullRefund(
     orderId: string,
@@ -762,6 +769,8 @@ export class CaseService {
         orderId,
         c.caseFaultParty ?? "",
         c.caseSeverity,
+        c.id.toString(),
+        c.caseResolvedAt ?? new Date(),
       );
     } catch (err: any) {
       // Lỗi mạng không được làm hỏng phán quyết (order-service/wallet-service
@@ -835,18 +844,111 @@ export class CaseService {
   /**
    * Mở khoá doanh thu của đơn (HELD_BY_DISPUTE → PENDING) khi phán quyết không
    * tiêu thụ escrow. Idempotent: wallet chỉ đổi các dòng đang bị giữ.
+   *
+   * Ví nhận thêm `caseId` + `resolvedAt` để đóng dấu `settleOn` = 23:00 ngày
+   * phán quyết ⇒ dòng tiền vào đúng lô quyết toán của ngày đó thay vì kẹt ngoài
+   * cửa sổ `deliveredAt` cũ.
+   *
+   * Trước đây lỗi ở đây chỉ `warn` rồi bỏ ⇒ đơn `a13aae84` treo 75.769đ
+   * HELD_BY_DISPUTE vĩnh viễn. Nay retry 1 lần, sau đó log ERROR và để cron
+   * `repairHeldEscrows()` (mỗi 30 phút) gọi lại — gọi lại luôn an toàn.
+   *
+   * @returns `true` nếu ví đã trả lời thành công.
    */
-  private async releaseEscrow(orderId: string, c: Case): Promise<void> {
-    try {
-      await this.integration.releaseSettlement(orderId);
+  private async releaseEscrow(orderId: string, c: Case): Promise<boolean> {
+    const caseId = c.id.toString();
+    const resolvedAt = c.caseResolvedAt ?? new Date();
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await this.integration.releaseSettlement(orderId, {
+          caseId,
+          resolvedAt,
+        });
+        this.logger.log(
+          `Case ${c.caseNumberValue}: mở khoá escrow đơn ${orderId.slice(0, 8)} — quyết toán ngày ${resolvedAt.toISOString()}`,
+        );
+        return true;
+      } catch (err: any) {
+        if (attempt === 2) {
+          this.logger.error(
+            `Case ${c.caseNumberValue}: mở khoá escrow đơn ${orderId.slice(0, 8)} thất bại sau ${attempt} lần ` +
+              `— doanh thu vẫn HELD_BY_DISPUTE, cron read-repair sẽ thử lại (${err?.message})`,
+          );
+          return false;
+        }
+        this.logger.warn(
+          `Case ${c.caseNumberValue}: mở khoá escrow đơn ${orderId.slice(0, 8)} lỗi (thử lại) — ${err?.message}`,
+        );
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Read-repair: mở khoá escrow còn treo của các case **đã kết thúc**.
+   *
+   * Vì sao cần: `releaseSettlement` là lời gọi HTTP sang wallet-service, có thể
+   * chết đúng lúc phán quyết (deploy, timeout, mạng). Không có bước này thì
+   * doanh thu của nhà hàng/tài xế nằm HELD_BY_DISPUTE vĩnh viễn và không bao giờ
+   * vào lô 23:00 — đúng lỗi "case có phạt mà không được quyết toán".
+   *
+   * Chỉ những case mà phán quyết **không tiêu thụ escrow** (NONE /
+   * SHIP_COMPENSATION) mới release tay; case FULL_REFUND phải đi qua đúng luồng
+   * chuyển tiền của ví (hoàn khách + trừ bên lỗi + giải toả escrow trong MỘT lời
+   * gọi idempotent). Release mù ở đây sẽ đẩy doanh thu vào lô 23:00 dù khách
+   * chưa được hoàn đồng nào.
+   *
+   * @returns số case đã xử lý xong trong lượt chạy này.
+   */
+  async repairHeldEscrows(lookbackHours = 72, limit = 200): Promise<number> {
+    const since = new Date(Date.now() - lookbackHours * 3600000);
+    const cases = await this.repo.findResolvedWithOrderSince(since, limit);
+    let repaired = 0;
+
+    for (const c of cases) {
+      const orderId = c.caseOrderId;
+      if (!orderId) continue;
+      try {
+        const order = await this.integration.getOrder(orderId);
+        if (!order) continue;
+
+        const status = String((order as any)?.status ?? "").toUpperCase();
+        if (status !== "DELIVERED" && status !== "COMPLETED") continue;
+
+        const decision = decideCaseMoney({
+          verdict: c.caseVerdict,
+          faultParty: c.caseFaultParty,
+          category: c.caseCategory,
+          reporterType: c.caseReporterType,
+          order,
+        });
+        if (decision.mode === "FULL_REFUND") {
+          // Ví idempotent theo orderId ⇒ gọi lại an toàn: nếu lượt trước đã chạy
+          // thì trả `FAILURE_ALREADY_SETTLED` (không phát sinh dòng tiền mới).
+          const res = await this.settleFullRefund(orderId, c);
+          if (
+            res.settledAmount > 0 ||
+            res.settlementNote === "FAILURE_ALREADY_SETTLED"
+          ) {
+            repaired++;
+          }
+          continue;
+        }
+
+        if (await this.releaseEscrow(orderId, c)) repaired++;
+      } catch (err: any) {
+        this.logger.warn(
+          `Read-repair case ${c.caseNumberValue}: bỏ qua — ${err?.message}`,
+        );
+      }
+    }
+
+    if (repaired > 0) {
       this.logger.log(
-        `Case ${c.caseNumberValue}: mở khoá escrow đơn ${orderId.slice(0, 8)}`,
-      );
-    } catch (err: any) {
-      this.logger.warn(
-        `Case ${c.caseNumberValue}: mở khoá escrow đơn ${orderId.slice(0, 8)} thất bại — ${err?.message}`,
+        `Read-repair: mở khoá escrow cho ${repaired}/${cases.length} case đã kết thúc`,
       );
     }
+    return repaired;
   }
 
   /** Ghi hình phạt đúng như AI đề xuất (admin đã duyệt), có chặn trần tiền. */

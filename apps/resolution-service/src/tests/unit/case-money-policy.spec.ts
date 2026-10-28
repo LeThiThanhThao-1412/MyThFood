@@ -3,7 +3,10 @@ import {
   FaultParty,
   Verdict,
 } from "../../modules/case/domain/case.enums";
-import { decideCaseMoney } from "../../modules/case/domain/case.money-policy";
+import {
+  allocateDiscount,
+  decideCaseMoney,
+} from "../../modules/case/domain/case.money-policy";
 
 /**
  * Test chính sách TIỀN của resolution-service.
@@ -147,5 +150,177 @@ describe("decideCaseMoney", () => {
     });
     expect(d.mode).toBe("SHIP_COMPENSATION");
     expect(d.amount).toBe(SHIP_FEE);
+  });
+});
+
+/**
+ * Lỗi gốc thứ hai: bồi thường tính trên giá **niêm yết** trong khi khách đã
+ * được giảm giá ⇒ hoàn nhiều hơn số khách thực trả và trừ oan bên lỗi.
+ *
+ * Quy tắc đã chốt: khuyến mãi phân bổ theo trọng số `subtotal : deliveryFee`,
+ * phần làm tròn dồn về tiền món; mọi khoản hoàn/bồi thường dựa trên số THỰC TRẢ
+ * và không bao giờ vượt tổng tiền khách đã trả.
+ */
+describe("allocateDiscount — khuyến mãi phân bổ theo tỷ lệ", () => {
+  it("không có khuyến mãi: số thực trả bằng giá niêm yết từng phần", () => {
+    const paid = allocateDiscount({
+      subtotal: 60000,
+      deliveryFee: 20000,
+      serviceFee: 5000,
+      discount: 0,
+      totalAmount: 85000,
+    });
+
+    expect(paid.itemPaid).toBe(60000);
+    expect(paid.shippingFeePaid).toBe(20000);
+    expect(paid.totalPaid).toBe(85000);
+  });
+
+  it("khuyến mãi chia đúng trọng số món : ship (làm tròn dồn về tiền món)", () => {
+    // base = 60000 + 20000 = 80000; discount 30000 ⇒ ship 7500, món 22500.
+    const paid = allocateDiscount({
+      subtotal: 60000,
+      deliveryFee: 20000,
+      serviceFee: 0,
+      discount: 30000,
+      totalAmount: 50000,
+    });
+
+    expect(paid.shippingDiscountShare).toBe(7500);
+    expect(paid.itemDiscountShare).toBe(22500);
+    expect(paid.shippingFeePaid).toBe(12500);
+    expect(paid.itemPaid).toBe(37500);
+    expect(paid.totalPaid).toBe(50000);
+    expect(paid.shippingDiscountShare + paid.itemDiscountShare).toBe(30000);
+  });
+
+  it("khuyến mãi lẻ: tổng hai phần luôn bằng đúng tổng khuyến mãi", () => {
+    for (const discount of [1, 999, 1234, 2999, 3999]) {
+      const paid = allocateDiscount({
+        subtotal: 3000,
+        deliveryFee: 1000,
+        discount,
+        totalAmount: 4000 - discount,
+      });
+      expect(paid.shippingDiscountShare + paid.itemDiscountShare).toBe(
+        discount,
+      );
+      expect(paid.shippingFeePaid + paid.itemPaid).toBe(4000 - discount);
+      expect(paid.shippingDiscountShare).toBeLessThanOrEqual(1000);
+      expect(paid.shippingFeePaid).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("giảm 100% cả đơn: khách không thực trả đồng nào", () => {
+    const paid = allocateDiscount({
+      subtotal: 60000,
+      deliveryFee: 20000,
+      serviceFee: 0,
+      discount: 80000,
+      totalAmount: 0,
+    });
+
+    expect(paid.shippingFeePaid).toBe(0);
+    expect(paid.itemPaid).toBe(0);
+    expect(paid.totalPaid).toBe(0);
+  });
+
+  it("khuyến mãi lớn hơn giá trị đơn: không phần nào bị âm, không vượt niêm yết", () => {
+    const paid = allocateDiscount({
+      subtotal: 3000,
+      deliveryFee: 1000,
+      serviceFee: 0,
+      discount: 5000,
+      totalAmount: 0,
+    });
+
+    expect(paid.shippingDiscountShare).toBe(1000);
+    expect(paid.itemDiscountShare).toBe(3000);
+    expect(paid.shippingFeePaid).toBe(0);
+    expect(paid.itemPaid).toBe(0);
+  });
+
+  it("ảnh chụp cũ (chỉ có totalAmount + deliveryFee) vẫn ra số thực trả đúng", () => {
+    // Không có subtotal/serviceFee/discount ⇒ suy ra tiền món từ tổng: 71.400đ.
+    const paid = allocateDiscount({
+      totalAmount: 93262,
+      deliveryFee: 21862,
+    });
+
+    expect(paid.itemPaid + paid.shippingFeePaid + paid.serviceFeePaid).toBe(
+      93262,
+    );
+    expect(paid.shippingFeePaid).toBe(21862);
+    expect(paid.totalPaid).toBe(93262);
+  });
+
+  it("tổng thực trả không bao giờ vượt totalAmount của đơn", () => {
+    const paid = allocateDiscount({
+      subtotal: 60000,
+      deliveryFee: 20000,
+      serviceFee: 5000,
+      discount: 0,
+      // Dữ liệu lỗi: total nhỏ hơn tổng các thành phần.
+      totalAmount: 40000,
+    });
+
+    expect(paid.totalPaid).toBe(40000);
+  });
+});
+
+describe("decideCaseMoney — bồi thường theo số THỰC TRẢ", () => {
+  it("đơn có khuyến mãi: chỉ hoàn phần phí ship khách thực trả", () => {
+    const d = decideCaseMoney({
+      ...base,
+      order: {
+        status: "DELIVERED",
+        subtotal: 60000,
+        deliveryFee: 20000,
+        serviceFee: 0,
+        discount: 30000,
+        discountFundedBy: "MERCHANT",
+        totalAmount: 50000,
+      },
+    });
+
+    // Trước đây hoàn 20.000đ (giá niêm yết) — nhiều hơn số khách bỏ ra.
+    expect(d.amount).toBe(12500);
+    expect(d.paidBasis?.shippingFeePaid).toBe(12500);
+    expect(d.reason).toContain("THỰC TRẢ");
+  });
+
+  it("khuyến mãi nuốt hết phí ship: không còn gì để hoàn", () => {
+    const d = decideCaseMoney({
+      ...base,
+      order: {
+        status: "DELIVERED",
+        subtotal: 0,
+        deliveryFee: 20000,
+        serviceFee: 0,
+        discount: 20000,
+        totalAmount: 0,
+      },
+    });
+
+    expect(d.mode).toBe("NONE");
+    expect(d.amount).toBe(0);
+  });
+
+  it("FULL_REFUND cũng bị chặn bởi tổng khách thực trả", () => {
+    const d = decideCaseMoney({
+      ...base,
+      category: CaseCategory.MISSING_ITEM,
+      order: {
+        status: "DELIVERED",
+        subtotal: 60000,
+        deliveryFee: 20000,
+        serviceFee: 0,
+        discount: 30000,
+        totalAmount: 50000,
+      },
+    });
+
+    expect(d.mode).toBe("FULL_REFUND");
+    expect(d.amount).toBe(50000);
   });
 });
