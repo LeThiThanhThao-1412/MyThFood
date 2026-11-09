@@ -1464,6 +1464,67 @@ export interface AiSideImageAnalysis {
   analysis: string;
 }
 
+/** Máy đếm món trên ảnh (so với đơn đã đặt / ảnh thực đơn) kết luận gì. */
+export type AiInventoryVerdict = "MATCH" | "MISSING" | "EXTRA" | "UNCLEAR";
+
+/** Kết luận tất định của code từ điểm khớp ảnh (không phải model tự phán). */
+export type AiImageMatchDecision =
+  | "AUTO_APPROVE"
+  | "AUTO_REJECT"
+  | "NEEDS_REVIEW";
+
+/** Một dòng đơn đã được ghép cặp với ảnh khách chụp. */
+export interface AiPairComparisonDetail {
+  orderItemId: string;
+  name: string;
+  orderedQuantity: number;
+  quantitySeen: number;
+  sameDish: boolean;
+  similarityPercent: number | null;
+}
+
+/**
+ * Kết quả GHÉP CẶP ảnh [thực đơn của quán] ↔ [ảnh khách chụp] do **code** tổng
+ * hợp — cho admin đọc thẳng "thiếu món nào, thiếu mấy phần" thay vì suy luận từ
+ * câu văn của model.
+ *
+ * Vắng mặt khi vụ việc không thuộc nhóm sự cố món ăn, hoặc không dựng được cặp
+ * ảnh nào (thiếu ảnh một bên / tải hỏng).
+ */
+export interface AiPairComparison {
+  /** Số cặp ảnh đã dựng được. */
+  pairs: number;
+  /** Số cặp model đọc được (ảnh quá mờ ⇒ không đọc được). */
+  readable: number;
+  /** Điểm giống trung bình 0–100 giữa ảnh chuẩn và ảnh khách chụp. */
+  similarityAvg: number | null;
+  /** Tên món bị nhận sai món (khác món đã đặt). */
+  wrongItems: string[];
+  /** Món đã đặt nhưng không dựng được cặp ảnh nào để đối chiếu. */
+  missingPairs: string[];
+  /** Code được phép lật kết luận của model khi điểm khớp ảnh đủ rõ. */
+  canOverride: boolean;
+  details: AiPairComparisonDetail[];
+}
+
+/** Bản rút gọn một phép chấm điểm ảnh tất định của code. */
+export interface AiImageMatchSummary {
+  side: "DELIVERY_PROOF" | "REPORTER";
+  verdict: AiInventoryVerdict;
+  matchedQuantity: number;
+  totalQuantity: number;
+  matchScore: number | null;
+  decision: AiImageMatchDecision;
+  reason: string;
+  missingText: string;
+  extraText: string;
+  refundCap: number | null;
+  pairCount?: number;
+  pairsTotal?: number;
+  similarityAvg?: number | null;
+  wrongItemsText?: string;
+}
+
 /**
  * Vì sao lượt phân tích vừa rồi không đọc được ảnh (hoặc đọc bình thường).
  *
@@ -1555,6 +1616,16 @@ export interface CaseAiSuggestion {
     /** Nhận xét ngắn về ảnh giao hàng. */
     analysis?: string | null;
   };
+  /**
+   * Kết quả ghép cặp ảnh do **code** tính (chỉ có khi vụ việc thuộc nhóm món ăn
+   * và bật `AI_IMAGE_PAIRWISE`). `undefined` ⇒ panel ẩn khối ghép cặp.
+   */
+  pairComparison?: AiPairComparison;
+  /**
+   * Điểm khớp ảnh tất định do code chấm (`AI_IMAGE_MATCH_SCORING != off`).
+   * Rỗng/`undefined` ⇒ panel ẩn khối điểm khớp.
+   */
+  imageMatch?: AiImageMatchSummary[];
   /** Trọng số bằng chứng (%) đã dùng để kết luận — ảnh & hệ thống > lời khai. */
   evidenceWeight: AiEvidenceWeight;
   /** ≤ 3 câu so sánh lời khai/ảnh của hai bên trước khi kết luận. */

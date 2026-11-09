@@ -1,7 +1,9 @@
 import { AssistantService } from "../../modules/assistant/application/assistant.service";
 import {
+  AI_IMAGE_SCHEMA,
   AI_IMAGE_SYSTEM_INSTRUCTION,
   AI_SYSTEM_INSTRUCTION,
+  IMAGE_INVENTORY_RULES,
   buildImagePrompt as imageBuildPrompt,
   buildUserPrompt,
   compactForPrompt,
@@ -73,6 +75,7 @@ function makeSnapshot(
 function makeService(
   raw: unknown,
   snapshot: CaseContextSnapshot = makeSnapshot(),
+  images: unknown[] = [],
 ) {
   const gemini = {
     assertReady: jest.fn(),
@@ -91,7 +94,7 @@ function makeService(
   } as any;
 
   const contextService = {
-    build: jest.fn().mockResolvedValue({ snapshot, images: [] }),
+    build: jest.fn().mockResolvedValue({ snapshot, images }),
   } as any;
 
   const analysisRepo = {
@@ -461,6 +464,200 @@ describe("AssistantService", () => {
         photoUrl: null,
         analyzed: false,
         matchesOrder: null,
+      });
+    });
+
+    describe("chấm điểm ảnh tất định (AI_IMAGE_MATCH_SCORING)", () => {
+      const ORIGINAL_MODE = process.env.AI_IMAGE_MATCH_SCORING;
+      afterEach(() => {
+        if (ORIGINAL_MODE === undefined)
+          delete process.env.AI_IMAGE_MATCH_SCORING;
+        else process.env.AI_IMAGE_MATCH_SCORING = ORIGINAL_MODE;
+      });
+
+      const THREE_ITEMS = [
+        { name: "Gà rán", quantity: 1, menuItemId: "m-1" },
+        { name: "Khoai tây chiên", quantity: 1, menuItemId: "m-2" },
+        { name: "Trà sữa trân châu", quantity: 1, menuItemId: "m-3" },
+      ];
+
+      /** Ảnh giao hàng chỉ thấy 2/3 phần ⇒ 67 %, dưới ngưỡng tự duyệt 80 %. */
+      const imageRaw = (matchesOrder: string) => ({
+        ...VALID_RAW,
+        deliveryProof: {
+          visibleItems: "Hai hộp giấy trên bàn",
+          matchesOrder,
+          analysis: "Ảnh chụp hai hộp thức ăn.",
+          items: [
+            { name: "gà rán", quantity: 1, orderItemId: "#1" },
+            { name: "khoai tây chiên", quantity: 1, orderItemId: "#2" },
+          ],
+          countable: true,
+          boxes: 2,
+          coverage: "all_items",
+        },
+      });
+
+      const snapshotWithProof = (orderItems: unknown = THREE_ITEMS) =>
+        makeSnapshot({
+          imagesAttached: 1,
+          reporterImagesAttached: 0,
+          deliveryProofPhotoUrl:
+            "http://localhost:3010/api/v1/upload/delivery/proof.jpg",
+          deliveryProofImageAttached: true,
+          orderItems: orderItems as any,
+        });
+
+      const oneImage = [{ mimeType: "image/jpeg", data: "x" }];
+
+      it("shadow: KHÔNG đổi kết luận của model, chỉ ghi số vào warnings", async () => {
+        process.env.AI_IMAGE_MATCH_SCORING = "shadow";
+        const { service } = makeService(
+          imageRaw("UNCLEAR"),
+          snapshotWithProof(),
+          oneImage,
+        );
+
+        const result = await service.analyzeCase(
+          "case-1",
+          {},
+          ADMIN_USER as any,
+        );
+
+        expect(result.deliveryProof.matchesOrder).toBe("UNCLEAR");
+        const notes = result.warnings.join(" ");
+        expect(notes).toContain("[image-match shadow]");
+        expect(notes).toContain("DELIVERY_PROOF 2/3");
+        expect(notes).toContain("AUTO_APPROVE");
+      });
+
+      it("mặc định (không đặt biến) = on: code được ghi đè kết luận", async () => {
+        delete process.env.AI_IMAGE_MATCH_SCORING;
+        const { service } = makeService(
+          imageRaw("UNCLEAR"),
+          snapshotWithProof(),
+          oneImage,
+        );
+
+        const result = await service.analyzeCase(
+          "case-1",
+          {},
+          ADMIN_USER as any,
+        );
+
+        expect(result.deliveryProof.matchesOrder).toBe("MISMATCH");
+        expect(result.warnings.join(" ")).toContain("[image-match]");
+      });
+
+      it("on: ghi đè matchesOrder khi kiểm kê ảnh giao hàng thiếu món", async () => {
+        process.env.AI_IMAGE_MATCH_SCORING = "on";
+        const { service } = makeService(
+          imageRaw("UNCLEAR"),
+          snapshotWithProof(),
+          oneImage,
+        );
+
+        const result = await service.analyzeCase(
+          "case-1",
+          {},
+          ADMIN_USER as any,
+        );
+
+        expect(result.deliveryProof.matchesOrder).toBe("MISMATCH");
+        expect(result.warnings.join(" ")).toContain(
+          "matchesOrder UNCLEAR → MISMATCH",
+        );
+      });
+
+      it("on: model nói MISMATCH nhưng kiểm kê đủ 3/3 phần ⇒ ghi đè MATCH", async () => {
+        process.env.AI_IMAGE_MATCH_SCORING = "on";
+        const raw = imageRaw("MISMATCH");
+        raw.deliveryProof.items = THREE_ITEMS.map((item, index) => ({
+          name: item.name,
+          quantity: 1,
+          orderItemId: `#${index + 1}`,
+        }));
+        const { service } = makeService(raw, snapshotWithProof(), oneImage);
+
+        const result = await service.analyzeCase(
+          "case-1",
+          {},
+          ADMIN_USER as any,
+        );
+
+        expect(result.deliveryProof.matchesOrder).toBe("MATCH");
+      });
+
+      it("on: đơn 8 phần khớp đủ vẫn KHÔNG bị tự bác (trần autoRejectMaxTotalQuantity)", async () => {
+        process.env.AI_IMAGE_MATCH_SCORING = "on";
+        const eightItems = Array.from({ length: 8 }, (_, index) => ({
+          name: `Món ${index + 1}`,
+          quantity: 1,
+          menuItemId: `m-${index + 1}`,
+        }));
+        const raw = imageRaw("UNCLEAR");
+        raw.deliveryProof.items = eightItems.map((item, index) => ({
+          name: item.name,
+          quantity: 1,
+          orderItemId: `#${index + 1}`,
+        }));
+        const { service } = makeService(
+          raw,
+          snapshotWithProof(eightItems),
+          oneImage,
+        );
+
+        const result = await service.analyzeCase(
+          "case-1",
+          {},
+          ADMIN_USER as any,
+        );
+
+        expect(result.deliveryProof.matchesOrder).not.toBe("MATCH");
+        expect(result.warnings.join(" ")).toContain("DELIVERY_PROOF 8/8");
+      });
+
+      it("off: không chấm điểm, không ghi chú image-match", async () => {
+        process.env.AI_IMAGE_MATCH_SCORING = "off";
+        const { service } = makeService(
+          imageRaw("MISMATCH"),
+          snapshotWithProof(),
+          oneImage,
+        );
+
+        const result = await service.analyzeCase(
+          "case-1",
+          {},
+          ADMIN_USER as any,
+        );
+
+        expect(result.deliveryProof.matchesOrder).toBe("MISMATCH");
+        expect(result.warnings.join(" ")).not.toContain("image-match");
+      });
+
+      it("model không trả kiểm kê ⇒ không chấm, không cảnh báo", async () => {
+        process.env.AI_IMAGE_MATCH_SCORING = "on";
+        const { service } = makeService(
+          {
+            ...VALID_RAW,
+            deliveryProof: {
+              visibleItems: "Một túi niêm phong",
+              matchesOrder: "UNCLEAR",
+              analysis: "Túi kín, không thấy món bên trong.",
+            },
+          },
+          snapshotWithProof(),
+          oneImage,
+        );
+
+        const result = await service.analyzeCase(
+          "case-1",
+          {},
+          ADMIN_USER as any,
+        );
+
+        expect(result.deliveryProof.matchesOrder).toBe("UNCLEAR");
+        expect(result.warnings.join(" ")).not.toContain("image-match");
       });
     });
 
@@ -1035,6 +1232,62 @@ describe("assistant prompt helpers", () => {
     expect(AI_IMAGE_SYSTEM_INSTRUCTION).toContain(
       "Hai ảnh giống nhau vẫn có thể CÙNG SAI MÓN",
     );
+  });
+
+  it("prompt ảnh & schema dùng CHUNG luật kiểm kê với harness đo", () => {
+    const snapshot = makeSnapshot({
+      orderItems: [
+        { name: "Cơm gà", quantity: 2, options: "ít cay", menuItemId: "m-1" },
+        { name: "Trà đào", quantity: 1 },
+      ],
+    });
+
+    // Luật chữ: MỘT nguồn duy nhất (`IMAGE_INVENTORY_RULES`) cho cả prompt chạy
+    // thật lẫn harness đo — sửa luật là sửa một chỗ, không thể "đo một đằng,
+    // chạy một nẻo" như trước.
+    for (const rule of Object.values(IMAGE_INVENTORY_RULES)) {
+      expect(AI_IMAGE_SYSTEM_INSTRUCTION).toContain(rule);
+    }
+    expect(AI_IMAGE_SYSTEM_INSTRUCTION).toContain(
+      "KHÔNG đếm món trong ẢNH CHUẨN MÓN TỪ THỰC ĐƠN",
+    );
+
+    // Schema: kiểm kê có ở CẢ HAI bên ảnh nhưng KHÔNG bắt buộc — model/schema cũ
+    // vẫn hợp lệ, code tự trả UNCLEAR khi thiếu.
+    const props = (side: string) =>
+      (AI_IMAGE_SCHEMA.properties as any)[side] as {
+        properties: Record<string, any>;
+        required: readonly string[];
+      };
+    for (const side of ["deliveryProof", "reporterImages"]) {
+      const schema = props(side);
+      expect(schema.properties.items.items.required).toEqual([
+        "name",
+        "quantity",
+        "orderItemId",
+      ]);
+      expect(schema.properties.items.items.additionalProperties).toBe(false);
+      expect(schema.properties.countable.type).toBe("boolean");
+      expect(schema.properties.coverage.enum).toEqual([
+        "all_items",
+        "partial",
+        "unknown",
+      ]);
+      expect(schema.required).not.toContain("items");
+    }
+    expect(props("deliveryProof").required).toEqual([
+      "visibleItems",
+      "matchesOrder",
+      "analysis",
+    ]);
+
+    // Danh sách món trong prompt ẢNH phải có MÃ DÒNG để model trỏ `orderItemId`;
+    // prompt CHỮ giữ nguyên định dạng cũ (admin đọc, không cần mã).
+    const imagePrompt = imageBuildPrompt(snapshot);
+    expect(imagePrompt).toContain("#1 · 2 × Cơm gà · ít cay");
+    expect(imagePrompt).toContain("#2 · 1 × Trà đào");
+    expect(imagePrompt).toContain("orderItemId");
+    expect(buildUserPrompt(snapshot)).toContain("1. 2 × Cơm gà · ít cay");
   });
 
   it("lược gọn chuỗi và mảng quá dài", () => {

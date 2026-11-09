@@ -39,15 +39,33 @@ import {
 import {
   AI_IMAGE_SCHEMA,
   AI_IMAGE_SYSTEM_INSTRUCTION,
+  AI_PAIR_IMAGE_SCHEMA,
+  AI_PAIR_IMAGE_SYSTEM_INSTRUCTION,
   AI_SUGGESTION_SCHEMA,
   AI_SYSTEM_INSTRUCTION,
   buildImagePrompt,
+  buildPairImagePrompt,
   buildUserPrompt,
 } from "../domain/assistant.prompt";
+import {
+  DEFAULT_IMAGE_MATCH_POLICY,
+  deliveryMatchFromDecision,
+  evaluateEvidenceImage,
+  reporterSupportFromDecision,
+  type ImageMatchSummary,
+} from "../domain/image-match";
+import {
+  describePairs,
+  scoreImagePairs,
+  type PairAttempt,
+  type PairImageReading,
+  type PairwiseSummary,
+} from "../domain/image-pair";
 import {
   ASSISTANT_LLM,
   AssistantLlmClient,
   LlmImageFailure,
+  LlmInlineImage,
 } from "../infrastructure/llm.types";
 import { CaseAiAnalysisRepository } from "../infrastructure/analysis.repository";
 import { CaseRepository } from "../../case/infrastructure/case.repository";
@@ -56,6 +74,7 @@ import {
   AiDecisionOutcome,
 } from "../../case/application/case.service";
 import { CaseContextService } from "./case-context.service";
+import type { BuiltImagePairs } from "./case-context.service";
 import { allocateImagesByKind, DEFAULT_IMAGE_ORDER } from "./image-plan";
 import {
   createPiiContext,
@@ -631,8 +650,8 @@ export class AssistantService {
           status: "VISION_OVERLOADED",
           hint:
             "Model đọc ảnh đang quá tải (429/1302/1305) — đợi 30–60 giây rồi bấm " +
-            '"Phân tích lại". Nếu lặp lại nhiều lần, đổi GLM_VISION_MODEL sang ' +
-            '"glm-4.6v-flashx" (bản trả phí rẻ, ít nghẽn hơn bản free).',
+            '"Phân tích lại". Nếu lặp lại nhiều lần, kiểm tra GLM_VISION_MODEL ' +
+            '(mặc định "glm-4.6v") và GLM_VISION_FALLBACK_MODELS rồi restart service.',
         };
       case "VISION_DISABLED":
         return {
@@ -640,7 +659,7 @@ export class AssistantService {
           status: "VISION_DISABLED",
           hint:
             "Chưa bật model đọc ảnh (GLM_VISION_MODEL=none) — đặt GLM_VISION_MODEL=" +
-            "glm-4.6v-flash rồi restart resolution-service.",
+            "glm-4.6v rồi restart resolution-service.",
         };
       default:
         return {
@@ -677,7 +696,7 @@ export class AssistantService {
       : (dto.maxImages ?? this.llm.maxEvidenceImages);
 
     const startedAt = Date.now();
-    const { snapshot, images } = await this.contextService.build(
+    const { snapshot, images, pairs } = await this.contextService.build(
       caseId,
       maxImages,
     );
@@ -756,6 +775,33 @@ export class AssistantService {
       }
     }
 
+    // ---- Lượt 1b: ĐỌC TỪNG CẶP ẢNH ([ảnh thực đơn] ↔ [ảnh khách chụp]) ----
+    // Chạy sau lượt đọc ảnh gộp và TRƯỚC phần chấm điểm tất định, để kiểm kê của
+    // cặp ảnh trở thành nguồn chính cho `reporterImages` rồi mới được chấm điểm.
+    // Chỉ áp dụng cho sự cố món ăn và khi dựng được ít nhất một cặp có đủ hai ảnh;
+    // mọi trường hợp khác giữ nguyên hành vi cũ (không tốn thêm lượt gọi nào).
+    let pairwise: PairwiseSummary | null = null;
+    if (pairs && pairs.sets.length > 0) {
+      pairwise = await this.readImagePairs(caseId, snapshot, pairs, notes);
+      if (pairwise) {
+        imageFindings = this.mergePairwiseFindings(imageFindings, pairwise);
+      }
+    } else if (pairs && (pairs.skipped.length > 0 || pairs.truncated > 0)) {
+      notes.push(...this.describePairGaps(pairs));
+    }
+
+    // Chấm điểm TẤT ĐỊNH trên kiểm kê vừa đọc (0 token, hàm thuần). Ở mode
+    // `shadow` chỉ ghi số vào `notes`; ở `on` mới gắn `imageMatch` vào findings
+    // để lượt chữ đọc được và mới được ghi đè `matchesOrder`.
+    if (imageFindings) {
+      imageFindings = this.applyImageMatchScoring(
+        imageFindings,
+        snapshot,
+        notes,
+        pairwise,
+      );
+    }
+
     // ---- Lượt 2: SUY LUẬN CHỮ với kết quả ảnh đã đọc ----
     const unreadableImages =
       images.length > 0 && imageFindings === null ? images.length : 0;
@@ -828,6 +874,10 @@ export class AssistantService {
         analysis: normalized.deliveryProof.analysis,
       },
       evidenceWeight: this.evidenceWeight(normalized, snapshot),
+      // Kết quả do CODE tổng hợp (không phải model tự phán): panel admin hiện
+      // khối "🔗 Ghép cặp ảnh" và badge "khớp/thiếu món" từ hai field này.
+      pairComparison: imageFindings?.pairComparison,
+      imageMatch: imageFindings?.imageMatch,
       sideComparison: normalized.sideComparison,
       suggestedVerdict: normalized.suggestedVerdict,
       suggestedFaultParty: normalized.suggestedFaultParty,
@@ -953,6 +1003,394 @@ export class AssistantService {
       };
     }
     return merged;
+  }
+
+  /**
+   * Số cặp ảnh tối đa mỗi vụ việc (`AI_PAIRWISE_MAX_PAIRS`, mặc định 4).
+   *
+   * Mỗi cặp là một lượt gọi vision nên đây là **ngân sách tiền/latency**, không
+   * phải tham số kỹ thuật. Đặt 0 để tắt hẳn phần ghép cặp mà vẫn giữ mọi thứ khác.
+   */
+  get maxImagePairs(): number {
+    const parsed = Number(process.env.AI_PAIRWISE_MAX_PAIRS);
+    if (!Number.isFinite(parsed)) return 4;
+    return Math.min(8, Math.max(0, Math.trunc(parsed)));
+  }
+
+  /** Số lượt gọi cặp ảnh chạy song song (`AI_PAIRWISE_CONCURRENCY`, mặc định 2). */
+  get imagePairConcurrency(): number {
+    const parsed = Number(process.env.AI_PAIRWISE_CONCURRENCY);
+    if (!Number.isFinite(parsed)) return 2;
+    return Math.min(4, Math.max(1, Math.trunc(parsed)));
+  }
+
+  /**
+   * Ngân sách thời gian cho TOÀN BỘ lượt ghép cặp (`AI_PAIRWISE_BUDGET_MS`,
+   * mặc định 25 000 ms).
+   *
+   * Vì sao phải có trần: lượt đọc ảnh gộp trước đó đã tốn vài giây; cộng thêm N
+   * lượt cặp mà không chặn thì một vụ việc có thể vượt timeout của gateway và
+   * **mất luôn cả phần phân tích chữ**. Quá hạn ⇒ cặp còn lại bị bỏ (coi như
+   * không đọc được) và hệ thống lùi về kết luận cũ một cách an toàn.
+   */
+  get imagePairBudgetMs(): number {
+    const parsed = Number(process.env.AI_PAIRWISE_BUDGET_MS);
+    if (!Number.isFinite(parsed)) return 25_000;
+    return Math.min(120_000, Math.max(3_000, Math.trunc(parsed)));
+  }
+
+  /**
+   * Đọc từng cặp ảnh ([ảnh thực đơn của quán] ↔ [ảnh khách chụp]) rồi gộp lại.
+   *
+   * Mỗi **ảnh khách** là một lượt gọi riêng: nhờ vậy số phần đọc được của một món
+   * là MAX trên các ảnh (xem `scoreImagePairs`), không phải tổng — hai ảnh chụp
+   * cùng một hộp không được biến thành "2 hộp". Lỗi/timeout của một cặp không làm
+   * hỏng cả lượt: cặp đó vào danh sách "không đọc được" và bị loại khỏi phần ghi
+   * đè kết luận.
+   */
+  private async readImagePairs(
+    caseId: string,
+    snapshot: CaseContextSnapshot,
+    pairs: BuiltImagePairs,
+    notes: string[],
+  ): Promise<PairwiseSummary | null> {
+    interface PairCall {
+      attempt: PairAttempt;
+      prompt: string;
+      images: LlmInlineImage[];
+    }
+
+    const calls: PairCall[] = [];
+    for (const set of pairs.sets) {
+      const prompt = buildPairImagePrompt(snapshot, set.target);
+      for (const evidence of set.evidence) {
+        calls.push({
+          attempt: {
+            orderItemId: set.target.orderItemId,
+            orderItemIds: set.target.orderItemIds,
+            menuItemId: set.target.menuItemId,
+            name: set.target.name,
+            orderedQuantity: set.target.orderedQuantity,
+            reading: null,
+          },
+          prompt,
+          images: [set.reference, evidence],
+        });
+      }
+    }
+    if (calls.length === 0) return null;
+
+    const budgetMs = this.imagePairBudgetMs;
+    const concurrency = Math.min(this.imagePairConcurrency, calls.length);
+    const startedAt = Date.now();
+    const attempts: PairAttempt[] = new Array(calls.length);
+    let next = 0;
+    let skippedByBudget = 0;
+
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const index = next;
+        next += 1;
+        if (index >= calls.length) return;
+        const call = calls[index] as PairCall;
+        if (Date.now() - startedAt > budgetMs) {
+          skippedByBudget += 1;
+          attempts[index] = { ...call.attempt, reading: null };
+          continue;
+        }
+        const callStartedAt = Date.now();
+        try {
+          const response = await this.llm.generateJson<PairImageReading>({
+            systemInstruction: AI_PAIR_IMAGE_SYSTEM_INSTRUCTION,
+            prompt: call.prompt,
+            schema: AI_PAIR_IMAGE_SCHEMA as unknown as Record<string, unknown>,
+            images: call.images,
+            temperature: 0.1,
+            maxOutputTokens: 700,
+          });
+          attempts[index] = {
+            ...call.attempt,
+            reading: response.data ?? null,
+            durationMs: Date.now() - callStartedAt,
+          };
+        } catch (err: any) {
+          attempts[index] = {
+            ...call.attempt,
+            reading: null,
+            durationMs: Date.now() - callStartedAt,
+          };
+          this.logger.warn(
+            `Đọc cặp ảnh "${call.attempt.name}" thất bại (case ${caseId}): ${err?.message ?? err}`,
+          );
+          notes.push(
+            `Không đọc được cặp ảnh của "${call.attempt.name}" ` +
+              `(${String(err?.message ?? err).slice(0, 120)}).`,
+          );
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+    if (skippedByBudget > 0) {
+      notes.push(
+        `Bỏ ${skippedByBudget} cặp ảnh vì vượt ngân sách ${Math.round(budgetMs / 1000)}s ` +
+          "(AI_PAIRWISE_BUDGET_MS) — phần còn lại dựa trên bằng chứng đã đọc.",
+      );
+    }
+
+    const summary = scoreImagePairs({
+      attempts,
+      orderItems: snapshot.orderItems,
+      totalTargets:
+        pairs.plannedTargets + pairs.skipped.length + pairs.truncated,
+    });
+    notes.push(...describePairs(summary), ...this.describePairGaps(pairs));
+    return summary;
+  }
+
+  /**
+   * Đưa kiểm kê của cặp ảnh vào `reporterImages` + chép bản tổng hợp vào
+   * `pairComparison` để lượt suy luận chữ thấy được cả số tương đồng và món khác
+   * loại. `findings = null` (lượt đọc ảnh gộp lỗi) vẫn dùng được: khi đó cặp ảnh
+   * là nguồn duy nhất, các field còn lại để trống thay vì bịa.
+   */
+  private mergePairwiseFindings(
+    findings: AiImageFindings | null,
+    summary: PairwiseSummary,
+  ): AiImageFindings {
+    const base: AiImageFindings = findings ?? {
+      deliveryProof: {
+        visibleItems: "",
+        matchesOrder: "UNCLEAR",
+        analysis: "",
+      },
+      reporterImages: { visibleItems: "", support: "NEUTRAL", analysis: "" },
+      respondentImages: { visibleItems: "", support: "NO_IMAGE", analysis: "" },
+      sideComparison: "",
+    };
+    const seenText =
+      summary.items.length > 0
+        ? summary.items
+            .map((item) => `${item.name} ×${item.quantity}`)
+            .join(", ")
+        : (base.reporterImages?.visibleItems ?? "");
+    return {
+      ...base,
+      reporterImages: {
+        ...base.reporterImages,
+        visibleItems: seenText,
+        items: summary.items,
+        boxes: summary.boxes ?? undefined,
+        countable: summary.countable,
+        sealed: summary.sealed ?? undefined,
+        coverage: summary.coverage,
+      },
+      pairComparison: {
+        pairs: summary.pairs.length,
+        readable: summary.pairsReadable,
+        similarityAvg: summary.similarityAvg,
+        wrongItems: summary.wrongItems,
+        missingPairs: summary.unpairedOrderItemIds,
+        canOverride: summary.canOverride,
+        details: summary.pairs.map((pair) => ({
+          orderItemId: pair.orderItemId,
+          name: pair.name,
+          orderedQuantity: pair.orderedQuantity,
+          quantitySeen: pair.quantitySeen,
+          sameDish: pair.sameDish,
+          similarityPercent: pair.similarityPercent,
+        })),
+      },
+    };
+  }
+
+  /** Vì sao một số nhóm món không dựng được cặp ảnh (câu đọc được cho admin). */
+  private describePairGaps(pairs: BuiltImagePairs): string[] {
+    const lines: string[] = [];
+    if (pairs.skipped.length > 0) {
+      lines.push(
+        "Không ghép được cặp ảnh cho: " +
+          pairs.skipped
+            .map((skip) => `${skip.orderItemId} ${skip.name} (${skip.reason})`)
+            .join("; ") +
+          ".",
+      );
+    }
+    if (pairs.truncated > 0) {
+      lines.push(
+        `Còn ${pairs.truncated} món chưa được ghép cặp ảnh do giới hạn ` +
+          `AI_PAIRWISE_MAX_PAIRS = ${this.maxImagePairs}.`,
+      );
+    }
+    return lines;
+  }
+
+  /**
+   * Mức áp dụng bộ **chấm điểm ảnh tất định** (`AI_IMAGE_MATCH_SCORING`).
+   *
+   * - `off` — như trước đây, chỉ nghe model.
+   * - `on` (**mặc định**) — code được quyền ghi đè kết luận khi điểm khớp rơi vào
+   *   vùng `AUTO_*`: `deliveryProof.matchesOrder` (ảnh giao hàng) và
+   *   `reporterImages.support` (kiểm kê từ cặp ảnh) xem `deliveryMatchFromDecision`
+   *   / `reporterSupportFromDecision`.
+   * - `shadow` — code vẫn chấm điểm nhưng **không đổi kết luận**, chỉ ghi số vào
+   *   `warnings`. Giữ lại làm chế độ quan sát khi cần đo lại trên dữ liệu mới.
+   *
+   * Vì sao mặc định `on` từ 08/11/2026: vòng đo trên 58 mẫu + harness
+   * `run-pairs.ts` đã xác nhận phần đếm của code khớp nhãn vàng tốt hơn lời phán
+   * của model; để `shadow` nghĩa là sản phẩm **không** dùng phần đã kiểm chứng.
+   * Rủi ro vẫn được chặn bằng các cổng trong `decideImageMatch` (`AUTO_*`,
+   * `autoRejectMaxTotalQuantity`) chứ không bằng cách tắt ghi đè.
+   *
+   * Giá trị lạ ⇒ `on` KHÔNG được nâng quyền: trả `shadow` (fail-safe).
+   */
+  get imageMatchScoring(): "off" | "shadow" | "on" {
+    const raw = (process.env.AI_IMAGE_MATCH_SCORING ?? "on")
+      .trim()
+      .toLowerCase();
+    if (raw === "off") return "off";
+    if (raw === "shadow") return "shadow";
+    if (raw === "on") return "on";
+    return "shadow";
+  }
+
+  /**
+   * Chấm điểm TẤT ĐỊNH trên kiểm kê model vừa đọc (0 token, hàm thuần).
+   *
+   * Chỗ đứng quan trọng: hàm này chạy **sau lượt đọc ảnh và trước lượt suy luận
+   * chữ**, nên ở mode `on` kết quả vừa được gắn vào `imageFindings` là lượt chữ
+   * đọc được ngay trong `<PHAN_TICH_ANH>` — không phải sửa prompt lượt chữ.
+   * Ở mode `shadow` thì KHÔNG gắn gì vào `findings`: nếu gắn, model chữ sẽ đọc
+   * `decision` của code rồi đổi kết luận, và "shadow" hết còn là quan sát.
+   *
+   * Vì sao chỉ dùng ảnh GIAO HÀNG để ghi đè `matchesOrder`: field đó nghĩa là
+   * "ảnh tài xế chụp lúc giao có khớp đơn không". Điểm của ảnh KHÁCH chụp là
+   * bằng chứng về phần thiếu (đo được ở harness v4), nhưng dùng nó để bác lời
+   * khách là đảo ngược ý nghĩa field và chưa có số liệu nào chống lưng.
+   */
+  private applyImageMatchScoring(
+    findings: AiImageFindings,
+    snapshot: CaseContextSnapshot,
+    warnings: string[],
+    pairwise?: PairwiseSummary | null,
+  ): AiImageFindings {
+    const mode = this.imageMatchScoring;
+    if (mode === "off") return findings;
+
+    const policy = DEFAULT_IMAGE_MATCH_POLICY;
+    const delivery = evaluateEvidenceImage(
+      "DELIVERY_PROOF",
+      findings.deliveryProof,
+      snapshot.orderItems,
+      policy,
+    );
+    /**
+     * Khi có kiểm kê từ CẶP ẢNH, mẫu số là phần đơn **đã ghép được cặp** — không
+     * phải toàn đơn. Dùng toàn đơn sẽ biến mọi dòng chưa ghép cặp thành "thiếu"
+     * và tạo ra con số thấp giả tạo (đúng loại lỗi đã làm hỏng lượt đo trước).
+     */
+    const reporterItems =
+      pairwise && pairwise.pairs.length > 0
+        ? pairwise.scopedOrderItems
+        : snapshot.orderItems;
+    const reporter = evaluateEvidenceImage(
+      "REPORTER",
+      findings.reporterImages,
+      reporterItems,
+      policy,
+    );
+    const reporterWithPairs: ImageMatchSummary | null =
+      reporter && pairwise && pairwise.pairs.length > 0
+        ? {
+            ...reporter,
+            pairCount: pairwise.pairsReadable,
+            pairsTotal: pairwise.pairsTotal,
+            similarityAvg: pairwise.similarityAvg,
+            wrongItemsText: pairwise.wrongItems.join("; "),
+          }
+        : reporter;
+    const summaries = [delivery, reporterWithPairs].filter(
+      (item): item is ImageMatchSummary => item !== null,
+    );
+    // Model không trả kiểm kê (schema cũ / bỏ khối này) ⇒ không có gì để chấm.
+    // Im lặng là đúng: cảnh báo ở đây sẽ bắn mỗi vụ việc và làm loãng warnings.
+    if (summaries.length === 0) return findings;
+
+    const modelVerdict = findings.deliveryProof?.matchesOrder ?? "UNCLEAR";
+    const line = (item: ImageMatchSummary) =>
+      `${item.side} ${item.matchedQuantity}/${item.totalQuantity} phần` +
+      ` (${item.matchScore === null ? "không chấm được" : `${(item.matchScore * 100).toFixed(0)}%`})` +
+      ` ⇒ ${item.decision}` +
+      (item.missingText ? ` · thiếu: ${item.missingText}` : "") +
+      (item.extraText ? ` · THỪA: ${item.extraText}` : "") +
+      (item.pairCount === undefined
+        ? ""
+        : ` · cặp ảnh ${item.pairCount}/${item.pairsTotal}`) +
+      (item.wrongItemsText ? ` · KHÁC MÓN: ${item.wrongItemsText}` : "");
+
+    if (mode === "shadow") {
+      warnings.push(
+        `[image-match shadow] ${summaries.map(line).join(" | ")} — model nói ${modelVerdict} (không đổi kết luận)`,
+      );
+      return findings;
+    }
+
+    const next: AiImageFindings = { ...findings, imageMatch: summaries };
+    // Ở `on` vẫn ghi lại toàn bộ số đã chấm: mỗi vụ việc một dòng, để khi code
+    // KHÔNG ghi đè (vùng xám, trần tự bác, ảnh mờ) admin vẫn thấy là code đã
+    // xem và vì sao nó đứng ngoài — không có dòng này thì "không đổi" và "không
+    // chạy" trông giống nhau trong log.
+    warnings.push(
+      `[image-match] ${summaries.map(line).join(" | ")} — model nói ${modelVerdict}.`,
+    );
+    if (delivery) {
+      const mapped = deliveryMatchFromDecision(delivery.decision);
+      if (mapped && mapped !== modelVerdict) {
+        warnings.push(
+          `Chấm lại ảnh giao hàng bằng kiểm kê: matchesOrder ${modelVerdict} → ${mapped} ` +
+            `(${delivery.reason}).`,
+        );
+        next.deliveryProof = { ...next.deliveryProof, matchesOrder: mapped };
+      }
+    }
+
+    // ---- Ghi đè `reporterImages.support` bằng đối chiếu CẶP ẢNH ----
+    // Đây là chỗ duy nhất đối chiếu cặp ảnh có quyền đổi kết luận, và chỉ đổi
+    // đúng field mà nó đo được: ảnh khách chụp có ủng hộ lời khiếu nại hay không.
+    // Điều kiện `canOverride` (≥ 2/3 số cặp đọc được + phủ đủ món + ảnh không bị
+    // cắt) bảo đảm không bao giờ kết luận từ một phần bàn ăn.
+    if (pairwise && pairwise.pairs.length > 0 && reporterWithPairs) {
+      if (pairwise.canOverride) {
+        const mapped = reporterSupportFromDecision(reporterWithPairs.decision);
+        const current = next.reporterImages?.support ?? "NEUTRAL";
+        if (mapped && mapped !== current) {
+          warnings.push(
+            `Chấm lại ảnh khách chụp bằng cặp ảnh thực đơn: support ${current} → ${mapped} ` +
+              `(${reporterWithPairs.reason}` +
+              (pairwise.wrongItems.length > 0
+                ? `; món khác loại: ${pairwise.wrongItems.join("; ")}`
+                : "") +
+              ").",
+          );
+          next.reporterImages = { ...next.reporterImages, support: mapped };
+        }
+      } else {
+        const why = [
+          pairwise.fullCoverage ? "" : "chưa phủ đủ món trong đơn",
+          pairwise.enoughPairs
+            ? ""
+            : `chỉ đọc được ${pairwise.pairsReadable}/${pairwise.pairsTotal} cặp`,
+          pairwise.coverage === "partial"
+            ? "ảnh khách bị cắt (coverage=partial)"
+            : "",
+        ].filter(Boolean);
+        warnings.push(
+          `Không ghi đè kết luận từ cặp ảnh: ${why.length > 0 ? why.join(", ") : "thiếu căn cứ"}.`,
+        );
+      }
+    }
+    return next;
   }
 
   /**

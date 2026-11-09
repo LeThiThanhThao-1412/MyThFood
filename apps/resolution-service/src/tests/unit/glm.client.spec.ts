@@ -10,7 +10,7 @@ function makeClient(
   return { client: new GlmClient(httpService), httpService };
 }
 
-function glmOk(content: string, model = "glm-4.5-flash") {
+function glmOk(content: string, model = "glm-4.6v") {
   return of({
     data: {
       choices: [{ finish_reason: "stop", index: 0, message: { content } }],
@@ -59,11 +59,11 @@ describe("GlmClient", () => {
   });
 
   describe("cấu hình", () => {
-    it("mặc định dùng GLM free: glm-4.5-flash (chữ) + glm-4.6v-flash (ảnh)", () => {
-      const { client } = makeClient(() => glmOk("{}"));
+    it("mặc định dùng glm-4.6v cho cả chữ và ảnh (bản trả phí, có quota)", () => {
+      const { client } = makeClient(() => glmOk("{ }"));
       expect(client.provider).toBe("glm");
-      expect(client.model).toBe("glm-4.5-flash");
-      expect(client.visionModel).toBe("glm-4.6v-flash");
+      expect(client.model).toBe("glm-4.6v");
+      expect(client.visionModel).toBe("glm-4.6v");
       expect(client.apiBase).toBe("https://open.bigmodel.cn/api/paas/v4");
       expect(client.enabled).toBe(true);
       expect(client.hasApiKey).toBe(true);
@@ -91,7 +91,7 @@ describe("GlmClient", () => {
       });
 
       expect(result.data.ok).toBe(true);
-      expect(result.model).toBe("glm-4.5-flash");
+      expect(result.model).toBe("glm-4.6v");
       expect(result.usage.totalTokens).toBe(18);
 
       const [url, body, config] = httpService.post.mock.calls[0] as any[];
@@ -107,7 +107,7 @@ describe("GlmClient", () => {
 
     it("gửi ảnh bằng chứng dưới dạng image_url data-URI và dùng model vision", async () => {
       const { client, httpService } = makeClient(() =>
-        glmOk("{}", "glm-4.6v-flash"),
+        glmOk("{ }", "glm-4.6v"),
       );
 
       const result = await client.generateJson({
@@ -123,9 +123,9 @@ describe("GlmClient", () => {
         ],
       });
 
-      expect(result.model).toBe("glm-4.6v-flash");
+      expect(result.model).toBe("glm-4.6v");
       const [, body] = httpService.post.mock.calls[0] as any[];
-      expect(body.model).toBe("glm-4.6v-flash");
+      expect(body.model).toBe("glm-4.6v");
       // Nhãn bên đứng ngay trước ảnh tương ứng
       expect(body.messages[1].content[1]).toEqual({
         type: "text",
@@ -264,11 +264,11 @@ describe("GlmClient", () => {
     });
 
     it("chuyển sang model dự phòng khi model chính hết quota (1113)", async () => {
-      process.env.GLM_FALLBACK_MODELS = "glm-4.6v-flash";
+      process.env.GLM_FALLBACK_MODELS = "glm-4.6";
       const { client, httpService } = makeClient((_url: string, body: any) =>
-        body.model === "glm-4.5-flash"
+        body.model === "glm-4.6v"
           ? throwError(() => glmError(429, "1113", "余额不足"))
-          : glmOk('{"ok":true}', "glm-4.6v-flash"),
+          : glmOk('{"ok":true}', "glm-4.6"),
       );
 
       const result = await client.generateJson<{ ok: boolean }>({
@@ -277,7 +277,7 @@ describe("GlmClient", () => {
         schema: { type: "object" },
       });
 
-      expect(result.model).toBe("glm-4.6v-flash");
+      expect(result.model).toBe("glm-4.6");
       // 1113 không đáng thử lại ⇒ đúng 1 lần/model
       expect(httpService.post).toHaveBeenCalledTimes(2);
     });
@@ -296,8 +296,8 @@ describe("GlmClient", () => {
         .catch((e) => e);
 
       expect(error.message).toMatch(/1113/);
-      expect(error.message).toMatch(/glm-4\.5-flash/);
-      expect(error.message).toMatch(/Model free đang dùng được/);
+      expect(error.message).toMatch(/glm-4\.6v/);
+      expect(error.message).toMatch(/Model đang cấu hình/);
       expect(httpService.post).toHaveBeenCalledTimes(1);
     });
 
@@ -319,7 +319,7 @@ describe("GlmClient", () => {
 
     it("model vision chính quá tải (1305) ⇒ chuyển sang model vision dự phòng, vẫn đọc ảnh", async () => {
       const { client } = makeClient((_url: string, body: any) =>
-        body.model === "glm-4.6v-flash"
+        body.model === "glm-4.6v"
           ? throwError(() => glmError(429, "1305", "该模型当前访问量过大"))
           : glmOk('{"ok":true}', String(body.model)),
       );
@@ -332,7 +332,7 @@ describe("GlmClient", () => {
       });
 
       expect(result.data.ok).toBe(true);
-      // Chuỗi vision mặc định: glm-4.6v-flash → glm-4.6v-flashx.
+      // Chuỗi vision mặc định: glm-4.6v → glm-4.6v-flashx.
       expect(result.model).toBe("glm-4.6v-flashx");
       // Ảnh vẫn được đọc ⇒ không bị coi là "mất ảnh".
       expect(result.imagesUsed).toBe(1);
@@ -341,10 +341,12 @@ describe("GlmClient", () => {
     });
 
     it("cả chuỗi vision lỗi ⇒ lùi về model chữ, ghi chú rõ + imageFailure để UI hướng dẫn", async () => {
+      // Giả lập deployment cấu hình model vision free (hay 1305) để chuỗi vision hỏng hết.
+      process.env.GLM_VISION_MODEL = "glm-4.6v-flash";
       process.env.GLM_VISION_FALLBACK_MODELS = "glm-4.6v-flashx";
       const { client, httpService } = makeClient((_url: string, body: any) =>
-        body.model === "glm-4.5-flash"
-          ? glmOk('{"ok":true}', "glm-4.5-flash")
+        body.model === "glm-4.6v"
+          ? glmOk('{"ok":true}', "glm-4.6v")
           : throwError(() => glmError(429, "1305", "该模型当前访问量过大")),
       );
 
@@ -356,7 +358,7 @@ describe("GlmClient", () => {
       });
 
       expect(result.data.ok).toBe(true);
-      expect(result.model).toBe("glm-4.5-flash");
+      expect(result.model).toBe("glm-4.6v");
       expect(result.imagesUsed).toBe(0);
       // Quá tải ⇒ được phép bấm lại sau khi chờ (khác lỗi cấu hình).
       expect(result.imageFailure).toMatchObject({
@@ -370,12 +372,12 @@ describe("GlmClient", () => {
       expect(result.notes?.join(" ")).toMatch(/quá tải/);
       // Mỗi model vision được thử 1 + GLM_OVERLOAD_ATTEMPTS(2) lần.
       const visionCalls = httpService.post.mock.calls.filter(
-        (call: any[]) => call[1]?.model !== "glm-4.5-flash",
+        (call: any[]) => call[1]?.model !== "glm-4.6v",
       );
       expect(visionCalls).toHaveLength(6);
       // Lượt cuối cùng không còn ảnh.
       const lastBody = httpService.post.mock.calls.at(-1)?.[1] as any;
-      expect(lastBody.model).toBe("glm-4.5-flash");
+      expect(lastBody.model).toBe("glm-4.6v");
       expect(typeof lastBody.messages[1].content).toBe("string");
     });
 
@@ -390,7 +392,7 @@ describe("GlmClient", () => {
         images: [{ mimeType: "image/png", base64: "AAAA" }],
       });
 
-      expect(result.model).toBe("glm-4.5-flash");
+      expect(result.model).toBe("glm-4.6v");
       expect(result.notes?.join(" ")).toMatch(/GLM_VISION_MODEL=none/);
       expect(result.imageFailure).toMatchObject({
         reason: "VISION_DISABLED",
@@ -412,7 +414,7 @@ describe("GlmClient", () => {
           prompt: "prompt",
           schema: { type: "object" },
         }),
-      ).rejects.toThrow(/Không tìm thấy model "glm-4\.5-flash"/);
+      ).rejects.toThrow(/Không tìm thấy model "glm-4\.6v"/);
     });
   });
 });

@@ -284,11 +284,136 @@ export const AI_SUGGESTION_SCHEMA = {
 } as const;
 
 /**
+ * Một dòng KIỂM KÊ trong ảnh — nguồn DUY NHẤT, dùng cho cả schema vision của
+ * production (`AI_IMAGE_SCHEMA`) lẫn harness đo (`tests/ai-eval/images`).
+ *
+ * Vì sao phải có `orderItemId`: 4 lượt đo live trên 58 mẫu cho thấy phần lớn sai
+ * số KHÔNG phải do đếm sai mà do **lệch từ vựng** (`chè thập cẩm` ↔ `chè trái
+ * cây`, `trứng chiên` ↔ `trứng ốp la`, `canh chua` ↔ `súp`). Không hàm so tên
+ * nào cứu được việc đó; cho model **trỏ mã dòng đơn** là cách khớp tất định duy
+ * nhất (MAE 0.3342 → 0.0212, báo động sai 8/12 → 0/12).
+ *
+ * Mã dùng `#1..#n` theo **THỨ TỰ DÒNG**, không dùng `menuItemId`: `menuItemId`
+ * có thể null (món không gắn thực đơn) và có thể **TRÙNG** khi cùng một món được
+ * đặt thành 2 dòng khác options — cả hai đều làm mã mất tính duy nhất.
+ */
+export const IMAGE_INVENTORY_ITEM_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["name", "quantity", "orderItemId"],
+  properties: {
+    name: {
+      type: "string",
+      description:
+        "Tên món TIẾNG VIỆT nhìn thấy trong ảnh (dịch nếu là tên nước ngoài).",
+    },
+    quantity: { type: "integer", minimum: 1 },
+    orderItemId: {
+      type: "string",
+      description:
+        'Mã dòng "#n" trong DANH SÁCH MÓN KHÁCH ĐÃ ĐẶT nếu món này ĐÚNG là món đã đặt; món không có trong danh sách thì "".',
+    },
+  },
+} as const;
+
+/** Các field kiểm kê dùng chung cho mỗi bên ảnh (thêm vào object của bên đó). */
+export const IMAGE_INVENTORY_FIELDS = {
+  items: {
+    type: "array",
+    description:
+      "Món đếm được trong ảnh, mỗi dòng kèm số lượng và mã dòng đơn (nếu khớp).",
+    items: IMAGE_INVENTORY_ITEM_SCHEMA,
+  },
+  boxes: {
+    type: "integer",
+    minimum: 0,
+    description: "Số hộp/túi đếm được (không đếm được thì bỏ trống).",
+  },
+  countable: {
+    type: "boolean",
+    description: "false = ảnh mờ/hộp chồng nhau, KHÔNG đếm được số món.",
+  },
+  sealed: {
+    type: "boolean",
+    description:
+      "Túi/hộp còn niêm phong nguyên vẹn (không mở ra xem bên trong được).",
+  },
+  coverage: {
+    type: "string",
+    enum: ["all_items", "partial", "unknown"],
+    description:
+      'Khung hình có thấy TRỌN mọi hộp đang có không: "all_items" / "partial" (bị cắt, bị che) / "unknown".',
+  },
+} as const;
+
+/**
+ * Luật ĐẾM MÓN — nguồn DUY NHẤT cho cả prompt production
+ * (`AI_IMAGE_SYSTEM_INSTRUCTION`) và prompt của harness đo (`run-pairs.ts`).
+ *
+ * Vì sao gom về đây: trước bước này harness giữ một bản luật riêng, nên "số đo
+ * được" (lượt v4: 72.4 % đúng, MAE 0.0449) và "hành vi thật" của app là hai
+ * thứ khác nhau — đo một đằng, chạy một nẻo. Từ nay sửa luật là sửa ở đây.
+ *
+ * Thứ tự khai báo CÓ Ý NGHĨA: `numberOfInventoryRules` đánh số theo đúng thứ tự
+ * này, và các luật ở đây được viết **trung tính theo bên ảnh** để dùng lại được
+ * cho cả ảnh giao hàng lẫn ảnh khiếu nại.
+ */
+export const IMAGE_INVENTORY_RULES = {
+  countOnlyVisible:
+    "Chỉ ghi món THỰC SỰ nhìn thấy trong ảnh đang xét. Không chép danh sách đơn, không đoán.",
+  emptyWhenNoneSeen: "Không nhìn thấy món nào thì items = [] (không bịa).",
+  uncountableWhenBlurry:
+    "Ảnh mờ / bị che / chụp quá gần không đếm được thì countable = false.",
+  translateNames:
+    "Tên món TIẾNG VIỆT, ngắn, đúng như thực đơn Việt gọi. Món có tên nước ngoài thì DỊCH, " +
+    'không để tiếng Anh trần: spaghetti ⇒ "mì Ý", french fries ⇒ "khoai tây chiên", ' +
+    'soda/nước ngọt có gas ⇒ "nước ngọt", hamburger ⇒ "hamburger", cucumber ⇒ "dưa chuột".',
+  ignoreCondiments:
+    "Chỉ đếm MÓN ĂN/UỐNG. Bỏ qua gia vị, nước chấm, đồ trang trí nằm lẫn trong hộp (tỏi, ớt, " +
+    "tương ớt, dầu hào, rau thơm, dưa chuột trang trí) — TRỪ khi chúng được đựng RIÊNG thành " +
+    "một hộp/bát/chén như một món của đơn (VD: mắm tôm, chén nước chấm đi kèm).",
+  coverageIsFraming:
+    'coverage nói về KHUNG HÌNH, KHÔNG phải về số món so với đơn: "all_items" khi mọi ' +
+    'hộp/món trong khung hình đều nhìn thấy TRỌN (không bị cắt, không bị che); "partial" CHỈ ' +
+    'khi có hộp/món bị cắt khỏi khung hoặc bị che không thấy trọn; "unknown" nếu không rõ. ' +
+    'Ảnh có ÍT hộp hơn đơn nhưng thấy trọn các hộp đang có ⇒ VẪN là "all_items".',
+  traceOrderItem:
+    "Mỗi dòng món: điền `orderItemId` = MÃ DÒNG trong DANH SÁCH MÓN KHÁCH ĐÃ ĐẶT nếu đó ĐÚNG " +
+    "là món đã đặt (chép đúng mã như danh sách hiển thị, không tự chế mã); món nhìn thấy nhưng " +
+    'KHÔNG có trong danh sách thì orderItemId = "".',
+  listIsNotEvidence:
+    "Danh sách đơn KHÔNG phải là thứ phải nhìn thấy: thiếu món trong ảnh là chuyện bình " +
+    "thường và phải phản ánh đúng — chỉ ghi món bạn THẤY, không ghi món bạn biết là đã đặt.",
+} as const;
+
+/**
+ * Đánh số luật kiểm kê bắt đầu từ `startAt` (1-based) — hai nơi dùng chung một
+ * nguồn chữ nên không thể lệch nội dung, chỉ khác số thứ tự.
+ *
+ * `orderIdRule: false` dành cho lượt đo **không** có danh sách món (harness
+ * `--menu` tắt): luật đòi điền `orderItemId` sẽ vô nghĩa khi schema không có
+ * trường đó và danh sách đơn không được gửi.
+ */
+export function numberOfInventoryRules(
+  startAt: number,
+  options: { orderIdRule?: boolean } = {},
+): string[] {
+  const { orderIdRule = true } = options;
+  return Object.entries(IMAGE_INVENTORY_RULES)
+    .filter(([key]) => orderIdRule || key !== "traceOrderItem")
+    .map(([, rule], index) => `${startAt + index}. ${rule}`);
+}
+
+/**
  * JSON Schema cho **lượt đọc ảnh** (model vision).
  *
  * Cố ý nhỏ: vision model free trả JSON hỏng khi phải nhả cùng lúc schema lớn,
  * nên chỉ hỏi đúng những gì mắt nhìn thấy được. Kết quả lượt này được nhét vào
  * prompt của lượt suy luận chữ (xem `buildUserPrompt`).
+ *
+ * Phần kiểm kê (`items/boxes/countable/sealed/coverage`) được thêm vào **hai
+ * bên ảnh** nhưng KHÔNG nằm trong `required`: schema cũ vẫn hợp lệ, model cũ
+ * vẫn chạy, và code chấm điểm (`scoreImageMatch`) tự trả `UNCLEAR` khi thiếu.
  */
 export const AI_IMAGE_SCHEMA = {
   type: "object",
@@ -317,6 +442,9 @@ export const AI_IMAGE_SCHEMA = {
           description:
             "Nếu có ẢNH CHUẨN MÓN TỪ THỰC ĐƠN: tối đa 2 câu so sánh hình dạng/bao bì/số hộp với ảnh giao hàng. Không có ảnh chuẩn thì ghi 'Không có ảnh chuẩn món'.",
         },
+        // Kiểm kê ảnh giao hàng: code chấm điểm tất định từ đây
+        // (`scoreImageMatch`), không dựa vào `matchesOrder` model tự phán.
+        ...IMAGE_INVENTORY_FIELDS,
       },
       required: ["visibleItems", "matchesOrder", "analysis"],
     },
@@ -339,6 +467,9 @@ export const AI_IMAGE_SCHEMA = {
           description:
             "Tối đa 3 câu: ảnh chụp gì, có khớp lời khiếu nại không, có dấu hiệu ảnh không liên quan/cắt ghép không.",
         },
+        // Kiểm kê ảnh KHÁCH chụp — đây chính là ảnh harness v4 đo (72.4 % đúng,
+        // MAE 0.0449), nên phần điểm khớp hiển thị cho admin lấy từ đây.
+        ...IMAGE_INVENTORY_FIELDS,
       },
       required: ["visibleItems", "support", "analysis"],
     },
@@ -384,6 +515,12 @@ export const AI_IMAGE_SCHEMA = {
   ],
 } as const;
 
+/**
+ * Số thứ tự bắt đầu của khối luật kiểm kê trong prompt ảnh. Tách thành hằng để
+ * thêm/bớt luật dùng chung ở `IMAGE_INVENTORY_RULES` không phải sửa tay số cuối.
+ */
+const IMAGE_INVENTORY_RULE_START = 8;
+
 export const AI_IMAGE_SYSTEM_INSTRUCTION = [
   "Bạn là chuyên viên điều tra của sàn giao đồ ăn, đang XEM ẢNH BẰNG CHỨNG.",
   "Nhiệm vụ DUY NHẤT: mô tả trung thực những gì NHÌN THẤY và đối chiếu với MÓN KHÁCH ĐÃ ĐẶT.",
@@ -395,6 +532,11 @@ export const AI_IMAGE_SYSTEM_INSTRUCTION = [
   "5. Không suy đoán ai có lỗi, không kết luận thay admin — chỉ nêu sự kiện quan sát được.",
   "6. Trả tiếng Việt, không markdown, chỉ JSON đúng schema.",
   "7. Nếu có ẢNH CHUẨN MÓN TỪ THỰC ĐƠN, chỉ dùng để đối chiếu hình dạng/bao bì/số hộp; ảnh quảng cáo có thể khác thực tế — khác biệt nhỏ KHÔNG đồng nghĩa sai món.",
+  "",
+  "KIỂM KÊ MÓN (bắt buộc cho deliveryProof.items và reporterImages.items — code đếm lại từ đây, không dùng lời phán):",
+  ...numberOfInventoryRules(IMAGE_INVENTORY_RULE_START),
+  `${IMAGE_INVENTORY_RULE_START + Object.keys(IMAGE_INVENTORY_RULES).length}. ` +
+    "Chỉ đếm món trong ẢNH GIAO HÀNG và ẢNH KHIẾU NẠI; KHÔNG đếm món trong ẢNH CHUẨN MÓN TỪ THỰC ĐƠN.",
 ].join("\n");
 
 /** Món đã đặt dạng dòng chữ — dùng chung cho prompt chữ và prompt ảnh. */
@@ -413,6 +555,23 @@ export function orderItemsLines(
       : "";
     return `${index + 1}. ${item.quantity} × ${item.name}${optionText}${note}`;
   });
+}
+
+/**
+ * Món đã đặt kèm MÃ DÒNG (`#1..#n`) — dùng cho **lượt đọc ảnh**.
+ *
+ * Vì sao phải có mã trong danh sách: model không trỏ được vào dòng đơn thì mọi
+ * phép so tên đều thành so chuỗi (`chè thập cẩm` vs `chè trái cây`) và đó chính
+ * là nguồn sai số lớn nhất đo được (MAE 0.3342 → 0.0212 khi có mã). Định dạng
+ * giữ nguyên phần đuôi của `orderItemsLines` để prompt chữ và prompt ảnh không
+ * mô tả cùng một đơn theo hai kiểu khác nhau.
+ */
+export function orderItemsLinesWithIds(
+  items: CaseContextSnapshot["orderItems"],
+): string[] {
+  return orderItemsLines(items).map((line, index) =>
+    line.replace(/^\d+\.\s/, `#${index + 1} · `),
+  );
 }
 
 /**
@@ -527,14 +686,18 @@ export function imageLabelEntries(
 
 export function buildImagePrompt(context: CaseContextSnapshot): string {
   const lines: string[] = [];
-  const ordered = orderItemsLines(context.orderItems);
+  const ordered = orderItemsLinesWithIds(context.orderItems);
 
-  lines.push("MÓN KHÁCH ĐÃ ĐẶT (mốc đối chiếu):");
+  lines.push("MÓN KHÁCH ĐÃ ĐẶT (mốc đối chiếu, mỗi dòng có MÃ DÒNG #n):");
   if (ordered.length > 0) {
     lines.push(...ordered);
+    lines.push(
+      'Mỗi món đếm được trong ảnh: điền `orderItemId` = mã "#n" của dòng đơn tương ứng; ' +
+        'món nhìn thấy nhưng KHÔNG có trong danh sách thì orderItemId = "".',
+    );
   } else {
     lines.push(
-      '- KHÔNG có dữ liệu món đã đặt (D1 thiếu) ⇒ deliveryProof.matchesOrder="UNCLEAR" và ghi rõ trong analysis.',
+      '- KHÔNG có dữ liệu món đã đặt (D1 thiếu) ⇒ deliveryProof.matchesOrder="UNCLEAR", items = [] ở cả hai bên, và ghi rõ trong analysis.',
     );
   }
   lines.push("");
@@ -570,6 +733,184 @@ export function buildImagePrompt(context: CaseContextSnapshot): string {
     }
   }
   lines.push("");
+  lines.push("Trả về JSON đúng schema.");
+  return lines.join("\n");
+}
+
+/**
+ * Schema NHỎ cho lượt đọc MỘT CẶP ẢNH ([ảnh thực đơn của quán] + [ảnh khách chụp]).
+ *
+ * Vì sao phải là schema riêng, không dùng `AI_IMAGE_SCHEMA`: lượt cặp chỉ trả lời
+ * 4 câu (đúng món không / giống bao nhiêu % / đếm được mấy phần / ảnh có bị cắt
+ * không). Schema càng nhỏ thì model vision free càng ít trả JSON hỏng, và mỗi
+ * trường ở đây đều được CODE kiểm tra lại kiểu (`parsePairReading`).
+ */
+export const AI_PAIR_IMAGE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "nameSeen",
+    "quantitySeen",
+    "sameDish",
+    "similarityPercent",
+    "countable",
+    "coverage",
+  ],
+  properties: {
+    nameSeen: {
+      type: "string",
+      description:
+        'Tên món TIẾNG VIỆT nhìn thấy trong ẢNH 2 (ảnh khách chụp). Không thấy món thì "".',
+    },
+    quantitySeen: {
+      type: "integer",
+      minimum: 0,
+      description:
+        "Số phần của ĐÚNG món này đếm được trong ẢNH 2 (0 nếu không thấy/không đếm được).",
+    },
+    sameDish: {
+      type: "boolean",
+      description:
+        "ẢNH 2 có phải ĐÚNG món trong ẢNH 1 (ảnh nhà hàng) không: true = cùng món, false = KHÁC món.",
+    },
+    similarityPercent: {
+      type: "integer",
+      minimum: 0,
+      maximum: 100,
+      description:
+        "Mức giống nhau về MÓN/hình thức giữa ẢNH 1 và ẢNH 2 (0–100). Khác góc chụp/ánh sáng chỉ trừ ít; " +
+        "khác nguyên liệu, khác món thì phải thấp.",
+    },
+    countable: {
+      type: "boolean",
+      description: "false = ảnh mờ/hộp chồng nhau, KHÔNG đếm được số phần.",
+    },
+    boxes: {
+      type: "integer",
+      minimum: 0,
+      description:
+        "Số hộp/túi của món này đếm được trong ẢNH 2 (bỏ trống nếu không đếm được).",
+    },
+    sealed: {
+      type: "boolean",
+      description: "Túi/hộp trong ẢNH 2 còn niêm phong nguyên vẹn.",
+    },
+    coverage: {
+      type: "string",
+      enum: ["all_items", "partial", "unknown"],
+      description:
+        'Khung hình ẢNH 2 có thấy TRỌN mọi hộp đang có không: "all_items" / "partial" (bị cắt, bị che) / "unknown".',
+    },
+    note: {
+      type: "string",
+      description:
+        "Tối đa 2 câu: khác biệt chính giữa hai ảnh (nguyên liệu, cách trình bày, số hộp).",
+    },
+  },
+  propertyOrdering: [
+    "nameSeen",
+    "quantitySeen",
+    "sameDish",
+    "similarityPercent",
+    "countable",
+    "coverage",
+    "boxes",
+    "sealed",
+    "note",
+  ],
+} as const;
+
+export const AI_PAIR_IMAGE_SYSTEM_INSTRUCTION = [
+  "Bạn là chuyên viên điều tra của sàn giao đồ ăn, đang SO SÁNH ĐÚNG HAI ẢNH của MỘT món.",
+  "ẢNH 1 = ảnh món do NHÀ HÀNG tự đăng lên thực đơn (ảnh quảng cáo, có thể đẹp hơn thực tế).",
+  "ẢNH 2 = ảnh do KHÁCH chụp khi nhận hàng (ảnh thật, có thể mờ/tối/chụp vội).",
+  "NGUYÊN TẮC:",
+  "1. Chỉ mô tả thứ NHÌN THẤY trong hai ảnh. Không suy đoán ai đúng ai sai, không kết luận bồi thường.",
+  "2. ẢNH 1 là ảnh QUẢNG CÁO: khác góc chụp, ánh sáng, cách bày biện KHÔNG phải sai món. Chỉ kết luận sameDish=false khi nguyên liệu/món nhìn thấy rõ ràng KHÁC (cơm gà vs cơm sườn, trà sữa vs nước cam).",
+  '3. Không thấy món nào trong ẢNH 2 (ảnh chụp túi niêm phong, ảnh nền, ảnh mờ) ⇒ countable=false, quantitySeen=0, coverage="unknown".',
+  "4. Đếm số phần của ĐÚNG món đó trong ẢNH 2, KHÔNG đếm món khác trong khung hình. Bỏ qua gia vị/nước chấm trang trí.",
+  "5. similarityPercent là mức giống nhau về MÓN: cùng món khác góc chụp ≥ 60; khác nguyên liệu chính ≤ 35; khác hẳn món ≤ 15.",
+  "6. Trả tiếng Việt, không markdown, chỉ JSON đúng schema.",
+  "",
+  "KIỂM KÊ (bắt buộc):",
+  ...numberOfInventoryRules(8),
+  `${8 + Object.keys(IMAGE_INVENTORY_RULES).length}. Chỉ đếm món trong ẢNH 2 (ảnh khách chụp) — KHÔNG đếm số món trong ẢNH 1.`,
+].join("\n");
+
+/** Phần dòng đơn cần cho prompt cặp ảnh (không phụ thuộc tầng application). */
+export interface PairPromptTarget {
+  orderItemId: string;
+  orderItemIds: string[];
+  name: string;
+  description: string | null;
+  orderedQuantity: number;
+  unitPrice: number | null;
+  options: string | null;
+}
+
+/**
+ * Prompt của lượt đọc MỘT CẶP ẢNH.
+ *
+ * Bắt buộc nêu rõ món đang xét (kèm mô tả + tuỳ chọn + số phần đã đặt) vì model
+ * chỉ thấy hai ảnh: không có mốc "món này là gì" thì mọi so sánh đều thành "hai
+ * ảnh đồ ăn giống nhau". Mô tả món lấy từ `menu_items.description` — đây là chỗ
+ * duy nhất chứa thành phần món (ảnh thực đơn không nói được "kèm canh rong biển").
+ */
+export function buildPairImagePrompt(
+  context: CaseContextSnapshot,
+  target: PairPromptTarget,
+): string {
+  const lines: string[] = [];
+  lines.push("HAI ẢNH GỬI KÈM, ĐÚNG thứ tự:");
+  lines.push("1. [ẢNH 1 — ẢNH MÓN DO NHÀ HÀNG ĐĂNG LÊN THỰC ĐƠN]");
+  lines.push("2. [ẢNH 2 — ẢNH KHÁCH CHỤP KHI NHẬN HÀNG]");
+  lines.push("");
+  lines.push(
+    `MÓN ĐANG XÉT — dòng đơn ${target.orderItemId}` +
+      (target.orderItemIds.length > 1
+        ? ` (gồm ${target.orderItemIds.join(", ")})`
+        : "") +
+      ":",
+  );
+  lines.push(`- Tên món theo đơn: ${target.name}`);
+  if (target.description)
+    lines.push(`- Mô tả món trên thực đơn: ${target.description}`);
+  if (target.options) lines.push(`- Tùy chọn khách chọn: ${target.options}`);
+  lines.push(`- Số phần khách đã đặt: ${target.orderedQuantity}`);
+  if (target.unitPrice !== null && target.unitPrice > 0) {
+    lines.push(`- Đơn giá khách trả: ${Math.round(target.unitPrice)} VND/phần`);
+  }
+  if (typeof context.orderTotalAmount === "number") {
+    lines.push(
+      `- Tổng tiền cả đơn: ${Math.round(context.orderTotalAmount)} VND`,
+    );
+  }
+  lines.push("");
+  lines.push(`VỤ VIỆC ${context.case.caseNumber} · ${context.case.category}`);
+  lines.push(`Khách khiếu nại: ${context.case.description}`);
+  if (context.case.respondentResponse) {
+    lines.push(`Quán giải trình: ${context.case.respondentResponse}`);
+  }
+  lines.push("");
+  lines.push("TRẢ LỜI 4 CÂU (chỉ dựa trên hai ảnh):");
+  lines.push("1. ẢNH 2 có phải ĐÚNG món ở trên không ⇒ sameDish = true/false.");
+  lines.push(
+    "2. Mức giống nhau về món giữa ẢNH 1 và ẢNH 2 ⇒ similarityPercent (0–100).",
+  );
+  lines.push(
+    "3. Đếm được bao nhiêu PHẦN của đúng món đó trong ẢNH 2 ⇒ quantitySeen.",
+  );
+  lines.push("4. Khung hình ẢNH 2 có thấy trọn mọi hộp không ⇒ coverage.");
+  lines.push("");
+  lines.push("PHÂN BIỆT HAI TRƯỜNG HỢP KHÁC NHAU (rất quan trọng):");
+  lines.push(
+    "- ẢNH 2 KHÔNG thấy món nào đếm được (mờ, chụp nền, chỉ thấy túi niêm phong) ⇒ " +
+      'countable=false, quantitySeen=0, coverage="unknown".',
+  );
+  lines.push(
+    "- ẢNH 2 thấy MÓN KHÁC (khác nguyên liệu/món) ⇒ countable=true, sameDish=false, " +
+      "nameSeen = tên món nhìn thấy, quantitySeen = số phần của món đó.",
+  );
   lines.push("Trả về JSON đúng schema.");
   return lines.join("\n");
 }
@@ -731,6 +1072,13 @@ export function buildUserPrompt(
       );
       if (item.optionGroups.length > 0) {
         lines.push(`  tùy chọn: ${item.optionGroups.join(" | ")}`);
+      }
+      // Mô tả món là mốc "thành phần" duy nhất khi khách khiếu nại SAI MÓN /
+      // thiếu thành phần: ảnh thực đơn chỉ cho biết hình thức, còn "cơm gà xối mỡ
+      // kèm canh rong biển" nằm ở `description`. Không render ⇒ model không có
+      // mốc nào để nói "giao thiếu canh".
+      if (item.description) {
+        lines.push(`  mô tả món: ${item.description}`);
       }
       if (item.imageUrl) lines.push(`  ảnh chuẩn: ${item.imageUrl}`);
     }

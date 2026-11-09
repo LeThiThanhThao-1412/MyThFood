@@ -6,6 +6,8 @@ import {
   Severity,
   Verdict,
 } from "../../case/domain/case.enums";
+import type { ImageMatchSummary } from "./image-match";
+import type { InventoryCoverage } from "./item-inventory";
 
 // ============================================================================
 // Nguồn dữ liệu (data sources) — xem docs/RESOLUTION_SERVICE_DESIGN.md
@@ -613,6 +615,32 @@ export const AI_DELIVERY_MATCH = ["MATCH", "MISMATCH", "UNCLEAR"] as const;
 export type AiDeliveryMatch = (typeof AI_DELIVERY_MATCH)[number];
 
 /**
+ * Kiểm kê model đọc được trong MỘT bên ảnh (khớp `IMAGE_INVENTORY_FIELDS` của
+ * `AI_IMAGE_SCHEMA`).
+ *
+ * Toàn bộ field đều optional: đây là câu trả lời của model, không phải dữ liệu
+ * hệ thống — schema cũ hoặc model bỏ khối này thì phần còn lại vẫn phải chạy.
+ * Việc chấm điểm dùng `labelFromInventory` (kiểm tra kiểu lại từ đầu) chứ không
+ * tin kiểu ở đây.
+ */
+export interface AiImageInventory {
+  /** Món đếm được, mỗi dòng kèm mã dòng đơn model trỏ tới (`#n`). */
+  items?: {
+    name: string;
+    quantity: number;
+    orderItemId?: string;
+  }[];
+  /** Số hộp/túi đếm được. */
+  boxes?: number;
+  /** `false` = ảnh mờ/hộp chồng nhau, không đếm được. */
+  countable?: boolean;
+  /** Túi/hộp còn niêm phong nguyên vẹn. */
+  sealed?: boolean;
+  /** Khung hình có thấy TRỌN mọi hộp đang có không (KHÔNG phải số món so với đơn). */
+  coverage?: InventoryCoverage;
+}
+
+/**
  * Kết quả của **lượt đọc ảnh riêng** (model vision, schema nhỏ).
  *
  * Tách khỏi lượt suy luận chữ vì model vision free thường trả JSON hỏng khi phải
@@ -626,12 +654,12 @@ export interface AiImageFindings {
     /** Ảnh giao hàng có khớp MÓN ĐÃ ĐẶT hay không. */
     matchesOrder: AiDeliveryMatch;
     analysis: string;
-  };
+  } & AiImageInventory;
   reporterImages: {
     visibleItems: string;
     support: AiImageSupport;
     analysis: string;
-  };
+  } & AiImageInventory;
   respondentImages: {
     visibleItems: string;
     support: AiImageSupport;
@@ -639,6 +667,40 @@ export interface AiImageFindings {
   };
   /** So sánh ảnh hai bên + ảnh giao hàng với món đã đặt. */
   sideComparison: string;
+  /**
+   * Kết quả ghép cặp [ảnh thực đơn] ↔ [ảnh khách chụp] do **CODE** tổng hợp.
+   *
+   * KHÔNG do model trả về: mỗi cặp là một lượt gọi vision riêng, code gộp lại
+   * (số phần lấy MAX theo món) rồi gắn vào đây để lượt suy luận chữ đọc được cả
+   * `similarityAvg` lẫn `wrongItems` — hai thứ mà một lượt đọc ảnh gộp không thể
+   * cung cấp.
+   */
+  pairComparison?: {
+    pairs: number;
+    readable: number;
+    similarityAvg: number | null;
+    /** Món KHÁC LOẠI so với ảnh thực đơn (kem theo % giống). */
+    wrongItems: string[];
+    /** Dòng đơn chưa ghép được cặp ảnh — không được suy ra "thiếu". */
+    missingPairs: string[];
+    canOverride: boolean;
+    details: {
+      orderItemId: string;
+      name: string;
+      orderedQuantity: number;
+      quantitySeen: number;
+      sameDish: boolean;
+      similarityPercent: number | null;
+    }[];
+  };
+  /**
+   * Điểm khớp do **CODE** chấm từ kiểm kê ở trên (`evaluateEvidenceImage`), gắn
+   * vào đây để (a) lượt suy luận chữ đọc được ngay trong `<PHAN_TICH_ANH>` mà
+   * không phải đổi prompt, (b) panel admin/log có số tất định để audit.
+   *
+   * KHÔNG do model trả về — model không thấy và không được hỏi field này.
+   */
+  imageMatch?: ImageMatchSummary[];
 }
 
 /** Ảnh bằng chứng của **một bên**, đã phân tích riêng. */
@@ -767,6 +829,18 @@ export interface CaseAiSuggestion {
   warnings: string[];
   /** Số ảnh chuẩn món từ thực đơn đã gửi cho model (0 = không có). */
   menuImagesAnalyzed?: number;
+  /**
+   * Kết quả ghép cặp [ảnh thực đơn] ↔ [ảnh khách chụp] do **CODE** tổng hợp.
+   *
+   * `undefined` khi vụ việc không thuộc nhóm món ăn, không dựng được cặp ảnh
+   * nào, hoặc đang tắt ghép cặp — panel admin khi đó ẩn khối 🔗.
+   */
+  pairComparison?: AiImageFindings["pairComparison"];
+  /**
+   * Điểm khớp ảnh tất định do code chấm (chỉ gắn khi `AI_IMAGE_MATCH_SCORING=on`).
+   * Panel admin hiện badge "khớp/thiếu/sai món" từ đây thay vì suy từ câu văn.
+   */
+  imageMatch?: AiImageFindings["imageMatch"];
   /** Tầng phân tích chi tiết (tùy chọn — bản ngắn phía trên vẫn là bản chính). */
   sourceAssessment?: AiSourceAssessment[];
   detailedFindings?: AiDetailedFinding[];

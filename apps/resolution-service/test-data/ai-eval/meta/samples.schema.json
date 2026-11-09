@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mythfood.local/schemas/ai-eval/samples.schema.json",
+  "title": "MyThFood AI image-match evaluation sample",
+  "description": "Một dòng trong samples.jsonl: một cặp ảnh (chuẩn ↔ ảnh khách chụp) + nhãn vàng để chấm điểm. Nhãn `expected.verdict` dùng đúng bộ INVENTORY_VERDICT của src/modules/assistant/domain/item-inventory.ts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sampleId",
+    "split",
+    "kind",
+    "comboId",
+    "standardImage",
+    "claimImage",
+    "expected"
+  ],
+  "properties": {
+    "sampleId": {
+      "type": "string",
+      "pattern": "^(MIS|WRO|COM)-combo[0-9]+-[a-z0-9-]+$",
+      "description": "ID ổn định, sinh từ tên file: MIS=thiếu món, WRO=sai món, COM=đầy đủ (đối chứng âm)."
+    },
+    "split": {
+      "enum": ["real", "synthetic"],
+      "description": "real = ảnh chụp thật; synthetic = ảnh do AI sinh/biến đổi. Hai tập này PHẢI báo cáo riêng, không lấy trung bình."
+    },
+    "kind": {
+      "enum": ["MISSING", "WRONG_ITEM", "COMPLETE"],
+      "description": "Loại khiếm khuyết của ảnh khách chụp."
+    },
+    "comboId": { "type": "string", "pattern": "^combo[0-9]+$" },
+    "standardImage": {
+      "type": "string",
+      "pattern": "^images/combo[0-9]+/[^/]+\\.(jpg|jpeg|png|webp)$",
+      "description": "Đường dẫn tương đối từ test-data/ai-eval/ tới ảnh chuẩn (đầy đủ, đúng đơn)."
+    },
+    "claimImage": {
+      "type": "string",
+      "pattern": "^images/combo[0-9]+/[^/]+\\.(jpg|jpeg|png|webp)$",
+      "description": "Đường dẫn tương đối từ test-data/ai-eval/ tới ảnh khách gửi."
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict",
+        "missing",
+        "extra",
+        "matchedQuantity",
+        "totalQuantity",
+        "matchScore"
+      ],
+      "properties": {
+        "verdict": {
+          "enum": ["MATCH", "MISSING", "EXTRA", "UNCLEAR"],
+          "description": "Khớp INVENTORY_VERDICT: MATCH=kết luận hợp lệ (duyệt hoàn), MISSING=thiếu món, EXTRA=có món lạ, UNCLEAR=ảnh không đủ căn cứ."
+        },
+        "missing": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/entry" },
+          "description": "Món thiếu so với đơn (đã gồm cả món bị thay bằng món khác)."
+        },
+        "extra": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/entry" },
+          "description": "Món có trong ảnh nhưng không nằm trong đơn (dùng cho loại SAI MÓN)."
+        },
+        "matchedQuantity": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Số phần khớp đúng kỳ vọng = totalQuantity − Σmissing."
+        },
+        "totalQuantity": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Tổng số phần trong đơn."
+        },
+        "matchScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "% trùng khớp THEO THÀNH PHẦN = matchedQuantity / totalQuantity. Không phải độ giống ảnh."
+        }
+      }
+    },
+    "replacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name"],
+      "properties": {
+        "key": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "description": "Chỉ có ở mẫu SAI MÓN: món đã bị thay bằng gì."
+    },
+    "captureVariant": {
+      "type": "string",
+      "description": "same = cùng khung chụp với ảnh chuẩn; khác (nghieng, toi, crop…) = biến thể chụp lại, dùng cho đối chứng âm."
+    },
+    "notes": { "type": "string" }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "quantity"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "quantity": { "type": "number", "minimum": 1 }
+      }
+    }
+  }
+}

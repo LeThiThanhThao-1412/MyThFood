@@ -47,9 +47,9 @@ const GLM_OVERLOAD_CODES = ["1302", "1305"];
 /**
  * Model vision dự phòng mặc định khi model chính quá tải.
  *
- * `glm-4.6v-flash` là bản **free** ⇒ hay 1305; `glm-4.6v-flashx` là bản trả phí
- * rẻ cùng thế hệ (nhanh, ít nghẽn). Nếu tài khoản không có gói cho flashx, GLM
- * trả 1113 và client tự chuyển tiếp model kế tiếp trong chuỗi.
+ * Từ 09/11/2026 model chính là `glm-4.6v` (bản trả phí, cần gói/quota) nên chuỗi dự
+ * phòng giữ các bản cùng thế hệ: `glm-4.6v-flashx` (trả phí rẻ, nhanh) và `glm-4.5v`.
+ * Model nào tài khoản không có gói thì GLM trả 1113 và client tự chuyển model kế tiếp.
  */
 const DEFAULT_VISION_FALLBACKS = ["glm-4.6v-flashx", "glm-4.5v"];
 
@@ -75,9 +75,11 @@ function formatBytes(bytes: number): string {
  * - Gemini: `gemini-3.8-flash`/`3.7-flash`/`flash-latest` liên tục trả **503
  *   "high demand"**, `gemini-pro-latest` **429** hết quota, `2.5-flash`/**404**
  *   (Google khoá với tài khoản mới) ⇒ demo rất dễ gãy.
- * - GLM: key hiện có dùng được model **free**: `glm-4.5-flash` (chữ) và
- *   `glm-4.6v-flash` (chữ + ảnh); cả hai đều trả **200** kèm JSON hợp lệ khi bật
- *   `response_format: json_object`.
+ * - GLM: tài khoản có gói/quota dùng được cả model trả phí; từ 09/11/2026 cấu hình
+ *   chốt là **`glm-4.6v` cho cả chữ và ảnh** (đo thật: đủ 15/15 field JSON, ~84s với
+ *   `thinking=auto` / ~40s khi `thinking=disabled`; đọc ảnh 3/3 mẫu đúng nhãn vàng).
+ *   Bản free (`glm-4.5-flash`, `glm-4.6v-flash`) vẫn dùng được nhưng hay 429/1305 khi
+ *   đông người dùng nên chỉ để làm phương án khi tài khoản hết gói.
  *
  * Ảnh bằng chứng: GLM tách model chữ và model vision (model chữ trả `1210` nếu
  * nhận ảnh) ⇒ client tự chọn model theo dữ liệu vào; nếu model vision hỏng thì
@@ -102,23 +104,23 @@ export class GlmClient implements AssistantLlmClient {
     return this.apiKey.length > 0;
   }
 
-  /** Model cho dữ liệu **chữ** (mặc định model free của GLM). */
+  /** Model cho dữ liệu **chữ** (mặc định `glm-4.6v` — bản trả phí, cần gói/quota). */
   get model(): string {
-    return (process.env.GLM_MODEL ?? "").trim() || "glm-4.5-flash";
+    return (process.env.GLM_MODEL ?? "").trim() || "glm-4.6v";
   }
 
   /**
    * Model nhận **ảnh** bằng chứng.
    *
    * Đặt `GLM_VISION_MODEL=none` để tắt hẳn phần ảnh (không tốn lượt gọi nào).
-   * Đo thật 10/2026: `glm-4.6v-flash` đọc ảnh + trả JSON tốt với prompt ngắn,
-   * nhưng với prompt schema lớn của module thì hay trả JSON lỗi — nên client luôn
-   * có đường lùi "bỏ ảnh, phân tích bằng model chữ" và ghi chú lại cho admin.
+   * Mặc định `glm-4.6v` — cùng model với đường chữ: đo thật 09/11/2026 nó vừa đọc
+   * ảnh (3/3 mẫu đúng nhãn vàng của bộ `test-data/ai-eval`) vừa trả JSON schema lớn
+   * (15/15 field). Bản free `glm-4.6v-flash` hay trả 1305/429 nên không dùng mặc định.
    */
   get visionModel(): string | undefined {
     const raw = (process.env.GLM_VISION_MODEL ?? "").trim();
     if (raw.toLowerCase() === "none") return undefined;
-    return raw || "glm-4.6v-flash";
+    return raw || "glm-4.6v";
   }
 
   get apiBase(): string {
@@ -169,9 +171,9 @@ export class GlmClient implements AssistantLlmClient {
   /**
    * Model dự phòng khi model chính **không dùng được** (hết quota/không tồn tại).
    *
-   * Mặc định **không có** (`none`): model vision free (`glm-4.6v-flash`) không làm
-   * nổi schema lớn — đo thật cho ra JSON hỏng, nên không đưa nó vào chuỗi dự phòng
-   * của đường chữ. Muốn bật lại: `GLM_FALLBACK_MODELS=glm-4.6v-flash`.
+   * Mặc định **không có** (`none`): `glm-4.6v` đã đảm nhận cả chữ lẫn ảnh nên không
+   * cần lấy model vision khác làm dự phòng cho đường chữ. Muốn bật: đặt
+   * `GLM_FALLBACK_MODELS=glm-4.6` (model chữ trả phí cùng thế hệ).
    */
   get fallbackModels(): string[] {
     const raw = (process.env.GLM_FALLBACK_MODELS ?? "").trim();
@@ -509,8 +511,8 @@ export class GlmClient implements AssistantLlmClient {
   /**
    * Tham số `thinking` gửi lên GLM.
    *
-   * - Lượt **có ảnh**: mặc định tắt thinking — model vision free hay "suy nghĩ"
-   *   dài rồi bị cắt token ⇒ JSON cụt (đo thật: trả nội dung không phải JSON).
+   * - Lượt **có ảnh**: mặc định tắt thinking — model vision hay "suy nghĩ" dài rồi
+   *   bị cắt token ⇒ JSON cụt (đo thật: trả nội dung không phải JSON).
    * - Lượt **thử lại vì JSON hỏng**: luôn tắt thinking.
    * - Còn lại: theo `GLM_THINKING` (`auto` ⇒ không gửi tham số).
    */
@@ -839,7 +841,9 @@ export class GlmClient implements AssistantLlmClient {
       return withMeta(
         new ServiceUnavailableException(
           `Tài khoản GLM không có gói/quota cho model "${offendingModel}" (1113): ${message} ` +
-            `Model free đang dùng được: "${this.model}" (chữ) và "${this.visionModel}" (ảnh).`,
+            `Model đang cấu hình: "${this.model}" (chữ) và "${this.visionModel}" (ảnh). ` +
+            `Nếu model đó cũng báo 1113, nạp thêm gói/quota hoặc đổi GLM_MODEL/GLM_VISION_MODEL ` +
+            `sang bản free ("glm-4.5-flash" cho chữ, "glm-4.6v-flash" cho ảnh).`,
         ),
       );
     }

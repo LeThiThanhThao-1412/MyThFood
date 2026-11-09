@@ -1,0 +1,163 @@
+{
+  "_readme": "Khai báo thành phần của từng combo. unitPrice = null ⇒ chưa có hoá đơn, khi đó KHÔNG tính refundAmount. 'key' là viết tắt xuất hiện trong tên file ảnh; 'aliases' là các viết tắt khác cùng nghĩa (đã gặp trong bộ ảnh). 'wrongItemCatalog' ánh xạ slug món thay thế trong tên file sai món → tên đọc được.",
+  "wrongItemCatalog": [
+    { "slug": "duiga", "name": "đùi gà nướng" },
+    { "slug": "duiganuong", "name": "đùi gà nướng" },
+    { "slug": "sandwichga", "name": "sandwich gà" },
+    { "slug": "xucxich", "name": "xúc xích chiên" },
+    { "slug": "chagio", "name": "chả giò" },
+    { "slug": "suonram", "name": "sườn ram" },
+    { "slug": "chethai", "name": "chè Thái" }
+  ],
+  "combos": [
+    {
+      "comboId": "combo1",
+      "name": "Combo gà rán",
+      "components": [
+        { "key": "ga", "name": "gà rán", "quantity": 1, "unitPrice": null },
+        { "key": "mi", "name": "mì ý", "quantity": 1, "unitPrice": null },
+        {
+          "key": "khoai",
+          "name": "khoai tây chiên",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        { "key": "nuoc", "name": "nước ngọt", "quantity": 1, "unitPrice": null }
+      ]
+    },
+    {
+      "comboId": "combo2",
+      "name": "Combo hamburger",
+      "components": [
+        {
+          "key": "hambuger",
+          "name": "hamburger bò",
+          "quantity": 1,
+          "unitPrice": null,
+          "aliases": ["hamburger"]
+        },
+        {
+          "key": "nuoc",
+          "name": "nước ngọt",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "key": "khoai",
+          "name": "khoai tây chiên",
+          "quantity": 1,
+          "unitPrice": null
+        }
+      ]
+    },
+    {
+      "comboId": "combo3",
+      "name": "Combo bánh tráng trộn",
+      "components": [
+        {
+          "key": "banhtrangtron",
+          "name": "bánh tráng trộn",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "key": "cavien",
+          "name": "cá viên chiên",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        { "key": "trasua", "name": "trà sữa", "quantity": 2, "unitPrice": null }
+      ]
+    },
+    {
+      "comboId": "combo4",
+      "name": "Combo bún đậu mắm tôm",
+      "components": [
+        { "key": "bunla", "name": "bún lá", "quantity": 1, "unitPrice": null },
+        {
+          "key": "dauhuchien",
+          "name": "đậu hũ chiên",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "key": "thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "key": "chacom",
+          "name": "chả cốm",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "key": "nemchuaran",
+          "name": "nem chua rán",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "key": "longdoi",
+          "name": "lòng dồi",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        { "key": "rau", "name": "rau sống", "quantity": 1, "unitPrice": null },
+        { "key": "mamtom", "name": "mắm tôm", "quantity": 1, "unitPrice": null }
+      ]
+    },
+    {
+      "comboId": "combo5",
+      "name": "Combo cơm sườn",
+      "components": [
+        { "key": "com", "name": "cơm trắng", "quantity": 1, "unitPrice": null },
+        {
+          "key": "suon",
+          "name": "sườn nướng",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "key": "trungopla",
+          "name": "trứng ốp la",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        { "key": "sup", "name": "súp", "quantity": 1, "unitPrice": null },
+        {
+          "key": "trada",
+          "name": "trà đá",
+          "quantity": 1,
+          "unitPrice": null,
+          "aliases": ["nuoc"]
+        }
+      ]
+    },
+    {
+      "comboId": "combo6",
+      "name": "Combo chè trái cây",
+      "components": [
+        {
+          "key": "chethapcam",
+          "name": "chè thập cẩm",
+          "quantity": 2,
+          "unitPrice": null
+        },
+        {
+          "key": "diatraicay",
+          "name": "đĩa trái cây",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "key": "tradau",
+          "name": "trà dâu",
+          "quantity": 2,
+          "unitPrice": null
+        }
+      ]
+    }
+  ]
+}

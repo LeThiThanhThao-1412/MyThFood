@@ -33,7 +33,7 @@ describe("AssistantModule — chọn provider theo AI_PROVIDER", () => {
 
     const client = await resolve();
     expect(client.provider).toBe("glm");
-    expect(client.model).toBe("glm-4.5-flash");
+    expect(client.model).toBe("glm-4.6v");
   });
 
   it("AI_PROVIDER=gemini ⇒ dùng Gemini", async () => {

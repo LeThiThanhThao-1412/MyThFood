@@ -22,6 +22,11 @@ import { LlmInlineImage } from "../infrastructure/llm.types";
 import { deriveGpsSignals } from "./gps-signals";
 import { buildImageOrder } from "./image-plan";
 import {
+  planImagePairs,
+  type ImagePairSkip,
+  type ImagePairTarget,
+} from "./pair-plan";
+import {
   createPiiContext,
   PiiContext,
   piiReport,
@@ -34,6 +39,37 @@ import { buildCaseTimeline } from "./timeline";
 export interface BuiltCaseContext {
   snapshot: CaseContextSnapshot;
   images: LlmInlineImage[];
+  /**
+   * Cặp ảnh [ảnh thực đơn của quán ↔ ảnh khách chụp] đã tải được.
+   *
+   * Tách khỏi `images` có chủ đích: cặp ảnh có **ngân sách riêng**
+   * (`AI_PAIRWISE_MAX_PAIRS`) nên không chiếm suất ảnh của lượt đọc ảnh gộp —
+   * nếu dùng chung `AI_ASSISTANT_MAX_IMAGES` thì ảnh chuẩn món lại bị ảnh bằng
+   * chứng đẩy ra ngoài, đúng lỗi mà cơ chế ghép cặp sinh ra để sửa.
+   *
+   * `undefined`/rỗng = tắt pairwise, không phải vụ án món ăn, hoặc không dựng
+   * được cặp nào (thiếu ảnh một bên).
+   */
+  pairs?: BuiltImagePairs;
+}
+
+/** Một cặp ảnh đã tải xong, sẵn sàng gửi model vision. */
+export interface ImagePairSet {
+  target: ImagePairTarget;
+  /** Ảnh món do NHÀ HÀNG upload — luôn là ảnh số 1 trong prompt cặp. */
+  reference: LlmInlineImage;
+  /** Ảnh KHÁCH chụp — ảnh số 2 (tối đa `AI_PAIRWISE_EVIDENCE_IMAGES`). */
+  evidence: LlmInlineImage[];
+}
+
+export interface BuiltImagePairs {
+  sets: ImagePairSet[];
+  /** Số nhóm món CẦN ghép cặp (trước khi cắt ngân sách và trước khi tải hỏng). */
+  plannedTargets: number;
+  /** Nhóm món không dựng được cặp, kèm lý do. */
+  skipped: ImagePairSkip[];
+  /** Số nhóm bị cắt do `AI_PAIRWISE_MAX_PAIRS`. */
+  truncated: number;
 }
 
 const SOURCE_BY_ID = new Map(CASE_CONTEXT_SOURCES.map((s) => [s.id, s]));
@@ -586,6 +622,14 @@ export class CaseContextService {
      * báo "bỏ qua" hai lần.
      */
     const triedImageUrls = new Set<string>();
+    /**
+     * Ảnh đã tải THÀNH CÔNG theo URL — để lượt ghép cặp dùng lại đúng bytes đã
+     * tải thay vì tải lại (hoặc tệ hơn: nhận `null` vì URL đã "thử").
+     */
+    const downloadedByUrl = new Map<
+      string,
+      { mimeType: string; base64: string; url: string }
+    >();
     const tryDownload = async (
       url: string,
     ): Promise<{ mimeType: string; base64: string; url: string } | null> => {
@@ -599,8 +643,24 @@ export class CaseContextService {
           url,
           reason: reason || "không rõ nguyên nhân",
         });
+      } else {
+        downloadedByUrl.set(url, image);
       }
       return image;
+    };
+
+    /**
+     * Lấy ảnh theo URL cho lượt ghép cặp: dùng lại bản đã tải, chỉ tải mới khi
+     * URL chưa từng được thử. URL đã thử và hỏng ⇒ `null` (không thử lại — mỗi
+     * lần thử tốn tới 15s timeout).
+     */
+    const getOrDownload = async (
+      url: string,
+    ): Promise<{ mimeType: string; base64: string; url: string } | null> => {
+      const cached = downloadedByUrl.get(url);
+      if (cached) return cached;
+      if (triedImageUrls.has(url)) return null;
+      return tryDownload(url);
     };
 
     const rawProofUrl =
@@ -756,6 +816,67 @@ export class CaseContextService {
           await attachReview();
           break;
       }
+    }
+
+    /**
+     * ---- GHÉP CẶP ẢNH: [ảnh thực đơn của quán] ↔ [ảnh khách chụp] ----
+     *
+     * Chạy SAU vòng lặp trên và dùng **ngân sách riêng** (`AI_PAIRWISE_MAX_PAIRS`):
+     * ảnh chuẩn món ở đây không tranh suất với ảnh bằng chứng, nên không còn
+     * cảnh "0 ảnh chuẩn món ⇒ AI phán sai món bằng niềm tin".
+     *
+     * Ảnh đã tải cho lượt gộp được dùng lại (`getOrDownload`), nên chi phí thêm
+     * chủ yếu là ảnh thực đơn mà ngân sách cũ đã bỏ rơi. Không dựng được cặp nào
+     * (thiếu ảnh một bên, tải hỏng) ⇒ `pairs.sets` rỗng và hệ thống lùi về đúng
+     * hành vi cũ.
+     */
+    const pairBudget = envInt("AI_PAIRWISE_MAX_PAIRS", 4, 0, 8);
+    let pairs: BuiltImagePairs | undefined;
+    if (
+      envBool("AI_IMAGE_PAIRWISE", true) &&
+      ITEM_RELATED.has(category) &&
+      limit > 0 &&
+      pairBudget > 0
+    ) {
+      const pairPlan = planImagePairs({
+        snapshot: { orderItems, menuItems, reporterImageUrls: reporterUrls },
+        maxPairs: pairBudget,
+      });
+      const evidenceCap = envInt("AI_PAIRWISE_EVIDENCE_IMAGES", 1, 1, 4);
+      const sets: ImagePairSet[] = [];
+      for (const target of pairPlan.targets) {
+        const reference = await getOrDownload(target.referenceUrl);
+        if (!reference) continue;
+        const evidence: LlmInlineImage[] = [];
+        for (const url of target.evidenceUrls.slice(0, evidenceCap)) {
+          const img = await getOrDownload(url);
+          if (!img) continue;
+          evidence.push({
+            mimeType: img.mimeType,
+            base64: img.base64,
+            label: `ẢNH KHÁCH CHỤP — ${target.name}: ${url}`,
+            kind: "REPORTER",
+          });
+        }
+        if (evidence.length === 0) continue;
+        sets.push({
+          target,
+          reference: {
+            mimeType: reference.mimeType,
+            base64: reference.base64,
+            label: `ẢNH THỰC ĐƠN (nhà hàng upload) — ${target.name}: ${target.referenceUrl}`,
+            kind: "MENU_REFERENCE",
+            refId: target.menuItemId,
+          },
+          evidence,
+        });
+      }
+      pairs = {
+        sets,
+        plannedTargets: pairPlan.targets.length,
+        skipped: pairPlan.skipped,
+        truncated: pairPlan.truncated,
+      };
     }
 
     /**
@@ -923,7 +1044,7 @@ export class CaseContextService {
       },
     };
 
-    return { snapshot, images };
+    return { snapshot, images, pairs };
   }
 
   /** Cờ bật/tắt từng nguồn mới (rollout theo từng bước). */

@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-11-07T17:19:14.285Z",
+  "total": 58,
+  "synthetic": 58,
+  "real": 0,
+  "byKind": {
+    "MISSING": 46,
+    "COMPLETE": 12
+  },
+  "byCombo": {
+    "combo1": 12,
+    "combo2": 8,
+    "combo3": 8,
+    "combo4": 15,
+    "combo5": 7,
+    "combo6": 8
+  },
+  "byVerdict": {
+    "MISSING": 46,
+    "MATCH": 12
+  },
+  "warnings": [
+    "combo1: KHÔNG có mẫu sai món",
+    "combo1: 10 mẫu thiếu món ⇒ chiếm ưu thế, dễ làm đẹp accuracy",
+    "combo2: KHÔNG có mẫu sai món",
+    "combo3: KHÔNG có mẫu sai món",
+    "combo4: KHÔNG có mẫu sai món",
+    "combo4: 13 mẫu thiếu món ⇒ chiếm ưu thế, dễ làm đẹp accuracy",
+    "combo5: KHÔNG có mẫu sai món",
+    "combo6: KHÔNG có mẫu sai món"
+  ]
+}

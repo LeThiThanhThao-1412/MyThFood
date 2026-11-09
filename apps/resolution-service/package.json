@@ -13,6 +13,10 @@
     "test": "jest --passWithNoTests",
     "test:coverage": "jest --coverage --passWithNoTests",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "ai:eval:samples": "node scripts/build-image-samples.mjs",
+    "ai:eval:labels": "node scripts/verify-image-labels.mjs",
+    "ai:eval:images": "ts-node --transpile-only src/tests/ai-eval/images/run-pairs.ts",
+    "ai:eval:rescore": "ts-node --transpile-only src/tests/ai-eval/images/rescore.ts",
     "clean": "rm -rf dist"
   },
   "dependencies": {

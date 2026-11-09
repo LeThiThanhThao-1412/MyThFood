@@ -1,0 +1,6503 @@
+{
+  "reportVersion": 2,
+  "generatedAt": "2026-11-07T13:07:29.620Z",
+  "dryRun": false,
+  "model": "glm-4.6v-flashx",
+  "policy": {
+    "autoApproveAtOrBelow": 0.85,
+    "autoRejectAtOrAbove": 1
+  },
+  "all": {
+    "samples": 58,
+    "scored": 38,
+    "verdictAccuracy": 0.2241,
+    "meanAbsoluteScoreError": 0.3342,
+    "withinToleranceRate": 0.2895,
+    "falseAlarmRate": 0.6667,
+    "missedDefectRate": 0,
+    "decisionCounts": {
+      "AUTO_APPROVE": 9,
+      "AUTO_REJECT": 4,
+      "NEEDS_REVIEW": 45
+    }
+  },
+  "bySplit": {
+    "synthetic": {
+      "samples": 57,
+      "scored": 38,
+      "verdictAccuracy": 0.2281,
+      "meanAbsoluteScoreError": 0.3342,
+      "withinToleranceRate": 0.2895,
+      "falseAlarmRate": 0.6667,
+      "missedDefectRate": 0,
+      "decisionCounts": {
+        "AUTO_APPROVE": 9,
+        "AUTO_REJECT": 4,
+        "NEEDS_REVIEW": 44
+      }
+    },
+    "real": {
+      "samples": 0,
+      "scored": 0,
+      "verdictAccuracy": null,
+      "meanAbsoluteScoreError": null,
+      "withinToleranceRate": null,
+      "falseAlarmRate": null,
+      "missedDefectRate": null,
+      "decisionCounts": {
+        "AUTO_APPROVE": 0,
+        "AUTO_REJECT": 0,
+        "NEEDS_REVIEW": 0
+      }
+    }
+  },
+  "byKind": {
+    "MISSING": {
+      "samples": 45,
+      "scored": 26,
+      "verdictAccuracy": 0.2,
+      "meanAbsoluteScoreError": 0.2721,
+      "withinToleranceRate": 0.2692,
+      "falseAlarmRate": null,
+      "missedDefectRate": 0,
+      "decisionCounts": {
+        "AUTO_APPROVE": 9,
+        "AUTO_REJECT": 0,
+        "NEEDS_REVIEW": 36
+      }
+    },
+    "WRONG_ITEM": {
+      "samples": 0,
+      "scored": 0,
+      "verdictAccuracy": null,
+      "meanAbsoluteScoreError": null,
+      "withinToleranceRate": null,
+      "falseAlarmRate": null,
+      "missedDefectRate": null,
+      "decisionCounts": {
+        "AUTO_APPROVE": 0,
+        "AUTO_REJECT": 0,
+        "NEEDS_REVIEW": 0
+      }
+    },
+    "COMPLETE": {
+      "samples": 12,
+      "scored": 12,
+      "verdictAccuracy": 0.3333,
+      "meanAbsoluteScoreError": 0.4688,
+      "withinToleranceRate": 0.3333,
+      "falseAlarmRate": 0.6667,
+      "missedDefectRate": null,
+      "decisionCounts": {
+        "AUTO_APPROVE": 0,
+        "AUTO_REJECT": 4,
+        "NEEDS_REVIEW": 8
+      }
+    }
+  },
+  "combos": {
+    "combo1": {
+      "name": "Combo gà rán",
+      "orderItems": [
+        {
+          "menuItemId": "eval-combo1-ga",
+          "name": "gà rán",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo1-mi",
+          "name": "mì ý",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo1-khoai",
+          "name": "khoai tây chiên",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo1-nuoc",
+          "name": "nước ngọt",
+          "quantity": 1,
+          "unitPrice": null
+        }
+      ]
+    },
+    "combo2": {
+      "name": "Combo hamburger",
+      "orderItems": [
+        {
+          "menuItemId": "eval-combo2-hambuger",
+          "name": "hamburger bò",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo2-nuoc",
+          "name": "nước ngọt",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo2-khoai",
+          "name": "khoai tây chiên",
+          "quantity": 1,
+          "unitPrice": null
+        }
+      ]
+    },
+    "combo3": {
+      "name": "Combo bánh tráng trộn",
+      "orderItems": [
+        {
+          "menuItemId": "eval-combo3-banhtrangtron",
+          "name": "bánh tráng trộn",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo3-cavien",
+          "name": "cá viên chiên",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo3-trasua",
+          "name": "trà sữa",
+          "quantity": 2,
+          "unitPrice": null
+        }
+      ]
+    },
+    "combo4": {
+      "name": "Combo bún đậu mắm tôm",
+      "orderItems": [
+        {
+          "menuItemId": "eval-combo4-bunla",
+          "name": "bún lá",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo4-dauhuchien",
+          "name": "đậu hũ chiên",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo4-nemchuaran",
+          "name": "nem chua rán",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo4-mamtom",
+          "name": "mắm tôm",
+          "quantity": 1,
+          "unitPrice": null
+        }
+      ]
+    },
+    "combo5": {
+      "name": "Combo cơm sườn",
+      "orderItems": [
+        {
+          "menuItemId": "eval-combo5-com",
+          "name": "cơm trắng",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo5-suon",
+          "name": "sườn nướng",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo5-trungopla",
+          "name": "trứng ốp la",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo5-sup",
+          "name": "súp",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo5-trada",
+          "name": "trà đá",
+          "quantity": 1,
+          "unitPrice": null
+        }
+      ]
+    },
+    "combo6": {
+      "name": "Combo chè trái cây",
+      "orderItems": [
+        {
+          "menuItemId": "eval-combo6-chethapcam",
+          "name": "chè thập cẩm",
+          "quantity": 2,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo6-diatraicay",
+          "name": "đĩa trái cây",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo6-tradau",
+          "name": "trà dâu",
+          "quantity": 2,
+          "unitPrice": null
+        }
+      ]
+    }
+  },
+  "rows": [
+    {
+      "sampleId": "MIS-combo1-thieu1ga",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "MISSING",
+      "matchScore": 0.75,
+      "missing": [
+        {
+          "menuItemId": "eval-combo1-ga",
+          "name": "gà rán",
+          "quantity": 1
+        }
+      ],
+      "extra": [],
+      "matchedQuantity": 3,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "AUTO_APPROVE",
+      "refundCap": null,
+      "reason": "Ảnh chỉ khớp 3/4 phần (75%) ≤ ngưỡng 85% — thiếu: gà rán x1",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "mì Ý",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MISSING",
+        "totalQuantity": 4,
+        "matchedQuantity": 3,
+        "matchScore": 0.75,
+        "missing": [
+          {
+            "menuItemId": "eval-combo1-ga",
+            "name": "gà rán",
+            "quantity": 1
+          }
+        ],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 1 phần so với đơn: gà rán x1",
+          "Túi đã mở tại thời điểm chụp ⇒ nghi thiếu món trong quá trình giao (luật 33)",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo1-thieu1ga1khoai",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.5
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "mì Ý",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo1-thieu1ga1mi",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.5
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo1-thieu1ga1nuoc",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.5
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "mì Ý",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo1-thieu1khoai",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "MISSING",
+      "matchScore": 0.75,
+      "missing": [
+        {
+          "menuItemId": "eval-combo1-khoai",
+          "name": "khoai tây chiên",
+          "quantity": 1
+        }
+      ],
+      "extra": [],
+      "matchedQuantity": 3,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "AUTO_APPROVE",
+      "refundCap": null,
+      "reason": "Ảnh chỉ khớp 3/4 phần (75%) ≤ ngưỡng 85% — thiếu: khoai tây chiên x1",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "gà rán",
+            "quantity": 1
+          },
+          {
+            "name": "mì Ý",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MISSING",
+        "totalQuantity": 4,
+        "matchedQuantity": 3,
+        "matchScore": 0.75,
+        "missing": [
+          {
+            "menuItemId": "eval-combo1-khoai",
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 1 phần so với đơn: khoai tây chiên x1",
+          "Túi đã mở tại thời điểm chụp ⇒ nghi thiếu món trong quá trình giao (luật 33)",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo1-thieu1mi",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "MISSING",
+      "matchScore": 0.75,
+      "missing": [
+        {
+          "menuItemId": "eval-combo1-mi",
+          "name": "mì ý",
+          "quantity": 1
+        }
+      ],
+      "extra": [],
+      "matchedQuantity": 3,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "AUTO_APPROVE",
+      "refundCap": null,
+      "reason": "Ảnh chỉ khớp 3/4 phần (75%) ≤ ngưỡng 85% — thiếu: mì ý x1",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "gà rán",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MISSING",
+        "totalQuantity": 4,
+        "matchedQuantity": 3,
+        "matchScore": 0.75,
+        "missing": [
+          {
+            "menuItemId": "eval-combo1-mi",
+            "name": "mì ý",
+            "quantity": 1
+          }
+        ],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 1 phần so với đơn: mì ý x1",
+          "Túi đã mở tại thời điểm chụp ⇒ nghi thiếu món trong quá trình giao (luật 33)",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo1-thieu1mi1khoai",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.5
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "gà rán",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo1-thieu1mi1nuoc",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.5
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "gà rán",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo1-thieu1nuoc",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flash",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "MISSING",
+      "matchScore": 0.75,
+      "missing": [
+        {
+          "menuItemId": "eval-combo1-nuoc",
+          "name": "nước ngọt",
+          "quantity": 1
+        }
+      ],
+      "extra": [],
+      "matchedQuantity": 3,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "AUTO_APPROVE",
+      "refundCap": null,
+      "reason": "Ảnh chỉ khớp 3/4 phần (75%) ≤ ngưỡng 85% — thiếu: nước ngọt x1",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "gà rán",
+            "quantity": 1
+          },
+          {
+            "name": "mì Ý",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MISSING",
+        "totalQuantity": 4,
+        "matchedQuantity": 3,
+        "matchScore": 0.75,
+        "missing": [
+          {
+            "menuItemId": "eval-combo1-nuoc",
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 1 phần so với đơn: nước ngọt x1",
+          "Túi đã mở tại thời điểm chụp ⇒ nghi thiếu món trong quá trình giao (luật 33)",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo1-thieu1nuoc1khoai",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.5
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "gà rán",
+            "quantity": 1
+          },
+          {
+            "name": "mì Ý",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo1-du-nghieng",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flash",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "MATCH",
+      "matchScore": 1,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 4,
+      "totalQuantity": 4,
+      "missingValue": 0,
+      "decision": "AUTO_REJECT",
+      "refundCap": null,
+      "reason": "Ảnh khớp 4/4 phần ⇒ không có căn cứ thiếu món",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "gà rán",
+            "quantity": 1
+          },
+          {
+            "name": "mì Ý",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MATCH",
+        "totalQuantity": 4,
+        "matchedQuantity": 4,
+        "matchScore": 1,
+        "missing": [],
+        "extra": [],
+        "missingValue": 0,
+        "reasons": []
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo1-du-toi",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "MATCH",
+      "matchScore": 1,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 4,
+      "totalQuantity": 4,
+      "missingValue": 0,
+      "decision": "AUTO_REJECT",
+      "refundCap": null,
+      "reason": "Ảnh khớp 4/4 phần ⇒ không có căn cứ thiếu món",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "gà rán",
+            "quantity": 1
+          },
+          {
+            "name": "mì Ý",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MATCH",
+        "totalQuantity": 4,
+        "matchedQuantity": 4,
+        "matchScore": 1,
+        "missing": [],
+        "extra": [],
+        "missingValue": 0,
+        "reasons": []
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo2-thieu1hambuger",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo2",
+      "model": "glm-4.6v-flash",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.6667
+      },
+      "verdict": "MISSING",
+      "matchScore": 0.6667,
+      "missing": [
+        {
+          "menuItemId": "eval-combo2-hambuger",
+          "name": "hamburger bò",
+          "quantity": 1
+        }
+      ],
+      "extra": [],
+      "matchedQuantity": 2,
+      "totalQuantity": 3,
+      "missingValue": null,
+      "decision": "AUTO_APPROVE",
+      "refundCap": null,
+      "reason": "Ảnh chỉ khớp 2/3 phần (67%) ≤ ngưỡng 85% — thiếu: hamburger bò x1",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MISSING",
+        "totalQuantity": 3,
+        "matchedQuantity": 2,
+        "matchScore": 0.6667,
+        "missing": [
+          {
+            "menuItemId": "eval-combo2-hambuger",
+            "name": "hamburger bò",
+            "quantity": 1
+          }
+        ],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 1 phần so với đơn: hamburger bò x1",
+          "Túi đã mở tại thời điểm chụp ⇒ nghi thiếu món trong quá trình giao (luật 33)",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo2-thieu1hambuger1khoai",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo2",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.3333
+      },
+      "verdict": "MISSING",
+      "matchScore": 0.3333,
+      "missing": [
+        {
+          "menuItemId": "eval-combo2-hambuger",
+          "name": "hamburger bò",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo2-khoai",
+          "name": "khoai tây chiên",
+          "quantity": 1
+        }
+      ],
+      "extra": [],
+      "matchedQuantity": 1,
+      "totalQuantity": 3,
+      "missingValue": null,
+      "decision": "AUTO_APPROVE",
+      "refundCap": null,
+      "reason": "Ảnh chỉ khớp 1/3 phần (33%) ≤ ngưỡng 85% — thiếu: hamburger bò x1, khoai tây chiên x1",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MISSING",
+        "totalQuantity": 3,
+        "matchedQuantity": 1,
+        "matchScore": 0.3333,
+        "missing": [
+          {
+            "menuItemId": "eval-combo2-hambuger",
+            "name": "hamburger bò",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo2-khoai",
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 2 phần so với đơn: hamburger bò x1, khoai tây chiên x1",
+          "Túi đã mở tại thời điểm chụp ⇒ nghi thiếu món trong quá trình giao (luật 33)",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo2-thieu1hambuger1nuoc",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo2",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.3333
+      },
+      "verdict": "MISSING",
+      "matchScore": 0.3333,
+      "missing": [
+        {
+          "menuItemId": "eval-combo2-hambuger",
+          "name": "hamburger bò",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo2-nuoc",
+          "name": "nước ngọt",
+          "quantity": 1
+        }
+      ],
+      "extra": [],
+      "matchedQuantity": 1,
+      "totalQuantity": 3,
+      "missingValue": null,
+      "decision": "AUTO_APPROVE",
+      "refundCap": null,
+      "reason": "Ảnh chỉ khớp 1/3 phần (33%) ≤ ngưỡng 85% — thiếu: hamburger bò x1, nước ngọt x1",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MISSING",
+        "totalQuantity": 3,
+        "matchedQuantity": 1,
+        "matchScore": 0.3333,
+        "missing": [
+          {
+            "menuItemId": "eval-combo2-hambuger",
+            "name": "hamburger bò",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo2-nuoc",
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 2 phần so với đơn: hamburger bò x1, nước ngọt x1",
+          "Túi đã mở tại thời điểm chụp ⇒ nghi thiếu món trong quá trình giao (luật 33)",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo2-thieu1khoai",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo2",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.6667
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 3,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "hamburger",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 3,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo2-thieu1nuoc",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo2",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.6667
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 3,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "hamburger",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 3,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo2-thieu1nuoc1khoai",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo2",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.3333
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 3,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "hamburger",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 3,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo2-du-nghieng",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo2",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "MATCH",
+      "matchScore": 1,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 3,
+      "totalQuantity": 3,
+      "missingValue": 0,
+      "decision": "AUTO_REJECT",
+      "refundCap": null,
+      "reason": "Ảnh khớp 3/3 phần ⇒ không có căn cứ thiếu món",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "hamburger",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MATCH",
+        "totalQuantity": 3,
+        "matchedQuantity": 3,
+        "matchScore": 1,
+        "missing": [],
+        "extra": [],
+        "missingValue": 0,
+        "reasons": []
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo2-du-toi",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo2",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "MATCH",
+      "matchScore": 1,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 3,
+      "totalQuantity": 3,
+      "missingValue": 0,
+      "decision": "AUTO_REJECT",
+      "refundCap": null,
+      "reason": "Ảnh khớp 3/3 phần ⇒ không có căn cứ thiếu món",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0,
+        "scoreWithinTolerance": true,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "hamburger",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MATCH",
+        "totalQuantity": 3,
+        "matchedQuantity": 3,
+        "matchScore": 1,
+        "missing": [],
+        "extra": [],
+        "missingValue": 0,
+        "reasons": []
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo3-thieu1banhtrangtron",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo3",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "nước ngọt",
+            "quantity": 2
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo3-thieu1banhtrangtron1trasua",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo3",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.5
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "trà sữa",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 3
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo3-thieu1cavien",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo3",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bánh tráng trộn",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 2
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo3-thieu1cavien1trasua",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo3",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.5
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bánh tráng trộn",
+            "quantity": 1
+          },
+          {
+            "name": "trà sữa",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo3-thieu1trasua",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo3",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.5,
+      "missing": [
+        {
+          "menuItemId": "eval-combo3-trasua",
+          "name": "trà sữa",
+          "quantity": 2
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "bánh mì",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "cá hồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "trứng cút",
+          "quantity": 2
+        },
+        {
+          "menuItemId": null,
+          "name": "nước chấm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "sosis",
+          "quantity": 4
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột",
+          "quantity": 3
+        }
+      ],
+      "matchedQuantity": 2,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.25,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bánh tráng trộn",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "bánh mì",
+            "quantity": 1
+          },
+          {
+            "name": "cá hồi",
+            "quantity": 1
+          },
+          {
+            "name": "trứng cút",
+            "quantity": 2
+          },
+          {
+            "name": "nước chấm",
+            "quantity": 1
+          },
+          {
+            "name": "cá viên",
+            "quantity": 5
+          },
+          {
+            "name": "sosis",
+            "quantity": 4
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 3
+          }
+        ],
+        "boxes": 2,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 4,
+        "matchedQuantity": 2,
+        "matchScore": 0.5,
+        "missing": [
+          {
+            "menuItemId": "eval-combo3-trasua",
+            "name": "trà sữa",
+            "quantity": 2
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "bánh mì",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "cá hồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "trứng cút",
+            "quantity": 2
+          },
+          {
+            "menuItemId": null,
+            "name": "nước chấm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "sosis",
+            "quantity": 4
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột",
+            "quantity": 3
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 2 phần so với đơn: trà sữa x2",
+          "Ảnh có món không nằm trong đơn: nước ngọt x1, bánh mì x1, cá hồi x1, trứng cút x2, nước chấm x1, sosis x4, dưa chuột x3",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo3-thieu2trasua",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo3",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.5
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bánh tráng trộn",
+            "quantity": 1
+          },
+          {
+            "name": "mì tôm",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 2
+          }
+        ],
+        "boxes": 2,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo3-du-nghieng",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo3",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.25,
+      "missing": [
+        {
+          "menuItemId": "eval-combo3-cavien",
+          "name": "cá viên chiên",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo3-trasua",
+          "name": "trà sữa",
+          "quantity": 2
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 2
+        },
+        {
+          "menuItemId": null,
+          "name": "bánh mì",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "trứng cút",
+          "quantity": 2
+        },
+        {
+          "menuItemId": null,
+          "name": "cơm tấm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "cucumber",
+          "quantity": 3
+        },
+        {
+          "menuItemId": null,
+          "name": "mì tôm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "sausage",
+          "quantity": 3
+        },
+        {
+          "menuItemId": null,
+          "name": "bánh giò",
+          "quantity": 4
+        },
+        {
+          "menuItemId": null,
+          "name": "mì ống",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 1,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.75,
+        "scoreWithinTolerance": false,
+        "falseAlarm": true,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bánh tráng trộn",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 2
+          },
+          {
+            "name": "bánh mì",
+            "quantity": 1
+          },
+          {
+            "name": "trứng cút",
+            "quantity": 2
+          },
+          {
+            "name": "cơm tấm",
+            "quantity": 1
+          },
+          {
+            "name": "cucumber",
+            "quantity": 3
+          },
+          {
+            "name": "mì tôm",
+            "quantity": 1
+          },
+          {
+            "name": "sausage",
+            "quantity": 3
+          },
+          {
+            "name": "bánh giò",
+            "quantity": 4
+          },
+          {
+            "name": "mì ống",
+            "quantity": 1
+          }
+        ],
+        "boxes": 3,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 4,
+        "matchedQuantity": 1,
+        "matchScore": 0.25,
+        "missing": [
+          {
+            "menuItemId": "eval-combo3-cavien",
+            "name": "cá viên chiên",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo3-trasua",
+            "name": "trà sữa",
+            "quantity": 2
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 2
+          },
+          {
+            "menuItemId": null,
+            "name": "bánh mì",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "trứng cút",
+            "quantity": 2
+          },
+          {
+            "menuItemId": null,
+            "name": "cơm tấm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "cucumber",
+            "quantity": 3
+          },
+          {
+            "menuItemId": null,
+            "name": "mì tôm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "sausage",
+            "quantity": 3
+          },
+          {
+            "menuItemId": null,
+            "name": "bánh giò",
+            "quantity": 4
+          },
+          {
+            "menuItemId": null,
+            "name": "mì ống",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 3 phần so với đơn: cá viên chiên x1, trà sữa x2",
+          "Ảnh có món không nằm trong đơn: nước ngọt x2, bánh mì x1, trứng cút x2, cơm tấm x1, cucumber x3, mì tôm x1, sausage x3, bánh giò x4, mì ống x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo3-du-toi",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo3",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.25,
+      "missing": [
+        {
+          "menuItemId": "eval-combo3-cavien",
+          "name": "cá viên chiên",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo3-trasua",
+          "name": "trà sữa",
+          "quantity": 2
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 2
+        },
+        {
+          "menuItemId": null,
+          "name": "mì tôm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "khoai tây chiên",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 1,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.75,
+        "scoreWithinTolerance": false,
+        "falseAlarm": true,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bánh tráng trộn",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 2
+          },
+          {
+            "name": "mì tôm",
+            "quantity": 1
+          },
+          {
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "boxes": 2,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 4,
+        "matchedQuantity": 1,
+        "matchScore": 0.25,
+        "missing": [
+          {
+            "menuItemId": "eval-combo3-cavien",
+            "name": "cá viên chiên",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo3-trasua",
+            "name": "trà sữa",
+            "quantity": 2
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 2
+          },
+          {
+            "menuItemId": null,
+            "name": "mì tôm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "khoai tây chiên",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 3 phần so với đơn: cá viên chiên x1, trà sữa x2",
+          "Ảnh có món không nằm trong đơn: nước ngọt x2, mì tôm x1, khoai tây chiên x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1bunla",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.875
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Không có ảnh, hoặc ảnh không thấy món nào",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 8,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": ["Không có ảnh, hoặc ảnh không thấy món nào"]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1bunla1longdoi",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "MISSING",
+      "matchScore": 0.25,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-dauhuchien",
+          "name": "đậu hũ chiên",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-nemchuaran",
+          "name": "nem chua rán",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-mamtom",
+          "name": "mắm tôm",
+          "quantity": 1
+        }
+      ],
+      "extra": [],
+      "matchedQuantity": 2,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "AUTO_APPROVE",
+      "refundCap": null,
+      "reason": "Ảnh chỉ khớp 2/8 phần (25%) ≤ ngưỡng 85% — thiếu: đậu hũ chiên x1, thịt luộc x1, chả cốm x1, nem chua rán x1, rau sống x1, mắm tôm x1",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0.5,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún la",
+            "quantity": 1
+          },
+          {
+            "name": "long doi",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MISSING",
+        "totalQuantity": 8,
+        "matchedQuantity": 2,
+        "matchScore": 0.25,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-dauhuchien",
+            "name": "đậu hũ chiên",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-nemchuaran",
+            "name": "nem chua rán",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-mamtom",
+            "name": "mắm tôm",
+            "quantity": 1
+          }
+        ],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 6 phần so với đơn: đậu hũ chiên x1, thịt luộc x1, chả cốm x1, nem chua rán x1, rau sống x1, mắm tôm x1",
+          "Túi đã mở tại thời điểm chụp ⇒ nghi thiếu món trong quá trình giao (luật 33)",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1bunla1nemchuaran",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "MISSING",
+      "matchScore": 0.25,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-dauhuchien",
+          "name": "đậu hũ chiên",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-mamtom",
+          "name": "mắm tôm",
+          "quantity": 1
+        }
+      ],
+      "extra": [],
+      "matchedQuantity": 2,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "AUTO_APPROVE",
+      "refundCap": null,
+      "reason": "Ảnh chỉ khớp 2/8 phần (25%) ≤ ngưỡng 85% — thiếu: đậu hũ chiên x1, thịt luộc x1, chả cốm x1, lòng dồi x1, rau sống x1, mắm tôm x1",
+      "evaluation": {
+        "verdictCorrect": true,
+        "scoreError": 0.5,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún la",
+            "quantity": 1
+          },
+          {
+            "name": "nem chua rán",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "MISSING",
+        "totalQuantity": 8,
+        "matchedQuantity": 2,
+        "matchScore": 0.25,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-dauhuchien",
+            "name": "đậu hũ chiên",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-mamtom",
+            "name": "mắm tôm",
+            "quantity": 1
+          }
+        ],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 6 phần so với đơn: đậu hũ chiên x1, thịt luộc x1, chả cốm x1, lòng dồi x1, rau sống x1, mắm tôm x1",
+          "Túi đã mở tại thời điểm chụp ⇒ nghi thiếu món trong quá trình giao (luật 33)",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1chacom",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flash",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.875
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.25,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-nemchuaran",
+          "name": "nem chua rán",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-mamtom",
+          "name": "mắm tôm",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "tofu",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "thit lợn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "chả giò",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì ống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "sausage",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "rau xanh",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước chấm",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 2,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.625,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu",
+            "quantity": 1
+          },
+          {
+            "name": "tofu",
+            "quantity": 1
+          },
+          {
+            "name": "thit lợn",
+            "quantity": 1
+          },
+          {
+            "name": "chả giò",
+            "quantity": 1
+          },
+          {
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "name": "sausage",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "name": "rau xanh",
+            "quantity": 1
+          },
+          {
+            "name": "nước chấm",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 2,
+        "matchScore": 0.25,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-nemchuaran",
+            "name": "nem chua rán",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-mamtom",
+            "name": "mắm tôm",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "tofu",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "thit lợn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "chả giò",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "sausage",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "rau xanh",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước chấm",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 6 phần so với đơn: thịt luộc x1, chả cốm x1, nem chua rán x1, lòng dồi x1, rau sống x1, mắm tôm x1",
+          "Ảnh có món không nằm trong đơn: tofu x1, thit lợn x1, chả giò x1, mì ống x1, sausage x1, dưa chuột x1, rau xanh x1, nước chấm x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1chacom1nemchuaran",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.5,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-nemchuaran",
+          "name": "nem chua rán",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "thịt lợn",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 4,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.25,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu hũ",
+            "quantity": 1
+          },
+          {
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "name": "chả",
+            "quantity": 1
+          },
+          {
+            "name": "mắm tôm",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 4,
+        "matchScore": 0.5,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-nemchuaran",
+            "name": "nem chua rán",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "thịt lợn",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 4 phần so với đơn: thịt luộc x1, nem chua rán x1, lòng dồi x1, rau sống x1",
+          "Ảnh có món không nằm trong đơn: thịt lợn x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1dauhuchien",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.875
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.375,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-mamtom",
+          "name": "mắm tôm",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "thịt lợn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì ống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "lạp xưởng",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước chấm",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 3,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.5,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu hũ chiên",
+            "quantity": 1
+          },
+          {
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "name": "nem chua",
+            "quantity": 1
+          },
+          {
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "name": "lạp xưởng",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "name": "nước chấm",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 3,
+        "matchScore": 0.375,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-mamtom",
+            "name": "mắm tôm",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "lạp xưởng",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước chấm",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 5 phần so với đơn: thịt luộc x1, chả cốm x1, lòng dồi x1, rau sống x1, mắm tôm x1",
+          "Ảnh có món không nằm trong đơn: thịt lợn x1, mì ống x1, lạp xưởng x1, dưa chuột x1, nước chấm x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1longdoi",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.875
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.625,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "thịt lợn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nem",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 5,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.25,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu hũ",
+            "quantity": 1
+          },
+          {
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "name": "nem chua",
+            "quantity": 1
+          },
+          {
+            "name": "nem",
+            "quantity": 1
+          },
+          {
+            "name": "mắm tôm",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "name": "rau",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 5,
+        "matchScore": 0.625,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nem",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 3 phần so với đơn: thịt luộc x1, chả cốm x1, lòng dồi x1",
+          "Ảnh có món không nằm trong đơn: thịt lợn x1, nem x1, dưa chuột x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1longdoi1rau",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.375,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-dauhuchien",
+          "name": "đậu hũ chiên",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-mamtom",
+          "name": "mắm tôm",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "tofu",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì cay",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 3,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.375,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "tofu",
+            "quantity": 1
+          },
+          {
+            "name": "thit luộc",
+            "quantity": 1
+          },
+          {
+            "name": "nem chua rán",
+            "quantity": 1
+          },
+          {
+            "name": "mì cay",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 3,
+        "matchScore": 0.375,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-dauhuchien",
+            "name": "đậu hũ chiên",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-mamtom",
+            "name": "mắm tôm",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "tofu",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì cay",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 5 phần so với đơn: đậu hũ chiên x1, chả cốm x1, lòng dồi x1, rau sống x1, mắm tôm x1",
+          "Ảnh có món không nằm trong đơn: tofu x1, mì cay x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1mamtom",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.875
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.625,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "tỏi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "ớt",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "thịt lợn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì ống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 5,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.25,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu",
+            "quantity": 1
+          },
+          {
+            "name": "tỏi",
+            "quantity": 1
+          },
+          {
+            "name": "ớt",
+            "quantity": 1
+          },
+          {
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "name": "nem chua",
+            "quantity": 1
+          },
+          {
+            "name": "nem rán",
+            "quantity": 1
+          },
+          {
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "name": "mắm tôm",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "name": "rau",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 5,
+        "matchScore": 0.625,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "tỏi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "ớt",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 3 phần so với đơn: thịt luộc x1, chả cốm x1, lòng dồi x1",
+          "Ảnh có món không nằm trong đơn: tỏi x1, ớt x1, thịt lợn x1, mì ống x1, dưa chuột x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1nemchuaran",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.875
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.625,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "thịt lợn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì ống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "lạp xưởng",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nem",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 5,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.25,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu hũ",
+            "quantity": 1
+          },
+          {
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "name": "nem chua",
+            "quantity": 1
+          },
+          {
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "name": "lạp xưởng",
+            "quantity": 1
+          },
+          {
+            "name": "nem",
+            "quantity": 1
+          },
+          {
+            "name": "rau",
+            "quantity": 1
+          },
+          {
+            "name": "mắm tôm",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 5,
+        "matchScore": 0.625,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "lạp xưởng",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nem",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 3 phần so với đơn: thịt luộc x1, chả cốm x1, lòng dồi x1",
+          "Ảnh có món không nằm trong đơn: thịt lợn x1, mì ống x1, lạp xưởng x1, nem x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1nemchuaran1rau",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.375,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-nemchuaran",
+          "name": "nem chua rán",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "thịt lợn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì ống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "thịt nướng",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "thịt chua",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 3,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.375,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu hũ",
+            "quantity": 1
+          },
+          {
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "name": "mắm tôm",
+            "quantity": 1
+          },
+          {
+            "name": "thịt nướng",
+            "quantity": 1
+          },
+          {
+            "name": "thịt chua",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 3,
+        "matchScore": 0.375,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-nemchuaran",
+            "name": "nem chua rán",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "thịt nướng",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "thịt chua",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 5 phần so với đơn: thịt luộc x1, chả cốm x1, nem chua rán x1, lòng dồi x1, rau sống x1",
+          "Ảnh có món không nằm trong đơn: thịt lợn x1, mì ống x1, thịt nướng x1, thịt chua x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1rau",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.875
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.375,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-nemchuaran",
+          "name": "nem chua rán",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "thịt lợn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "chả giò",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "chả lụa",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 3,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.5,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu hũ",
+            "quantity": 1
+          },
+          {
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "name": "chả giò",
+            "quantity": 1
+          },
+          {
+            "name": "chả lụa",
+            "quantity": 1
+          },
+          {
+            "name": "mắm tôm",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 3,
+        "matchScore": 0.375,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-nemchuaran",
+            "name": "nem chua rán",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "chả giò",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "chả lụa",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 5 phần so với đơn: thịt luộc x1, chả cốm x1, nem chua rán x1, lòng dồi x1, rau sống x1",
+          "Ảnh có món không nằm trong đơn: thịt lợn x1, chả giò x1, chả lụa x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo4-thieu1thitluoc",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flash",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.875
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.625,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "tofu",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì ớt",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "rau xanh",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 5,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.25,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu",
+            "quantity": 1
+          },
+          {
+            "name": "tofu",
+            "quantity": 1
+          },
+          {
+            "name": "thit luộc",
+            "quantity": 1
+          },
+          {
+            "name": "nem chua rán",
+            "quantity": 1
+          },
+          {
+            "name": "mì ớt",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "name": "rau xanh",
+            "quantity": 1
+          },
+          {
+            "name": "mắm tôm",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 5,
+        "matchScore": 0.625,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "tofu",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì ớt",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "rau xanh",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 3 phần so với đơn: chả cốm x1, lòng dồi x1, rau sống x1",
+          "Ảnh có món không nằm trong đơn: tofu x1, mì ớt x1, dưa chuột x1, rau xanh x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo4-du-nghieng",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.5,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "thịt lợn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì ống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "thịt nướng",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "rau xanh",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 4,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.5,
+        "scoreWithinTolerance": false,
+        "falseAlarm": true,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu hũ",
+            "quantity": 1
+          },
+          {
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "name": "nem chua",
+            "quantity": 1
+          },
+          {
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "name": "thịt nướng",
+            "quantity": 1
+          },
+          {
+            "name": "mắm tôm",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "name": "rau xanh",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 4,
+        "matchScore": 0.5,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "thịt nướng",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "rau xanh",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 4 phần so với đơn: thịt luộc x1, chả cốm x1, lòng dồi x1, rau sống x1",
+          "Ảnh có món không nằm trong đơn: thịt lợn x1, mì ống x1, thịt nướng x1, dưa chuột x1, rau xanh x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo4-du-toi",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo4",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.375,
+      "missing": [
+        {
+          "menuItemId": "eval-combo4-thitluoc",
+          "name": "thịt luộc",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-chacom",
+          "name": "chả cốm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-longdoi",
+          "name": "lòng dồi",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-rau",
+          "name": "rau sống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo4-mamtom",
+          "name": "mắm tôm",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "thịt lợn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì ống",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "lạp xưởng",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước chấm",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 3,
+      "totalQuantity": 8,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.625,
+        "scoreWithinTolerance": false,
+        "falseAlarm": true,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "bún",
+            "quantity": 1
+          },
+          {
+            "name": "đậu hũ",
+            "quantity": 1
+          },
+          {
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "name": "nem chua",
+            "quantity": 1
+          },
+          {
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "name": "lạp xưởng",
+            "quantity": 1
+          },
+          {
+            "name": "nước chấm",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 8,
+        "matchedQuantity": 3,
+        "matchScore": 0.375,
+        "missing": [
+          {
+            "menuItemId": "eval-combo4-thitluoc",
+            "name": "thịt luộc",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-chacom",
+            "name": "chả cốm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-longdoi",
+            "name": "lòng dồi",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-rau",
+            "name": "rau sống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo4-mamtom",
+            "name": "mắm tôm",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "thịt lợn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì ống",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "lạp xưởng",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước chấm",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 5 phần so với đơn: thịt luộc x1, chả cốm x1, lòng dồi x1, rau sống x1, mắm tôm x1",
+          "Ảnh có món không nằm trong đơn: thịt lợn x1, mì ống x1, lạp xưởng x1, nước chấm x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo5-thieu1suon",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo5",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.8
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Không đối chiếu được tên món nào giữa ảnh và đơn đã đặt (khác cách gọi/ngôn ngữ, hoặc giao nhầm cả túi) — không kết luận thiếu/thừa, cần người xem ảnh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "gạo",
+            "quantity": 1
+          },
+          {
+            "name": "trứng chiên",
+            "quantity": 1
+          },
+          {
+            "name": "canh chua",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "salsa ớt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 5,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Không đối chiếu được tên món nào giữa ảnh và đơn đã đặt (khác cách gọi/ngôn ngữ, hoặc giao nhầm cả túi) — không kết luận thiếu/thừa, cần người xem ảnh"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo5-thieu1suon1trada",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo5",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.6
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.4,
+      "missing": [
+        {
+          "menuItemId": "eval-combo5-suon",
+          "name": "sườn nướng",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo5-trungopla",
+          "name": "trứng ốp la",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo5-trada",
+          "name": "trà đá",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "trứng chiên",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì tôm",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 2,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.2,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "cơm",
+            "quantity": 1
+          },
+          {
+            "name": "trứng chiên",
+            "quantity": 1
+          },
+          {
+            "name": "súp",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "mì tôm",
+            "quantity": 1
+          }
+        ],
+        "boxes": 2,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 5,
+        "matchedQuantity": 2,
+        "matchScore": 0.4,
+        "missing": [
+          {
+            "menuItemId": "eval-combo5-suon",
+            "name": "sườn nướng",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo5-trungopla",
+            "name": "trứng ốp la",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo5-trada",
+            "name": "trà đá",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "trứng chiên",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì tôm",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 3 phần so với đơn: sườn nướng x1, trứng ốp la x1, trà đá x1",
+          "Ảnh có món không nằm trong đơn: trứng chiên x1, nước ngọt x1, mì tôm x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo5-thieu1sup",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo5",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.8
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.6,
+      "missing": [
+        {
+          "menuItemId": "eval-combo5-sup",
+          "name": "súp",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo5-trada",
+          "name": "trà đá",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 3,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.2,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "cơm",
+            "quantity": 1
+          },
+          {
+            "name": "sườn",
+            "quantity": 1
+          },
+          {
+            "name": "trứng",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 5,
+        "matchedQuantity": 3,
+        "matchScore": 0.6,
+        "missing": [
+          {
+            "menuItemId": "eval-combo5-sup",
+            "name": "súp",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo5-trada",
+            "name": "trà đá",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 2 phần so với đơn: súp x1, trà đá x1",
+          "Ảnh có món không nằm trong đơn: nước ngọt x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo5-thieu1trungopla",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo5",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.8
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.4,
+      "missing": [
+        {
+          "menuItemId": "eval-combo5-trungopla",
+          "name": "trứng ốp la",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo5-sup",
+          "name": "súp",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo5-trada",
+          "name": "trà đá",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "canh chua",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "tom",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột trộn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước chấm",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 2,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.4,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "cơm",
+            "quantity": 1
+          },
+          {
+            "name": "sườn nướng",
+            "quantity": 1
+          },
+          {
+            "name": "canh chua",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "name": "tom",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột trộn",
+            "quantity": 1
+          },
+          {
+            "name": "nước chấm",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 5,
+        "matchedQuantity": 2,
+        "matchScore": 0.4,
+        "missing": [
+          {
+            "menuItemId": "eval-combo5-trungopla",
+            "name": "trứng ốp la",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo5-sup",
+            "name": "súp",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo5-trada",
+            "name": "trà đá",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "canh chua",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "tom",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột trộn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước chấm",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 3 phần so với đơn: trứng ốp la x1, súp x1, trà đá x1",
+          "Ảnh có món không nằm trong đơn: canh chua x1, nước ngọt x1, dưa chuột x1, tom x1, dưa chuột trộn x1, nước chấm x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo5-thieu1trungopla1nuoc",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo5",
+      "model": "glm-4.5-flash",
+      "imagesUsed": 0,
+      "degraded": true,
+      "imageFailureReason": "VISION_ERROR",
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.6
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Không có ảnh, hoặc ảnh không thấy món nào",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [],
+        "boxes": 0,
+        "countable": false,
+        "sealed": false,
+        "coverage": "unknown"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 5,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": ["Không có ảnh, hoặc ảnh không thấy món nào"]
+      },
+      "error": "Provider bỏ 2/2 ảnh (VISION_ERROR: lỗi GLM \"glm-4.6v-flashx\" trả về nội dung không phải JSON hợp lệ (finish_reason=length, 12075 ký tự). Đoạn đầu: { \"items\": [ { \"name\": \"cơm\", \"quantity\": 1 }, { \"na…) ⇒ mẫu không phải phép đo khả năng đếm món"
+    },
+    {
+      "sampleId": "COM-combo5-du-nghieng",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo5",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.4,
+      "missing": [
+        {
+          "menuItemId": "eval-combo5-trungopla",
+          "name": "trứng ốp la",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo5-sup",
+          "name": "súp",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo5-trada",
+          "name": "trà đá",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "trứng chiên",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "canh chua",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "mì tôm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "thịt xay",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước chấm",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 2,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.6,
+        "scoreWithinTolerance": false,
+        "falseAlarm": true,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "cơm",
+            "quantity": 1
+          },
+          {
+            "name": "sườn",
+            "quantity": 1
+          },
+          {
+            "name": "trứng chiên",
+            "quantity": 1
+          },
+          {
+            "name": "canh chua",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "mì tôm",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "name": "thịt xay",
+            "quantity": 1
+          },
+          {
+            "name": "nước chấm",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 5,
+        "matchedQuantity": 2,
+        "matchScore": 0.4,
+        "missing": [
+          {
+            "menuItemId": "eval-combo5-trungopla",
+            "name": "trứng ốp la",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo5-sup",
+            "name": "súp",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo5-trada",
+            "name": "trà đá",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "trứng chiên",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "canh chua",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "mì tôm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "thịt xay",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước chấm",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 3 phần so với đơn: trứng ốp la x1, súp x1, trà đá x1",
+          "Ảnh có món không nằm trong đơn: trứng chiên x1, canh chua x1, nước ngọt x1, mì tôm x1, dưa chuột x1, thịt xay x1, nước chấm x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo5-du-toi",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo5",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.2,
+      "missing": [
+        {
+          "menuItemId": "eval-combo5-com",
+          "name": "cơm trắng",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo5-trungopla",
+          "name": "trứng ốp la",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo5-sup",
+          "name": "súp",
+          "quantity": 1
+        },
+        {
+          "menuItemId": "eval-combo5-trada",
+          "name": "trà đá",
+          "quantity": 1
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "gạo",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "trứng chiên",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "cà chua",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "dưa chuột trộn",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước chấm",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "canh chua",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 1,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.8,
+        "scoreWithinTolerance": false,
+        "falseAlarm": true,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "gạo",
+            "quantity": 1
+          },
+          {
+            "name": "sườn nướng",
+            "quantity": 1
+          },
+          {
+            "name": "trứng chiên",
+            "quantity": 1
+          },
+          {
+            "name": "cà chua",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "name": "dưa chuột trộn",
+            "quantity": 1
+          },
+          {
+            "name": "nước chấm",
+            "quantity": 1
+          },
+          {
+            "name": "canh chua",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 5,
+        "matchedQuantity": 1,
+        "matchScore": 0.2,
+        "missing": [
+          {
+            "menuItemId": "eval-combo5-com",
+            "name": "cơm trắng",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo5-trungopla",
+            "name": "trứng ốp la",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo5-sup",
+            "name": "súp",
+            "quantity": 1
+          },
+          {
+            "menuItemId": "eval-combo5-trada",
+            "name": "trà đá",
+            "quantity": 1
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "gạo",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "trứng chiên",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "cà chua",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "dưa chuột trộn",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước chấm",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "canh chua",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 4 phần so với đơn: cơm trắng x1, trứng ốp la x1, súp x1, trà đá x1",
+          "Ảnh có món không nằm trong đơn: gạo x1, trứng chiên x1, cà chua x1, dưa chuột x1, dưa chuột trộn x1, nước chấm x1, canh chua x1, nước ngọt x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo6-thieu1chethapcam",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo6",
+      "model": "glm-4.6v-flash",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.8
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Không đối chiếu được tên món nào giữa ảnh và đơn đã đặt (khác cách gọi/ngôn ngữ, hoặc giao nhầm cả túi) — không kết luận thiếu/thừa, cần người xem ảnh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "chè trái cây",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 2
+          },
+          {
+            "name": "trái cây tươi",
+            "quantity": 1
+          }
+        ],
+        "boxes": 1,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 5,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Không đối chiếu được tên món nào giữa ảnh và đơn đã đặt (khác cách gọi/ngôn ngữ, hoặc giao nhầm cả túi) — không kết luận thiếu/thừa, cần người xem ảnh"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo6-thieu1chethapcam1tradau",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo6",
+      "model": "glm-4.6v-flash",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.6
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.2,
+      "missing": [
+        {
+          "menuItemId": "eval-combo6-chethapcam",
+          "name": "chè thập cẩm",
+          "quantity": 2
+        },
+        {
+          "menuItemId": "eval-combo6-tradau",
+          "name": "trà dâu",
+          "quantity": 2
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "chè trái cây",
+          "quantity": 1
+        },
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 1,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.4,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "chè trái cây",
+            "quantity": 1
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "trái cây",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 5,
+        "matchedQuantity": 1,
+        "matchScore": 0.2,
+        "missing": [
+          {
+            "menuItemId": "eval-combo6-chethapcam",
+            "name": "chè thập cẩm",
+            "quantity": 2
+          },
+          {
+            "menuItemId": "eval-combo6-tradau",
+            "name": "trà dâu",
+            "quantity": 2
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "chè trái cây",
+            "quantity": 1
+          },
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 4 phần so với đơn: chè thập cẩm x2, trà dâu x2",
+          "Ảnh có món không nằm trong đơn: chè trái cây x1, nước ngọt x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo6-thieu1diatraicay",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo6",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.8
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "chè đậu đỏ",
+            "quantity": 2
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 2
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 5,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo6-thieu1diatraicay1tradau",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo6",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.6
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "chè trái cây",
+            "quantity": 2
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "partial"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 5,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": [
+          "Ảnh chỉ bày MỘT PHẦN đơn — không đủ căn cứ kết luận thiếu món"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo6-thieu1tradau",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo6",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.8
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.2,
+      "missing": [
+        {
+          "menuItemId": "eval-combo6-chethapcam",
+          "name": "chè thập cẩm",
+          "quantity": 2
+        },
+        {
+          "menuItemId": "eval-combo6-tradau",
+          "name": "trà dâu",
+          "quantity": 2
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "chè trái cây",
+          "quantity": 2
+        },
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 1
+        }
+      ],
+      "matchedQuantity": 1,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.6,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "chè trái cây",
+            "quantity": 2
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 1
+          },
+          {
+            "name": "trái cây",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 5,
+        "matchedQuantity": 1,
+        "matchScore": 0.2,
+        "missing": [
+          {
+            "menuItemId": "eval-combo6-chethapcam",
+            "name": "chè thập cẩm",
+            "quantity": 2
+          },
+          {
+            "menuItemId": "eval-combo6-tradau",
+            "name": "trà dâu",
+            "quantity": 2
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "chè trái cây",
+            "quantity": 2
+          },
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 1
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 4 phần so với đơn: chè thập cẩm x2, trà dâu x2",
+          "Ảnh có món không nằm trong đơn: chè trái cây x2, nước ngọt x1",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "MIS-combo6-thieu2tradau",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo6",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.6
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.2,
+      "missing": [
+        {
+          "menuItemId": "eval-combo6-chethapcam",
+          "name": "chè thập cẩm",
+          "quantity": 2
+        },
+        {
+          "menuItemId": "eval-combo6-tradau",
+          "name": "trà dâu",
+          "quantity": 2
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "chè trái cây",
+          "quantity": 2
+        }
+      ],
+      "matchedQuantity": 1,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.4,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "chè trái cây",
+            "quantity": 2
+          },
+          {
+            "name": "trái cây",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 5,
+        "matchedQuantity": 1,
+        "matchScore": 0.2,
+        "missing": [
+          {
+            "menuItemId": "eval-combo6-chethapcam",
+            "name": "chè thập cẩm",
+            "quantity": 2
+          },
+          {
+            "menuItemId": "eval-combo6-tradau",
+            "name": "trà dâu",
+            "quantity": 2
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "chè trái cây",
+            "quantity": 2
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 4 phần so với đơn: chè thập cẩm x2, trà dâu x2",
+          "Ảnh có món không nằm trong đơn: chè trái cây x2",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo6-du-nghieng",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo6",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.2,
+      "missing": [
+        {
+          "menuItemId": "eval-combo6-chethapcam",
+          "name": "chè thập cẩm",
+          "quantity": 2
+        },
+        {
+          "menuItemId": "eval-combo6-tradau",
+          "name": "trà dâu",
+          "quantity": 2
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "chè trái cây",
+          "quantity": 2
+        },
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 2
+        }
+      ],
+      "matchedQuantity": 1,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.8,
+        "scoreWithinTolerance": false,
+        "falseAlarm": true,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "chè trái cây",
+            "quantity": 2
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 2
+          },
+          {
+            "name": "trái cây",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 5,
+        "matchedQuantity": 1,
+        "matchScore": 0.2,
+        "missing": [
+          {
+            "menuItemId": "eval-combo6-chethapcam",
+            "name": "chè thập cẩm",
+            "quantity": 2
+          },
+          {
+            "menuItemId": "eval-combo6-tradau",
+            "name": "trà dâu",
+            "quantity": 2
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "chè trái cây",
+            "quantity": 2
+          },
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 2
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 4 phần so với đơn: chè thập cẩm x2, trà dâu x2",
+          "Ảnh có món không nằm trong đơn: chè trái cây x2, nước ngọt x2",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    },
+    {
+      "sampleId": "COM-combo6-du-toi",
+      "kind": "COMPLETE",
+      "split": "synthetic",
+      "comboId": "combo6",
+      "model": "glm-4.6v-flashx",
+      "imagesUsed": 2,
+      "degraded": false,
+      "imageFailureReason": null,
+      "truth": {
+        "verdict": "MATCH",
+        "matchScore": 1
+      },
+      "verdict": "EXTRA",
+      "matchScore": 0.2,
+      "missing": [
+        {
+          "menuItemId": "eval-combo6-chethapcam",
+          "name": "chè thập cẩm",
+          "quantity": 2
+        },
+        {
+          "menuItemId": "eval-combo6-tradau",
+          "name": "trà dâu",
+          "quantity": 2
+        }
+      ],
+      "extra": [
+        {
+          "menuItemId": null,
+          "name": "chè trái cây",
+          "quantity": 2
+        },
+        {
+          "menuItemId": null,
+          "name": "nước ngọt",
+          "quantity": 2
+        }
+      ],
+      "matchedQuantity": 1,
+      "totalQuantity": 5,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Ảnh có món KHÔNG nằm trong đơn ⇒ có thể giao nhầm, cần người xác minh",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": 0.8,
+        "scoreWithinTolerance": false,
+        "falseAlarm": true,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [
+          {
+            "name": "chè trái cây",
+            "quantity": 2
+          },
+          {
+            "name": "nước ngọt",
+            "quantity": 2
+          },
+          {
+            "name": "trái cây",
+            "quantity": 1
+          }
+        ],
+        "boxes": 0,
+        "countable": true,
+        "sealed": false,
+        "coverage": "all_items"
+      },
+      "score": {
+        "verdict": "EXTRA",
+        "totalQuantity": 5,
+        "matchedQuantity": 1,
+        "matchScore": 0.2,
+        "missing": [
+          {
+            "menuItemId": "eval-combo6-chethapcam",
+            "name": "chè thập cẩm",
+            "quantity": 2
+          },
+          {
+            "menuItemId": "eval-combo6-tradau",
+            "name": "trà dâu",
+            "quantity": 2
+          }
+        ],
+        "extra": [
+          {
+            "menuItemId": null,
+            "name": "chè trái cây",
+            "quantity": 2
+          },
+          {
+            "menuItemId": null,
+            "name": "nước ngọt",
+            "quantity": 2
+          }
+        ],
+        "missingValue": null,
+        "reasons": [
+          "Thiếu 4 phần so với đơn: chè thập cẩm x2, trà dâu x2",
+          "Ảnh có món không nằm trong đơn: chè trái cây x2, nước ngọt x2",
+          "Ảnh có món lạ trong khi túi còn niêm phong ⇒ nghi đóng gói nhầm phía quán",
+          "Không có đơn giá của món thiếu ⇒ chưa tính được trần bồi thường"
+        ]
+      },
+      "error": null
+    }
+  ]
+}

@@ -540,6 +540,17 @@ services:
       UPLOAD_SERVICE_URL: http://upload-service:3010
       AI_ASSISTANT_ENABLED: ${AI_ASSISTANT_ENABLED:-false}
       AI_AUTO_ANALYZE: ${AI_AUTO_ANALYZE:-true}
+      # Chấm điểm ảnh tất định từ kiểm kê món (code chấm, 0 token):
+      # off = chỉ nghe model | shadow = chấm nhưng KHÔNG đổi kết luận (chỉ ghi warnings)
+      # | on = code được ghi đè kết luận khi điểm khớp rơi vào vùng AUTO_*.
+      AI_IMAGE_MATCH_SCORING: ${AI_IMAGE_MATCH_SCORING:-on}
+      # Ghép cặp ảnh [ảnh thực đơn của quán] ↔ [ảnh khách chụp]: mỗi cặp 1 lượt vision,
+      # so sánh đúng món + đếm phần + % tương đồng. off = tắt, quay lại 1 lượt gộp.
+      AI_IMAGE_PAIRWISE: ${AI_IMAGE_PAIRWISE:-on}
+      AI_PAIRWISE_MAX_PAIRS: ${AI_PAIRWISE_MAX_PAIRS:-4}
+      AI_PAIRWISE_CONCURRENCY: ${AI_PAIRWISE_CONCURRENCY:-2}
+      AI_PAIRWISE_BUDGET_MS: ${AI_PAIRWISE_BUDGET_MS:-25000}
+      AI_PAIRWISE_EVIDENCE_IMAGES: ${AI_PAIRWISE_EVIDENCE_IMAGES:-1}
       AI_ASSISTANT_MAX_IMAGES: ${AI_ASSISTANT_MAX_IMAGES:-6}
       # Ẩn danh PII trước khi gửi model (off|shadow|enforce)
       AI_PII_MODE: ${AI_PII_MODE:-enforce}
@@ -565,19 +576,20 @@ services:
       # Provider đang dùng (xem docs/AI_ASSISTANT_REPORT.md mục 2.7)
       AI_PROVIDER: ${AI_PROVIDER:-glm}
       GLM_API_KEY: ${GLM_API_KEY}
-      GLM_MODEL: ${GLM_MODEL:-glm-4.5-flash}
-      GLM_VISION_MODEL: ${GLM_VISION_MODEL:-glm-4.6v-flash}
+      GLM_MODEL: ${GLM_MODEL:-glm-4.6v}
+      GLM_VISION_MODEL: ${GLM_VISION_MODEL:-glm-4.6v}
       GLM_API_BASE: ${GLM_API_BASE:-https://open.bigmodel.cn/api/paas/v4}
       GLM_TIMEOUT_MS: ${GLM_TIMEOUT_MS:-120000}
       GLM_MAX_ATTEMPTS: ${GLM_MAX_ATTEMPTS:-3}
       GLM_RETRY_BASE_MS: ${GLM_RETRY_BASE_MS:-1500}
-      # Model đọc ảnh dự phòng khi model vision free quá tải (1305/1302).
+      # Model đọc ảnh dự phòng khi model vision quá tải (1305/1302).
       # Không đặt = glm-4.6v-flashx,glm-4.5v; "none" = chỉ dùng GLM_VISION_MODEL.
       GLM_VISION_FALLBACK_MODELS: ${GLM_VISION_FALLBACK_MODELS:-glm-4.6v-flashx,glm-4.5v}
       # Quá tải model (1305/1302): chờ bao lâu & thử thêm mấy lần trước khi bỏ ảnh
       GLM_OVERLOAD_RETRY_MS: ${GLM_OVERLOAD_RETRY_MS:-8000}
       GLM_OVERLOAD_ATTEMPTS: ${GLM_OVERLOAD_ATTEMPTS:-2}
-      GLM_FALLBACK_MODELS: ${GLM_FALLBACK_MODELS:-none}
+      # Model chữ dự phòng khi model chính lỗi (1113/1211/404); "none" = tắt
+      GLM_FALLBACK_MODELS: ${GLM_FALLBACK_MODELS:-glm-4.6}
       GLM_THINKING: ${GLM_THINKING:-auto}
       # Vẫn giữ để đổi lại Google bằng AI_PROVIDER=gemini
       GEMINI_API_KEY: ${GEMINI_API_KEY}
