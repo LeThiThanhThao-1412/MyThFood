@@ -13,8 +13,10 @@ COPY packages/event-contracts/package.json packages/event-contracts/tsconfig.jso
 COPY packages/common/package.json packages/common/tsconfig.json packages/common/
 COPY apps/notification-service/package.json apps/notification-service/tsconfig.json apps/notification-service/tsconfig.build.json apps/notification-service/nest-cli.json apps/notification-service/
 
-RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
-RUN pnpm install --frozen-lockfile --filter @mythfood/notification-service --prod false
+# Corepack luôn tải pnpm từ registry.npmjs.org (không đọc .npmrc) nên hay chết với
+# "Internal Error: Error when performing the request". -> Cài pnpm bằng npm qua mirror npmmirror.
+RUN --mount=type=cache,id=mythfood-npm,target=/root/.npm npm install -g pnpm@9.4.0 --registry=https://registry.npmmirror.com --fetch-retries=5 --fetch-timeout=120000 --no-fund --no-audit
+RUN --mount=type=cache,id=mythfood-pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile --filter @mythfood/notification-service --prod false --store-dir=/pnpm/store --prefer-offline --package-import-method=copy
 
 COPY packages/shared-kernel/src packages/shared-kernel/src/
 COPY packages/event-contracts/src packages/event-contracts/src/
@@ -43,10 +45,12 @@ COPY --from=builder /app/packages/common/dist packages/common/dist/
 COPY --from=builder /app/apps/notification-service/package.json apps/notification-service/
 COPY --from=builder /app/apps/notification-service/dist apps/notification-service/dist/
 
-RUN corepack enable && corepack prepare pnpm@9.4.0 --activate \
+# Corepack luôn tải pnpm từ registry.npmjs.org (không đọc .npmrc) nên hay chết với
+# "Internal Error: Error when performing the request". -> Cài pnpm bằng npm qua mirror npmmirror.
+RUN --mount=type=cache,id=mythfood-npm,target=/root/.npm npm install -g pnpm@9.4.0 --registry=https://registry.npmmirror.com --fetch-retries=5 --fetch-timeout=120000 --no-fund --no-audit \
     && (for i in 1 2 3 4 5; do apk add --no-cache tzdata && exit 0; sleep 5; done; exit 1)
 RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
-RUN pnpm install --frozen-lockfile --filter @mythfood/notification-service --prod
+RUN --mount=type=cache,id=mythfood-pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile --filter @mythfood/notification-service --prod --store-dir=/pnpm/store --prefer-offline --package-import-method=copy
 
 EXPOSE 3013
 CMD ["node", "apps/notification-service/dist/main.js"]

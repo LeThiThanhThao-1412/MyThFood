@@ -74,3 +74,8 @@ SETUP_GUIDE.md
 # Docker volumes (but keep the DB bootstrap scripts — docker-compose mounts them)
 docker/*
 !docker/init-db/
+!docker/kong/
+
+# Kết quả đo thực nghiệm: dữ liệu thô rất lớn (k6.json ~10 MB/run) — chỉ giữ .gitkeep
+logs/*
+!logs/.gitkeep

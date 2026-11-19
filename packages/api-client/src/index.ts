@@ -1,5 +1,10 @@
 export { httpClient, ApiError } from "./http-client";
 export {
+  API_GATEWAY_URL,
+  isDirectServiceMode,
+  resolveApiBase,
+} from "./base-url";
+export {
   socketClient,
   chatSocketClient,
   trackingSocketClient,

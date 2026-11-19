@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../stores/auth.store";
-import { httpClient } from "@mythfood/api-client";
+import { httpClient, resolveApiBase } from "@mythfood/api-client";
 import {
   getAccountBlockFromProfile,
   storeAccountBlock,
 } from "../utils/account-status";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_GATEWAY || "http://localhost:3001";
+/** Cổng identity-service - các lời gọi auth dưới đây đều thuộc service này. */
+const IDENTITY_PORT = 3001;
 
 export default function AuthProvider({
   children,
@@ -104,7 +104,7 @@ export default function AuthProvider({
         // We have a stored token – verify it works by fetching profile
         try {
           const res = await fetch(
-            `${API_BASE_URL.includes("3001") ? "http://localhost:3001" : API_BASE_URL}/api/v1/auth/me`,
+            `${resolveApiBase(IDENTITY_PORT)}/api/v1/auth/me`,
             {
               headers: { Authorization: `Bearer ${token}` },
             },
@@ -129,7 +129,7 @@ export default function AuthProvider({
             // Token expired, try refresh
             try {
               const refreshRes = await fetch(
-                `${API_BASE_URL.includes("3001") ? "http://localhost:3001" : API_BASE_URL}/api/v1/auth/refresh`,
+                `${resolveApiBase(IDENTITY_PORT)}/api/v1/auth/refresh`,
                 {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -144,7 +144,7 @@ export default function AuthProvider({
                   // Re-fetch profile with new token
                   try {
                     const retryRes = await fetch(
-                      `${API_BASE_URL.includes("3001") ? "http://localhost:3001" : API_BASE_URL}/api/v1/auth/me`,
+                      `${resolveApiBase(IDENTITY_PORT)}/api/v1/auth/me`,
                       {
                         headers: {
                           Authorization: `Bearer ${newTokens.accessToken}`,

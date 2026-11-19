@@ -32,6 +32,7 @@ import SearchHistoryDropdown from "@/components/SearchHistoryDropdown";
 import FloatingOrderCard from "@/components/FloatingOrderCard";
 import RecentOrdersDrawer from "@/components/RecentOrdersDrawer";
 import FlashSaleDrawer from "@/components/FlashSaleDrawer";
+import CardCarousel from "@/components/CardCarousel";
 
 const gradientPalette = [
   "from-[#f093fb] to-[#f5576c]",
@@ -722,11 +723,11 @@ export default function DashboardPage() {
                 {reorderMsg && (
                   <p className="text-sm text-green-600 mb-3">{reorderMsg}</p>
                 )}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <CardCarousel ariaLabel="Đặt lại lần nữa">
                   {reorderableDishes.map((d) => (
                     <div
                       key={d.key}
-                      className="border border-gray-100 rounded-xl overflow-hidden flex flex-col"
+                      className="snap-start shrink-0 w-[calc(50%-8px)] sm:w-[calc(33.333%-11px)] lg:w-[calc(25%-12px)] border border-gray-100 rounded-xl overflow-hidden flex flex-col"
                     >
                       <div className="h-24 sm:h-28 bg-[#fff7ed] flex items-center justify-center overflow-hidden">
                         {d.imageUrl || dishImageMap[d.menuItemId] ? (
@@ -758,7 +759,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ))}
-                </div>
+                </CardCarousel>
               </div>
             )}
 
@@ -819,12 +820,12 @@ export default function DashboardPage() {
                     Xem tất cả
                   </Link>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                <CardCarousel ariaLabel="Quán mới dùng thử ngay">
                   {newMerchants.map((m) => (
                     <Link
                       key={m.id}
                       href={`/restaurants/${m.id}`}
-                      className="border border-gray-100 rounded-xl overflow-hidden hover:shadow-md transition no-underline"
+                      className="snap-start shrink-0 w-[calc(50%-8px)] sm:w-[calc(33.333%-11px)] lg:w-[calc(20%-13px)] border border-gray-100 rounded-xl overflow-hidden hover:shadow-md transition no-underline"
                     >
                       <div className="h-20 bg-[#fff7ed] flex items-center justify-center overflow-hidden">
                         {m.coverImageUrl || m.logoUrl ? (
@@ -847,7 +848,7 @@ export default function DashboardPage() {
                       </div>
                     </Link>
                   ))}
-                </div>
+                </CardCarousel>
               </div>
             )}
 

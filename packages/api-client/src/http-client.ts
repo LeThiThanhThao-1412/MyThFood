@@ -2,8 +2,10 @@
 // MyThFood HTTP Client - Fetch wrapper with JWT + Refresh Token interceptors
 // ============================================================================
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_GATEWAY || "http://localhost:3001";
+import { resolveApiBase } from "./base-url";
+
+/** Cổng identity-service - dùng cho luồng refresh token. */
+const IDENTITY_PORT = 3001;
 
 interface RequestConfig {
   headers?: Record<string, string>;
@@ -60,9 +62,9 @@ class HttpClient {
   }
 
   private buildUrl(servicePort: number, path: string): string {
-    const isLocal = API_BASE_URL.startsWith("http://localhost");
-    const base = isLocal ? `http://localhost:${servicePort}` : API_BASE_URL;
-    return `${base}/api/v1${path}`;
+    // Qua gateway (Kong) thì mọi service dùng chung base, Kong route theo path;
+    // chạy trực tiếp thì vẫn dựng http://localhost:<port> như trước.
+    return `${resolveApiBase(servicePort)}/api/v1${path}`;
   }
 
   /**
@@ -83,7 +85,7 @@ class HttpClient {
     this.isRefreshing = true;
     this.refreshPromise = (async () => {
       try {
-        const url = `${API_BASE_URL.includes("3001") ? "http://localhost:3001" : API_BASE_URL}/api/v1/auth/refresh`;
+        const url = this.buildUrl(IDENTITY_PORT, "/auth/refresh");
         const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { CqrsModule } from "@nestjs/cqrs";
-import { HttpModule } from "@nestjs/axios";
 import { OrderController } from "./presentation/order.controller";
 import {
   OrderChangeController,
@@ -48,7 +47,8 @@ import { IdempotencyInterceptor } from "../cache/idempotency.interceptor";
     ]),
     CqrsModule,
     AuthModule,
-    HttpModule,
+    // KHÔNG import HttpModule ở đây: InstrumentationModule (global) cung cấp
+    // HttpService đã đo/in-process. Import HttpModule sẽ che bản toàn cục.
     CacheModule,
     ShippingModule,
   ],

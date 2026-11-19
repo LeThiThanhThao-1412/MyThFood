@@ -20,10 +20,12 @@ COPY packages/common/package.json packages/common/tsconfig.json packages/common/
 COPY apps/merchant-service/package.json apps/merchant-service/tsconfig.json apps/merchant-service/tsconfig.build.json apps/merchant-service/nest-cli.json apps/merchant-service/
 
 # Install pnpm globally
-RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
+# Corepack luôn tải pnpm từ registry.npmjs.org (không đọc .npmrc) nên hay chết với
+# "Internal Error: Error when performing the request". -> Cài pnpm bằng npm qua mirror npmmirror.
+RUN --mount=type=cache,id=mythfood-npm,target=/root/.npm npm install -g pnpm@9.4.0 --registry=https://registry.npmmirror.com --fetch-retries=5 --fetch-timeout=120000 --no-fund --no-audit
 
 # Install dependencies (only prod deps for build stage)
-RUN pnpm install --frozen-lockfile --filter @mythfood/merchant-service --prod false
+RUN --mount=type=cache,id=mythfood-pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile --filter @mythfood/merchant-service --prod false --store-dir=/pnpm/store --prefer-offline --package-import-method=copy
 
 # Copy source code
 COPY packages/shared-kernel/src packages/shared-kernel/src/
@@ -45,7 +47,9 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # Install pnpm and wget for healthcheck
-RUN corepack enable && corepack prepare pnpm@9.4.0 --activate \
+# Corepack luôn tải pnpm từ registry.npmjs.org (không đọc .npmrc) nên hay chết với
+# "Internal Error: Error when performing the request". -> Cài pnpm bằng npm qua mirror npmmirror.
+RUN --mount=type=cache,id=mythfood-npm,target=/root/.npm npm install -g pnpm@9.4.0 --registry=https://registry.npmmirror.com --fetch-retries=5 --fetch-timeout=120000 --no-fund --no-audit \
     && (for i in 1 2 3 4 5; do apk add --no-cache wget tzdata && exit 0; sleep 5; done; exit 1)
 
 # Copy root configs
@@ -67,7 +71,7 @@ COPY --from=builder /app/apps/merchant-service/package.json apps/merchant-servic
 COPY --from=builder /app/apps/merchant-service/dist apps/merchant-service/dist/
 
 # Install production dependencies only (skip prepare scripts since no git)
-RUN pnpm install --frozen-lockfile --filter @mythfood/merchant-service --prod --ignore-scripts
+RUN --mount=type=cache,id=mythfood-pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile --filter @mythfood/merchant-service --prod --ignore-scripts --store-dir=/pnpm/store --prefer-offline --package-import-method=copy
 
 EXPOSE 3003
 

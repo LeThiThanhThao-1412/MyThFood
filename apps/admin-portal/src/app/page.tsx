@@ -8,6 +8,8 @@ import {
   paymentApi,
   driverApi,
   walletApi,
+  PORTS,
+  resolveApiBase,
 } from "@mythfood/api-client";
 import { useAuthStore, NotificationBell } from "@mythfood/frontend-shared";
 import { formatDateTime } from "../lib/format";
@@ -393,7 +395,7 @@ export default function AdminDashboardPage() {
   }
 
   // ─── Driver actions ───────────────────────────────────────
-  const DRIVER_API_URL = "http://localhost:3007/api/v1";
+  const DRIVER_API_URL = `${resolveApiBase(PORTS.DRIVER)}/api/v1`;
 
   async function handleActivateDriver(id: string) {
     setActionError("");

@@ -6,6 +6,8 @@ import {
   driverApi,
   consumerApi,
   authApi,
+  PORTS,
+  resolveApiBase,
 } from "@mythfood/api-client";
 import { useAuthStore, deliveryOptionMeta } from "@mythfood/frontend-shared";
 import { useMerchantSocket } from "./SocketProvider";
@@ -287,7 +289,8 @@ export default function OrderDetailDrawer({
   async function handlePrintInvoice() {
     if (!order) return;
     try {
-      const base = process.env.NEXT_PUBLIC_ORDER_API || "http://localhost:3004";
+      const base =
+        process.env.NEXT_PUBLIC_ORDER_API || resolveApiBase(PORTS.ORDER);
       const res = await fetch(`${base}/api/v1/orders/${order.id}/invoice`, {
         headers: { Authorization: `Bearer ${token}` },
       });

@@ -35,6 +35,9 @@ Trong dự án này, tôi đóng vai trò **QA Engineer** — chịu trách nhi�
 │                      FRONTEND (Next.js)                      │
 │  consumer-app │ merchant-app │ driver-app │ admin-portal    │
 ├─────────────────────────────────────────────────────────────┤
+│                API GATEWAY (Kong, DB-less :8000)             │
+│  route /api/v1/* → 15 service │ x-trace-id │ rate-limit auth │
+├─────────────────────────────────────────────────────────────┤
 │                    BACKEND (NestJS Microservices)            │
 │  identity-service (3001)    consumer-service (3002)         │
 │  merchant-service (3003)    order-service    (3004)         │
@@ -44,6 +47,7 @@ Trong dự án này, tôi đóng vai trò **QA Engineer** — chịu trách nhi�
 ├─────────────────────────────────────────────────────────────┤
 │            INFRASTRUCTURE (Docker Compose)                   │
 │  PostgreSQL 16 (9 DBs) │ Redis 7 │ Kafka │ Stripe API       │
+│  Kong Gateway :8000 - điểm vào HTTP (WS đi trực tiếp)       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -173,6 +177,12 @@ pnpm test
 | Dispatch Service  | 3008 | `mythfood_dispatch`  |
 | Wallet Service    | 3009 | `mythfood_wallet`    |
 | Upload Service    | 3010 | N/A                  |
+| Kong Gateway      | 8000 | N/A (DB-less)        |
+| Kong Admin API    | 8001 | N/A (chỉ dev)        |
+
+> Frontend gọi HTTP qua gateway: `http://localhost:8000/api/v1/...`.
+> WebSocket vẫn gọi trực tiếp service. Chi tiết: [`docs/API_GATEWAY.md`](docs/API_GATEWAY.md).
+> Smoke test gateway: `pwsh scripts/test-gateway.ps1` (35 kiểm tra: route, login, upload, webhook, rate-limit).
 
 ---
 

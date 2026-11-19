@@ -46,6 +46,44 @@ services:
       - mythfood-network
 
   # ============================================================================
+  # Kong Gateway (DB-less) - điểm vào HTTP duy nhất cho 4 frontend
+  # Frontend gọi http://localhost:8000/api/v1/... ; cấu hình route ở
+  # docker/kong/kong.yml. WebSocket vẫn đi trực tiếp tới từng service.
+  # ============================================================================
+  gateway:
+    image: kong:3.9.4
+    container_name: mythfood-gateway
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_LOG_LEVEL: notice
+      # Không đệm body: upload 100MB và webhook Stripe đi thẳng tới upstream
+      KONG_NGINX_HTTP_PROXY_REQUEST_BUFFERING: "off"
+      KONG_NGINX_HTTP_CLIENT_MAX_BODY_SIZE: "0"
+      # AI phân tích khiếu nại có thể chạy > 60s (mặc định nginx)
+      KONG_NGINX_HTTP_PROXY_READ_TIMEOUT: 300s
+      KONG_NGINX_HTTP_PROXY_SEND_TIMEOUT: 300s
+      # rate-limiting dùng policy "local" (không cần Redis) nên bộ đếm nằm trong
+      # từng worker. Để mức 60 req/phút/IP là đúng thực tế chứ không bị nhân lên
+      # theo số worker, chạy 1 worker - quá đủ cho môi trường dev 4 frontend.
+      KONG_NGINX_WORKER_PROCESSES: "1"
+    volumes:
+      - ./docker/kong/kong.yml:/kong/kong.yml:ro
+    ports:
+      - "8000:8000" # proxy - frontend dùng cổng này
+      - "8001:8001" # Admin API - chỉ dùng ở dev để reload config
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - mythfood-network
+
+  # ============================================================================
   # Identity Service (NestJS)
   # ============================================================================
   identity-service:
@@ -407,6 +445,10 @@ services:
       TZ: Asia/Ho_Chi_Minh
       JWT_SECRET: ${JWT_SECRET_UPLOAD}
       JWT_EXPIRATION: 1h
+      # URL trả về cho frontend khi upload xong. Phải trỏ về Kong (:8000) chứ
+      # không phải :3010, để ảnh cũng đi qua gateway như mọi HTTP khác. Biến này
+      # ghi đè UPLOAD_BASE_URL trong apps/upload-service/.env.
+      UPLOAD_BASE_URL: ${UPLOAD_BASE_URL:-http://localhost:8000}
     # Ảnh bằng chứng khiếu nại (STORAGE_DRIVER=local) nằm trong /app/uploads.
     # Không mount ⇒ mất toàn bộ ảnh mỗi lần container được tạo lại, và AI sẽ báo
     # "không đọc được ảnh" dù khách đã gửi.

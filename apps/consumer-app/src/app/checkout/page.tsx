@@ -25,6 +25,8 @@ import {
   merchantApi,
   promotionApi,
   shippingApi,
+  PORTS,
+  resolveApiBase,
   type ConsumerProfile,
   type Address,
   type PaymentMethod,
@@ -752,7 +754,7 @@ function CheckoutContent() {
       if (authStore.refreshToken) {
         try {
           const refreshResponse = await fetch(
-            "http://localhost:3001/api/v1/auth/refresh",
+            `${resolveApiBase(PORTS.IDENTITY)}/api/v1/auth/refresh`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },

@@ -1,0 +1,74 @@
+[
+  {
+    "runId": "E3-W3-http-r1",
+    "experiment": "E3",
+    "profile": "W3",
+    "variant": "M2",
+    "targetRate": 1,
+    "repeat": 1,
+    "note": "Chế độ rút gọn (n=1) — cặp nhánh cho Bảng VI"
+  },
+  {
+    "runId": "E3-W3-inproc-r1",
+    "experiment": "E3",
+    "profile": "W3",
+    "variant": "B1",
+    "targetRate": 1,
+    "repeat": 1,
+    "note": "Chế độ rút gọn (n=1) — cặp nhánh cho Bảng VI"
+  },
+
+  {
+    "runId": "E1-W1-r1",
+    "experiment": "E1",
+    "profile": "W1",
+    "variant": "M2",
+    "repeat": 1,
+    "note": "Chế độ rút gọn (n=1)"
+  },
+  {
+    "runId": "E1-W4-r1",
+    "experiment": "E1",
+    "profile": "W4",
+    "variant": "M2",
+    "repeat": 1,
+    "note": "Chế độ rút gọn (n=1) — điểm gãy co giãn"
+  },
+
+  {
+    "runId": "E5-F1-r1",
+    "experiment": "E5",
+    "profile": "W2",
+    "variant": "M2",
+    "repeat": 1,
+    "fault": "faults\\F1.ps1",
+    "note": "Dừng review-service (0 lượt gọi đo được)"
+  },
+  {
+    "runId": "E5-F2-r1",
+    "experiment": "E5",
+    "profile": "W2",
+    "variant": "M2",
+    "repeat": 1,
+    "fault": "faults\\F2.ps1",
+    "note": "Dừng promotion-service (1 lượt gọi/đơn — trên đường tới hạn)"
+  },
+  {
+    "runId": "E5-F3-r1",
+    "experiment": "E5",
+    "profile": "W2",
+    "variant": "M2",
+    "repeat": 1,
+    "fault": "faults\\F3.ps1",
+    "note": "Dừng notification-service (0 lượt gọi đo được)"
+  },
+  {
+    "runId": "E5-F4-r1",
+    "experiment": "E5",
+    "profile": "W2",
+    "variant": "M2",
+    "repeat": 1,
+    "fault": "faults\\F4.ps1",
+    "note": "Dừng inventory-service (fan-in 0 — kiểm chứng giả thuyết sai)"
+  }
+]

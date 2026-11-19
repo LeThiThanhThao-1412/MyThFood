@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   merchantApi,
   PORTS,
+  resolveApiBase,
   type PriceHistoryStatus,
 } from "@mythfood/api-client";
 import { useAuthStore } from "@mythfood/frontend-shared";
@@ -141,11 +142,7 @@ export default function MerchantPriceHistoryPage() {
     if (menuItemId) params.set("menuItemId", menuItemId);
     if (from) params.set("from", from);
     if (to) params.set("to", to);
-    const base = process.env.NEXT_PUBLIC_API_GATEWAY || "http://localhost:3001";
-    const isLocal = base.startsWith("http://localhost");
-    const url = `${
-      isLocal ? `http://localhost:${PORTS.MERCHANT}` : base
-    }/api/v1/merchants/${merchant.id}/price-history/export?${params.toString()}`;
+    const url = `${resolveApiBase(PORTS.MERCHANT)}/api/v1/merchants/${merchant.id}/price-history/export?${params.toString()}`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
     });

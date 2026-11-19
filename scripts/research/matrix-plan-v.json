@@ -1,0 +1,20 @@
+[
+  {
+    "runId": "E1-W2-http-3rps-r1",
+    "experiment": "E1",
+    "profile": "W2",
+    "variant": "M2",
+    "targetRate": 3,
+    "repeat": 1,
+    "note": "Cặp so sánh ở 3 rps: 10 rps làm nhánh B1 bão hoà 1,0 CPU (§14.6)"
+  },
+  {
+    "runId": "E3-W2-inproc-3rps-r1",
+    "experiment": "E3",
+    "profile": "W2",
+    "variant": "B1",
+    "targetRate": 3,
+    "repeat": 1,
+    "note": "Cặp so sánh ở 3 rps — dòng B1 của Bảng V"
+  }
+]

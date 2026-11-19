@@ -13,8 +13,10 @@ COPY packages/event-contracts/package.json packages/event-contracts/tsconfig.jso
 COPY packages/common/package.json packages/common/tsconfig.json packages/common/
 COPY apps/review-service/package.json apps/review-service/tsconfig.json apps/review-service/tsconfig.build.json apps/review-service/nest-cli.json apps/review-service/
 
-RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
-RUN pnpm install --frozen-lockfile --filter @mythfood/review-service --prod false
+# Corepack luôn tải pnpm từ registry.npmjs.org (không đọc .npmrc) nên hay chết với
+# "Internal Error: Error when performing the request". -> Cài pnpm bằng npm qua mirror npmmirror.
+RUN --mount=type=cache,id=mythfood-npm,target=/root/.npm npm install -g pnpm@9.4.0 --registry=https://registry.npmmirror.com --fetch-retries=5 --fetch-timeout=120000 --no-fund --no-audit
+RUN --mount=type=cache,id=mythfood-pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile --filter @mythfood/review-service --prod false --store-dir=/pnpm/store --prefer-offline --package-import-method=copy
 
 COPY packages/shared-kernel/src packages/shared-kernel/src/
 COPY packages/event-contracts/src packages/event-contracts/src/
@@ -43,10 +45,12 @@ COPY --from=builder /app/packages/common/dist packages/common/dist/
 COPY --from=builder /app/apps/review-service/package.json apps/review-service/
 COPY --from=builder /app/apps/review-service/dist apps/review-service/dist/
 
-RUN corepack enable && corepack prepare pnpm@9.4.0 --activate \
+# Corepack luôn tải pnpm từ registry.npmjs.org (không đọc .npmrc) nên hay chết với
+# "Internal Error: Error when performing the request". -> Cài pnpm bằng npm qua mirror npmmirror.
+RUN --mount=type=cache,id=mythfood-npm,target=/root/.npm npm install -g pnpm@9.4.0 --registry=https://registry.npmmirror.com --fetch-retries=5 --fetch-timeout=120000 --no-fund --no-audit \
     && (for i in 1 2 3 4 5; do apk add --no-cache tzdata && exit 0; sleep 5; done; exit 1)
 RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
-RUN pnpm install --frozen-lockfile --filter @mythfood/review-service --prod
+RUN --mount=type=cache,id=mythfood-pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile --filter @mythfood/review-service --prod --store-dir=/pnpm/store --prefer-offline --package-import-method=copy
 
 EXPOSE 3011
 CMD ["node", "apps/review-service/dist/main.js"]

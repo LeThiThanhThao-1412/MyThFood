@@ -1,5 +1,9 @@
 import { io, Socket } from "socket.io-client";
 
+// HTTP đi qua Kong Gateway (xem ./base-url.ts), còn WebSocket vẫn gọi TRỰC TIẾP
+// từng service: cả 3 socket server dùng path mặc định `/socket.io/` và namespace
+// (`/chat`, `/tracking`) nằm trong payload handshake nên Kong không thể tách theo
+// path. Muốn đưa WS qua gateway phải đặt `path` riêng cho từng server trước.
 const SOCKET_URL = process.env.NEXT_PUBLIC_WS_URL || "http://localhost:3004";
 const CHAT_SOCKET_URL =
   process.env.NEXT_PUBLIC_CHAT_WS_URL || "http://localhost:3015/chat";

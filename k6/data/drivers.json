@@ -1,0 +1,122 @@
+[
+  {
+    "driverIndex": 1,
+    "phoneNumber": "+84930000001",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000001"
+  },
+  {
+    "driverIndex": 2,
+    "phoneNumber": "+84930000002",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000002"
+  },
+  {
+    "driverIndex": 3,
+    "phoneNumber": "+84930000003",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000003"
+  },
+  {
+    "driverIndex": 4,
+    "phoneNumber": "+84930000004",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000004"
+  },
+  {
+    "driverIndex": 5,
+    "phoneNumber": "+84930000005",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000005"
+  },
+  {
+    "driverIndex": 6,
+    "phoneNumber": "+84930000006",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000006"
+  },
+  {
+    "driverIndex": 7,
+    "phoneNumber": "+84930000007",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000007"
+  },
+  {
+    "driverIndex": 8,
+    "phoneNumber": "+84930000008",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000008"
+  },
+  {
+    "driverIndex": 9,
+    "phoneNumber": "+84930000009",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000009"
+  },
+  {
+    "driverIndex": 10,
+    "phoneNumber": "+84930000010",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000010"
+  },
+  {
+    "driverIndex": 11,
+    "phoneNumber": "+84930000011",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000011"
+  },
+  {
+    "driverIndex": 12,
+    "phoneNumber": "+84930000012",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000012"
+  },
+  {
+    "driverIndex": 13,
+    "phoneNumber": "+84930000013",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000013"
+  },
+  {
+    "driverIndex": 14,
+    "phoneNumber": "+84930000014",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000014"
+  },
+  {
+    "driverIndex": 15,
+    "phoneNumber": "+84930000015",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000015"
+  },
+  {
+    "driverIndex": 16,
+    "phoneNumber": "+84930000016",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000016"
+  },
+  {
+    "driverIndex": 17,
+    "phoneNumber": "+84930000017",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000017"
+  },
+  {
+    "driverIndex": 18,
+    "phoneNumber": "+84930000018",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000018"
+  },
+  {
+    "driverIndex": 19,
+    "phoneNumber": "+84930000019",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000019"
+  },
+  {
+    "driverIndex": 20,
+    "phoneNumber": "+84930000020",
+    "password": "Test123!",
+    "driverId": "d2000000-0000-4000-8000-000000000020"
+  }
+]
