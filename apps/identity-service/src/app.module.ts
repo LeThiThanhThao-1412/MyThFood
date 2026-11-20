@@ -6,6 +6,7 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { APP_GUARD } from "@nestjs/core";
 import { AuthModule } from "./modules/auth/auth.module";
 import { UserModule } from "./modules/user/user.module";
+import { HealthController } from "./modules/health/health.controller";
 import { databaseConfig } from "./config/database.config";
 
 @Module({
@@ -55,6 +56,7 @@ import { databaseConfig } from "./config/database.config";
     AuthModule,
     UserModule,
   ],
+  controllers: [HealthController],
   providers: [
     {
       provide: APP_GUARD,

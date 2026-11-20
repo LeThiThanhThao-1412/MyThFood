@@ -84,6 +84,6 @@ RUN (for i in 1 2 3 4 5; do apk add --no-cache libstdc++ build-base python3 && e
 EXPOSE 3001
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/v1/health || exit 1
 
 CMD ["node", "apps/identity-service/dist/main.js"]

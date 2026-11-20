@@ -4,6 +4,7 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { CqrsModule } from "@nestjs/cqrs";
 import { AuthModule } from "./modules/auth/auth.module";
 import { ConsumerModule } from "./modules/consumer/consumer.module";
+import { HealthController } from "./modules/health/health.controller";
 import { databaseConfig } from "./config/database.config";
 
 @Module({
@@ -23,5 +24,6 @@ import { databaseConfig } from "./config/database.config";
     AuthModule,
     ConsumerModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}
