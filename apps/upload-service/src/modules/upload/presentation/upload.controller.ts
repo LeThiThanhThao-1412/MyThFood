@@ -42,10 +42,26 @@ export class UploadController {
     };
   }
 
-  @Get(":key")
+  @Get(":key(.*)")
   async getFile(@Param("key") key: string, @Res() res: Response) {
+    const result = this.uploadService.getFileStream(key);
+
+    if (result === null) {
+      // S3 mode: generate pre-signed URL (no ACL needed)
+      try {
+        const url = await this.uploadService.getSignedUrl(key);
+        res.redirect(url);
+      } catch {
+        const bucket = process.env.AWS_S3_BUCKET;
+        const region = process.env.AWS_REGION || "ap-southeast-1";
+        const url = `https://${bucket}.s3.${region}.amazonaws.com/mythfood/${key}`;
+        res.redirect(url);
+      }
+      return;
+    }
+
     try {
-      const { stream, mimeType } = this.uploadService.getFileStream(key);
+      const { stream, mimeType } = result;
       res.setHeader("Content-Type", mimeType);
       res.setHeader("Cache-Control", "public, max-age=86400");
       stream.pipe(res);

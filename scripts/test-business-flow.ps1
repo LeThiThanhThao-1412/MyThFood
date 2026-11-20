@@ -262,9 +262,10 @@ if (-not $skipOrder) {
                 Write-Host "[WARN] Assign driver: $($_.Exception.Message)" -ForegroundColor Yellow
             }
             
-            # Mark delivered
+            # Mark delivered (bắt buộc ảnh món ăn tài xế chụp lúc giao cho khách)
             try {
-                $done = Invoke-RestMethod -Uri "$orderUrl/orders/$orderId/delivered" -Method Patch -Headers $dh2
+                $proofBody = @{ photoUrl = "http://localhost:3010/api/v1/upload/delivery-proof/test-proof.jpg" } | ConvertTo-Json
+                $done = Invoke-RestMethod -Uri "$orderUrl/orders/$orderId/delivered" -Method Patch -Body $proofBody -Headers $dh2
                 Write-Host "[PASS] DELIVERED! Status: $($done.status)" -ForegroundColor Green
             } catch {
                 Write-Host "[WARN] Deliver: $($_.Exception.Message)" -ForegroundColor Yellow

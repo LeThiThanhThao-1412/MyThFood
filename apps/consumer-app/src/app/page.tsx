@@ -1,30 +1,62 @@
-'use client';
-import { useEffect } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@mythfood/frontend-shared';
+"use client";
+import { useEffect } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuthStore } from "@mythfood/frontend-shared";
 
 const highlights = [
-  { icon: '🛵', title: 'Giao hàng nhanh', desc: 'Giao trong 30 phút, theo dõi real-time' },
-  { icon: '🍜', title: 'Đa dạng món ngon', desc: 'Hàng trăm nhà hàng, nghìn món ăn' },
-  { icon: '💰', title: 'Giá tốt mỗi ngày', desc: 'Flash sale, khuyến mãi hấp dẫn' },
-  { icon: '⭐', title: 'Chất lượng đảm bảo', desc: 'Nhà hàng được kiểm duyệt kỹ' },
+  {
+    icon: "🛵",
+    title: "Giao hàng nhanh",
+    desc: "Giao trong 30 phút, theo dõi real-time",
+  },
+  {
+    icon: "🍜",
+    title: "Đa dạng món ngon",
+    desc: "Hàng trăm nhà hàng, nghìn món ăn",
+  },
+  {
+    icon: "💰",
+    title: "Giá tốt mỗi ngày",
+    desc: "Flash sale, khuyến mãi hấp dẫn",
+  },
+  {
+    icon: "⭐",
+    title: "Chất lượng đảm bảo",
+    desc: "Nhà hàng được kiểm duyệt kỹ",
+  },
 ];
 
 const categories = [
-  { icon: '🍜', label: 'Món chính' },
-  { icon: '🥤', label: 'Đồ uống' },
-  { icon: '🍰', label: 'Tráng miệng' },
-  { icon: '🥗', label: 'Món ăn kèm' },
-  { icon: '🍱', label: 'Combo' },
-  { icon: '🌶️', label: 'Đặc sắc' },
+  { icon: "🍜", label: "Món chính" },
+  { icon: "🥤", label: "Đồ uống" },
+  { icon: "🍰", label: "Tráng miệng" },
+  { icon: "🥗", label: "Món ăn kèm" },
+  { icon: "🍱", label: "Combo" },
+  { icon: "🌶️", label: "Đặc sắc" },
 ];
 
 const steps = [
-  { icon: '📱', title: 'Tải app hoặc truy cập web', desc: 'Có mặt trên iOS, Android và Web' },
-  { icon: '📍', title: 'Chọn địa chỉ giao hàng', desc: 'Nhập địa chỉ hoặc dùng GPS' },
-  { icon: '🍽️', title: 'Chọn món yêu thích', desc: 'Duyệt menu từ hàng trăm nhà hàng' },
-  { icon: '🛵', title: 'Nhận món tận nơi', desc: 'Giao hàng nhanh chóng, tươi ngon' },
+  {
+    icon: "📱",
+    title: "Tải app hoặc truy cập web",
+    desc: "Có mặt trên iOS, Android và Web",
+  },
+  {
+    icon: "📍",
+    title: "Chọn địa chỉ giao hàng",
+    desc: "Nhập địa chỉ hoặc dùng GPS",
+  },
+  {
+    icon: "🍽️",
+    title: "Chọn món yêu thích",
+    desc: "Duyệt menu từ hàng trăm nhà hàng",
+  },
+  {
+    icon: "🛵",
+    title: "Nhận món tận nơi",
+    desc: "Giao hàng nhanh chóng, tươi ngon",
+  },
 ];
 
 export default function LandingPage() {
@@ -33,7 +65,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      router.replace('/dashboard');
+      router.replace("/dashboard");
     }
   }, [isAuthenticated, router]);
 
@@ -46,7 +78,10 @@ export default function LandingPage() {
             MyTh<span className="text-[#1a1a2e]">Food</span>
           </Link>
           <div className="flex items-center gap-4">
-            <Link href="/login" className="text-sm font-medium text-gray-600 hover:text-[#ff6b35] transition">
+            <Link
+              href="/login"
+              className="text-sm font-medium text-gray-600 hover:text-[#ff6b35] transition"
+            >
               Đăng nhập
             </Link>
             <Link
@@ -66,10 +101,11 @@ export default function LandingPage() {
             <div className="flex-1 text-center md:text-left">
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-[#1a1a2e] leading-tight">
                 Đặt đồ ăn <span className="text-[#ff6b35]">nhanh chóng</span>,
-                <br />giao tận nơi tươi ngon
+                <br />
+                giao tận nơi tươi ngon
               </h1>
               <p className="mt-6 text-lg text-gray-500 max-w-xl mx-auto md:mx-0">
-                Hàng trăm nhà hàng, nghìn món ngon. Giao hàng chỉ trong 30 phút. 
+                Hàng trăm nhà hàng, nghìn món ngon. Giao hàng chỉ trong 30 phút.
                 Theo dõi đơn hàng real-time. Giảm 50% cho đơn đầu tiên!
               </p>
               <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
@@ -108,7 +144,9 @@ export default function LandingPage() {
             <h2 className="text-3xl md:text-4xl font-extrabold text-[#1a1a2e]">
               ✨ Tại sao chọn <span className="text-[#ff6b35]">MyThFood</span>?
             </h2>
-            <p className="mt-3 text-gray-500">Nền tảng giao đồ ăn hàng đầu Việt Nam</p>
+            <p className="mt-3 text-gray-500">
+              Nền tảng giao đồ ăn hàng đầu Việt Nam
+            </p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {highlights.map((item) => (
@@ -132,7 +170,9 @@ export default function LandingPage() {
             <h2 className="text-3xl md:text-4xl font-extrabold text-[#1a1a2e]">
               🍽️ Danh mục món ăn
             </h2>
-            <p className="mt-3 text-gray-500">Khám phá hàng nghìn món ăn đa dạng</p>
+            <p className="mt-3 text-gray-500">
+              Khám phá hàng nghìn món ăn đa dạng
+            </p>
           </div>
           <div className="flex flex-wrap justify-center gap-4">
             {categories.map((cat) => (
@@ -141,7 +181,9 @@ export default function LandingPage() {
                 className="bg-white rounded-2xl px-6 py-4 text-center shadow-sm hover:shadow-md transition-all cursor-pointer min-w-[110px] border border-gray-100"
               >
                 <div className="text-3xl mb-2">{cat.icon}</div>
-                <div className="text-sm font-semibold text-gray-700">{cat.label}</div>
+                <div className="text-sm font-semibold text-gray-700">
+                  {cat.label}
+                </div>
               </div>
             ))}
           </div>
@@ -155,7 +197,9 @@ export default function LandingPage() {
             <h2 className="text-3xl md:text-4xl font-extrabold text-[#1a1a2e]">
               📲 Cách đặt món
             </h2>
-            <p className="mt-3 text-gray-500">Chỉ 4 bước đơn giản để có món ngon</p>
+            <p className="mt-3 text-gray-500">
+              Chỉ 4 bước đơn giản để có món ngon
+            </p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {steps.map((step, idx) => (
@@ -183,7 +227,9 @@ export default function LandingPage() {
             🛵 Sẵn sàng đặt món chưa?
           </h2>
           <p className="text-lg text-white/60 mb-8">
-            Tạo tài khoản miễn phí và nhận ngay <strong className="text-white">ưu đãi 50%</strong> cho đơn hàng đầu tiên!
+            Tạo tài khoản miễn phí và nhận ngay{" "}
+            <strong className="text-white">ưu đãi 50%</strong> cho đơn hàng đầu
+            tiên!
           </p>
           <Link
             href="/register"
@@ -192,8 +238,11 @@ export default function LandingPage() {
             🎉 Đăng ký ngay - Miễn phí
           </Link>
           <p className="mt-4 text-sm text-white/40">
-            Đã có tài khoản?{' '}
-            <Link href="/login" className="text-[#ff6b35] hover:underline font-medium">
+            Đã có tài khoản?{" "}
+            <Link
+              href="/login"
+              className="text-[#ff6b35] hover:underline font-medium"
+            >
               Đăng nhập
             </Link>
           </p>
@@ -204,7 +253,10 @@ export default function LandingPage() {
       <footer className="bg-[#1a1a2e] text-white/50 py-8">
         <div className="max-w-6xl mx-auto px-4 text-center text-sm">
           <p className="mb-1">
-            <span className="text-white font-bold">MyTh<span className="text-[#ff6b35]">Food</span></span> - Nền tảng giao đồ ăn hàng đầu Việt Nam
+            <span className="text-white font-bold">
+              MyTh<span className="text-[#ff6b35]">Food</span>
+            </span>{" "}
+            - Nền tảng giao đồ ăn hàng đầu Việt Nam
           </p>
           <p>© 2026 MyThFood. Tất cả quyền được bảo lưu.</p>
         </div>

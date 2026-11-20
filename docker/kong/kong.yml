@@ -1,0 +1,245 @@
+# ============================================================================
+# MyThFood - Kong Gateway (DB-less / declarative)
+# ============================================================================
+# Điểm vào duy nhất cho 4 frontend: http://localhost:8000
+# Route 1-1 theo prefix @Controller của từng microservice, giữ nguyên `/api/v1`
+# (strip_path: false) để controller bên trong không phải đổi gì.
+#
+# Chỉ áp dụng cho kiến trúc microservice. WebSocket (socket.io) KHÔNG đi qua đây
+# vì cả 3 socket server dùng path mặc định `/socket.io/`; namespace nằm trong
+# payload handshake nên không thể tách theo path (xem docs/API_GATEWAY.md).
+#
+# Không dùng biến môi trường trong file này: upstream là DNS nội bộ Docker
+# network, cố định theo docker-compose.yml (môi trường dev).
+# ============================================================================
+
+_format_version: "3.0"
+_transform: true
+
+# ----------------------------------------------------------------------------
+# Plugin toàn cục
+# - correlation-id: đảm bảo mọi request có `x-trace-id` (khớp TraceMiddleware
+#   của packages/instrumentation). Nếu client đã gửi header này thì Kong GIỮ
+#   NGUYÊN giá trị, ngược lại Kong sinh UUID mới.
+# - Không cấu hình CORS: 15 service đều đã enableCors() trong main.ts, thêm nữa
+#   sẽ sinh header Access-Control-Allow-Origin trùng và bị browser chặn.
+# - Không cấu hình JWT: access token không có `iss`/`aud` nên không map được với
+#   consumer/jwt_secret của Kong OSS; service vẫn tự verify như hiện tại.
+# ----------------------------------------------------------------------------
+plugins:
+  - name: correlation-id
+    config:
+      header_name: x-trace-id
+      generator: uuid
+      echo_downstream: false
+
+services:
+  # --------------------------------------------------------------------------
+  # Smoke-test: trả 200 ngay cả khi chưa có upstream nào chạy
+  # GET http://localhost:8000/gateway/health
+  # --------------------------------------------------------------------------
+  - name: gateway-meta
+    url: http://127.0.0.1:8000
+    routes:
+      - name: gateway-health
+        paths:
+          - /gateway/health
+        strip_path: true
+        plugins:
+          - name: request-termination
+            config:
+              status_code: 200
+              message: "mythfood gateway ok"
+
+  # --------------------------------------------------------------------------
+  # 3001 - Identity Service (đăng nhập, refresh token, quản lý user)
+  # Chỉ rate-limit 2 endpoint credentials để chặn dò mật khẩu. Không giới hạn
+  # /auth/me và /auth/refresh: mỗi tab đều gọi 2 endpoint này khi tải trang nên
+  # nếu limit cả prefix sẽ bị 429 khi mở nhiều tab.
+  # --------------------------------------------------------------------------
+  - name: identity-service
+    url: http://identity-service:3001
+    routes:
+      - name: identity-credentials
+        paths:
+          - /api/v1/auth/login
+          - /api/v1/auth/register
+        strip_path: false
+        plugins:
+          # 60 request/phút/IP cho 2 endpoint dễ bị dò mật khẩu.
+          # policy "local" => bộ đếm nằm trong worker; docker-compose.yml đặt
+          # KONG_NGINX_WORKER_PROCESSES=1 nên con số này là chính xác.
+          - name: rate-limiting
+            config:
+              minute: 60
+              policy: local
+              fault_tolerant: true
+              hide_client_headers: false
+
+      - name: identity
+        paths:
+          - /api/v1/auth
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3002 - Consumer Service
+  # --------------------------------------------------------------------------
+  - name: consumer-service
+    url: http://consumer-service:3002
+    routes:
+      - name: consumer
+        paths:
+          - /api/v1/consumers
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3003 - Merchant Service (gồm /health của riêng service này)
+  # --------------------------------------------------------------------------
+  - name: merchant-service
+    url: http://merchant-service:3003
+    routes:
+      - name: merchant
+        paths:
+          - /api/v1/merchants
+          - /api/v1/health
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3004 - Order Service
+  # --------------------------------------------------------------------------
+  - name: order-service
+    url: http://order-service:3004
+    routes:
+      - name: order
+        paths:
+          - /api/v1/orders
+          - /api/v1/order-change-requests
+          - /api/v1/shipping
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3005 - Inventory Service
+  # --------------------------------------------------------------------------
+  - name: inventory-service
+    url: http://inventory-service:3005
+    routes:
+      - name: inventory
+        paths:
+          - /api/v1/inventory
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3006 - Payment Service (Stripe). Gateway không đệm body nên webhook
+  # vẫn nhận raw body để verify chữ ký.
+  # --------------------------------------------------------------------------
+  - name: payment-service
+    url: http://payment-service:3006
+    routes:
+      - name: payment
+        paths:
+          - /api/v1/payments
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3007 - Driver Service (HTTP API; socket.io `/tracking` đi trực tiếp)
+  # --------------------------------------------------------------------------
+  - name: driver-service
+    url: http://driver-service:3007
+    routes:
+      - name: driver
+        paths:
+          - /api/v1/drivers
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3008 - Dispatch Service
+  # --------------------------------------------------------------------------
+  - name: dispatch-service
+    url: http://dispatch-service:3008
+    routes:
+      - name: dispatch
+        paths:
+          - /api/v1/dispatches
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3009 - Wallet Service
+  # --------------------------------------------------------------------------
+  - name: wallet-service
+    url: http://wallet-service:3009
+    routes:
+      - name: wallet
+        paths:
+          - /api/v1/wallets
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3010 - Upload Service (multipart: gateway tắt request buffering)
+  # --------------------------------------------------------------------------
+  - name: upload-service
+    url: http://upload-service:3010
+    routes:
+      - name: upload
+        paths:
+          - /api/v1/upload
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3011 - Review Service
+  # --------------------------------------------------------------------------
+  - name: review-service
+    url: http://review-service:3011
+    routes:
+      - name: review
+        paths:
+          - /api/v1/reviews
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3012 - Promotion Service
+  # --------------------------------------------------------------------------
+  - name: promotion-service
+    url: http://promotion-service:3012
+    routes:
+      - name: promotion
+        paths:
+          - /api/v1/promotions
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3013 - Notification Service
+  # --------------------------------------------------------------------------
+  - name: notification-service
+    url: http://notification-service:3013
+    routes:
+      - name: notification
+        paths:
+          - /api/v1/notifications
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3014 - Resolution Service (khiếu nại, AI assistant, xử phạt, fraud rules)
+  # AI phân tích ảnh có thể chạy > 60s -> compose đã nâng proxy read timeout.
+  # --------------------------------------------------------------------------
+  - name: resolution-service
+    url: http://resolution-service:3014
+    routes:
+      - name: resolution
+        paths:
+          - /api/v1/cases
+          - /api/v1/assistant
+          - /api/v1/penalties
+          - /api/v1/fraud-rules
+          - /api/v1/fraud
+        strip_path: false
+
+  # --------------------------------------------------------------------------
+  # 3015 - Chat Service (HTTP API; socket.io `/chat` đi trực tiếp)
+  # --------------------------------------------------------------------------
+  - name: chat-service
+    url: http://chat-service:3015
+    routes:
+      - name: chat
+        paths:
+          - /api/v1/chat
+        strip_path: false

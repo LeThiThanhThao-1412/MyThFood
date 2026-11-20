@@ -1,4 +1,14 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
+import {
+  DELIVERY_OPTIONS,
+  DeliveryOption,
+  DeliveryOptionPolicy,
+  applyPolicyToFee,
+  deliveryOptionLabel,
+  estimateEtaWithPolicy,
+  getDeliveryOptionPolicy,
+} from "../order/domain/delivery-option";
+import { DeliveryOptionConfigService } from "./delivery-option-config.service";
 
 export interface ShippingFeeRequest {
   originLat: number;
@@ -23,9 +33,46 @@ export interface ShippingFeeResponse {
   };
 }
 
+export interface DeliveryOptionQuote {
+  option: DeliveryOption;
+  label: string;
+  distanceKm: number;
+  /** Tổng phí giao hàng khách phải trả cho phương thức này. */
+  fee: number;
+  /** Phí giao hàng tiêu chuẩn (FAST) trước khi áp dụng phương thức. */
+  baseFee: number;
+  /** Phụ thu (dương) hoặc giảm giá (âm) so với phí tiêu chuẩn. */
+  optionFee: number;
+  etaMinutes: number;
+  etaRange: string;
+  description: string;
+  maxStackedOrders: number;
+  dispatchTimeoutSeconds: number;
+}
+
+export interface ShippingQuoteResponse {
+  distanceKm: number;
+  standardFee: number;
+  options: DeliveryOptionQuote[];
+  breakdown: ShippingFeeResponse["breakdown"];
+}
+
 @Injectable()
 export class ShippingService {
   private readonly logger = new Logger(ShippingService.name);
+
+  constructor(
+    @Optional()
+    private readonly configService?: DeliveryOptionConfigService,
+  ) {}
+
+  /** Policy hiện hành: DB/admin nếu có, ngược lại mặc định env. */
+  async getPolicy(option: DeliveryOption): Promise<DeliveryOptionPolicy> {
+    if (this.configService) {
+      return this.configService.getPolicy(option);
+    }
+    return getDeliveryOptionPolicy(option);
+  }
 
   // ─── Fee Constants ──────────────────────────────────────
   private readonly BASE_FEE = 10000; // 10,000 VND
@@ -98,7 +145,10 @@ export class ShippingService {
   }
 
   // ─── Weather Surcharge ───────────────────────────────────
-  private async getWeatherMultiplier(lat: number, lng: number): Promise<number> {
+  private async getWeatherMultiplier(
+    lat: number,
+    lng: number,
+  ): Promise<number> {
     try {
       const apiKey = "e3238768c07b4d77897565c7bb6a42b5";
       const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${apiKey}&units=metric`;
@@ -107,7 +157,9 @@ export class ShippingService {
 
       if (data.weather?.length > 0) {
         const condition = data.weather[0].main as string;
-        const description = (data.weather[0].description as string).toLowerCase();
+        const description = (
+          data.weather[0].description as string
+        ).toLowerCase();
 
         // Heavy rain / storm → +30%
         if (
@@ -117,13 +169,17 @@ export class ShippingService {
           description.includes("mưa") ||
           description.includes("rain")
         ) {
-          this.logger.log(`Weather: ${condition}, applying rain surcharge x1.3`);
+          this.logger.log(
+            `Weather: ${condition}, applying rain surcharge x1.3`,
+          );
           return 1.3;
         }
 
         // Snow / extreme → +50%
         if (condition === "Snow" || condition === "Extreme") {
-          this.logger.log(`Weather: ${condition}, applying extreme surcharge x1.5`);
+          this.logger.log(
+            `Weather: ${condition}, applying extreme surcharge x1.5`,
+          );
           return 1.5;
         }
 
@@ -141,7 +197,9 @@ export class ShippingService {
         if (data.main?.temp) {
           const temp = data.main.temp as number;
           if (temp > 35 || temp < 10) {
-            this.logger.log(`Temperature: ${temp}°C, applying temp surcharge x1.15`);
+            this.logger.log(
+              `Temperature: ${temp}°C, applying temp surcharge x1.15`,
+            );
             return 1.15;
           }
         }
@@ -156,6 +214,13 @@ export class ShippingService {
   // PUBLIC: Calculate Shipping Fee
   // ═════════════════════════════════════════════════════════
   async calculateFee(req: ShippingFeeRequest): Promise<ShippingFeeResponse> {
+    return this.calculateStandardFee(req);
+  }
+
+  /** Phí giao hàng tiêu chuẩn (FAST): base + km + rush + thời tiết, clamp min/max. */
+  async calculateStandardFee(
+    req: ShippingFeeRequest,
+  ): Promise<ShippingFeeResponse> {
     // 1. Distance
     let distanceKm = await this.getOSRMDistance(
       req.originLat,
@@ -171,7 +236,9 @@ export class ShippingService {
         req.destLat,
         req.destLng,
       );
-      this.logger.log(`OSRM failed, using Haversine: ${distanceKm.toFixed(2)} km`);
+      this.logger.log(
+        `OSRM failed, using Haversine: ${distanceKm.toFixed(2)} km`,
+      );
     } else {
       this.logger.log(`OSRM distance: ${distanceKm.toFixed(2)} km`);
     }
@@ -215,6 +282,63 @@ export class ShippingService {
       weatherSurcharge: totalFee - feeAfterRush,
       totalFee: finalFee,
       breakdown,
+    };
+  }
+
+  // ═════════════════════════════════════════════════════════
+  // PUBLIC: Delivery options (SAVER / FAST / PRIORITY)
+  // ═════════════════════════════════════════════════════════
+
+  /**
+   * Báo giá một phương thức giao hàng cụ thể.
+   * Dùng khi tạo đơn để server tính lại phí (chống sửa phí phía client).
+   */
+  async calculateOptionFee(
+    req: ShippingFeeRequest,
+    option: DeliveryOption,
+  ): Promise<DeliveryOptionQuote> {
+    const standard = await this.calculateStandardFee(req);
+    return this.buildOptionQuote(option, standard);
+  }
+
+  /**
+   * Báo giá cả 3 phương thức trong một lần gọi — checkout dùng để hiển thị
+   * cho khách chọn (chỉ gọi OSRM + thời tiết một lần).
+   */
+  async quoteAll(req: ShippingFeeRequest): Promise<ShippingQuoteResponse> {
+    const standard = await this.calculateStandardFee(req);
+    return {
+      distanceKm: standard.distanceKm,
+      standardFee: standard.totalFee,
+      options: await Promise.all(
+        DELIVERY_OPTIONS.map((option) =>
+          this.buildOptionQuote(option, standard),
+        ),
+      ),
+      breakdown: standard.breakdown,
+    };
+  }
+
+  private async buildOptionQuote(
+    option: DeliveryOption,
+    standard: ShippingFeeResponse,
+  ): Promise<DeliveryOptionQuote> {
+    const policy = await this.getPolicy(option);
+    const fee = applyPolicyToFee(standard.totalFee, policy);
+    const etaMinutes = estimateEtaWithPolicy(standard.distanceKm, policy);
+
+    return {
+      option,
+      label: deliveryOptionLabel(option),
+      distanceKm: standard.distanceKm,
+      fee,
+      baseFee: standard.totalFee,
+      optionFee: fee - standard.totalFee,
+      etaMinutes,
+      etaRange: `${etaMinutes}-${etaMinutes + 10} phút`,
+      description: policy.description,
+      maxStackedOrders: policy.maxStackedOrders,
+      dispatchTimeoutSeconds: policy.dispatchTimeoutSeconds,
     };
   }
 }

@@ -17,6 +17,9 @@ export class OrderItemEntity {
   @Column("uuid", { name: "menu_item_id" })
   menu_item_id!: string;
 
+  @Column("varchar", { length: 500, name: "image_url", nullable: true })
+  image_url!: string | null;
+
   @Column("varchar", { length: 255 })
   name!: string;
 
@@ -26,15 +29,33 @@ export class OrderItemEntity {
   @Column("decimal", { precision: 12, scale: 2, name: "unit_price" })
   unit_price!: number;
 
+  @Column("decimal", {
+    precision: 12,
+    scale: 2,
+    name: "original_price",
+    nullable: true,
+  })
+  original_price!: number | null;
+
+  @Column("varchar", {
+    length: 20,
+    name: "flash_sale_funded_by",
+    nullable: true,
+  })
+  flash_sale_funded_by!: string | null;
+
   @Column("decimal", { precision: 12, scale: 2 })
   subtotal!: number;
 
   @Column("text", { name: "special_instructions", nullable: true })
   special_instructions!: string | null;
 
-  @CreateDateColumn({ name: "created_at" })
+  @Column("jsonb", { name: "options", nullable: true })
+  options!: Record<string, unknown>[] | null;
+
+  @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   created_at!: Date;
 
-  @UpdateDateColumn({ name: "updated_at" })
+  @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updated_at!: Date;
 }

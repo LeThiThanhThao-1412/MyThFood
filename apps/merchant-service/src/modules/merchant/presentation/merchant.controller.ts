@@ -11,20 +11,35 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Req,
+  Header,
 } from "@nestjs/common";
-import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { MerchantService } from "../application/merchant.service";
 import {
   RegisterMerchantDto,
   UpdateMerchantDto,
+  UpdateRatingDto,
   MerchantQueryDto,
   MerchantResponseDto,
+  MenuSearchQueryDto,
+  MenuSearchItemDto,
+  MatchedMenuItemDto,
+  RecordFlashSalePriceHistoryDto,
 } from "../application/dtos/merchant.dto";
 import {
   CreateMenuItemDto,
   UpdateMenuItemDto,
   MenuItemResponseDto,
+  SetMenuItemAvailabilityDto,
 } from "../application/dtos/menu.dto";
+import {
+  CreateMenuCategoryDto,
+  UpdateMenuCategoryDto,
+  MenuCategoryResponseDto,
+} from "../application/dtos/menu-category.dto";
+import { BulkImportMenuDto } from "../application/dtos/menu-import.dto";
 import {
   SetOperatingHoursDto,
   OperatingHoursResponseDto,
@@ -36,15 +51,17 @@ import {
 } from "../application/dtos/capacity.dto";
 import { Merchant } from "../domain/merchant.aggregate";
 import { MenuItem } from "../domain/menu-item.entity";
+import { MenuCategory } from "../domain/menu-category.entity";
 
 @Controller("merchants")
-@UseGuards(AuthGuard("jwt"))
+@UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
 export class MerchantController {
   constructor(private readonly merchantService: MerchantService) {}
 
   // ===================== Merchant CRUD =====================
 
   @Post()
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async register(
     @Body() dto: RegisterMerchantDto,
   ): Promise<MerchantResponseDto> {
@@ -56,9 +73,77 @@ export class MerchantController {
   async findAll(@Query() query: MerchantQueryDto) {
     const result = await this.merchantService.findAll(query);
     return {
-      items: result.items.map((m) => this.toMerchantResponse(m)),
+      items: result.items.map((m) =>
+        this.toMerchantResponse(
+          m,
+          result.matchedMenuItems.get(m.id.toString()),
+        ),
+      ),
       total: result.total,
     };
+  }
+
+  /**
+   * Global dish search (feature: search by dish).
+   * MUST stay declared before `@Get(":id")`, otherwise "menu" would be captured
+   * as an `:id` route param.
+   */
+  @Get("menu/search")
+  async searchMenu(
+    @Query() query: MenuSearchQueryDto,
+  ): Promise<{ items: MenuSearchItemDto[]; total: number }> {
+    return this.merchantService.searchMenuItems(query);
+  }
+
+  /**
+   * Resolve menu items by ids (comma-separated) — used by favourite dishes.
+   * MUST stay declared before `@Get(":id")`.
+   */
+  @Get("menu-items/by-ids")
+  async getMenuItemsByIds(@Query("ids") ids?: string) {
+    const idList = (ids || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return {
+      items: await this.merchantService.getMenuItemsByIds(idList),
+    };
+  }
+
+  /**
+   * Global top dishes (one per merchant) — fallback recommendation for new
+   * customers. MUST stay declared before `@Get(":id")`.
+   */
+  @Get("menu/top")
+  async getTopMenuItems(@Query("take") take?: string) {
+    const limit = take
+      ? Math.min(Math.max(parseInt(take, 10) || 12, 1), 50)
+      : 12;
+    return {
+      items: await this.merchantService.getTopMenuItems(limit),
+    };
+  }
+
+  @Get("user/:userId")
+  async getByUserId(
+    @Param("userId") userId: string,
+  ): Promise<MerchantResponseDto | null> {
+    const merchant = await this.merchantService.getByUserId(userId);
+    return merchant ? this.toMerchantResponse(merchant) : null;
+  }
+
+  @Patch("user/:userId/status")
+  @Roles("ADMIN")
+  async updateStatusByUserId(
+    @Param("userId") userId: string,
+    @Body() dto: { status: string; reason?: string; durationDays?: number },
+  ): Promise<MerchantResponseDto | null> {
+    const merchant = await this.merchantService.updateStatusByUserId(
+      userId,
+      dto.status,
+      { reason: dto.reason, durationDays: dto.durationDays },
+    );
+    return merchant ? this.toMerchantResponse(merchant) : null;
   }
 
   @Get(":id")
@@ -68,6 +153,7 @@ export class MerchantController {
   }
 
   @Put(":id")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async update(
     @Param("id") id: string,
     @Body() dto: UpdateMerchantDto,
@@ -77,28 +163,59 @@ export class MerchantController {
   }
 
   @Delete(":id")
+  @Roles("ADMIN")
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param("id") id: string): Promise<void> {
     await this.merchantService.softDelete(id);
   }
 
+  @Patch(":id/rating")
+  @Roles("ADMIN", "MERCHANT_OWNER")
+  async updateRating(
+    @Param("id") id: string,
+    @Body() dto: UpdateRatingDto,
+  ): Promise<MerchantResponseDto> {
+    const merchant = await this.merchantService.updateRating(id, dto);
+    return this.toMerchantResponse(merchant);
+  }
+
   // ===================== Admin APIs =====================
 
   @Put(":id/approve")
+  @Roles("ADMIN")
   async approve(@Param("id") id: string): Promise<MerchantResponseDto> {
     const merchant = await this.merchantService.approve(id);
     return this.toMerchantResponse(merchant);
   }
 
   @Put(":id/reject")
-  async reject(@Param("id") id: string): Promise<MerchantResponseDto> {
-    const merchant = await this.merchantService.reject(id);
+  @Roles("ADMIN")
+  async reject(
+    @Param("id") id: string,
+    @Body() body: { reason?: string } = {},
+  ): Promise<MerchantResponseDto> {
+    const merchant = await this.merchantService.reject(id, body?.reason);
+    return this.toMerchantResponse(merchant);
+  }
+
+  @Patch(":id/status")
+  @Roles("ADMIN")
+  async updateStatus(
+    @Param("id") id: string,
+    @Body()
+    dto: { status: string; reason?: string; durationDays?: number },
+  ): Promise<MerchantResponseDto> {
+    const merchant = await this.merchantService.updateStatus(id, dto.status, {
+      reason: dto.reason,
+      durationDays: dto.durationDays,
+    });
     return this.toMerchantResponse(merchant);
   }
 
   // ===================== Menu Management =====================
 
   @Post(":id/menu/items")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async addMenuItem(
     @Param("id") id: string,
     @Body() dto: CreateMenuItemDto,
@@ -107,9 +224,21 @@ export class MerchantController {
     return this.toMenuItemResponse(menuItem);
   }
 
+  @Post(":id/menu/import")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async importMenu(@Param("id") id: string, @Body() dto: BulkImportMenuDto) {
+    return this.merchantService.importMenu(id, dto);
+  }
+
   @Get(":id/menu")
-  async getMenuItems(@Param("id") id: string): Promise<MenuItemResponseDto[]> {
-    const menuItems = await this.merchantService.getMenuItems(id);
+  async getMenuItems(
+    @Param("id") id: string,
+    @Query("includeUnavailable") includeUnavailable?: string,
+  ): Promise<MenuItemResponseDto[]> {
+    const menuItems = await this.merchantService.getMenuItems(
+      id,
+      includeUnavailable === "true",
+    );
     return menuItems.map((mi) => this.toMenuItemResponse(mi));
   }
 
@@ -123,25 +252,39 @@ export class MerchantController {
   }
 
   @Put(":id/menu/:itemId")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async updateMenuItem(
     @Param("id") id: string,
     @Param("itemId") itemId: string,
     @Body() dto: UpdateMenuItemDto,
+    @Req() req: any,
   ): Promise<MenuItemResponseDto> {
-    const menuItem = await this.merchantService.updateMenuItem(id, itemId, dto);
+    const menuItem = await this.merchantService.updateMenuItem(
+      id,
+      itemId,
+      dto,
+      req?.user?.userId,
+    );
     return this.toMenuItemResponse(menuItem);
   }
 
-  @Delete(":id/menu/:itemId")
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteMenuItem(
+  @Patch(":id/menu/:itemId/availability")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async setMenuItemAvailability(
     @Param("id") id: string,
     @Param("itemId") itemId: string,
-  ): Promise<void> {
-    await this.merchantService.deleteMenuItem(id, itemId);
+    @Body() dto: SetMenuItemAvailabilityDto,
+  ): Promise<MenuItemResponseDto> {
+    const menuItem = await this.merchantService.setMenuItemAvailability(
+      id,
+      itemId,
+      dto,
+    );
+    return this.toMenuItemResponse(menuItem);
   }
 
   @Patch(":id/menu/:itemId/available")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async toggleMenuItem(
     @Param("id") id: string,
     @Param("itemId") itemId: string,
@@ -150,9 +293,157 @@ export class MerchantController {
     return this.toMenuItemResponse(menuItem);
   }
 
+  // ===================== Price History & Auditing =====================
+
+  @Get(":id/price-history")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async getPriceHistory(
+    @Param("id") id: string,
+    @Query("menuItemId") menuItemId?: string,
+    @Query("changedBy") changedBy?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("skip") skip?: string,
+    @Query("take") take?: string,
+  ) {
+    return this.merchantService.getPriceHistory(id, {
+      menuItemId,
+      changedBy,
+      from,
+      to,
+      skip: skip ? parseInt(skip, 10) : 0,
+      take: take ? parseInt(take, 10) : 50,
+    });
+  }
+
+  @Get(":id/price-history/compare")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async comparePrice(
+    @Param("id") id: string,
+    @Query("menuItemId") menuItemId: string,
+    @Query("at") at?: string,
+  ) {
+    return this.merchantService.comparePrice(id, menuItemId, at);
+  }
+
+  @Get(":id/price-history/export")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="price-history.csv"')
+  async exportPriceHistoryCsv(
+    @Param("id") id: string,
+    @Query("menuItemId") menuItemId?: string,
+    @Query("changedBy") changedBy?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+  ) {
+    return this.merchantService.exportPriceHistoryCsv(id, {
+      menuItemId,
+      changedBy,
+      from,
+      to,
+    });
+  }
+
+  @Get(":id/price-history/report")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async getPriceFluctuationReport(
+    @Param("id") id: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+  ) {
+    return this.merchantService.getPriceFluctuationReport(id, from, to);
+  }
+
+  @Get(":id/price-alerts")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async getPriceAlerts(
+    @Param("id") id: string,
+    @Query("skip") skip?: string,
+    @Query("take") take?: string,
+  ) {
+    return this.merchantService.getPriceAlerts(
+      id,
+      skip ? parseInt(skip, 10) : undefined,
+      take ? parseInt(take, 10) : undefined,
+    );
+  }
+
+  @Get(":id/revenue-reconciliation")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async reconcileRevenue(
+    @Param("id") id: string,
+    @Query("period") period?: string,
+  ) {
+    return this.merchantService.reconcileRevenue(id, period);
+  }
+
+  @Patch("price-history/:historyId/status")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async updatePriceHistoryStatus(
+    @Param("historyId") historyId: string,
+    @Body() dto: { status: string },
+  ) {
+    return this.merchantService.updatePriceHistoryStatus(historyId, dto.status);
+  }
+
+  @Post("price-history/flash-sale")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async recordFlashSalePriceHistory(
+    @Body() dto: RecordFlashSalePriceHistoryDto,
+  ) {
+    return this.merchantService.recordFlashSalePriceHistory(dto);
+  }
+
+  // ===================== Menu Categories =====================
+
+  @Get(":id/menu-categories")
+  async getMenuCategories(
+    @Param("id") id: string,
+  ): Promise<MenuCategoryResponseDto[]> {
+    const categories = await this.merchantService.getMenuCategories(id);
+    return categories.map((c) => this.toMenuCategoryResponse(c));
+  }
+
+  @Post(":id/menu-categories")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async addMenuCategory(
+    @Param("id") id: string,
+    @Body() dto: CreateMenuCategoryDto,
+  ): Promise<MenuCategoryResponseDto> {
+    const category = await this.merchantService.addMenuCategory(id, dto);
+    return this.toMenuCategoryResponse(category);
+  }
+
+  @Put(":id/menu-categories/:categoryId")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async updateMenuCategory(
+    @Param("id") id: string,
+    @Param("categoryId") categoryId: string,
+    @Body() dto: UpdateMenuCategoryDto,
+  ): Promise<MenuCategoryResponseDto> {
+    const category = await this.merchantService.updateMenuCategory(
+      id,
+      categoryId,
+      dto,
+    );
+    return this.toMenuCategoryResponse(category);
+  }
+
+  @Delete(":id/menu-categories/:categoryId")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteMenuCategory(
+    @Param("id") id: string,
+    @Param("categoryId") categoryId: string,
+  ): Promise<void> {
+    await this.merchantService.deleteMenuCategory(id, categoryId);
+  }
+
   // ===================== Operating Hours =====================
 
   @Put(":id/operating-hours")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   @HttpCode(HttpStatus.NO_CONTENT)
   async setOperatingHours(
     @Param("id") id: string,
@@ -173,9 +464,17 @@ export class MerchantController {
     return this.merchantService.isOpen(id);
   }
 
+  @Patch(":id/toggle-open")
+  @Roles("MERCHANT_OWNER", "ADMIN")
+  async toggleOpen(@Param("id") id: string): Promise<MerchantResponseDto> {
+    const merchant = await this.merchantService.toggleOpen(id);
+    return this.toMerchantResponse(merchant);
+  }
+
   // ===================== Capacity Management =====================
 
   @Put(":id/capacity")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async updateCapacity(
     @Param("id") id: string,
     @Body() dto: UpdateCapacityDto,
@@ -184,6 +483,7 @@ export class MerchantController {
   }
 
   @Get(":id/capacity")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async getCapacity(@Param("id") id: string): Promise<CapacityResponseDto> {
     return this.merchantService.getCapacity(id);
   }
@@ -198,6 +498,7 @@ export class MerchantController {
   // ===================== Stats & Reviews (B7) =====================
 
   @Get(":id/stats")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async getMerchantStats(
     @Param("id") id: string,
     @Query("period") period?: string,
@@ -221,7 +522,10 @@ export class MerchantController {
 
   // ===================== Mapping Helpers =====================
 
-  private toMerchantResponse(merchant: Merchant): MerchantResponseDto {
+  private toMerchantResponse(
+    merchant: Merchant,
+    matchedMenuItems?: MatchedMenuItemDto[],
+  ): MerchantResponseDto {
     return {
       id: merchant.id.toString(),
       userId: merchant.ownerId,
@@ -236,9 +540,18 @@ export class MerchantController {
       longitude: merchant.merchantLongitude,
       status: merchant.merchantStatus,
       rating: merchant.merchantRating,
+      totalRatings: merchant.merchantTotalRatings,
       totalOrders: merchant.merchantTotalOrders,
       capacityStatus: merchant.merchantCapacityStatus,
       currentOrderCount: merchant.merchantCurrentOrderCount,
+      primaryCategory: merchant.merchantPrimaryCategory,
+      secondaryCategories: merchant.merchantSecondaryCategories,
+      otherCategoryDescription: merchant.merchantOtherCategoryDescription,
+      isOpen: merchant.merchantIsOpen,
+      isOpenNow: merchant.isOpen(),
+      rejectedAt: merchant.merchantRejectedAt,
+      rejectReason: merchant.merchantRejectReason,
+      matchedMenuItems,
       createdAt: merchant.createdAt,
       updatedAt: merchant.updatedAt,
     };
@@ -249,17 +562,33 @@ export class MerchantController {
       id: menuItem.id.toString(),
       merchantId: menuItem.merchant.toString(),
       category: menuItem.itemCategory,
+      categoryId: menuItem.itemCategoryId,
       name: menuItem.itemName,
       description: menuItem.itemDescription,
       price: menuItem.itemPrice,
       originalPrice: menuItem.itemOriginalPrice,
       imageUrl: menuItem.itemImageUrl,
       isAvailable: menuItem.available,
+      availabilityStatus: menuItem.availabilityStatus,
+      outOfStockUntil: menuItem.outOfStockUntil,
       isFeatured: menuItem.featured,
       preparationTime: menuItem.prepTime,
       sortOrder: menuItem.order,
+      optionGroups: menuItem.itemOptionGroups as any,
       createdAt: menuItem.createdAt,
       updatedAt: menuItem.updatedAt,
+    };
+  }
+
+  private toMenuCategoryResponse(
+    category: MenuCategory,
+  ): MenuCategoryResponseDto {
+    return {
+      id: category.id,
+      merchantId: category.merchantId,
+      name: category.name,
+      sortOrder: category.sortOrder,
+      isActive: category.active,
     };
   }
 }

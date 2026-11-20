@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
 import { InventoryService } from "../application/inventory.service";
 import {
   CreateInventoryDto,
@@ -21,11 +22,12 @@ import {
 import { Inventory } from "../domain/inventory.aggregate";
 
 @Controller("inventory")
-@UseGuards(AuthGuard("jwt"))
+@UseGuards(AuthGuard("jwt"), RolesGuard)
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   @Post()
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async create(@Body() dto: CreateInventoryDto): Promise<InventoryResponseDto> {
     const inv = await this.inventoryService.create(dto);
     return this.toResponse(inv);
@@ -60,6 +62,7 @@ export class InventoryController {
   }
 
   @Put(":id/total")
+  @Roles("MERCHANT_OWNER", "ADMIN")
   async updateTotal(
     @Param("id") id: string,
     @Body() dto: UpdateTotalDto,

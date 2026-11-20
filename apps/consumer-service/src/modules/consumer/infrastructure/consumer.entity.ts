@@ -5,9 +5,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   DeleteDateColumn,
+  Index,
 } from "typeorm";
 
 @Entity("consumers")
+@Index(["user_id"], { unique: true })
 export class ConsumerEntity {
   @PrimaryColumn({ type: "uuid" })
   id!: string;
@@ -27,11 +29,26 @@ export class ConsumerEntity {
   @Column({ type: "varchar", length: 10, nullable: true })
   gender!: string | null;
 
+  @Column({ type: "varchar", length: 20, default: "ACTIVE" })
+  status!: string;
+
+  @Column({ type: "boolean", default: false })
+  is_verified!: boolean;
+
+  @Column({ type: "varchar", length: 30, nullable: true })
+  id_card_number!: string | null;
+
   @Column({ type: "jsonb", default: "[]" })
   addresses!: string;
 
   @Column({ type: "jsonb", default: "[]" })
   payment_methods!: string;
+
+  @Column({ type: "jsonb", default: "[]" })
+  favorite_merchant_ids!: string;
+
+  @Column({ type: "jsonb", default: "[]" })
+  favorite_menu_item_ids!: string;
 
   @CreateDateColumn({ type: "timestamptz" })
   created_at!: Date;

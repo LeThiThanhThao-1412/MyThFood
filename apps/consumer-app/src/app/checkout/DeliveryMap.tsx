@@ -1,6 +1,18 @@
-'use client';
+"use client";
 
-import { MapView } from '@mythfood/frontend-shared';
+// MapView phải nạp client-only: MapLibre cần WebGL + `window`, import tĩnh sẽ
+// làm vỡ SSR của trang dùng component này.
+import dynamic from "next/dynamic";
+
+const MapView = dynamic(
+  () => import("@mythfood/frontend-shared/components/MapView"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-[300px] w-full animate-pulse rounded-lg bg-gray-100" />
+    ),
+  },
+);
 
 interface DeliveryMapProps {
   lat: number;
@@ -9,14 +21,19 @@ interface DeliveryMapProps {
   onLocationSelect: (lat: number, lng: number) => void;
 }
 
-export default function DeliveryMap({ lat, lng, address, onLocationSelect }: DeliveryMapProps) {
+export default function DeliveryMap({
+  lat,
+  lng,
+  address,
+  onLocationSelect,
+}: DeliveryMapProps) {
   return (
     <MapView
       locations={[
         {
           latitude: lat,
           longitude: lng,
-          label: '📍 Vị trí giao hàng',
+          label: "📍 Vị trí giao hàng",
           address,
         },
       ]}

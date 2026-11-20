@@ -1,6 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { DispatchRepository } from "../infrastructure/dispatch.repository";
 import { Dispatch } from "../domain/dispatch.aggregate";
+import { RouteStopInput, isRouteCompatible } from "../domain/route-planner";
+import { DriverComplianceService } from "./driver-compliance.service";
 
 /**
  * Matching Engine - tìm tài xế theo vòng tròn bán kính mở rộng
@@ -43,7 +45,10 @@ const MAX_RETRY_ATTEMPTS = 3;
 export class MatchingEngineService {
   private readonly logger = new Logger(MatchingEngineService.name);
 
-  constructor(private readonly dispatchRepo: DispatchRepository) {}
+  constructor(
+    private readonly dispatchRepo: DispatchRepository,
+    private readonly driverCompliance: DriverComplianceService,
+  ) {}
 
   /**
    * Execute one round of matching for a dispatch.
@@ -56,7 +61,13 @@ export class MatchingEngineService {
     walletServiceUrl?: string,
     authToken?: string,
   ): Promise<MatchingResult> {
-    const ringIndex = Math.min(retryCount, SEARCH_RINGS.length - 1);
+    // Đơn PRIORITY mở rộng bán kính nhanh hơn (bắt đầu ring 3km) để tìm
+    // tài xế trong thời gian ngắn hơn.
+    const ringOffset = dispatch.dispatchDeliveryOption === "PRIORITY" ? 1 : 0;
+    const ringIndex = Math.min(
+      ringOffset + retryCount,
+      SEARCH_RINGS.length - 1,
+    );
     const ring = SEARCH_RINGS[ringIndex]!;
 
     this.logger.log(
@@ -64,10 +75,13 @@ export class MatchingEngineService {
     );
 
     // Get available drivers within radius
+    // SAVER: lấy cả tài xế đang có đơn nhưng còn slot để gộp theo tuyến.
+    const includeStackable = dispatch.dispatchDeliveryOption === "SAVER";
     const drivers = await this.dispatchRepo.findAvailableDriversNearLocation(
       dispatch.dispatchMerchantLatitude || dispatch.dispatchDeliveryLatitude,
       dispatch.dispatchMerchantLongitude || dispatch.dispatchDeliveryLongitude,
       ring.radius,
+      includeStackable,
     );
 
     if (drivers.length === 0) {
@@ -82,10 +96,19 @@ export class MatchingEngineService {
       };
     }
 
-    // Filter out previously matched drivers
+    // Filter out previously matched drivers.
+    // Ngoài `matchedDriverIds` (gắn với 1 row dispatch), loại thêm các tài xế
+    // đã chủ động từ chối đơn này theo `driver_dispatch_offers` — dữ liệu này
+    // tồn tại qua order nên vẫn đúng khi driver-app xoá dispatch cũ và tạo
+    // dispatch mới với matchedDriverIds rỗng (tránh "ghép lại" đơn đã từ chối).
     const previouslyMatched = dispatch.dispatchMatchedDriverIds;
-    const eligibleDrivers = drivers.filter(
-      (d) => !previouslyMatched.includes(d.driverId),
+    const declinedDriverIds = await this.declinedDriverIdsFor(
+      dispatch.dispatchOrderId,
+    );
+    let eligibleDrivers = drivers.filter(
+      (d) =>
+        !previouslyMatched.includes(d.driverId) &&
+        !declinedDriverIds.has(d.driverId),
     );
 
     if (eligibleDrivers.length === 0) {
@@ -95,6 +118,74 @@ export class MatchingEngineService {
         incentiveMultiplier: ring.incentive,
         attemptsRemaining: MAX_RETRY_ATTEMPTS - retryCount,
         message: "All drivers at this radius have already been attempted",
+      };
+    }
+
+    // SAVER stacking: chỉ gộp khi tài xế đang chạy toàn đơn SAVER, quán và
+    // điểm giao của đơn mới đều gần lộ trình hiện tại, và detour không quá lớn.
+    if (includeStackable) {
+      const maxDropoffKm = Number(process.env.SAVER_STACK_RADIUS_KM || 3);
+      const maxPickupKm = Number(
+        process.env.SAVER_PICKUP_RADIUS_KM || maxDropoffKm || 3,
+      );
+      const maxDetourKm = Number(process.env.SAVER_MAX_DETOUR_KM || 3);
+      const compatibilityOptions = {
+        maxDropoffDeviationKm: Number.isFinite(maxDropoffKm) ? maxDropoffKm : 3,
+        maxPickupDeviationKm: Number.isFinite(maxPickupKm) ? maxPickupKm : 3,
+        maxDetourKm: Number.isFinite(maxDetourKm) ? maxDetourKm : 3,
+      };
+      const stackable: typeof eligibleDrivers = [];
+      for (const driver of eligibleDrivers) {
+        if (driver.activeOrderIds.length === 0) {
+          stackable.push(driver);
+          continue;
+        }
+
+        const active = await this.dispatchRepo.findActiveByDriverId(
+          driver.driverId,
+        );
+        if (active.some((d) => d.dispatchDeliveryOption !== "SAVER")) {
+          continue;
+        }
+
+        const stops: RouteStopInput[] = active.map((d) => ({
+          orderId: d.dispatchOrderId,
+          merchantLatitude: d.dispatchMerchantLatitude,
+          merchantLongitude: d.dispatchMerchantLongitude,
+          deliveryLatitude: d.dispatchDeliveryLatitude,
+          deliveryLongitude: d.dispatchDeliveryLongitude,
+          status: d.dispatchStatus,
+          priorityRank: d.dispatchPriorityRank,
+        }));
+
+        const compatible = isRouteCompatible(
+          driver.latitude,
+          driver.longitude,
+          stops,
+          {
+            orderId: dispatch.dispatchOrderId,
+            merchantLatitude: dispatch.dispatchMerchantLatitude,
+            merchantLongitude: dispatch.dispatchMerchantLongitude,
+            deliveryLatitude: dispatch.dispatchDeliveryLatitude,
+            deliveryLongitude: dispatch.dispatchDeliveryLongitude,
+            status: dispatch.dispatchStatus,
+          },
+          compatibilityOptions,
+        );
+        if (compatible) stackable.push(driver);
+      }
+      eligibleDrivers = stackable;
+    }
+
+    if (eligibleDrivers.length === 0) {
+      return {
+        matched: false,
+        searchRadius: ring.radius,
+        incentiveMultiplier: ring.incentive,
+        attemptsRemaining: MAX_RETRY_ATTEMPTS - retryCount,
+        message: includeStackable
+          ? "No route-compatible drivers for SAVER stacking"
+          : "No eligible drivers at this radius",
       };
     }
 
@@ -129,12 +220,19 @@ export class MatchingEngineService {
           message: "No COD-eligible drivers found at this radius",
         };
       }
+      // Chỉ chọn trong nhóm tài xế đủ điều kiện COD.
+      eligibleDrivers = filtered;
     }
 
-    // Select closest driver
-    const best = eligibleDrivers.reduce((a, b) =>
-      a.distanceKm < b.distanceKm ? a : b,
-    );
+    // SAVER ưu tiên tài xế đã có lộ trình cùng tuyến; các phương thức khác
+    // chọn tài xế gần nhất.
+    const best = [...eligibleDrivers].sort((a, b) => {
+      const scoreA =
+        a.distanceKm - (includeStackable ? a.activeOrderIds.length * 2 : 0);
+      const scoreB =
+        b.distanceKm - (includeStackable ? b.activeOrderIds.length * 2 : 0);
+      return scoreA - scoreB;
+    })[0]!;
 
     return {
       matched: true,
@@ -151,6 +249,19 @@ export class MatchingEngineService {
   }
 
   /**
+   * Tài xế đã chủ động từ chối đơn này (đọc từ `driver_dispatch_offers`).
+   * Lỗi đọc dữ liệu → trả về rỗng để không chặn matching (fail-open).
+   */
+  private async declinedDriverIdsFor(orderId: string): Promise<Set<string>> {
+    try {
+      const ids = await this.driverCompliance.getDeclinedDriverIds(orderId);
+      return new Set((ids ?? []).filter(Boolean));
+    } catch {
+      return new Set();
+    }
+  }
+
+  /**
    * Check if dispatch has timed out
    */
   isTimedOut(dispatch: Dispatch): boolean {
@@ -160,7 +271,8 @@ export class MatchingEngineService {
 
     // Also check: created more than MATCHING_TIMEOUT_SECONDS ago
     const createdAt = dispatch.createdAt; // using inherited from AggregateRoot
-    const elapsed = (now.getTime() - (createdAt?.getTime() || now.getTime())) / 1000;
+    const elapsed =
+      (now.getTime() - (createdAt?.getTime() || now.getTime())) / 1000;
     return elapsed > MATCHING_TIMEOUT_SECONDS;
   }
 
@@ -168,8 +280,10 @@ export class MatchingEngineService {
    * Calculate distance between two coordinates (Haversine formula)
    */
   static haversineKm(
-    lat1: number, lng1: number,
-    lat2: number, lng2: number,
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
   ): number {
     const R = 6371;
     const dLat = ((lat2 - lat1) * Math.PI) / 180;

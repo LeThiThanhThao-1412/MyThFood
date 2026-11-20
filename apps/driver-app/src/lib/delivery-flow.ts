@@ -1,0 +1,752 @@
+// ============================================================================
+// Luồng giao hàng của tài xế (dispatch state machine + thông báo cho khách)
+//
+//   [Nhận đơn]             → DRIVER_ACCEPTED → "Đang đến nhà hàng" + GPS tại quán
+//   [Đã đến nhà hàng]      → DRIVER_ARRIVED  → map hiện điểm đến khách
+//   [Đã nhận món]          → PICKED_UP → DELIVERING + order OUT_FOR_DELIVERY
+//   [Đã giao món thành công] → DELIVERED + order DELIVERED + quyết toán ví
+//
+// Mỗi bước đều gửi notification tới khách hàng (notification-service).
+// ============================================================================
+
+import {
+  authApi,
+  chatApi,
+  consumerApi,
+  dispatchApi,
+  driverApi,
+  merchantApi,
+  notificationApi,
+  orderApi,
+} from "@mythfood/api-client";
+
+export type DeliveryStage =
+  /** Chưa nhận đơn (dispatch MATCHING / DRIVER_ASSIGNED). */
+  | "WAITING"
+  /** Đã bấm “Nhận đơn” — đang trên đường đến quán. */
+  | "GOING_TO_RESTAURANT"
+  /** Đã bấm “Đã đến quán” — đang chờ nhận món. */
+  | "AT_RESTAURANT"
+  /** Đã bấm “Đã nhận món” — đang giao tới khách. */
+  | "DELIVERING"
+  /** Đã giao thành công. */
+  | "DELIVERED";
+
+export interface LatLng {
+  latitude: number;
+  longitude: number;
+}
+
+export interface StageMeta {
+  stage: DeliveryStage;
+  icon: string;
+  label: string;
+  /** Mô tả hiển thị cho tài xế. */
+  hint: string;
+  /** Nhãn nút chuyển sang bước kế tiếp (null = đã xong). */
+  actionLabel: string | null;
+  /** Điểm đang được dẫn đường tới. */
+  target: "RESTAURANT" | "CUSTOMER" | null;
+}
+
+export const STAGE_META: Record<DeliveryStage, StageMeta> = {
+  WAITING: {
+    stage: "WAITING",
+    icon: "📩",
+    label: "Chờ nhận đơn",
+    hint: "Bấm “Nhận đơn” để bắt đầu chuyến giao hàng.",
+    actionLabel: "📥 Nhận đơn",
+    target: "RESTAURANT",
+  },
+  GOING_TO_RESTAURANT: {
+    stage: "GOING_TO_RESTAURANT",
+    icon: "🛵",
+    label: "Đang đến nhà hàng",
+    hint: "Đang trên đường tới nhà hàng. Tới nơi thì bấm “Đã đến nhà hàng”.",
+    actionLabel: "📍 Đã đến nhà hàng",
+    target: "RESTAURANT",
+  },
+  AT_RESTAURANT: {
+    stage: "AT_RESTAURANT",
+    icon: "🏪",
+    label: "Đã đến nhà hàng",
+    hint: "Nhận món xong thì bấm “Đã nhận món” để giao cho khách.",
+    actionLabel: "📦 Đã nhận món",
+    target: "CUSTOMER",
+  },
+  DELIVERING: {
+    stage: "DELIVERING",
+    icon: "🚚",
+    label: "Đang giao cho khách",
+    hint: "Giao tới địa chỉ khách, chụp ảnh món ăn lúc giao rồi bấm “Đã giao món thành công”.",
+    actionLabel: "✅ Đã giao món thành công",
+    target: "CUSTOMER",
+  },
+  DELIVERED: {
+    stage: "DELIVERED",
+    icon: "🎉",
+    label: "Đã giao thành công",
+    hint: "Đơn hàng đã hoàn tất, thu nhập được cộng vào ví.",
+    actionLabel: null,
+    target: null,
+  },
+};
+
+/** Thứ tự các bước để vẽ timeline tiến trình. */
+export const STAGE_ORDER: DeliveryStage[] = [
+  "WAITING",
+  "GOING_TO_RESTAURANT",
+  "AT_RESTAURANT",
+  "DELIVERING",
+  "DELIVERED",
+];
+
+// ---------------------------------------------------------------------------
+// Nội dung thông báo gửi khách hàng ở từng bước
+// ---------------------------------------------------------------------------
+const CONSUMER_NOTIFICATIONS: Record<
+  Exclude<DeliveryStage, "WAITING">,
+  { type: string; title: string; body: (shortId: string) => string }
+> = {
+  GOING_TO_RESTAURANT: {
+    type: "DRIVER_GOING_TO_RESTAURANT",
+    title: "Tài xế đang đến nhà hàng",
+    body: (id) =>
+      `Tài xế đã nhận đơn #${id} và đang trên đường đến nhà hàng lấy món.`,
+  },
+  AT_RESTAURANT: {
+    type: "DRIVER_ARRIVED_RESTAURANT",
+    title: "Tài xế đã đến nhà hàng",
+    body: (id) => `Tài xế đang chờ nhà hàng bàn giao món của đơn #${id}.`,
+  },
+  DELIVERING: {
+    type: "DRIVER_PICKED_UP",
+    title: "Tài xế đã nhận món, đang giao",
+    body: (id) => `Đơn #${id} đã được lấy và đang trên đường tới bạn.`,
+  },
+  DELIVERED: {
+    type: "ORDER_DELIVERED",
+    title: "Đơn hàng đã được giao",
+    body: (id) => `Đơn #${id} đã được giao thành công. Chúc bạn ngon miệng!`,
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Bóc `{ statusCode, data }` của các service NestJS; xử lý đúng cả khi `data` = null. */
+export function unwrap<T = any>(res: any): T {
+  if (res && typeof res === "object" && "data" in res) {
+    return res.data as T;
+  }
+  return res as T;
+}
+
+export function toNum(v: unknown, fallback = 0): number {
+  if (typeof v === "number" && !Number.isNaN(v)) return v;
+  if (typeof v === "string") {
+    const parsed = parseFloat(v);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+/** Suy ra bước hiện tại từ trạng thái dispatch (ưu tiên) hoặc trạng thái đơn. */
+export function resolveStage(
+  dispatchStatus?: string | null,
+  orderStatus?: string | null,
+): DeliveryStage {
+  switch (dispatchStatus) {
+    case "DRIVER_ACCEPTED":
+      return "GOING_TO_RESTAURANT";
+    case "DRIVER_ARRIVED":
+      return "AT_RESTAURANT";
+    case "PICKED_UP":
+    case "DELIVERING":
+      return "DELIVERING";
+    case "DELIVERED":
+      return "DELIVERED";
+    case "MATCHING":
+    case "DRIVER_ASSIGNED":
+    case "DRIVER_DECLINED":
+      return "WAITING";
+    default:
+      break;
+  }
+  // Fallback khi đơn chưa có dispatch: dựa vào trạng thái đơn hàng
+  if (orderStatus === "DELIVERED") return "DELIVERED";
+  if (orderStatus === "OUT_FOR_DELIVERY") return "DELIVERING";
+  return "WAITING";
+}
+
+/** Chuẩn hoá message lỗi từ ApiError sang tiếng Việt thân thiện. */
+export function friendlyError(err: any, fallback = "Có lỗi xảy ra"): string {
+  const raw: string = err?.message || "";
+  if (!raw) return fallback;
+  if (raw.includes("already attempted"))
+    return "Bạn đã bỏ qua đơn này trước đó, không thể nhận lại.";
+  if (raw.includes("Maximum matching attempts"))
+    return "Đơn đã hết lượt tìm tài xế, vui lòng chọn đơn khác.";
+  if (raw.includes("does not meet COD requirements"))
+    return "Ví chưa đủ 2.000.000₫ để nhận đơn COD.";
+  if (raw.includes("chưa đủ điều kiện nhận đơn"))
+    return "Bạn chưa đủ điều kiện nhận đơn này. Đơn gộp chỉ dành cho tài xế đang giữ toàn đơn Tiết kiệm (SAVER) còn slot và cùng tuyến.";
+  if (raw.includes("đã được gán cho tài xế khác"))
+    return "Đơn này đã được gán cho tài xế khác, vui lòng chọn đơn khác.";
+  if (raw.includes("Dispatch already exists"))
+    return "Đơn này đã có tài xế khác nhận.";
+  if (raw.toLowerCase().includes("network"))
+    return "Không kết nối được server, kiểm tra mạng rồi thử lại.";
+  return raw;
+}
+
+// ---------------------------------------------------------------------------
+// Thông báo cho khách hàng
+// ---------------------------------------------------------------------------
+
+/**
+ * userId của khách dùng làm khoá notification.
+ * Trong dữ liệu test hiện tại, `order.consumerId` thường chính là identity userId;
+ * nếu sau này cần map chính xác consumerId → userId thì thêm endpoint backend.
+ */
+async function resolveConsumerUserId(consumerId: string): Promise<string> {
+  return consumerId;
+}
+
+/**
+ * Gửi thông báo tiến trình giao hàng tới khách.
+ * Không bao giờ throw — lỗi chỉ log warning để không chặn luồng tài xế.
+ */
+export async function notifyConsumer(
+  order: any,
+  stage: Exclude<DeliveryStage, "WAITING">,
+): Promise<boolean> {
+  const template = CONSUMER_NOTIFICATIONS[stage];
+  if (!template || !order?.consumerId) return false;
+  try {
+    const userId = await resolveConsumerUserId(order.consumerId);
+    if (!userId) return false;
+    await notificationApi.create({
+      userId,
+      type: template.type,
+      title: template.title,
+      body: template.body(String(order.id).slice(0, 8)),
+      data: {
+        orderId: order.id,
+        stage,
+        driverId: order.driverId ?? null,
+      },
+    });
+    return true;
+  } catch (err: any) {
+    console.warn(
+      `[delivery-flow] Không gửi được thông báo "${template.title}": ${err?.message}`,
+    );
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Truy vấn dữ liệu chuyến giao
+// ---------------------------------------------------------------------------
+
+export async function getDispatchByOrder(orderId: string): Promise<any | null> {
+  try {
+    const res: any = await dispatchApi.getByOrder(orderId);
+    return unwrap<any>(res) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getMerchant(merchantId: string): Promise<any | null> {
+  if (!merchantId) return null;
+  try {
+    return unwrap<any>(await merchantApi.getById(merchantId));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lấy tên + SĐT khách hàng cho tài xế.
+ * consumerId (order) → consumer profile (tên + userId) → identity (SĐT).
+ * Không bao giờ throw — trả null nếu thiếu dữ liệu.
+ */
+export async function getCustomerInfo(order: any): Promise<{
+  fullName: string | null;
+  phone: string | null;
+  userId: string | null;
+  avatar?: string | null;
+}> {
+  const consumerId = order?.consumerId;
+  if (!consumerId) return { fullName: null, phone: null, userId: null };
+
+  let fullName: string | null = null;
+  let userId: string | null = null;
+  let avatar: string | null = null;
+
+  // 1. Lấy tên + userId + avatar từ consumer profile
+  try {
+    const c = unwrap<any>(await consumerApi.getContact(consumerId)) ?? null;
+    fullName = c?.fullName ?? null;
+    userId = c?.userId ?? null;
+    avatar = c?.avatar ?? null;
+  } catch {
+    /* ignore */
+  }
+
+  // 2. Lấy SĐT (và tên fallback) từ identity
+  try {
+    const uid = userId ?? consumerId;
+    const u = unwrap<any>(await authApi.getUserContact(uid)) ?? null;
+    if (!fullName && u?.fullName) fullName = u.fullName;
+    return { fullName, phone: u?.phone ?? null, userId: uid, avatar };
+  } catch {
+    return { fullName, phone: null, userId: userId ?? consumerId, avatar };
+  }
+}
+
+/** Toạ độ nhà hàng: ưu tiên dispatch (lưu lúc tạo), fallback merchant profile. */
+export function restaurantLocation(
+  dispatch: any,
+  merchant: any,
+): LatLng | null {
+  const lat = dispatch?.merchantLatitude ?? merchant?.latitude ?? 10.775;
+  const lng = dispatch?.merchantLongitude ?? merchant?.longitude ?? 106.7;
+  return { latitude: toNum(lat, 10.775), longitude: toNum(lng, 106.7) };
+}
+
+/** Toạ độ giao hàng: ưu tiên đơn hàng, fallback dispatch. */
+export function customerLocation(order: any, dispatch: any): LatLng | null {
+  const lat = order?.deliveryLatitude ?? dispatch?.deliveryLatitude ?? 10.775;
+  const lng = order?.deliveryLongitude ?? dispatch?.deliveryLongitude ?? 106.7;
+  return { latitude: toNum(lat, 10.775), longitude: toNum(lng, 106.7) };
+}
+
+// ---------------------------------------------------------------------------
+// 4 hành động của tài xế
+// ---------------------------------------------------------------------------
+
+/** Tạo dispatch nếu đơn chưa có (kèm toạ độ nhà hàng để vẽ tuyến & matching). */
+async function ensureDispatch(order: any, merchant?: any): Promise<any> {
+  const existing = await getDispatchByOrder(order.id);
+
+  // Nếu dispatch cũ bị kẹt ở trạng thái không thể tiếp tục → xoá để tạo lại
+  if (
+    existing &&
+    ["DRIVER_DECLINED", "EXPIRED", "CANCELLED"].includes(existing.status)
+  ) {
+    try {
+      await dispatchApi.delete(existing.id);
+    } catch {
+      /* ignore */
+    }
+  } else if (existing) {
+    return existing;
+  }
+
+  const m = merchant ?? (await getMerchant(order.merchantId));
+  const created = await dispatchApi.create({
+    orderId: order.id,
+    merchantId: order.merchantId,
+    deliveryAddress: order.deliveryAddress ?? "",
+    deliveryLatitude: toNum(order.deliveryLatitude, 10.775),
+    deliveryLongitude: toNum(order.deliveryLongitude, 106.7),
+    ...(m?.latitude != null ? { merchantLatitude: toNum(m.latitude) } : {}),
+    ...(m?.longitude != null ? { merchantLongitude: toNum(m.longitude) } : {}),
+    // Giữ đúng phương thức giao hàng của đơn: thiếu field này dispatch sẽ
+    // mặc định FAST (maxStackedOrders = 1) và đơn SAVER không thể gộp.
+    ...(order.deliveryOption ? { deliveryOption: order.deliveryOption } : {}),
+    ...(order.promisedDeliveryAt
+      ? { promisedDeliveryAt: order.promisedDeliveryAt }
+      : {}),
+  });
+  return unwrap<any>(created);
+}
+
+/**
+ * GPS gửi kèm khi nhận đơn (nếu có) để dispatch-service cập nhật vị trí tài xế
+ * trước khi kiểm tra bán kính nhận đơn. Toạ độ không hợp lệ → bỏ qua.
+ */
+function acceptLocationPayload(
+  location?: LatLng,
+): { latitude: number; longitude: number } | undefined {
+  if (!location) return undefined;
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return undefined;
+  }
+  return { latitude, longitude };
+}
+
+/**
+ * Bước 1 — “Nhận đơn”: gán tài xế + driver-accept → DRIVER_ACCEPTED
+ * (hệ thống chuyển sang “Đang đến quán”) và thông báo cho khách.
+ */
+export async function acceptOrder(
+  order: any,
+  driverId: string,
+  merchant?: any,
+  driverLocation?: LatLng,
+): Promise<any> {
+  if (!order?.id) throw new Error("Không tìm thấy thông tin đơn hàng.");
+  let dispatch = await ensureDispatch(order, merchant);
+
+  if (
+    dispatch.status === "DRIVER_ASSIGNED" &&
+    dispatch.driverId &&
+    dispatch.driverId !== driverId
+  ) {
+    throw new Error("Đơn này đã được gán cho tài xế khác.");
+  }
+
+  if (
+    ["DRIVER_ACCEPTED", "DRIVER_ARRIVED", "PICKED_UP", "DELIVERING"].includes(
+      dispatch.status,
+    ) &&
+    dispatch.driverId &&
+    dispatch.driverId !== driverId
+  ) {
+    throw new Error("Đơn này đã được tài xế khác nhận.");
+  }
+
+  if (dispatch.status === "MATCHING") {
+    dispatch = unwrap<any>(
+      await dispatchApi.assignDriver(dispatch.id, driverId),
+    );
+  }
+  if (dispatch.status === "DRIVER_ASSIGNED") {
+    dispatch = unwrap<any>(
+      await dispatchApi.driverAccept(
+        dispatch.id,
+        acceptLocationPayload(driverLocation),
+      ),
+    );
+  }
+
+  if (
+    !["DRIVER_ACCEPTED", "DRIVER_ARRIVED", "PICKED_UP", "DELIVERING"].includes(
+      dispatch.status,
+    )
+  ) {
+    throw new Error(
+      `Không thể nhận đơn: dispatch đang ở trạng thái ${dispatch.status}`,
+    );
+  }
+
+  // Đánh dấu tài xế đang chạy đơn (bỏ qua nếu đã có đơn để tránh 409)
+  try {
+    const driverProfile = unwrap<any>(await driverApi.getById(driverId));
+    const alreadyOnDelivery =
+      driverProfile?.status === "ON_DELIVERY" || driverProfile?.currentOrderId;
+    if (!alreadyOnDelivery) {
+      await driverApi.assignOrder(driverId, order.id);
+    }
+  } catch {
+    /* non-fatal */
+  }
+
+  // Gán tài xế cho ĐƠN để đơn biết "đã có tài xế" (tránh bị hủy nhầm do hết giờ chờ).
+  try {
+    await orderApi.assignDriver(order.id, driverId);
+  } catch {
+    /* non-fatal */
+  }
+
+  // Không "dịch chuyển" GPS về quán khi nhận đơn: lộ trình gộp đơn phải
+  // xuất phát từ vị trí thật của tài xế. App vẫn cập nhật GPS định kỳ qua
+  // driverApi.updateLocation ở trang vị trí.
+  await notifyConsumer(order, "GOING_TO_RESTAURANT");
+  return dispatch;
+}
+
+/**
+ * Bước 2 — “Đã đến nhà hàng”: DRIVER_ARRIVED, thông báo “Tài xế đã đến nhà hàng”
+ * và bản đồ chuyển sang hiển thị điểm đến của khách.
+ */
+export async function arriveAtRestaurant(
+  order: any,
+  dispatch: any,
+  driverId: string,
+  restaurant: LatLng | null,
+): Promise<any> {
+  let current = dispatch;
+  if (current?.status === "DRIVER_ASSIGNED") {
+    current = unwrap<any>(await dispatchApi.driverAccept(current.id));
+  }
+  if (current?.status === "DRIVER_ACCEPTED") {
+    current = unwrap<any>(await dispatchApi.driverArrived(current.id));
+  }
+
+  if (restaurant && driverId) {
+    try {
+      await driverApi.updateLocation(driverId, {
+        latitude: restaurant.latitude,
+        longitude: restaurant.longitude,
+      });
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  await notifyConsumer(order, "AT_RESTAURANT");
+  return current;
+}
+
+/**
+ * Bước 3 — “Đã nhận món”: PICKED_UP → DELIVERING, đồng bộ đơn sang
+ * OUT_FOR_DELIVERY và thông báo “Tài xế đã nhận món, đang giao”.
+ */
+export async function pickUpFood(
+  order: any,
+  dispatch: any,
+  driverId: string,
+): Promise<{ dispatch: any; order: any }> {
+  let current = dispatch;
+  if (current?.status === "DRIVER_ARRIVED") {
+    current = unwrap<any>(await dispatchApi.markPickedUp(current.id));
+  }
+  if (current?.status === "PICKED_UP") {
+    current = unwrap<any>(await dispatchApi.startDelivering(current.id));
+  }
+
+  // Ghi nhận vị trí tại nhà hàng khi nhận món, để lịch sử GPS có đủ chuỗi mốc:
+  // Nhận đơn → Đến quán → Nhận món → Đã giao.
+  try {
+    const m = await getMerchant(order?.merchantId);
+    const restaurant = restaurantLocation(current, m);
+    if (restaurant && driverId) {
+      await driverApi.updateLocation(driverId, {
+        latitude: restaurant.latitude,
+        longitude: restaurant.longitude,
+      });
+    }
+  } catch {
+    /* non-fatal */
+  }
+
+  const updatedOrder = await syncOrderOutForDelivery(order, driverId);
+  await notifyConsumer(order, "DELIVERING");
+  return { dispatch: current, order: updatedOrder };
+}
+
+/**
+ * Các dispatch KHÁC của tài xế đang chờ lấy món tại CÙNG nhà hàng.
+ *
+ * Dùng khi tài xế đã ở quán: lấy món luôn cho tất cả đơn gộp cùng quán, tránh
+ * việc giao xong một đơn rồi phải quay lại quán lấy đơn còn lại.
+ */
+export async function getStackedDispatchesAtSameMerchant(
+  order: any,
+  driverId: string,
+  statuses: string[],
+): Promise<any[]> {
+  if (!order?.id || !order?.merchantId || !driverId) return [];
+  try {
+    const res: any = await dispatchApi.getByDriver(driverId);
+    const dispatches = unwrap<any[]>(res) ?? [];
+    return dispatches.filter(
+      (d) =>
+        d.orderId !== order.id &&
+        d.merchantId === order.merchantId &&
+        statuses.includes(d.status),
+    );
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Đánh dấu “đã đến nhà hàng” cho các đơn gộp cùng quán (cùng một điểm lấy
+ * hàng) để tài xế có thể lấy món tất cả trong một lần.
+ */
+export async function arriveStackedOrdersAtSameMerchant(
+  order: any,
+  driverId: string,
+  restaurant: LatLng | null,
+): Promise<number> {
+  const others = await getStackedDispatchesAtSameMerchant(order, driverId, [
+    "DRIVER_ACCEPTED",
+  ]);
+  let count = 0;
+  for (const other of others) {
+    try {
+      const otherOrder = unwrap<any>(await orderApi.getById(other.orderId));
+      if (!otherOrder) continue;
+      await arriveAtRestaurant(otherOrder, other, driverId, restaurant);
+      count += 1;
+    } catch {
+      /* non-fatal: lỗi đơn khác không ảnh hưởng đơn hiện tại */
+    }
+  }
+  return count;
+}
+
+/**
+ * Lấy món cho toàn bộ đơn gộp cùng nhà hàng (kể cả đơn chưa bấm “đã đến quán”
+ * nhưng tài xế đang ở cùng quán). Trả về số đơn lấy thêm được.
+ */
+export async function pickUpStackedOrdersAtSameMerchant(
+  order: any,
+  driverId: string,
+): Promise<number> {
+  const others = await getStackedDispatchesAtSameMerchant(order, driverId, [
+    "DRIVER_ACCEPTED",
+    "DRIVER_ARRIVED",
+  ]);
+  let count = 0;
+  for (const other of others) {
+    try {
+      const otherOrder = unwrap<any>(await orderApi.getById(other.orderId));
+      if (!otherOrder) continue;
+      let current = other;
+      if (current.status === "DRIVER_ACCEPTED") {
+        current = unwrap<any>(await dispatchApi.driverArrived(current.id));
+      }
+      if (current.status !== "DRIVER_ARRIVED") continue;
+      await pickUpFood(otherOrder, current, driverId);
+      count += 1;
+    } catch {
+      /* non-fatal */
+    }
+  }
+  return count;
+}
+
+/**
+ * Bước 4 — “Giao hàng thành công”: DELIVERED (dispatch + order → kích hoạt
+ * settlement ví), định vị tài xế tại nhà khách, thông báo hoàn tất.
+ *
+ * Với đơn DELIVERY, `deliveryProofPhotoUrl` là ảnh tài xế chụp món ăn lúc giao
+ * cho khách — **bắt buộc** để làm bằng chứng khi khách khiếu nại.
+ */
+export async function completeDelivery(
+  order: any,
+  dispatch: any,
+  driverId: string,
+  customer: LatLng | null,
+  deliveryProofPhotoUrl?: string,
+): Promise<{ dispatch: any; order: any }> {
+  const proofUrl = deliveryProofPhotoUrl?.trim() ?? "";
+  if (
+    order?.orderType !== "PICKUP" &&
+    order?.status !== "DELIVERED" &&
+    !proofUrl
+  ) {
+    throw new Error(
+      "Vui lòng chụp ảnh món ăn khi giao cho khách trước khi xác nhận giao hàng thành công",
+    );
+  }
+
+  let current = dispatch;
+  if (current?.status === "DRIVER_ARRIVED") {
+    current = unwrap<any>(await dispatchApi.markPickedUp(current.id));
+  }
+  if (current?.status === "PICKED_UP") {
+    current = unwrap<any>(await dispatchApi.startDelivering(current.id));
+  }
+  if (current?.status === "DELIVERING") {
+    current = unwrap<any>(await dispatchApi.markDelivered(current.id));
+  }
+
+  // Đơn hàng: OUT_FOR_DELIVERY → DELIVERED (order-service tự chia tiền ví)
+  let updatedOrder = order;
+  try {
+    if (order.status !== "DELIVERED") {
+      updatedOrder = await syncOrderOutForDelivery(order, driverId);
+      if (updatedOrder?.status !== "DELIVERED") {
+        updatedOrder = await orderApi.delivered(order.id, {
+          photoUrl: proofUrl || undefined,
+        });
+      }
+    }
+  } catch (err) {
+    // Đơn có thể đã bị hủy trước đó (VD: CANCELLED_NO_DRIVER) → bỏ qua,
+    // vẫn phải giải phóng tài xế bên dưới để không bị kẹt currentOrderId.
+    // Các lỗi khác (VD: order-service từ chối vì thiếu ảnh bằng chứng) phải
+    // nổi lên để tài xế thấy và xử lý, tránh báo "giao thành công" sai.
+    const fresh = await orderApi.getById(order.id).catch(() => null);
+    const terminal =
+      fresh?.status === "CANCELLED" ||
+      fresh?.status === "REJECTED" ||
+      fresh?.status === "CANCELLED_NO_DRIVER" ||
+      fresh?.status === "DELIVERY_FAILED" ||
+      fresh?.status === "DELIVERED";
+    if (!terminal) throw err;
+    if (fresh) updatedOrder = fresh;
+  }
+
+  // Xác nhận vị trí tài xế tại nhà khách
+  if (customer && driverId) {
+    try {
+      await driverApi.updateLocation(driverId, {
+        latitude: customer.latitude,
+        longitude: customer.longitude,
+      });
+    } catch {
+      /* non-fatal */
+    }
+  }
+
+  // Giải phóng tài xế (bỏ qua 409 khi đơn đã hoàn tất trước đó)
+  try {
+    await driverApi.completeOrder(driverId, order.id);
+  } catch {
+    /* non-fatal */
+  }
+
+  await notifyConsumer(order, "DELIVERED");
+
+  // Kích hoạt TTL chat: ẩn sau 3 giờ, xóa cứng sau 5 ngày kể từ lúc giao xong.
+  try {
+    await chatApi.markDelivered(order.id);
+  } catch {
+    /* non-fatal */
+  }
+
+  return { dispatch: current, order: updatedOrder };
+}
+
+/** Đưa đơn về OUT_FOR_DELIVERY nếu chưa (bỏ qua khi đã đi giao/đã giao). */
+async function syncOrderOutForDelivery(
+  order: any,
+  driverId: string,
+): Promise<any> {
+  let fresh = order;
+  try {
+    fresh = await orderApi.getById(order.id);
+  } catch {
+    /* dùng dữ liệu đang có */
+  }
+  if (fresh?.status === "OUT_FOR_DELIVERY" || fresh?.status === "DELIVERED") {
+    return fresh;
+  }
+  return orderApi.outForDelivery(order.id, {
+    driverId: driverId || order.driverId || "",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Dẫn đường (OSRM public API, fallback đường chim bay) — dùng chung với
+// consumer-app qua @mythfood/frontend-shared.
+// ---------------------------------------------------------------------------
+
+export { fetchRoute, fetchRouteThrough } from "@mythfood/frontend-shared";
+export type { RouteInfo } from "@mythfood/frontend-shared";
+
+/** Link mở Google Maps dẫn đường (nếu tài xế muốn dùng app ngoài). */
+export function googleMapsDirections(from: LatLng | null, to: LatLng): string {
+  const origin = from ? `${from.latitude},${from.longitude}` : "";
+  return (
+    `https://www.google.com/maps/dir/?api=1&destination=${to.latitude},${to.longitude}` +
+    (origin ? `&origin=${origin}` : "") +
+    "&travelmode=driving"
+  );
+}
+
+export function formatKm(km: number): string {
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+}

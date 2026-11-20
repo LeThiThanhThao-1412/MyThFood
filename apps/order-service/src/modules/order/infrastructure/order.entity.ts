@@ -15,6 +15,9 @@ export class OrderEntity {
   @Column("uuid", { name: "consumer_id" })
   consumer_id!: string;
 
+  @Column("uuid", { name: "user_id", nullable: true })
+  user_id!: string | null;
+
   @Column("uuid", { name: "merchant_id" })
   merchant_id!: string;
 
@@ -46,6 +49,13 @@ export class OrderEntity {
   @Column("decimal", { precision: 12, scale: 2, default: 0 })
   discount!: number;
 
+  @Column("varchar", {
+    length: 20,
+    name: "discount_funded_by",
+    default: "MERCHANT",
+  })
+  discount_funded_by!: string;
+
   @Column("decimal", { precision: 12, scale: 2, name: "total_amount" })
   total_amount!: number;
 
@@ -71,11 +81,36 @@ export class OrderEntity {
   @Column("timestamptz", { name: "estimated_delivery_time", nullable: true })
   estimated_delivery_time!: Date | null;
 
+  /** Phương thức giao hàng: SAVER | FAST | PRIORITY (mặc định FAST). */
+  @Column("varchar", { length: 20, name: "delivery_option", default: "FAST" })
+  delivery_option!: string;
+
+  /** Phụ thu/giảm giá của phương thức so với phí FAST (VND). */
+  @Column("decimal", {
+    precision: 12,
+    scale: 2,
+    name: "delivery_option_fee",
+    default: 0,
+  })
+  delivery_option_fee!: number;
+
+  /** Thứ tự ưu tiên hàng đợi nhà hàng (SAVER 0, FAST 1, PRIORITY 2). */
+  @Column("smallint", { name: "priority_rank", default: 1 })
+  priority_rank!: number;
+
+  /** Thời điểm cam kết giao hàng — dùng cảnh báo trễ / SLA. */
+  @Column("timestamptz", { name: "promised_delivery_at", nullable: true })
+  promised_delivery_at!: Date | null;
+
   @Column("text", { nullable: true })
   notes!: string | null;
 
   @Column("uuid", { name: "driver_id", nullable: true })
   driver_id!: string | null;
+
+  /** Ảnh tài xế chụp món ăn lúc giao cho khách (bằng chứng chống khiếu nại). */
+  @Column("text", { name: "delivery_proof_photo_url", nullable: true })
+  delivery_proof_photo_url!: string | null;
 
   @Column("text", { name: "cancel_reason", nullable: true })
   cancel_reason!: string | null;
@@ -83,12 +118,21 @@ export class OrderEntity {
   @Column("text", { name: "rejection_reason", nullable: true })
   rejection_reason!: string | null;
 
-  @CreateDateColumn({ name: "created_at" })
+  @Column("varchar", { length: 30, name: "rejection_source", nullable: true })
+  rejection_source!: string | null;
+
+  @Column("varchar", { length: 20, name: "payment_method", default: "CASH" })
+  payment_method!: string;
+
+  @Column("int", { name: "items_version", default: 1 })
+  items_version!: number;
+
+  @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   created_at!: Date;
 
-  @UpdateDateColumn({ name: "updated_at" })
+  @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updated_at!: Date;
 
-  @DeleteDateColumn({ name: "deleted_at" })
+  @DeleteDateColumn({ name: "deleted_at", type: "timestamptz" })
   deleted_at!: Date | null;
 }

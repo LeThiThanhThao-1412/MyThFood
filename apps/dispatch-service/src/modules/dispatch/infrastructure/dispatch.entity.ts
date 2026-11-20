@@ -35,6 +35,38 @@ export class DispatchEntity {
   @Column({ type: "double precision" })
   deliveryLongitude!: number;
 
+  /** Phương thức giao hàng: SAVER | FAST | PRIORITY. */
+  @Column({ type: "varchar", length: 20, default: "FAST" })
+  deliveryOption!: string;
+
+  /** Thứ tự ưu tiên điều phối (SAVER 0, FAST 1, PRIORITY 2). */
+  @Column({ type: "smallint", default: 1 })
+  priorityRank!: number;
+
+  /** Thời điểm cam kết giao hàng (SLA). */
+  @Column({ type: "timestamptz", nullable: true })
+  promisedDeliveryAt!: Date | null;
+
+  /** Mã lô gộp đơn (Phase 2 — SAVER stacking). */
+  @Column({ type: "uuid", nullable: true })
+  batchId!: string | null;
+
+  /** Thứ tự điểm dừng trong lô (Phase 2 — SAVER stacking). */
+  @Column({ type: "int", nullable: true })
+  routeSequence!: number | null;
+
+  /** Số đơn tối đa tài xế được giữ khi nhận đơn này (SAVER: 3). */
+  @Column({ type: "int", default: 1 })
+  maxStackedOrders!: number;
+
+  /** Timeout chờ tài xế nhận đơn (giây) — chụp lại từ cấu hình lúc tạo. */
+  @Column({ type: "int", default: 300 })
+  dispatchTimeoutSeconds!: number;
+
+  /** Timeout chờ tài xế phản hồi sau khi được gán (giây). */
+  @Column({ type: "int", default: 60 })
+  driverResponseTimeoutSeconds!: number;
+
   @Column({ type: "varchar", length: 50 })
   @Index("idx_dispatch_status")
   status!: string;

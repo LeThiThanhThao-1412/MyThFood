@@ -9,11 +9,18 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  BadRequestException,
 } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { Request } from "express";
 import { WalletService } from "../application/wallet.service";
 import { OwnerType } from "../domain/owner-type.enum";
+import {
+  FailureSettlementInput,
+  CaseCompensationInput,
+} from "../domain/settlement.types";
 import { StripeService } from "../../stripe/stripe.service";
 
 @Controller("wallets")
@@ -31,13 +38,22 @@ export class WalletController {
   async stripeWebhook(@Req() req: Request) {
     const sig = req.headers["stripe-signature"] as string;
     try {
-      const event = this.stripeService.verifyWebhookSignature(req.body as any, sig);
+      const event = this.stripeService.verifyWebhookSignature(
+        req.body as any,
+        sig,
+      );
       if (event.type === "payment_intent.succeeded") {
         const pi = event.data.object as any;
         const ownerId = pi.metadata?.ownerId;
+        const ownerType =
+          (pi.metadata?.ownerType as OwnerType) || OwnerType.CONSUMER;
         const amount = pi.amount;
         if (ownerId) {
-          await this.walletService.handleStripeTopup(ownerId, amount);
+          await this.walletService.handleStripeTopup(
+            ownerId,
+            ownerType,
+            amount,
+          );
         }
       }
     } catch (err: any) {
@@ -51,10 +67,11 @@ export class WalletController {
   // ═══════════════════════════════════════════════════════
   @Post()
   @UseGuards(AuthGuard("jwt"))
-  async createWallet(
-    @Body() body: { ownerId: string; ownerType: OwnerType },
-  ) {
-    const wallet = await this.walletService.getOrCreateWallet(body.ownerId, body.ownerType);
+  async createWallet(@Body() body: { ownerId: string; ownerType: OwnerType }) {
+    const wallet = await this.walletService.getOrCreateWallet(
+      body.ownerId,
+      body.ownerType,
+    );
     return {
       id: wallet.id,
       ownerId: wallet.ownerId,
@@ -73,8 +90,14 @@ export class WalletController {
     @Query("ownerId") ownerId: string,
     @Query("ownerType") ownerType: string,
   ) {
-    const wallet = await this.walletService.getOrCreateWallet(ownerId, ownerType as OwnerType);
-    const transactions = await this.walletService.getTransactions(ownerId, ownerType as OwnerType);
+    const wallet = await this.walletService.getOrCreateWallet(
+      ownerId,
+      ownerType as OwnerType,
+    );
+    const transactions = await this.walletService.getTransactions(
+      ownerId,
+      ownerType as OwnerType,
+    );
     return {
       id: wallet.id,
       ownerId: wallet.ownerId,
@@ -104,17 +127,56 @@ export class WalletController {
     @Query("ownerId") ownerId: string,
     @Query("ownerType") ownerType: string,
   ) {
-    const balance = await this.walletService.getBalance(ownerId, ownerType as OwnerType);
+    const balance = await this.walletService.getBalance(
+      ownerId,
+      ownerType as OwnerType,
+    );
     return { ownerId, ownerType, balance };
   }
 
   // ═══════════════════════════════════════════════════════
-  // COD Eligibility Check
+  // COD Eligibility Check (with optional orderValue)
   // ═══════════════════════════════════════════════════════
   @Get("check-cod-eligibility/:driverId")
   @UseGuards(AuthGuard("jwt"))
-  async checkCodEligibility(@Param("driverId") driverId: string) {
-    return this.walletService.canAcceptCOD(driverId);
+  async checkCodEligibility(
+    @Param("driverId") driverId: string,
+    @Query("orderValue") orderValue?: string,
+  ) {
+    return this.walletService.canAcceptCOD(
+      driverId,
+      orderValue ? parseInt(orderValue, 10) : undefined,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Hold funds for COD order
+  // ═══════════════════════════════════════════════════════
+  @Post("hold-cod")
+  @UseGuards(AuthGuard("jwt"))
+  async holdForCOD(
+    @Body() body: { driverId: string; orderValue: number; orderId: string },
+  ) {
+    return this.walletService.holdForCOD(
+      body.driverId,
+      body.orderValue,
+      body.orderId,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Release held funds for COD order
+  // ═══════════════════════════════════════════════════════
+  @Post("release-cod")
+  @UseGuards(AuthGuard("jwt"))
+  async releaseHoldCOD(
+    @Body() body: { driverId: string; orderValue: number; orderId: string },
+  ) {
+    return this.walletService.releaseHoldCOD(
+      body.driverId,
+      body.orderValue,
+      body.orderId,
+    );
   }
 
   // ═══════════════════════════════════════════════════════
@@ -123,11 +185,18 @@ export class WalletController {
   @Post("topup/stripe")
   @UseGuards(AuthGuard("jwt"))
   async topupStripe(
-    @Body() body: { ownerId: string; amount: number },
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType?: OwnerType;
+      amount: number;
+    },
   ) {
+    const ownerType = body.ownerType || OwnerType.CONSUMER;
     const pi = await this.stripeService.createPaymentIntent({
       amount: body.amount,
       ownerId: body.ownerId,
+      ownerType,
     });
     return { clientSecret: pi.client_secret, paymentIntentId: pi.id };
   }
@@ -150,6 +219,238 @@ export class WalletController {
   }
 
   // ═══════════════════════════════════════════════════════
+  // Pay order with wallet
+  // ═══════════════════════════════════════════════════════
+  @Post("pay")
+  @UseGuards(AuthGuard("jwt"))
+  async pay(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType?: OwnerType;
+      amount: number;
+      orderId: string;
+    },
+  ) {
+    return this.walletService.pay(
+      body.ownerId,
+      (body.ownerType as OwnerType) || OwnerType.CONSUMER,
+      body.amount,
+      body.orderId,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Refund to wallet (store credit) for cancelled online orders
+  // ═══════════════════════════════════════════════════════
+  @Post("refund")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async refund(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType?: OwnerType;
+      amount: number;
+      orderId: string;
+      /** Cho phép nhiều lần hoàn khác nhau trên cùng đơn (mặc định REFUND + orderId). */
+      referenceType?: string;
+      referenceId?: string;
+    },
+  ) {
+    return this.walletService.refundCredit(
+      body.ownerId,
+      (body.ownerType as OwnerType) || OwnerType.CONSUMER,
+      body.amount,
+      body.orderId,
+      { referenceType: body.referenceType, referenceId: body.referenceId },
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Thu/hoàn chênh lệch khi nhà hàng chỉnh sửa đơn (idempotent)
+  // ═══════════════════════════════════════════════════════
+  @Post("order-adjustment")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async adjustOrderAmount(
+    @Body()
+    body: {
+      adjustmentId: string;
+      ownerId: string;
+      ownerType?: OwnerType;
+      direction: "CHARGE" | "REFUND";
+      amount: number;
+      orderId: string;
+      description?: string;
+    },
+  ) {
+    return this.walletService.adjustOrderAmount({
+      adjustmentId: body.adjustmentId,
+      ownerId: body.ownerId,
+      ownerType: body.ownerType || OwnerType.CONSUMER,
+      direction: body.direction,
+      amount: body.amount,
+      orderId: body.orderId,
+      description: body.description,
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Bồi thường phí ship cho tài xế khi giao thất bại do lỗi khách (Case 8)
+  // ═══════════════════════════════════════════════════════
+  @Post("compensate-driver")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async compensateDriver(
+    @Body()
+    body: {
+      driverId: string;
+      orderId: string;
+      shippingFee?: number;
+    },
+  ) {
+    // shippingFee chỉ là fallback: nếu đơn có dòng DRIVER_SHIPPING_FEE thì
+    // service trả đúng phần NET (đã trừ hoa hồng) chứ không trả full phí ship.
+    return this.walletService.compensateDriver(
+      body.driverId,
+      body.orderId,
+      body.shippingFee ?? 0,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Resolution Service — Compliance (hold/release + penalty)
+  // ═══════════════════════════════════════════════════════
+  @Post("settlement/hold")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async holdSettlement(
+    @Body() body: { orderId: string; caseId?: string | null },
+  ) {
+    return this.walletService.holdSettlement(body.orderId, {
+      caseId: body.caseId ?? null,
+    });
+  }
+
+  @Post("settlement/release")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async releaseSettlement(
+    @Body()
+    body: {
+      orderId: string;
+      caseId?: string | null;
+      /** Ngày phán quyết — dòng tiền vào lô 23:00 của ngày này. */
+      resolvedAt?: string | null;
+    },
+  ) {
+    return this.walletService.releaseSettlement(body.orderId, {
+      caseId: body.caseId ?? null,
+      resolvedAt: body.resolvedAt ?? null,
+    });
+  }
+
+  @Post("penalty/debit")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async penaltyDebit(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType: string;
+      amount: number;
+      description: string;
+      referenceType?: string;
+      referenceId?: string;
+      transferToPlatform?: boolean;
+    },
+  ) {
+    return this.walletService.penaltyDebit(
+      body.ownerId,
+      body.ownerType as OwnerType,
+      body.amount,
+      body.description,
+      {
+        referenceType: body.referenceType,
+        referenceId: body.referenceId,
+        transferToPlatform: body.transferToPlatform,
+      },
+    );
+  }
+
+  @Post("penalty/credit")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async penaltyCredit(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType: string;
+      amount: number;
+      description: string;
+      referenceType?: string;
+      referenceId?: string;
+    },
+  ) {
+    return this.walletService.penaltyCredit(
+      body.ownerId,
+      body.ownerType as OwnerType,
+      body.amount,
+      body.description,
+      { referenceType: body.referenceType, referenceId: body.referenceId },
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Route tiền khi đơn giao thất bại đã có phán quyết (VALID)
+  // 1 request duy nhất, idempotent theo orderId, không tạo tiền từ thin air.
+  // ═══════════════════════════════════════════════════════
+  @Post("failure-settlement")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async settleFailure(@Body() body: FailureSettlementInput) {
+    return this.walletService.settleFailure(body);
+  }
+
+  /**
+   * Bồi thường cho đơn ĐÃ giao xong (giao trễ...) — không huỷ escrow, không hoàn
+   * 100%: chỉ chuyển đúng một khoản từ ví bên lỗi sang ví khách.
+   */
+  @Post("case-compensation")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async settleCaseCompensation(@Body() body: CaseCompensationInput) {
+    return this.walletService.settleCaseCompensation(body);
+  }
+
+  @Get("reserve/balance")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async reserveBalance() {
+    return this.walletService.getReserveBalance();
+  }
+
+  @Post("reserve/disburse")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async reserveDisburse(
+    @Body()
+    body: {
+      recipientId: string;
+      recipientType: string;
+      amount: number;
+      description: string;
+    },
+  ) {
+    return this.walletService.disburseReserve(
+      body.recipientId,
+      body.recipientType as OwnerType,
+      body.amount,
+      body.description,
+    );
+  }
+
+  @Get("debts")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async overdueDebts(@Query("days") days?: string) {
+    const d = days ? parseInt(days, 10) : 14;
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.walletService.listOverdueDebts(d),
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════
   // Withdraw
   // ═══════════════════════════════════════════════════════
   @Post("withdraw")
@@ -169,7 +470,6 @@ export class WalletController {
   // Settlement - COD
   // ═══════════════════════════════════════════════════════
   @Post("settle/cod")
-  @UseGuards(AuthGuard("jwt"))
   async settleCOD(
     @Body()
     body: {
@@ -178,14 +478,31 @@ export class WalletController {
       orderId: string;
       foodTotal: number;
       shippingFee: number;
+      discount?: number;
+      discountFundedBy?: string;
+      serviceFee?: number;
     },
+    @Req() req: Request,
   ) {
+    // Allow both JWT auth and service-to-service key
+    const serviceKey = req.headers["x-service-key"] as string;
+    const expectedKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    const isServiceCall = serviceKey === expectedKey;
+
+    if (!isServiceCall) {
+      // Fall through to JWT guard check for regular API calls
+      // (handled by global guard)
+    }
+
     await this.walletService.settleCOD(
       body.merchantId,
       body.driverId,
       body.orderId,
       body.foodTotal,
       body.shippingFee,
+      body.discount ?? 0,
+      body.discountFundedBy ?? "MERCHANT",
+      body.serviceFee ?? 0,
     );
     return { message: "COD Settlement completed" };
   }
@@ -203,15 +520,207 @@ export class WalletController {
       shippingFee: number;
     },
   ) {
-    await this.walletService.settleRegular(body.driverId, body.orderId, body.shippingFee);
+    await this.walletService.settleRegular(
+      body.driverId,
+      body.orderId,
+      body.shippingFee,
+    );
     return { message: "Regular Settlement completed" };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Settlement - Online (card/Stripe payments)
+  // ═══════════════════════════════════════════════════════
+  @Post("settle/online")
+  async settleOnline(
+    @Body()
+    body: {
+      merchantId: string;
+      driverId: string;
+      orderId: string;
+      foodTotal: number;
+      shippingFee: number;
+      discount?: number;
+      discountFundedBy?: string;
+      serviceFee?: number;
+    },
+  ) {
+    await this.walletService.settleOnline(
+      body.merchantId,
+      body.driverId,
+      body.orderId,
+      body.foodTotal,
+      body.shippingFee,
+      body.discount ?? 0,
+      body.discountFundedBy ?? "MERCHANT",
+      body.serviceFee ?? 0,
+    );
+    return { message: "Online Settlement completed" };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Settlement - Accrue (ghi nhận doanh thu, chưa cộng vào ví)
+  // ═══════════════════════════════════════════════════════
+  @Post("settlement/accrue")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async accrueSettlement(
+    @Body()
+    body: {
+      merchantId: string;
+      driverId: string;
+      orderId: string;
+      foodTotal: number;
+      shippingFee: number;
+      serviceFee?: number;
+      discount?: number;
+      discountFundedBy?: string;
+      paymentMethod: string;
+      deliveredAt?: string;
+    },
+  ) {
+    return this.walletService.accrueRevenue(body);
+  }
+
+  // Doanh thu chưa quyết toán
+  @Get("settlement/pending")
+  @UseGuards(AuthGuard("jwt"))
+  async pendingSettlement(
+    @Query("ownerId") ownerId: string,
+    @Query("ownerType") ownerType: string,
+  ) {
+    return this.walletService.getPendingSettlement(
+      ownerId,
+      (ownerType || "DRIVER") as OwnerType,
+    );
+  }
+
+  // Nợ clawback đang mở
+  @Get("settlement/clawback")
+  @UseGuards(AuthGuard("jwt"))
+  async openClawback(
+    @Query("ownerId") ownerId: string,
+    @Query("ownerType") ownerType: string,
+  ) {
+    return this.walletService.getOpenClawback(
+      ownerId,
+      (ownerType || "DRIVER") as OwnerType,
+    );
+  }
+
+  // Tạo clawback (refund sau settle)
+  @Post("settlement/clawback")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async createClawback(
+    @Body()
+    body: {
+      ownerId: string;
+      ownerType: string;
+      sourceOrderId?: string;
+      sourceBatchId?: string;
+      refundId?: string;
+      amount: number;
+      /** Nhãn khoản nợ: CUSTOMER_REFUND | DRIVER_COMPENSATION | PLATFORM_FUND. */
+      category?: string;
+      /** Diễn giải hiển thị cho chủ ví. */
+      description?: string;
+    },
+  ) {
+    return this.walletService.createClawback(body);
+  }
+
+  // Thu hồi nợ tự động — quét các ví đã đủ tiền trả nợ (chạy tay/giám sát)
+  @Post("settlement/clawback/sweep")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async sweepClawback(
+    @Body()
+    body?: {
+      limit?: number;
+      ownerId?: string;
+      ownerType?: string;
+    },
+  ) {
+    return this.walletService.recoverAllCoveredDebts(body ?? {});
+  }
+
+  // Thu hồi nợ ngay cho một ví cụ thể (CSKH/admin bấm thu)
+  @Post("settlement/clawback/recover")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  @HttpCode(HttpStatus.OK)
+  async recoverClawback(@Body() body: { ownerId: string; ownerType?: string }) {
+    if (!body?.ownerId) {
+      throw new BadRequestException("ownerId is required");
+    }
+    return this.walletService.recoverDebts(
+      body.ownerId,
+      (body.ownerType || "DRIVER") as OwnerType,
+      { source: "MANUAL" },
+    );
+  }
+
+  // Lịch sử lô quyết toán
+  @Get("settlement/batches")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async settlementBatches(
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("status") status?: string,
+  ) {
+    return this.walletService.getSettlementBatches(from, to, status);
+  }
+
+  // Chi tiết lô quyết toán
+  @Get("settlement/batches/:id")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async settlementBatchDetail(@Param("id") id: string) {
+    return this.walletService.getSettlementBatchDetail(id);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Quyết toán thủ công (settle ngay cửa sổ hiện tại)
+  // ═══════════════════════════════════════════════════════
+  @Post("settlement/manual-run")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async manualRunSettlement(@Req() req: Request) {
+    return this.walletService.settleDaily({
+      triggeredBy: (req as any).user?.id || "ADMIN_MANUAL",
+    });
+  }
+
+  // Manual trigger: chạy batch quyết toán (có dryRun)
+  @Post("settlement/batches/run")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async runSettlementBatch(
+    @Body()
+    body: { periodStart?: string; periodEnd?: string; dryRun?: boolean },
+    @Req() req: Request,
+  ) {
+    return this.walletService.settleDaily({
+      periodStart: body.periodStart,
+      periodEnd: body.periodEnd,
+      dryRun: body.dryRun ?? false,
+      triggeredBy: (req as any).user?.id || "ADMIN",
+    });
+  }
+
+  // Retry batch FAILED
+  @Post("settlement/batches/:id/retry")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async retrySettlementBatch(@Param("id") id: string) {
+    return this.walletService.retryBatch(id);
   }
 
   // ═══════════════════════════════════════════════════════
   // Admin: All Transactions (must come BEFORE :ownerId wildcard)
   // ═══════════════════════════════════════════════════════
   @Get("transactions/admin")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
   async getAdminTransactions(
     @Query("skip") skip?: string,
     @Query("take") take?: string,
@@ -236,19 +745,41 @@ export class WalletController {
   // Transaction History (wildcard - must come AFTER static routes)
   // ═══════════════════════════════════════════════════════
   @Get(":ownerId/transactions")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(ServiceKeyOrJwtGuard)
   async getTransactions(
     @Param("ownerId") ownerId: string,
     @Query("ownerType") ownerType: string,
   ) {
-    return this.walletService.getTransactions(ownerId, (ownerType || "DRIVER") as OwnerType);
+    return this.walletService.getTransactions(
+      ownerId,
+      (ownerType || "DRIVER") as OwnerType,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Earnings (driver income from settlements)
+  // ═══════════════════════════════════════════════════════
+  @Get("earnings")
+  @UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
+  @Roles("DRIVER", "ADMIN")
+  async getEarnings(
+    @Query("ownerId") ownerId: string,
+    @Query("ownerType") ownerType: string,
+    @Query("period") period?: string,
+  ) {
+    return this.walletService.getEarnings(
+      ownerId,
+      (ownerType || "DRIVER") as OwnerType,
+      period || "today",
+    );
   }
 
   // ═══════════════════════════════════════════════════════
   // Admin: Wallet Stats
   // ═══════════════════════════════════════════════════════
   @Get("stats")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
   async getWalletStats() {
     return this.walletService.getWalletStats();
   }

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Between, In, Repository } from "typeorm";
 import { WalletEntity } from "./wallet.entity";
 import { WalletTransactionEntity } from "./wallet-transaction.entity";
 import { Wallet } from "../domain/wallet.aggregate";
@@ -24,7 +24,10 @@ export class WalletRepository {
     private readonly txRepo: Repository<WalletTransactionEntity>,
   ) {}
 
-  async findByOwnerOrCreate(ownerId: string, ownerType: string): Promise<{
+  async findByOwnerOrCreate(
+    ownerId: string,
+    ownerType: string,
+  ): Promise<{
     entity: WalletEntity;
     domain: Wallet;
   }> {
@@ -51,12 +54,20 @@ export class WalletRepository {
     return this.walletRepo.save(walletEntity);
   }
 
+  /** Chỉ đọc ví — không tạo mới (dùng cho endpoint tra cứu). */
+  async findByOwner(
+    ownerId: string,
+    ownerType: string,
+  ): Promise<WalletEntity | null> {
+    return this.walletRepo.findOne({ where: { ownerId, ownerType } });
+  }
+
   async recordTransaction(params: {
     id: string;
     walletId: string;
     ownerId: string;
     ownerType: string;
-    type: "CREDIT" | "DEBIT";
+    type: string;
     amount: number;
     balanceBefore: number;
     balanceAfter: number;
@@ -86,11 +97,52 @@ export class WalletRepository {
     } as WalletTransactionEntity);
   }
 
-  async getTransactions(ownerId: string, ownerType: string): Promise<WalletTransactionEntity[]> {
+  async getTransactions(
+    ownerId: string,
+    ownerType: string,
+  ): Promise<WalletTransactionEntity[]> {
     return this.txRepo.find({
       where: { ownerId, ownerType },
       order: { createdAt: "DESC" },
       take: 50,
+    });
+  }
+
+  async findTransactionsByType(
+    ownerId: string,
+    referenceType: string,
+  ): Promise<WalletTransactionEntity[]> {
+    return this.txRepo.find({
+      where: { ownerId, referenceType },
+      order: { createdAt: "DESC" },
+    });
+  }
+
+  /** Tìm giao dịch theo reference để đảm bảo idempotency (vd điều chỉnh đơn). */
+  async findTransactionByReference(
+    referenceType: string,
+    referenceId: string,
+  ): Promise<WalletTransactionEntity | null> {
+    return this.txRepo.findOne({
+      where: { referenceType, referenceId },
+      order: { createdAt: "DESC" },
+    });
+  }
+
+  /**
+   * Idempotency theo (owner, referenceType, referenceId) — dùng cho các bút
+   * toán mà nhiều bên cùng tham chiếu một reference (vd phạt đơn #X: bên bị
+   * phạt và quỹ nền tảng).
+   */
+  async findTransactionByOwnerReference(
+    ownerId: string,
+    ownerType: string,
+    referenceType: string,
+    referenceId: string,
+  ): Promise<WalletTransactionEntity | null> {
+    return this.txRepo.findOne({
+      where: { ownerId, ownerType, referenceType, referenceId },
+      order: { createdAt: "DESC" },
     });
   }
 
@@ -120,10 +172,16 @@ export class WalletRepository {
     search?: string;
   }): Promise<{ items: WalletTransactionEntity[]; total: number }> {
     const qb = this.txRepo.createQueryBuilder("tx");
-    if (params.ownerType) qb.andWhere("tx.ownerType = :ownerType", { ownerType: params.ownerType });
-    if (params.type) qb.andWhere("tx.referenceType = :type", { type: params.type });
-    if (params.startDate) qb.andWhere("tx.createdAt >= :startDate", { startDate: params.startDate });
-    if (params.endDate) qb.andWhere("tx.createdAt <= :endDate", { endDate: params.endDate });
+    if (params.ownerType)
+      qb.andWhere("tx.ownerType = :ownerType", { ownerType: params.ownerType });
+    if (params.type)
+      qb.andWhere("tx.referenceType = :type", { type: params.type });
+    if (params.startDate)
+      qb.andWhere("tx.createdAt >= :startDate", {
+        startDate: params.startDate,
+      });
+    if (params.endDate)
+      qb.andWhere("tx.createdAt <= :endDate", { endDate: params.endDate });
     if (params.search) {
       qb.andWhere(
         "(tx.description ILIKE :search OR tx.referenceId ILIKE :search OR tx.ownerId ILIKE :search)",
@@ -135,26 +193,109 @@ export class WalletRepository {
     return { items, total };
   }
 
-  async getStatsSummary(startDate?: string, endDate?: string): Promise<{
+  async getStatsSummary(
+    startDate?: string,
+    endDate?: string,
+  ): Promise<{
     totalTopupVolume: number;
+    totalWithdrawVolume: number;
     totalSettlementVolume: number;
+    totalCodVolume: number;
   }> {
     const statsQb = this.txRepo.createQueryBuilder("tx");
-    if (startDate) statsQb.andWhere("tx.createdAt >= :startDate", { startDate });
+    if (startDate)
+      statsQb.andWhere("tx.createdAt >= :startDate", { startDate });
     if (endDate) statsQb.andWhere("tx.createdAt <= :endDate", { endDate });
     const stats = await statsQb
-      .select("tx.referenceType", "type")
+      .select("tx.type", "txType")
+      .addSelect("tx.referenceType", "refType")
       .addSelect("SUM(tx.amount)", "total")
-      .where("tx.type = 'CREDIT'")
-      .groupBy("tx.referenceType")
+      .groupBy("tx.type")
+      .addGroupBy("tx.referenceType")
       .getRawMany();
     let totalTopupVolume = 0;
+    let totalWithdrawVolume = 0;
     let totalSettlementVolume = 0;
+    let totalCodVolume = 0;
     for (const row of stats) {
-      if (row.type === "TOPUP") totalTopupVolume = Number(row.total) || 0;
-      if (row.type === "SETTLEMENT") totalSettlementVolume = Number(row.total) || 0;
+      const amount = Math.abs(Number(row.total) || 0);
+      const txType = row.txType;
+      const refType = row.refType;
+      if (refType === "TOPUP" && txType === "CREDIT") {
+        totalTopupVolume += amount;
+      }
+      if (refType === "WITHDRAW") {
+        totalWithdrawVolume += amount;
+      }
+      if (refType === "COD_SETTLEMENT" && txType === "CREDIT") {
+        totalCodVolume += amount;
+      }
+      if (
+        (refType === "SETTLEMENT" || refType === "COD_SETTLEMENT") &&
+        txType === "CREDIT"
+      ) {
+        totalSettlementVolume += amount;
+      }
     }
-    return { totalTopupVolume, totalSettlementVolume };
+    return {
+      totalTopupVolume,
+      totalWithdrawVolume,
+      totalSettlementVolume,
+      totalCodVolume,
+    };
+  }
+
+  async getEarningsByOwner(
+    ownerId: string,
+    ownerType: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<{
+    totalEarnings: number;
+    totalOrders: number;
+    earningsByDay: any[];
+  }> {
+    const where: Record<string, unknown> = {
+      ownerId,
+      ownerType,
+      referenceType: "SETTLEMENT",
+      type: In(["CREDIT", "REVENUE"]),
+    };
+    if (startDate || endDate) {
+      const from = startDate ? new Date(startDate) : new Date(0);
+      const to = endDate ? new Date(endDate) : new Date(8640000000000000);
+      where["createdAt"] = Between(from, to);
+    }
+
+    const txs = await this.txRepo.find({ where, order: { createdAt: "ASC" } });
+
+    const byDay = new Map<
+      string,
+      { earnings: number; orderIds: Set<string> }
+    >();
+    for (const tx of txs) {
+      const date = tx.createdAt.toISOString().slice(0, 10);
+      const bucket = byDay.get(date) ?? {
+        earnings: 0,
+        orderIds: new Set<string>(),
+      };
+      bucket.earnings += Number(tx.amount);
+      if (tx.referenceId) bucket.orderIds.add(tx.referenceId);
+      byDay.set(date, bucket);
+    }
+
+    const earningsByDay = [...byDay.entries()]
+      .map(([date, b]) => ({
+        date,
+        earnings: b.earnings,
+        orders: b.orderIds.size,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const totalEarnings = earningsByDay.reduce((s, d) => s + d.earnings, 0);
+    const totalOrders = earningsByDay.reduce((s, d) => s + d.orders, 0);
+
+    return { totalEarnings, totalOrders, earningsByDay };
   }
 
   toDomain(entity: WalletEntity): Wallet {
@@ -163,6 +304,7 @@ export class WalletRepository {
       ownerId: entity.ownerId,
       ownerType: entity.ownerType,
       balance: Number(entity.balance),
+      heldBalance: Number(entity.heldBalance || 0),
       currency: entity.currency,
     });
   }

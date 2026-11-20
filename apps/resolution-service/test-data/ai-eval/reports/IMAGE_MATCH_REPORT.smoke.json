@@ -1,0 +1,229 @@
+{
+  "reportVersion": 2,
+  "generatedAt": "2026-11-07T11:51:00.360Z",
+  "dryRun": false,
+  "model": "glm-4.5-flash",
+  "policy": {
+    "autoApproveAtOrBelow": 0.85,
+    "autoRejectAtOrAbove": 1
+  },
+  "all": {
+    "samples": 2,
+    "scored": 0,
+    "verdictAccuracy": 0,
+    "meanAbsoluteScoreError": null,
+    "withinToleranceRate": null,
+    "falseAlarmRate": null,
+    "missedDefectRate": 0,
+    "decisionCounts": {
+      "AUTO_APPROVE": 0,
+      "AUTO_REJECT": 0,
+      "NEEDS_REVIEW": 2
+    }
+  },
+  "bySplit": {
+    "synthetic": {
+      "samples": 0,
+      "scored": 0,
+      "verdictAccuracy": null,
+      "meanAbsoluteScoreError": null,
+      "withinToleranceRate": null,
+      "falseAlarmRate": null,
+      "missedDefectRate": null,
+      "decisionCounts": {
+        "AUTO_APPROVE": 0,
+        "AUTO_REJECT": 0,
+        "NEEDS_REVIEW": 0
+      }
+    },
+    "real": {
+      "samples": 0,
+      "scored": 0,
+      "verdictAccuracy": null,
+      "meanAbsoluteScoreError": null,
+      "withinToleranceRate": null,
+      "falseAlarmRate": null,
+      "missedDefectRate": null,
+      "decisionCounts": {
+        "AUTO_APPROVE": 0,
+        "AUTO_REJECT": 0,
+        "NEEDS_REVIEW": 0
+      }
+    }
+  },
+  "byKind": {
+    "MISSING": {
+      "samples": 0,
+      "scored": 0,
+      "verdictAccuracy": null,
+      "meanAbsoluteScoreError": null,
+      "withinToleranceRate": null,
+      "falseAlarmRate": null,
+      "missedDefectRate": null,
+      "decisionCounts": {
+        "AUTO_APPROVE": 0,
+        "AUTO_REJECT": 0,
+        "NEEDS_REVIEW": 0
+      }
+    },
+    "WRONG_ITEM": {
+      "samples": 0,
+      "scored": 0,
+      "verdictAccuracy": null,
+      "meanAbsoluteScoreError": null,
+      "withinToleranceRate": null,
+      "falseAlarmRate": null,
+      "missedDefectRate": null,
+      "decisionCounts": {
+        "AUTO_APPROVE": 0,
+        "AUTO_REJECT": 0,
+        "NEEDS_REVIEW": 0
+      }
+    },
+    "COMPLETE": {
+      "samples": 0,
+      "scored": 0,
+      "verdictAccuracy": null,
+      "meanAbsoluteScoreError": null,
+      "withinToleranceRate": null,
+      "falseAlarmRate": null,
+      "missedDefectRate": null,
+      "decisionCounts": {
+        "AUTO_APPROVE": 0,
+        "AUTO_REJECT": 0,
+        "NEEDS_REVIEW": 0
+      }
+    }
+  },
+  "combos": {
+    "combo1": {
+      "name": "Combo gà rán",
+      "orderItems": [
+        {
+          "menuItemId": "eval-combo1-ga",
+          "name": "gà rán",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo1-mi",
+          "name": "mì ý",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo1-khoai",
+          "name": "khoai tây chiên",
+          "quantity": 1,
+          "unitPrice": null
+        },
+        {
+          "menuItemId": "eval-combo1-nuoc",
+          "name": "nước ngọt",
+          "quantity": 1,
+          "unitPrice": null
+        }
+      ]
+    }
+  },
+  "rows": [
+    {
+      "sampleId": "MIS-combo1-thieu1ga",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.5-flash",
+      "imagesUsed": 0,
+      "degraded": true,
+      "imageFailureReason": "VISION_OVERLOADED",
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.75
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Không có ảnh, hoặc ảnh không thấy món nào",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [],
+        "boxes": 0,
+        "countable": false,
+        "sealed": false,
+        "coverage": "unknown"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": ["Không có ảnh, hoặc ảnh không thấy món nào"]
+      },
+      "error": "Provider bỏ 2/2 ảnh (VISION_OVERLOADED: 429/1113 Tài khoản GLM không có gói/quota cho model \"glm-4.5v\" (1113): 余额不足或无可用资源包,请充值。 Model free đang dùng được: \"glm-4.5-flash\" (chữ) và \"glm-4.6v-flash\" (ảnh).) ⇒ mẫu không phải phép đo khả năng đếm món"
+    },
+    {
+      "sampleId": "MIS-combo1-thieu1ga1khoai",
+      "kind": "MISSING",
+      "split": "synthetic",
+      "comboId": "combo1",
+      "model": "glm-4.5-flash",
+      "imagesUsed": 0,
+      "degraded": true,
+      "imageFailureReason": "VISION_OVERLOADED",
+      "truth": {
+        "verdict": "MISSING",
+        "matchScore": 0.5
+      },
+      "verdict": "UNCLEAR",
+      "matchScore": null,
+      "missing": [],
+      "extra": [],
+      "matchedQuantity": 0,
+      "totalQuantity": 4,
+      "missingValue": null,
+      "decision": "NEEDS_REVIEW",
+      "refundCap": null,
+      "reason": "Không có ảnh, hoặc ảnh không thấy món nào",
+      "evaluation": {
+        "verdictCorrect": false,
+        "scoreError": null,
+        "scoreWithinTolerance": false,
+        "falseAlarm": false,
+        "missedDefect": false
+      },
+      "label": {
+        "items": [],
+        "boxes": 0,
+        "countable": false,
+        "sealed": false,
+        "coverage": "unknown"
+      },
+      "score": {
+        "verdict": "UNCLEAR",
+        "totalQuantity": 4,
+        "matchedQuantity": 0,
+        "matchScore": null,
+        "missing": [],
+        "extra": [],
+        "missingValue": null,
+        "reasons": ["Không có ảnh, hoặc ảnh không thấy món nào"]
+      },
+      "error": "Provider bỏ 2/2 ảnh (VISION_OVERLOADED: 429/1113 Tài khoản GLM không có gói/quota cho model \"glm-4.5v\" (1113): 余额不足或无可用资源包,请充值。 Model free đang dùng được: \"glm-4.5-flash\" (chữ) và \"glm-4.6v-flash\" (ảnh).) ⇒ mẫu không phải phép đo khả năng đếm món"
+    }
+  ]
+}

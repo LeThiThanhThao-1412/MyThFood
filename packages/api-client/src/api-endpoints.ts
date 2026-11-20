@@ -2,7 +2,7 @@
 // MyThFood API Endpoints - Typed API functions for all services
 // ============================================================================
 
-import { httpClient } from './http-client';
+import { httpClient } from "./http-client";
 import type {
   ApiResponse,
   PaginatedResponse,
@@ -14,19 +14,37 @@ import type {
   ConsumerProfile,
   AddAddressRequest,
   AddPaymentMethodRequest,
+  UpdateConsumerProfileRequest,
+  ChangePasswordRequest,
   CreateMerchantRequest,
   Merchant,
+  MerchantListQuery,
+  MenuSearchItem,
   CreateMenuItemRequest,
   MenuItem,
   UpdateMenuItemRequest,
+  SetMenuItemAvailabilityRequest,
+  BulkImportMenuRequest,
+  MenuImportResult,
+  MenuCategory,
+  CreateMenuCategoryRequest,
+  UpdateMenuCategoryRequest,
   SetOperatingHoursRequest,
+  OperatingHour,
   UpdateCapacityRequest,
   PlaceOrderRequest,
   Order,
+  OrderWarning,
+  DeliveryOption,
   CancelOrderRequest,
   RejectOrderRequest,
   OutForDeliveryRequest,
   UpdateOrderRequest,
+  OrderChangeRequest,
+  CreateOrderChangeRequest,
+  AcceptOrderChangeRequest,
+  AcceptOrderChangeResult,
+  OrderAdjustment,
   CreatePaymentRequest,
   Payment,
   CompletePaymentRequest,
@@ -40,8 +58,51 @@ import type {
   UpdateStockRequest,
   RegisterDriverRequest,
   Driver,
+  DriverPublicProfile,
   UpdateLocationRequest,
-} from './types';
+  DriverLocationBatchPoint,
+  DriverLocationPoint,
+  CreateReviewRequest,
+  Review,
+  ReplyReviewRequest,
+  CreatePromotionRequest,
+  UpdatePromotionRequest,
+  Promotion,
+  PromotionStats,
+  ValidatePromotionRequest,
+  ApplyPromotionRequest,
+  CompensationConfig,
+  CompensationVoucher,
+  UpdateCompensationConfigRequest,
+  IssueCompensationVoucherRequest,
+  ApplyCompensationVoucherRequest,
+  FlashSale,
+  CreateFlashSaleRequest,
+  UpdateFlashSaleRequest,
+  ValidateFlashSaleRequest,
+  ApplyFlashSaleRequest,
+  RefundFlashSaleRequest,
+  FlashSalePricedItem,
+  FlashSaleStats,
+  PriceHistory,
+  PriceHistoryStatus,
+  PriceAlert,
+  PriceFluctuationReport,
+  RevenueReconciliation,
+  CreateNotificationRequest,
+  Notification,
+  ChatMessage,
+  ChatConversation,
+  GetOrCreateConversationRequest,
+  SendMessageRequest,
+  AssistantHealth,
+  CaseAiAnalysisRecord,
+  CaseAiAutoStatus,
+  CaseAiContext,
+  CaseAiListSummary,
+  CaseAiSuggestion,
+  CaseAiReviewResult,
+} from "./types";
 
 // Service port constants
 export const PORTS = {
@@ -54,6 +115,12 @@ export const PORTS = {
   DRIVER: 3007,
   DISPATCH: 3008,
   WALLET: 3009,
+  UPLOAD: 3010,
+  REVIEW: 3011,
+  PROMOTION: 3012,
+  NOTIFICATION: 3013,
+  RESOLUTION: 3014,
+  CHAT: 3015,
 } as const;
 
 // ============================================================================
@@ -61,13 +128,33 @@ export const PORTS = {
 // ============================================================================
 export const authApi = {
   login: (body: LoginRequest) =>
-    httpClient.post<ApiResponse<LoginResponse>>(PORTS.IDENTITY, '/auth/login', body),
+    httpClient.post<ApiResponse<LoginResponse>>(
+      PORTS.IDENTITY,
+      "/auth/login",
+      body,
+    ),
 
   register: (body: RegisterRequest) =>
-    httpClient.post<ApiResponse<{ user: UserDetail }>>(PORTS.IDENTITY, '/auth/register', body),
+    httpClient.post<ApiResponse<{ user: UserDetail }>>(
+      PORTS.IDENTITY,
+      "/auth/register",
+      body,
+    ),
 
-  me: () =>
-    httpClient.get<ApiResponse<UserDetail>>(PORTS.IDENTITY, '/auth/me'),
+  me: () => httpClient.get<ApiResponse<UserDetail>>(PORTS.IDENTITY, "/auth/me"),
+
+  /** Thông tin liên hệ cơ bản của 1 user (tên + SĐT) — dùng cho tài xế gọi khách. */
+  getUserContact: (id: string) =>
+    httpClient.get<
+      ApiResponse<{ id: string; fullName: string; phone: string }>
+    >(PORTS.IDENTITY, `/auth/users/${id}/contact`),
+
+  changePassword: (body: ChangePasswordRequest) =>
+    httpClient.post<ApiResponse<{ message: string }>>(
+      PORTS.IDENTITY,
+      "/auth/change-password",
+      body,
+    ),
 };
 
 // ============================================================================
@@ -75,13 +162,42 @@ export const authApi = {
 // ============================================================================
 export const consumerApi = {
   create: (body: CreateConsumerRequest) =>
-    httpClient.post<ApiResponse<ConsumerProfile>>(PORTS.CONSUMER, '/consumers', body),
+    httpClient.post<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      "/consumers",
+      body,
+    ),
 
   getByUserId: (userId: string) =>
-    httpClient.get<ApiResponse<ConsumerProfile>>(PORTS.CONSUMER, `/consumers/user/${userId}`),
+    httpClient.get<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/user/${userId}`,
+    ),
 
   getById: (id: string) =>
-    httpClient.get<ApiResponse<ConsumerProfile>>(PORTS.CONSUMER, `/consumers/${id}`),
+    httpClient.get<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${id}`,
+    ),
+
+  /** Thông tin liên hệ cơ bản (tên + userId + avatar) cho tài xế. */
+  getContact: (id: string) =>
+    httpClient.get<
+      ApiResponse<{
+        id: string;
+        userId: string;
+        fullName: string;
+        avatar?: string | null;
+      }>
+    >(PORTS.CONSUMER, `/consumers/${id}/contact`),
+
+  /** Xác minh danh tính (CMND/CCCD) để được đặt COD đơn lớn. */
+  verify: (id: string, idCardNumber: string) =>
+    httpClient.patch<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${id}/verify`,
+      { idCardNumber },
+    ),
 
   addAddress: (consumerId: string, body: AddAddressRequest) =>
     httpClient.post<ApiResponse<ConsumerProfile>>(
@@ -90,11 +206,60 @@ export const consumerApi = {
       body,
     ),
 
+  update: (consumerId: string, body: UpdateConsumerProfileRequest) =>
+    httpClient.put<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}`,
+      body,
+    ),
+
+  removeAddress: (consumerId: string, addressId: string) =>
+    httpClient.delete<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/addresses/${addressId}`,
+    ),
+
   addPaymentMethod: (consumerId: string, body: AddPaymentMethodRequest) =>
     httpClient.post<ApiResponse<ConsumerProfile>>(
       PORTS.CONSUMER,
       `/consumers/${consumerId}/payment-methods`,
       body,
+    ),
+
+  removePaymentMethod: (consumerId: string, paymentMethodId: string) =>
+    httpClient.delete<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/payment-methods/${paymentMethodId}`,
+    ),
+
+  setDefaultPaymentMethod: (consumerId: string, paymentMethodId: string) =>
+    httpClient.patch<ApiResponse<ConsumerProfile>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/payment-methods/${paymentMethodId}/default`,
+    ),
+
+  getFavorites: (consumerId: string) =>
+    httpClient.get<ApiResponse<{ favorites: string[] }>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/favorites`,
+    ),
+
+  toggleFavorite: (consumerId: string, merchantId: string) =>
+    httpClient.put<ApiResponse<{ added: boolean; favorites: string[] }>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/favorites/${merchantId}`,
+    ),
+
+  getFavoriteMenuItems: (consumerId: string) =>
+    httpClient.get<ApiResponse<{ favorites: string[] }>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/favorite-menu-items`,
+    ),
+
+  toggleFavoriteMenuItem: (consumerId: string, menuItemId: string) =>
+    httpClient.put<ApiResponse<{ added: boolean; favorites: string[] }>>(
+      PORTS.CONSUMER,
+      `/consumers/${consumerId}/favorite-menu-items/${menuItemId}`,
     ),
 };
 
@@ -103,51 +268,299 @@ export const consumerApi = {
 // ============================================================================
 export const merchantApi = {
   create: (body: CreateMerchantRequest) =>
-    httpClient.post<Merchant>(PORTS.MERCHANT, '/merchants', body),
+    httpClient.post<Merchant>(PORTS.MERCHANT, "/merchants", body),
 
-  list: (params?: { status?: string; search?: string; skip?: number; take?: number }) =>
-    httpClient.get<PaginatedResponse<Merchant>>(PORTS.MERCHANT, '/merchants', { params }),
+  list: (params?: MerchantListQuery) =>
+    httpClient.get<PaginatedResponse<Merchant>>(PORTS.MERCHANT, "/merchants", {
+      params,
+    }),
+
+  getByUserId: (userId: string) =>
+    httpClient.get<Merchant>(PORTS.MERCHANT, `/merchants/user/${userId}`),
+
+  /**
+   * Global dish search across all APPROVED merchants.
+   * NOTE: backend route is declared before `/merchants/:id` on purpose.
+   */
+  searchMenu: (params: {
+    q: string;
+    category?: string;
+    skip?: number;
+    take?: number;
+  }) =>
+    httpClient.get<{ items: MenuSearchItem[]; total: number }>(
+      PORTS.MERCHANT,
+      "/merchants/menu/search",
+      { params },
+    ),
+
+  /** Resolve menu items (with merchant info) by ids — favourite dishes. */
+  getMenuItemsByIds: (ids: string[]) =>
+    httpClient.get<{ items: MenuSearchItem[] }>(
+      PORTS.MERCHANT,
+      "/merchants/menu-items/by-ids",
+      { params: { ids: ids.join(",") } },
+    ),
+
+  /** Global top dishes (one per merchant) — fallback for new customers. */
+  getTopMenuItems: (params?: { take?: number }) =>
+    httpClient.get<{ items: MenuSearchItem[] }>(
+      PORTS.MERCHANT,
+      "/merchants/menu/top",
+      {
+        params,
+      },
+    ),
 
   getById: (id: string) =>
     httpClient.get<Merchant>(PORTS.MERCHANT, `/merchants/${id}`),
 
+  update: (
+    id: string,
+    body: {
+      name?: string;
+      description?: string;
+      phone?: string;
+      email?: string;
+      address?: string;
+      logoUrl?: string;
+      coverImageUrl?: string;
+      primaryCategory?: string;
+      secondaryCategories?: string[];
+      otherCategoryDescription?: string;
+    },
+  ) => httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${id}`, body),
+
   approve: (id: string) =>
     httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${id}/approve`),
 
-  getMenu: (merchantId: string) =>
-    httpClient.get<MenuItem[]>(PORTS.MERCHANT, `/merchants/${merchantId}/menu`),
+  /** Từ chối nhà hàng kèm lý do (hiển thị khi chủ nhà hàng đăng nhập). */
+  reject: (id: string, reason?: string) =>
+    httpClient.put<Merchant>(
+      PORTS.MERCHANT,
+      `/merchants/${id}/reject`,
+      reason ? { reason } : {},
+    ),
+
+  suspend: (id: string, body?: { reason?: string; durationDays?: number }) =>
+    httpClient.patch<Merchant>(PORTS.MERCHANT, `/merchants/${id}/status`, {
+      status: "SUSPENDED",
+      reason: body?.reason,
+      durationDays: body?.durationDays,
+    }),
+
+  reactivate: (id: string) =>
+    httpClient.patch<Merchant>(PORTS.MERCHANT, `/merchants/${id}/status`, {
+      status: "APPROVED",
+    }),
+
+  getStats: (id: string, period?: string) =>
+    httpClient.get<any>(PORTS.MERCHANT, `/merchants/${id}/stats`, {
+      params: period ? { period } : undefined,
+    }),
+
+  getReviews: (
+    id: string,
+    params?: { skip?: number; take?: number; rating?: number },
+  ) =>
+    httpClient.get<any>(PORTS.MERCHANT, `/merchants/${id}/reviews`, {
+      params,
+    }),
+
+  getMenu: (merchantId: string, includeUnavailable?: boolean) =>
+    httpClient.get<MenuItem[]>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu`,
+      {
+        params: includeUnavailable ? { includeUnavailable: "true" } : undefined,
+      },
+    ),
 
   addMenuItem: (merchantId: string, body: CreateMenuItemRequest) =>
-    httpClient.post<MenuItem>(PORTS.MERCHANT, `/merchants/${merchantId}/menu/items`, body),
+    httpClient.post<MenuItem>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu/items`,
+      body,
+    ),
 
-  updateMenuItem: (merchantId: string, itemId: string, body: UpdateMenuItemRequest) =>
-    httpClient.put<MenuItem>(PORTS.MERCHANT, `/merchants/${merchantId}/menu/${itemId}`, body),
+  importMenu: (merchantId: string, body: BulkImportMenuRequest) =>
+    httpClient.post<MenuImportResult>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu/import`,
+      body,
+    ),
+
+  updateMenuItem: (
+    merchantId: string,
+    itemId: string,
+    body: UpdateMenuItemRequest,
+  ) =>
+    httpClient.put<MenuItem>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu/${itemId}`,
+      body,
+    ),
 
   toggleMenuItem: (merchantId: string, itemId: string) =>
-    httpClient.patch<MenuItem>(PORTS.MERCHANT, `/merchants/${merchantId}/menu/${itemId}/available`),
+    httpClient.patch<MenuItem>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu/${itemId}/available`,
+    ),
 
-  deleteMenuItem: (merchantId: string, itemId: string) =>
-    httpClient.delete<void>(PORTS.MERCHANT, `/merchants/${merchantId}/menu/${itemId}`),
+  setMenuItemAvailability: (
+    merchantId: string,
+    itemId: string,
+    body: SetMenuItemAvailabilityRequest,
+  ) =>
+    httpClient.patch<MenuItem>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu/${itemId}/availability`,
+      body,
+    ),
+
+  getMenuCategories: (merchantId: string) =>
+    httpClient.get<MenuCategory[]>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu-categories`,
+    ),
+
+  addMenuCategory: (merchantId: string, body: CreateMenuCategoryRequest) =>
+    httpClient.post<MenuCategory>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu-categories`,
+      body,
+    ),
+
+  updateMenuCategory: (
+    merchantId: string,
+    categoryId: string,
+    body: UpdateMenuCategoryRequest,
+  ) =>
+    httpClient.put<MenuCategory>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu-categories/${categoryId}`,
+      body,
+    ),
+
+  deleteMenuCategory: (merchantId: string, categoryId: string) =>
+    httpClient.delete<void>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/menu-categories/${categoryId}`,
+    ),
 
   setOperatingHours: (merchantId: string, body: SetOperatingHoursRequest) =>
-    httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${merchantId}/operating-hours`, body),
+    httpClient.put<Merchant>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/operating-hours`,
+      body,
+    ),
+
+  getOperatingHours: (merchantId: string) =>
+    httpClient.get<OperatingHour[]>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/operating-hours`,
+    ),
 
   checkIsOpen: (merchantId: string) =>
-    httpClient.get<{ isOpen: boolean }>(PORTS.MERCHANT, `/merchants/${merchantId}/is-open`),
+    httpClient.get<{ isOpen: boolean }>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/is-open`,
+    ),
+
+  toggleOpen: (merchantId: string) =>
+    httpClient.patch<Merchant>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/toggle-open`,
+    ),
+
+  getCapacity: (merchantId: string) =>
+    httpClient.get<{
+      maxConcurrentOrders: number;
+      averagePreparationMinutes: number;
+    }>(PORTS.MERCHANT, `/merchants/${merchantId}/capacity`),
 
   updateCapacity: (merchantId: string, body: UpdateCapacityRequest) =>
-    httpClient.put<Merchant>(PORTS.MERCHANT, `/merchants/${merchantId}/capacity`, body),
+    httpClient.put<Merchant>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/capacity`,
+      body,
+    ),
+
+  // ---- Price History & Auditing ----
+  getPriceHistory: (
+    merchantId: string,
+    params?: {
+      menuItemId?: string;
+      changedBy?: string;
+      from?: string;
+      to?: string;
+      skip?: number;
+      take?: number;
+    },
+  ) =>
+    httpClient.get<{ items: PriceHistory[]; total: number }>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/price-history`,
+      { params },
+    ),
+
+  comparePrice: (
+    merchantId: string,
+    params: { menuItemId: string; at?: string },
+  ) =>
+    httpClient.get<{
+      menuItemId: string;
+      currentPrice: number | null;
+      priceAt: { price: number; at: string } | null;
+    }>(PORTS.MERCHANT, `/merchants/${merchantId}/price-history/compare`, {
+      params,
+    }),
+
+  getPriceFluctuationReport: (
+    merchantId: string,
+    params?: { from?: string; to?: string },
+  ) =>
+    httpClient.get<PriceFluctuationReport>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/price-history/report`,
+      { params },
+    ),
+
+  getPriceAlerts: (
+    merchantId: string,
+    params?: { skip?: number; take?: number },
+  ) =>
+    httpClient.get<{ items: PriceAlert[]; total: number }>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/price-alerts`,
+      { params },
+    ),
+
+  reconcileRevenue: (merchantId: string, params?: { period?: string }) =>
+    httpClient.get<RevenueReconciliation>(
+      PORTS.MERCHANT,
+      `/merchants/${merchantId}/revenue-reconciliation`,
+      { params },
+    ),
+
+  updatePriceHistoryStatus: (historyId: string, status: PriceHistoryStatus) =>
+    httpClient.patch<{ id: string; status: string }>(
+      PORTS.MERCHANT,
+      `/merchants/price-history/${historyId}/status`,
+      { status },
+    ),
 };
 
 // ============================================================================
 // Order (Port 3004)
 // ============================================================================
 export const orderApi = {
-  place: (body: PlaceOrderRequest) =>
-    httpClient.post<Order>(PORTS.ORDER, '/orders', body),
+  place: (body: PlaceOrderRequest, idempotencyKey?: string) =>
+    httpClient.post<Order>(PORTS.ORDER, "/orders", body, {
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
+    }),
 
-  getById: (id: string) =>
-    httpClient.get<Order>(PORTS.ORDER, `/orders/${id}`),
+  getById: (id: string) => httpClient.get<Order>(PORTS.ORDER, `/orders/${id}`),
 
   list: (params?: {
     status?: string;
@@ -155,7 +568,10 @@ export const orderApi = {
     consumerId?: string;
     skip?: number;
     take?: number;
-  }) => httpClient.get<PaginatedResponse<Order>>(PORTS.ORDER, '/orders', { params }),
+  }) =>
+    httpClient.get<PaginatedResponse<Order>>(PORTS.ORDER, "/orders", {
+      params,
+    }),
 
   listByConsumer: (consumerId: string) =>
     httpClient.get<Order[]>(PORTS.ORDER, `/orders/consumer/${consumerId}`),
@@ -176,10 +592,19 @@ export const orderApi = {
     httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/ready`),
 
   outForDelivery: (id: string, body: OutForDeliveryRequest) =>
-    httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/out-for-delivery`, body),
+    httpClient.patch<Order>(
+      PORTS.ORDER,
+      `/orders/${id}/out-for-delivery`,
+      body,
+    ),
 
-  delivered: (id: string) =>
-    httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/delivered`),
+  delivered: (id: string, body?: import("./types").MarkDeliveredRequest) =>
+    httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/delivered`, body ?? {}),
+
+  assignDriver: (id: string, driverId: string) =>
+    httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/assign-driver`, {
+      driverId,
+    }),
 
   cancel: (id: string, body: CancelOrderRequest) =>
     httpClient.patch<Order>(PORTS.ORDER, `/orders/${id}/cancel`, body),
@@ -190,8 +615,128 @@ export const orderApi = {
   update: (id: string, body: UpdateOrderRequest) =>
     httpClient.put<Order>(PORTS.ORDER, `/orders/${id}`, body),
 
-  delete: (id: string) =>
-    httpClient.delete<void>(PORTS.ORDER, `/orders/${id}`),
+  delete: (id: string) => httpClient.delete<void>(PORTS.ORDER, `/orders/${id}`),
+
+  // ---- Admin stats & timeline ---- //
+  getDailyStats: (startDate?: string, endDate?: string) =>
+    httpClient.get<any>(PORTS.ORDER, "/orders/stats/daily", {
+      params: { startDate, endDate },
+    }),
+
+  /** Thống kê theo phương thức giao hàng (admin). */
+  getDeliveryOptionStats: (days = 30) =>
+    httpClient.get<{
+      statusCode: number;
+      data: DeliveryOptionStatsRow[];
+    }>(PORTS.ORDER, "/orders/stats/delivery-options", { params: { days } }),
+
+  getTopMenuItems: (take?: number) =>
+    httpClient.get<any>(PORTS.ORDER, "/orders/stats/top-items", {
+      params: take ? { take: String(take) } : undefined,
+    }),
+
+  getMerchantStats: (
+    merchantId: string,
+    startDate?: string,
+    endDate?: string,
+  ) =>
+    httpClient.get<any>(PORTS.ORDER, `/orders/stats/merchant/${merchantId}`, {
+      params: { startDate, endDate },
+    }),
+
+  getMerchantOrderItems: (
+    merchantId: string,
+    startDate?: string,
+    endDate?: string,
+  ) =>
+    httpClient.get<any>(
+      PORTS.ORDER,
+      `/orders/reconciliation/merchant/${merchantId}`,
+      { params: { startDate, endDate } },
+    ),
+
+  getTimeline: (id: string) =>
+    httpClient.get<any>(PORTS.ORDER, `/orders/${id}/timeline`),
+
+  // ---- Cảnh báo đơn hàng (thay cho phạt tiền khi giao thất bại) ---- //
+  listWarnings: (orderId: string) =>
+    httpClient.get<OrderWarning[]>(PORTS.ORDER, `/orders/${orderId}/warnings`),
+
+  dismissWarning: (orderId: string, warningId: string) =>
+    httpClient.post<OrderWarning>(
+      PORTS.ORDER,
+      `/orders/${orderId}/warnings/${warningId}/dismiss`,
+      {},
+    ),
+
+  listActiveWarnings: (merchantId: string) =>
+    httpClient.get<OrderWarning[]>(
+      PORTS.ORDER,
+      `/orders/merchant/${merchantId}/warnings/active`,
+    ),
+
+  // ---- Order change requests (nhà hàng đổi món, khách xác nhận) ---- //
+  createChangeRequest: (orderId: string, body: CreateOrderChangeRequest) =>
+    httpClient.post<OrderChangeRequest>(
+      PORTS.ORDER,
+      `/orders/${orderId}/change-requests`,
+      body,
+    ),
+
+  listChangeRequests: (orderId: string) =>
+    httpClient.get<OrderChangeRequest[]>(
+      PORTS.ORDER,
+      `/orders/${orderId}/change-requests`,
+    ),
+
+  getChangeRequest: (requestId: string) =>
+    httpClient.get<OrderChangeRequest>(
+      PORTS.ORDER,
+      `/order-change-requests/${requestId}`,
+    ),
+
+  acceptChangeRequest: (requestId: string, body?: AcceptOrderChangeRequest) =>
+    httpClient.post<AcceptOrderChangeResult>(
+      PORTS.ORDER,
+      `/order-change-requests/${requestId}/accept`,
+      body ?? {},
+    ),
+
+  rejectChangeRequest: (requestId: string, body?: { reason?: string }) =>
+    httpClient.post<OrderChangeRequest>(
+      PORTS.ORDER,
+      `/order-change-requests/${requestId}/reject`,
+      body ?? {},
+    ),
+
+  cancelChangeRequest: (requestId: string, body?: { reason?: string }) =>
+    httpClient.post<OrderChangeRequest>(
+      PORTS.ORDER,
+      `/order-change-requests/${requestId}/cancel`,
+      body ?? {},
+    ),
+
+  getAdjustments: (orderId: string) =>
+    httpClient.get<OrderAdjustment[]>(
+      PORTS.ORDER,
+      `/orders/${orderId}/adjustments`,
+    ),
+
+  getMerchantAdjustments: (
+    merchantId: string,
+    params?: { startDate?: string; endDate?: string },
+  ) =>
+    httpClient.get<{
+      items: OrderAdjustment[];
+      total: number;
+      totalDelta: number;
+    }>(
+      PORTS.ORDER,
+      `/orders/reconciliation/merchant/${merchantId}/adjustments`,
+      {
+        params,
+      },
+    ),
 };
 
 // ============================================================================
@@ -199,10 +744,14 @@ export const orderApi = {
 // ============================================================================
 export const paymentApi = {
   create: (body: CreatePaymentRequest) =>
-    httpClient.post<Payment>(PORTS.PAYMENT, '/payments', body),
+    httpClient.post<Payment>(PORTS.PAYMENT, "/payments", body),
 
   createStripePayment: (body: CreatePaymentRequest & { currency?: string }) =>
-    httpClient.post<Payment & { clientSecret: string }>(PORTS.PAYMENT, '/payments/stripe', body),
+    httpClient.post<Payment & { clientSecret: string }>(
+      PORTS.PAYMENT,
+      "/payments/stripe",
+      body,
+    ),
 
   getById: (id: string) =>
     httpClient.get<Payment>(PORTS.PAYMENT, `/payments/${id}`),
@@ -212,19 +761,43 @@ export const paymentApi = {
     consumerId?: string;
     merchantId?: string;
     status?: string;
-  }) => httpClient.get<Payment[]>(PORTS.PAYMENT, '/payments', { params }),
+  }) => httpClient.get<Payment[]>(PORTS.PAYMENT, "/payments", { params }),
 
   getByOrder: (orderId: string) =>
     httpClient.get<Payment>(PORTS.PAYMENT, `/payments/order/${orderId}`),
 
+  getAdjustmentPaymentSecret: (adjustmentRequestId: string) =>
+    httpClient.get<{
+      paymentId: string | null;
+      clientSecret: string;
+      amount: number;
+      status: string | null;
+    }>(
+      PORTS.PAYMENT,
+      `/payments/order-adjustment/${adjustmentRequestId}/secret`,
+    ),
+
   listByConsumer: (consumerId: string) =>
-    httpClient.get<Payment[]>(PORTS.PAYMENT, `/payments/consumer/${consumerId}`),
+    httpClient.get<Payment[]>(
+      PORTS.PAYMENT,
+      `/payments/consumer/${consumerId}`,
+    ),
 
   listByMerchant: (merchantId: string) =>
-    httpClient.get<Payment[]>(PORTS.PAYMENT, `/payments/merchant/${merchantId}`),
+    httpClient.get<Payment[]>(
+      PORTS.PAYMENT,
+      `/payments/merchant/${merchantId}`,
+    ),
 
   complete: (id: string, body: CompletePaymentRequest) =>
     httpClient.patch<Payment>(PORTS.PAYMENT, `/payments/${id}/complete`, body),
+
+  completeAdjustment: (id: string, body: CompletePaymentRequest) =>
+    httpClient.patch<Payment>(
+      PORTS.PAYMENT,
+      `/payments/${id}/complete-adjustment`,
+      body,
+    ),
 
   fail: (id: string, body: FailPaymentRequest) =>
     httpClient.patch<Payment>(PORTS.PAYMENT, `/payments/${id}/fail`, body),
@@ -234,6 +807,12 @@ export const paymentApi = {
 
   delete: (id: string) =>
     httpClient.delete<void>(PORTS.PAYMENT, `/payments/${id}`),
+
+  // ---- Admin stats ---- //
+  getDailyStats: (startDate?: string, endDate?: string) =>
+    httpClient.get<any>(PORTS.PAYMENT, "/payments/stats/daily", {
+      params: { startDate, endDate },
+    }),
 };
 
 // ============================================================================
@@ -241,28 +820,45 @@ export const paymentApi = {
 // ============================================================================
 export const inventoryApi = {
   create: (body: CreateInventoryRequest) =>
-    httpClient.post<Inventory>(PORTS.INVENTORY, '/inventory', body),
+    httpClient.post<Inventory>(PORTS.INVENTORY, "/inventory", body),
 
-  list: () =>
-    httpClient.get<Inventory[]>(PORTS.INVENTORY, '/inventory'),
+  list: () => httpClient.get<Inventory[]>(PORTS.INVENTORY, "/inventory"),
 
   getById: (id: string) =>
     httpClient.get<Inventory>(PORTS.INVENTORY, `/inventory/${id}`),
 
   getByMerchant: (merchantId: string) =>
-    httpClient.get<Inventory[]>(PORTS.INVENTORY, `/inventory/merchant/${merchantId}`),
+    httpClient.get<Inventory[]>(
+      PORTS.INVENTORY,
+      `/inventory/merchant/${merchantId}`,
+    ),
 
   getByMenuItem: (menuItemId: string) =>
-    httpClient.get<Inventory>(PORTS.INVENTORY, `/inventory/menuitem/${menuItemId}`),
+    httpClient.get<Inventory>(
+      PORTS.INVENTORY,
+      `/inventory/menuitem/${menuItemId}`,
+    ),
 
   reserve: (id: string, body: ReserveStockRequest) =>
-    httpClient.post<Inventory>(PORTS.INVENTORY, `/inventory/${id}/reserve`, body),
+    httpClient.post<Inventory>(
+      PORTS.INVENTORY,
+      `/inventory/${id}/reserve`,
+      body,
+    ),
 
   release: (id: string, body: ReleaseStockRequest) =>
-    httpClient.post<Inventory>(PORTS.INVENTORY, `/inventory/${id}/release`, body),
+    httpClient.post<Inventory>(
+      PORTS.INVENTORY,
+      `/inventory/${id}/release`,
+      body,
+    ),
 
   consume: (id: string, body: ConsumeStockRequest) =>
-    httpClient.post<Inventory>(PORTS.INVENTORY, `/inventory/${id}/consume`, body),
+    httpClient.post<Inventory>(
+      PORTS.INVENTORY,
+      `/inventory/${id}/consume`,
+      body,
+    ),
 
   updateTotal: (id: string, body: UpdateStockRequest) =>
     httpClient.put<Inventory>(PORTS.INVENTORY, `/inventory/${id}/total`, body),
@@ -273,72 +869,415 @@ export const inventoryApi = {
 // ============================================================================
 export const driverApi = {
   register: (body: RegisterDriverRequest) =>
-    httpClient.post<{ statusCode: number; data: Driver }>(PORTS.DRIVER, '/drivers', body),
+    httpClient.post<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      "/drivers",
+      body,
+    ),
 
   getById: (id: string) =>
-    httpClient.get<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}`),
+    httpClient.get<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}`,
+    ),
 
   getByUserId: (userId: string) =>
-    httpClient.get<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/user/${userId}`),
+    httpClient.get<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/user/${userId}`,
+    ),
 
-  list: (params?: { status?: string; onlineStatus?: string; fatigueLevel?: string }) =>
-    httpClient.get<{ statusCode: number; data: Driver[] }>(PORTS.DRIVER, '/drivers', { params }),
+  list: (params?: {
+    status?: string;
+    onlineStatus?: string;
+    fatigueLevel?: string;
+  }) =>
+    httpClient.get<{ statusCode: number; data: Driver[] }>(
+      PORTS.DRIVER,
+      "/drivers",
+      { params },
+    ),
 
   getAvailable: () =>
-    httpClient.get<{ statusCode: number; data: Driver[] }>(PORTS.DRIVER, '/drivers/available/list'),
+    httpClient.get<{ statusCode: number; data: Driver[] }>(
+      PORTS.DRIVER,
+      "/drivers/available/list",
+    ),
 
   updateProfile: (id: string, body: Partial<RegisterDriverRequest>) =>
-    httpClient.put<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}`, body),
+    httpClient.put<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}`,
+      body,
+    ),
 
   goOnline: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/go-online`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/go-online`,
+    ),
 
   goOffline: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/go-offline`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/go-offline`,
+    ),
 
   goHome: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/go-home`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/go-home`,
+    ),
 
   updateLocation: (id: string, body: UpdateLocationRequest) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/location`, body),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/location`,
+      body,
+    ),
+
+  /**
+   * Gửi lô điểm GPS (tối đa 100 điểm/lần). Dùng cho pipeline realtime: client
+   * lấy mẫu bằng `watchPosition` rồi gửi theo lô để giảm tải DB.
+   */
+  updateLocationBatch: (id: string, points: DriverLocationBatchPoint[]) =>
+    httpClient.post<{
+      statusCode: number;
+      data: { accepted: number; driver: Driver };
+    }>(PORTS.DRIVER, `/drivers/${id}/location/batch`, { points }),
+
+  /**
+   * Tài xế khả dụng gần một toạ độ. driver-service ưu tiên Redis GEO
+   * (GEOSEARCH) và tự fallback sang quét DB + Haversine khi Redis không sẵn sàng.
+   */
+  getNearbyAvailableDrivers: (params: {
+    latitude: number;
+    longitude: number;
+    radiusKm?: number;
+    includeStackable?: boolean;
+    limit?: number;
+  }) =>
+    httpClient.get<{
+      statusCode: number;
+      data: (Driver & { distanceKm: number })[];
+    }>(PORTS.DRIVER, "/drivers/available/nearby", { params }),
+
+  getLocationHistory: (id: string, limit?: number) =>
+    httpClient.get<{ statusCode: number; data: DriverLocationPoint[] }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/location/history${limit != null ? `?limit=${limit}` : ""}`,
+    ),
 
   assignOrder: (id: string, orderId: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/assign-order`, { orderId }),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/assign-order`,
+      { orderId },
+    ),
 
-  completeOrder: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/complete-order`),
+  completeOrder: (id: string, orderId?: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/complete-order`,
+      orderId ? { orderId } : {},
+    ),
 
   startShift: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/start-shift`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/start-shift`,
+    ),
 
   endShift: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/end-shift`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/end-shift`,
+    ),
 
   takeBreak: (id: string) =>
-    httpClient.patch<{ statusCode: number; data: Driver }>(PORTS.DRIVER, `/drivers/${id}/take-break`),
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/take-break`,
+    ),
 
   delete: (id: string) =>
     httpClient.delete<void>(PORTS.DRIVER, `/drivers/${id}`),
+
+  // ---- Admin: training & activation ---- //
+  completeTraining: (id: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/complete-training`,
+    ),
+
+  activate: (id: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/activate`,
+    ),
+
+  deactivate: (id: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/deactivate`,
+    ),
+
+  suspend: (id: string, body?: { durationDays?: number; reason?: string }) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/suspend`,
+      body || {},
+    ),
+
+  /** Từ chối hồ sơ tài xế kèm lý do (hiển thị khi đăng nhập). */
+  reject: (id: string, reason?: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/reject`,
+      reason ? { reason } : {},
+    ),
+
+  unlock: (id: string) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/unlock`,
+    ),
+
+  getDriverStats: () =>
+    httpClient.get<{
+      statusCode: number;
+      data: {
+        totalDrivers: number;
+        activeDrivers: number;
+        onlineDrivers: number;
+      };
+    }>(PORTS.DRIVER, "/drivers/stats"),
+
+  rate: (id: string, rating: number) =>
+    httpClient.patch<{ statusCode: number; data: Driver }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/rating`,
+      { rating },
+    ),
+
+  getPublicProfile: (id: string) =>
+    httpClient.get<{ statusCode: number; data: DriverPublicProfile }>(
+      PORTS.DRIVER,
+      `/drivers/${id}/public-profile`,
+    ),
 };
 
 // ============================================================================
 // Dispatch (Port 3008)
+// Base path backend: `/api/v1/dispatches` (DispatchController → @Controller("dispatches"))
+// Mọi response đều được bọc `{ statusCode, data }`.
 // ============================================================================
+type DispatchEnvelope = {
+  statusCode: number;
+  data: import("./types").Dispatch;
+};
+type DispatchListEnvelope = {
+  statusCode: number;
+  data: import("./types").Dispatch[];
+  total: number;
+};
+
 export const dispatchApi = {
   getById: (id: string) =>
-    httpClient.get<import('./types').Dispatch>(PORTS.DISPATCH, `/dispatch/${id}`),
+    httpClient.get<DispatchEnvelope>(PORTS.DISPATCH, `/dispatches/${id}`),
 
+  /** `data` = null khi đơn chưa có dispatch. */
   getByOrder: (orderId: string) =>
-    httpClient.get<import('./types').Dispatch>(PORTS.DISPATCH, `/dispatch/order/${orderId}`),
+    httpClient.get<{
+      statusCode: number;
+      data: import("./types").Dispatch | null;
+    }>(PORTS.DISPATCH, `/dispatches/order/${orderId}`),
 
   getByDriver: (driverId: string) =>
-    httpClient.get<import('./types').Dispatch[]>(PORTS.DISPATCH, `/dispatch/driver/${driverId}`),
+    httpClient.get<DispatchListEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/driver/${driverId}`,
+    ),
 
-  create: (body: import('./types').CreateDispatchRequest) =>
-    httpClient.post<import('./types').Dispatch>(PORTS.DISPATCH, '/dispatch', body),
+  /**
+   * Các dispatch tài xế đủ điều kiện nhận ngay (backend đã áp dụng luật gộp
+   * SAVER: còn slot, cùng tuyến, đúng bán kính...). Dùng để lọc danh sách đơn
+   * hiển thị trên dashboard tài xế.
+   */
+  getAvailableForDriver: (driverId: string) =>
+    httpClient.get<DispatchListEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/available-for-driver/${driverId}`,
+    ),
 
-  updateStatus: (id: string, body: { status: string }) =>
-    httpClient.patch<import('./types').Dispatch>(PORTS.DISPATCH, `/dispatch/${id}/status`, body),
+  /** Case 4: danh sách orderId mà tài xế đã từ chối (để ẩn triệt để). */
+  getDeclinedOrderIds: (driverId: string) =>
+    httpClient.get<{ statusCode: number; data: string[] }>(
+      PORTS.DISPATCH,
+      `/dispatches/declined-by/${driverId}`,
+    ),
+
+  getByMerchant: (merchantId: string) =>
+    httpClient.get<DispatchListEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/merchant/${merchantId}`,
+    ),
+
+  listActive: () =>
+    httpClient.get<DispatchListEnvelope>(PORTS.DISPATCH, "/dispatches/active"),
+
+  listNearby: (latitude: number, longitude: number, radiusKm = 5) =>
+    httpClient.get<{
+      statusCode: number;
+      data: {
+        driverLocation: { latitude: number; longitude: number };
+        nearbyDispatches: import("./types").Dispatch[];
+        total: number;
+      };
+    }>(PORTS.DISPATCH, "/dispatches/nearby", {
+      params: { latitude, longitude, radiusKm },
+    }),
+
+  /** Vị trí theo dõi giao hàng (gồm GPS tài xế, nhà hàng, khách). */
+  getLocation: (id: string) =>
+    httpClient.get<{
+      statusCode: number;
+      data: {
+        dispatchId: string;
+        status: string;
+        driverId: string | null;
+        driverLatitude: number | null;
+        driverLongitude: number | null;
+        merchantLatitude: number;
+        merchantLongitude: number;
+        deliveryLatitude: number;
+        deliveryLongitude: number;
+      };
+    }>(PORTS.DISPATCH, `/dispatches/${id}/location`),
+
+  /** Thống kê gộp đơn SAVER (admin). */
+  getStackingStats: (days = 30) =>
+    httpClient.get<{
+      statusCode: number;
+      data: StackingStats;
+    }>(PORTS.DISPATCH, "/dispatches/stats/stacking", { params: { days } }),
+
+  /** Lộ trình gộp đơn hiện tại của tài xế (SAVER stacking). */
+  getDriverRoute: (driverId: string) =>
+    httpClient.get<{
+      statusCode: number;
+      data: import("./types").DriverRoute;
+    }>(PORTS.DISPATCH, `/dispatches/driver/${driverId}/route`),
+
+  /** Lộ trình của một dispatch (gồm các đơn đang gộp cùng tài xế). */
+  getRoute: (id: string) =>
+    httpClient.get<{
+      statusCode: number;
+      data: import("./types").DriverRoute;
+    }>(PORTS.DISPATCH, `/dispatches/${id}/route`),
+
+  create: (body: import("./types").CreateDispatchRequest) =>
+    httpClient.post<DispatchEnvelope>(PORTS.DISPATCH, "/dispatches", body),
+
+  delete: (id: string) =>
+    httpClient.delete<void>(PORTS.DISPATCH, `/dispatches/${id}`),
+
+  assignDriver: (id: string, driverId: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/assign-driver`,
+      { driverId },
+    ),
+
+  // ---- Vòng đời giao hàng của tài xế ----
+
+  /** Bấm “Nhận đơn” → DRIVER_ACCEPTED (Đang đến quán). */
+  /**
+   * Bấm “Nhận đơn”. Gửi kèm GPS hiện tại (nếu có) để server cập nhật vị trí
+   * tài xế trước khi kiểm tra bán kính nhận đơn.
+   */
+  driverAccept: (
+    id: string,
+    location?: { latitude?: number; longitude?: number },
+  ) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/driver-accept`,
+      location ?? {},
+    ),
+
+  driverDecline: (id: string, body: import("./types").DeclineDispatchRequest) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/driver-decline`,
+      body,
+    ),
+
+  /** Case 4: ghi nhận tài xế đã từ chối (dù dispatch ở trạng thái nào) để không gán lại. */
+  recordDriverDecline: (id: string, driverId: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/record-driver-decline`,
+      { driverId },
+    ),
+
+  /** Bấm “Đã đến quán” → DRIVER_ARRIVED. */
+  driverArrived: (id: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/driver-arrived`,
+    ),
+
+  /** Bấm “Đã nhận món” → PICKED_UP. */
+  markPickedUp: (id: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/picked-up`,
+    ),
+
+  /** PICKED_UP → DELIVERING (đang giao tới khách). */
+  startDelivering: (id: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/start-delivering`,
+    ),
+
+  /** Bấm “Giao hàng thành công” → DELIVERED. */
+  markDelivered: (id: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/delivered`,
+    ),
+
+  /** Case 7: tài xế hủy đơn sau khi đã nhận → ghi lý do + tìm tài xế khác. */
+  driverCancel: (id: string, body: import("./types").DriverCancelRequest) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/driver-cancel`,
+      body,
+    ),
+
+  /** Case 8: tài xế giao hàng thất bại (khách không nhận hàng). */
+  deliveryFailed: (id: string, body: import("./types").DeliveryFailedRequest) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/delivery-failed`,
+      body,
+    ),
+
+  cancel: (id: string, reason: string) =>
+    httpClient.patch<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/cancel`,
+      { reason },
+    ),
+
+  updateNotes: (id: string, notes: string) =>
+    httpClient.put<DispatchEnvelope>(
+      PORTS.DISPATCH,
+      `/dispatches/${id}/notes`,
+      { notes },
+    ),
 };
 
 // ============================================================================
@@ -367,56 +1306,1029 @@ export interface ShippingFeeResponse {
   };
 }
 
+export interface DeliveryOptionQuote {
+  option: DeliveryOption;
+  label: string;
+  distanceKm: number;
+  /** Tổng phí giao hàng khách phải trả cho phương thức này. */
+  fee: number;
+  /** Phí giao hàng tiêu chuẩn (FAST) trước khi áp dụng phương thức. */
+  baseFee: number;
+  /** Phụ thu (dương) hoặc giảm giá (âm) so với phí tiêu chuẩn. */
+  optionFee: number;
+  etaMinutes: number;
+  etaRange: string;
+  description: string;
+  maxStackedOrders: number;
+  dispatchTimeoutSeconds: number;
+}
+
+export interface ShippingQuoteResponse {
+  distanceKm: number;
+  standardFee: number;
+  options: DeliveryOptionQuote[];
+  breakdown: ShippingFeeResponse["breakdown"];
+}
+
+/** Cấu hình phương thức giao hàng (admin chỉnh). */
+export interface DeliveryOptionConfig {
+  option: DeliveryOption;
+  label: string;
+  description: string;
+  feeFactor: number;
+  fixedSurcharge: number;
+  minFee: number;
+  maxFee: number;
+  prepMinutes: number;
+  etaBufferMinutes: number;
+  dispatchTimeoutSeconds: number;
+  driverResponseTimeoutSeconds: number;
+  maxStackedOrders: number;
+}
+
+export interface UpdateDeliveryOptionConfigRequest {
+  feeFactor?: number;
+  fixedSurcharge?: number;
+  minFee?: number;
+  maxFee?: number;
+  prepMinutes?: number;
+  etaBufferMinutes?: number;
+  dispatchTimeoutSeconds?: number;
+  driverResponseTimeoutSeconds?: number;
+  maxStackedOrders?: number;
+}
+
+export interface DeliveryOptionStatsRow {
+  deliveryOption: DeliveryOption;
+  total: number;
+  delivered: number;
+  late: number;
+  deliveryFees: number;
+  avgFee: number;
+  revenue: number;
+}
+
+export interface StackingStats {
+  days: number;
+  batches: number;
+  stackedDispatches: number;
+  totalDispatches: number;
+  avgRouteSequence: number;
+}
+
 // ============================================================================
 // ============================================================================
 // Wallet Service (Port 3009) - Quản lý ví độc lập
 // ============================================================================
 export const walletApi = {
   // Get wallet + transactions
-  getWallet: (ownerId: string, ownerType: 'CONSUMER' | 'DRIVER' | 'MERCHANT' | 'PLATFORM' | 'TAX') =>
+  getWallet: (
+    ownerId: string,
+    ownerType: "CONSUMER" | "DRIVER" | "MERCHANT" | "PLATFORM" | "TAX",
+  ) =>
     httpClient.get<{
-      id: string; ownerId: string; ownerType: string; balance: number; currency: string;
-      transactions: { id: string; type: string; amount: number; description: string; referenceType: string; referenceId: string; createdAt: string }[];
-    }>(PORTS.WALLET, '/wallets', { params: { ownerId, ownerType } }),
+      id: string;
+      ownerId: string;
+      ownerType: string;
+      balance: number;
+      currency: string;
+      transactions: {
+        id: string;
+        type: string;
+        amount: number;
+        description: string;
+        referenceType: string;
+        referenceId: string;
+        createdAt: string;
+      }[];
+    }>(PORTS.WALLET, "/wallets", { params: { ownerId, ownerType } }),
 
   // Get balance
   getBalance: (ownerId: string, ownerType: string) =>
-    httpClient.get<{ ownerId: string; ownerType: string; balance: number }>(PORTS.WALLET, '/wallets/balance', { params: { ownerId, ownerType } }),
+    httpClient.get<{ ownerId: string; ownerType: string; balance: number }>(
+      PORTS.WALLET,
+      "/wallets/balance",
+      { params: { ownerId, ownerType } },
+    ),
+
+  // Quỹ dự phòng
+  getReserveBalance: () =>
+    httpClient.get<{ balance: number }>(
+      PORTS.WALLET,
+      "/wallets/reserve/balance",
+    ),
+
+  // Nợ COD quá hạn
+  listDebts: (days?: number) =>
+    httpClient.get<{ statusCode: number; data: any[] }>(
+      PORTS.WALLET,
+      "/wallets/debts",
+      { params: { days } },
+    ),
 
   // Top-up via Stripe (returns clientSecret)
-  topupStripe: (ownerId: string, amount: number) =>
-    httpClient.post<{ clientSecret: string; paymentIntentId: string }>(PORTS.WALLET, '/wallets/topup/stripe', { ownerId, amount }),
+  topupStripe: (ownerId: string, ownerType: string, amount: number) =>
+    httpClient.post<{ clientSecret: string; paymentIntentId: string }>(
+      PORTS.WALLET,
+      "/wallets/topup/stripe",
+      { ownerId, ownerType, amount },
+    ),
 
   // Direct top-up (internal/testing)
   topup: (ownerId: string, ownerType: string, amount: number) =>
-    httpClient.post<{ id: string; balance: number }>(PORTS.WALLET, '/wallets/topup', { ownerId, ownerType, amount }),
+    httpClient.post<{ id: string; balance: number }>(
+      PORTS.WALLET,
+      "/wallets/topup",
+      { ownerId, ownerType, amount },
+    ),
 
   // Withdraw (with min balance check for driver)
   withdraw: (ownerId: string, ownerType: string, amount: number) =>
-    httpClient.post<{ id: string; balance: number }>(PORTS.WALLET, '/wallets/withdraw', { ownerId, ownerType, amount }),
+    httpClient.post<{ id: string; balance: number }>(
+      PORTS.WALLET,
+      "/wallets/withdraw",
+      { ownerId, ownerType, amount },
+    ),
+
+  // Pay an order using wallet balance
+  pay: (data: {
+    ownerId: string;
+    ownerType?: string;
+    amount: number;
+    orderId: string;
+  }) =>
+    httpClient.post<{ id: string; balance: number }>(
+      PORTS.WALLET,
+      "/wallets/pay",
+      data,
+    ),
+
+  // Refund to wallet (store credit) for cancelled online orders
+  refund: (data: {
+    ownerId: string;
+    ownerType?: string;
+    amount: number;
+    orderId: string;
+  }) =>
+    httpClient.post<{ id: string; balance: number }>(
+      PORTS.WALLET,
+      "/wallets/refund",
+      data,
+    ),
 
   // COD settlement
-  settleCOD: (data: { merchantId: string; driverId: string; orderId: string; foodTotal: number; shippingFee: number }) =>
-    httpClient.post<{ message: string }>(PORTS.WALLET, '/wallets/settle/cod', data),
+  settleCOD: (data: {
+    merchantId: string;
+    driverId: string;
+    orderId: string;
+    foodTotal: number;
+    shippingFee: number;
+    discount?: number;
+    discountFundedBy?: string;
+    serviceFee?: number;
+  }) =>
+    httpClient.post<{ message: string }>(
+      PORTS.WALLET,
+      "/wallets/settle/cod",
+      data,
+    ),
+
+  // Online (card) settlement
+  settleOnline: (data: {
+    merchantId: string;
+    driverId: string;
+    orderId: string;
+    foodTotal: number;
+    shippingFee: number;
+    discount?: number;
+    discountFundedBy?: string;
+    serviceFee?: number;
+  }) =>
+    httpClient.post<{ message: string }>(
+      PORTS.WALLET,
+      "/wallets/settle/online",
+      data,
+    ),
 
   // Regular settlement
-  settleRegular: (data: { driverId: string; orderId: string; shippingFee: number }) =>
-    httpClient.post<{ message: string }>(PORTS.WALLET, '/wallets/settle/regular', data),
+  settleRegular: (data: {
+    driverId: string;
+    orderId: string;
+    shippingFee: number;
+  }) =>
+    httpClient.post<{ message: string }>(
+      PORTS.WALLET,
+      "/wallets/settle/regular",
+      data,
+    ),
 
   // Check COD eligibility (min 2M VND)
   checkCodEligibility: (driverId: string) =>
-    httpClient.get<{ eligible: boolean; balance: number; required: number }>(PORTS.WALLET, `/wallets/check-cod-eligibility/${driverId}`),
+    httpClient.get<{
+      eligible: boolean;
+      balance: number;
+      heldBalance: number;
+      availableBalance: number;
+      hasActiveCOD: boolean;
+      required: number;
+    }>(PORTS.WALLET, `/wallets/check-cod-eligibility/${driverId}`),
 
   // Transaction history
   getTransactions: (ownerId: string, ownerType: string) =>
-    httpClient.get<any[]>(PORTS.WALLET, `/${ownerId}/transactions`, { params: { ownerType } }),
+    httpClient.get<any[]>(PORTS.WALLET, `/${ownerId}/transactions`, {
+      params: { ownerType },
+    }),
 
   // Create wallet
   createWallet: (ownerId: string, ownerType: string) =>
-    httpClient.post<{ id: string; ownerId: string; ownerType: string; balance: number; currency: string }>(PORTS.WALLET, '/wallets', { ownerId, ownerType }),
+    httpClient.post<{
+      id: string;
+      ownerId: string;
+      ownerType: string;
+      balance: number;
+      currency: string;
+    }>(PORTS.WALLET, "/wallets", { ownerId, ownerType }),
+
+  // ───────── Settlement (quyết toán cuối ngày 23:00) ─────────
+
+  // Doanh thu chờ quyết toán
+  getPendingSettlement: (ownerId: string, ownerType: string) =>
+    httpClient.get<{
+      ownerId: string;
+      ownerType: string;
+      totalPending: number;
+      entries: {
+        id: string;
+        orderId: string;
+        kind: string;
+        amount: number;
+        status: string;
+        deliveredAt: string;
+        createdAt: string;
+      }[];
+    }>(PORTS.WALLET, "/wallets/settlement/pending", {
+      params: { ownerId, ownerType },
+    }),
+
+  // Lịch sử lô quyết toán
+  getSettlementBatches: (params?: {
+    from?: string;
+    to?: string;
+    status?: string;
+  }) =>
+    httpClient.get<
+      {
+        id: string;
+        status: string;
+        periodStart: string;
+        periodEnd: string;
+        totalDriverPayout: number;
+        totalMerchantPayout: number;
+        totalPlatformPayout: number;
+        triggeredBy: string;
+        failureReason: string | null;
+        createdAt: string;
+      }[]
+    >(PORTS.WALLET, "/wallets/settlement/batches", { params }),
+
+  // Chi tiết lô quyết toán
+  getSettlementBatchDetail: (id: string) =>
+    httpClient.get<any>(PORTS.WALLET, `/wallets/settlement/batches/${id}`),
+
+  // Manual trigger: chạy batch (có dryRun)
+  runSettlementBatch: (data?: {
+    periodStart?: string;
+    periodEnd?: string;
+    dryRun?: boolean;
+  }) =>
+    httpClient.post<any>(
+      PORTS.WALLET,
+      "/wallets/settlement/batches/run",
+      data || {},
+    ),
+
+  // Quyết toán thủ công ngay (settle cửa sổ hiện tại, không dry-run)
+  manualRunSettlement: () =>
+    httpClient.post<any>(PORTS.WALLET, "/wallets/settlement/manual-run", {}),
+
+  // Retry batch FAILED
+  retrySettlementBatch: (id: string) =>
+    httpClient.post<any>(
+      PORTS.WALLET,
+      `/wallets/settlement/batches/${id}/retry`,
+      {},
+    ),
+
+  // Nợ clawback đang mở
+  getOpenClawback: (ownerId: string, ownerType: string) =>
+    httpClient.get<{
+      ownerId: string;
+      ownerType: string;
+      totalOpenClawback: number;
+      balance?: number;
+      heldBalance?: number;
+      availableBalance?: number;
+      canRecoverNow?: boolean;
+      recoveryMode?: string;
+      /** Tổng nợ theo nhãn: CUSTOMER_REFUND | DRIVER_COMPENSATION | ... */
+      byCategory?: { category: string; amount: number }[];
+      items: {
+        id: string;
+        sourceOrderId: string | null;
+        sourceBatchId?: string | null;
+        refundId?: string | null;
+        originalAmount: number;
+        remainingAmount: number;
+        category?: string | null;
+        description?: string | null;
+        status: string;
+        createdAt: string;
+        settledAt?: string | null;
+      }[];
+    }>(PORTS.WALLET, "/wallets/settlement/clawback", {
+      params: { ownerId, ownerType },
+    }),
+
+  // Tạo clawback (refund sau settle)
+  createClawback: (data: {
+    ownerId: string;
+    ownerType: string;
+    sourceOrderId?: string;
+    sourceBatchId?: string;
+    refundId?: string;
+    amount: number;
+  }) =>
+    httpClient.post<any>(PORTS.WALLET, "/wallets/settlement/clawback", data),
+
+  // Admin: tất cả giao dịch (paginated, filterable)
+  getAdminTransactions: (params?: {
+    skip?: number;
+    take?: number;
+    type?: string;
+    ownerType?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+  }) =>
+    httpClient.get<any>(PORTS.WALLET, "/wallets/transactions/admin", {
+      params,
+    }),
+
+  // Admin: thống kê ví
+  getWalletStats: () =>
+    httpClient.get<{
+      totalWallets: number;
+      totalBalance: number;
+      balanceByType: Record<string, number>;
+    }>(PORTS.WALLET, "/wallets/stats"),
 };
 
 export const shippingApi = {
+  /** Phí giao hàng tiêu chuẩn (FAST) — giữ để tương thích ngược. */
   getFee: (params: ShippingFeeRequest) =>
-    httpClient.get<ShippingFeeResponse>(PORTS.ORDER, '/shipping/fee', { params }),
+    httpClient.get<ShippingFeeResponse>(PORTS.ORDER, "/shipping/fee", {
+      params,
+    }),
+
+  /** Báo giá cả 3 phương thức giao hàng (SAVER / FAST / PRIORITY). */
+  getQuote: (params: ShippingFeeRequest) =>
+    httpClient.get<ShippingQuoteResponse>(PORTS.ORDER, "/shipping/quote", {
+      params,
+    }),
+
+  /** Admin: danh sách cấu hình phương thức giao hàng. */
+  getOptionConfigs: () =>
+    httpClient.get<{
+      statusCode: number;
+      data: DeliveryOptionConfig[];
+    }>(PORTS.ORDER, "/shipping/options/config"),
+
+  /** Admin: cập nhật cấu hình một phương thức. */
+  updateOptionConfig: (
+    option: DeliveryOption,
+    body: UpdateDeliveryOptionConfigRequest,
+  ) =>
+    httpClient.put<{
+      statusCode: number;
+      data: DeliveryOptionConfig;
+    }>(PORTS.ORDER, `/shipping/options/config/${option}`, body),
+};
+
+// ============================================================================
+// Upload Service (Port 3010)
+// ============================================================================
+export const uploadApi = {
+  uploadImage: (file: File, folder?: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (folder) formData.append("folder", folder);
+    return httpClient.post<{
+      statusCode: number;
+      message: string;
+      data: { url: string; key: string; size: number; mimeType: string };
+    }>(3010, "/upload/image", formData);
+  },
+};
+
+// ============================================================================
+// Review Service (Port 3011)
+// ============================================================================
+export const reviewApi = {
+  create: (body: CreateReviewRequest) =>
+    httpClient.post<ApiResponse<Review>>(PORTS.REVIEW, "/reviews", body),
+
+  getByMerchant: (
+    merchantId: string,
+    params?: { skip?: number; take?: number },
+  ) =>
+    httpClient.get<{
+      statusCode: number;
+      data: Review[];
+      total: number;
+      averageRating: number;
+    }>(PORTS.REVIEW, `/reviews/merchant/${merchantId}`, { params }),
+
+  /** Đánh giá khách hàng dành cho tài xế (kèm điểm trung bình). */
+  getByDriver: (driverId: string, params?: { skip?: number; take?: number }) =>
+    httpClient.get<{
+      statusCode: number;
+      data: Review[];
+      total: number;
+      averageRating: number;
+      /** Số lượng đánh giá theo từng mức sao: { "1": n, ..., "5": n } */
+      distribution?: Record<string, number>;
+    }>(PORTS.REVIEW, `/reviews/driver/${driverId}`, { params }),
+
+  getByOrder: (orderId: string) =>
+    httpClient.get<ApiResponse<Review | null>>(
+      PORTS.REVIEW,
+      `/reviews/order/${orderId}`,
+    ),
+
+  reply: (reviewId: string, body: ReplyReviewRequest) =>
+    httpClient.post<ApiResponse<Review>>(
+      PORTS.REVIEW,
+      `/reviews/${reviewId}/reply`,
+      body,
+    ),
+};
+
+// ============================================================================
+// Promotion Service (Port 3012)
+// ============================================================================
+export const promotionApi = {
+  create: (body: CreatePromotionRequest) =>
+    httpClient.post<ApiResponse<Promotion>>(
+      PORTS.PROMOTION,
+      "/promotions",
+      body,
+    ),
+
+  list: (params?: {
+    merchantId?: string;
+    isActive?: boolean;
+    skip?: number;
+    take?: number;
+  }) =>
+    httpClient.get<{ statusCode: number; items: Promotion[]; total: number }>(
+      PORTS.PROMOTION,
+      "/promotions",
+      { params },
+    ),
+
+  getById: (id: string) =>
+    httpClient.get<ApiResponse<Promotion>>(
+      PORTS.PROMOTION,
+      `/promotions/${id}`,
+    ),
+
+  getByMerchant: (merchantId: string) =>
+    httpClient.get<ApiResponse<Promotion[]>>(
+      PORTS.PROMOTION,
+      `/promotions/merchant/${merchantId}`,
+    ),
+
+  update: (id: string, body: UpdatePromotionRequest) =>
+    httpClient.patch<ApiResponse<Promotion>>(
+      PORTS.PROMOTION,
+      `/promotions/${id}`,
+      body,
+    ),
+
+  activate: (id: string) =>
+    httpClient.patch<ApiResponse<Promotion>>(
+      PORTS.PROMOTION,
+      `/promotions/${id}/activate`,
+    ),
+
+  deactivate: (id: string) =>
+    httpClient.patch<ApiResponse<Promotion>>(
+      PORTS.PROMOTION,
+      `/promotions/${id}/deactivate`,
+    ),
+
+  remove: (id: string) =>
+    httpClient.delete<void>(PORTS.PROMOTION, `/promotions/${id}`),
+
+  validate: (body: ValidatePromotionRequest) =>
+    httpClient.post<
+      ApiResponse<{ discount: number; fundedBy: string; target: string }>
+    >(PORTS.PROMOTION, "/promotions/validate", body),
+
+  apply: (body: ApplyPromotionRequest) =>
+    httpClient.post<
+      ApiResponse<{
+        discount: number;
+        promotionId: string;
+        fundedBy: string;
+        target: string;
+      }>
+    >(PORTS.PROMOTION, "/promotions/apply", body),
+
+  getStats: (id: string) =>
+    httpClient.get<ApiResponse<PromotionStats>>(
+      PORTS.PROMOTION,
+      `/promotions/${id}/stats`,
+    ),
+
+  getMerchantStats: (merchantId: string) =>
+    httpClient.get<
+      ApiResponse<{
+        totalPromotions: number;
+        activePromotions: number;
+        totalUsedCount: number;
+        totalDiscount: number;
+        totalOrders: number;
+      }>
+    >(PORTS.PROMOTION, `/promotions/merchant/${merchantId}/stats`),
+
+  getCompensationConfig: () =>
+    httpClient.get<ApiResponse<CompensationConfig>>(
+      PORTS.PROMOTION,
+      "/promotions/compensation-config",
+    ),
+
+  updateCompensationConfig: (body: UpdateCompensationConfigRequest) =>
+    httpClient.patch<ApiResponse<CompensationConfig>>(
+      PORTS.PROMOTION,
+      "/promotions/compensation-config",
+      body,
+    ),
+
+  issueCompensationVoucher: (body: IssueCompensationVoucherRequest) =>
+    httpClient.post<ApiResponse<CompensationVoucher | null>>(
+      PORTS.PROMOTION,
+      "/promotions/compensation-vouchers/issue",
+      body,
+    ),
+
+  listCompensationVouchers: (consumerId: string) =>
+    httpClient.get<ApiResponse<CompensationVoucher[]>>(
+      PORTS.PROMOTION,
+      `/promotions/compensation-vouchers/consumer/${consumerId}`,
+    ),
+
+  applyCompensationVoucher: (body: ApplyCompensationVoucherRequest) =>
+    httpClient.post<ApiResponse<{ discount: number }>>(
+      PORTS.PROMOTION,
+      "/promotions/compensation-vouchers/apply",
+      body,
+    ),
+
+  // ---- Flash Sale ----
+  flashSale: {
+    create: (body: CreateFlashSaleRequest) =>
+      httpClient.post<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        "/promotions/flash-sales",
+        body,
+      ),
+
+    list: (params?: {
+      merchantId?: string;
+      status?: string;
+      skip?: number;
+      take?: number;
+    }) =>
+      httpClient.get<{ statusCode: number; items: FlashSale[]; total: number }>(
+        PORTS.PROMOTION,
+        "/promotions/flash-sales",
+        { params },
+      ),
+
+    listActive: () =>
+      httpClient.get<ApiResponse<FlashSale[]>>(
+        PORTS.PROMOTION,
+        "/promotions/flash-sales/active",
+      ),
+
+    getByMerchant: (merchantId: string) =>
+      httpClient.get<{
+        statusCode: number;
+        items: FlashSale[];
+        total: number;
+      }>(PORTS.PROMOTION, `/promotions/flash-sales/merchant/${merchantId}`),
+
+    getById: (id: string) =>
+      httpClient.get<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}`,
+      ),
+
+    update: (id: string, body: UpdateFlashSaleRequest) =>
+      httpClient.patch<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}`,
+        body,
+      ),
+
+    cancel: (id: string) =>
+      httpClient.post<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}/cancel`,
+      ),
+
+    pause: (id: string) =>
+      httpClient.post<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}/pause`,
+      ),
+
+    resume: (id: string) =>
+      httpClient.post<ApiResponse<FlashSale>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}/resume`,
+      ),
+
+    validate: (body: ValidateFlashSaleRequest) =>
+      httpClient.post<
+        ApiResponse<{ items: FlashSalePricedItem[]; discountAmount: number }>
+      >(PORTS.PROMOTION, "/promotions/flash-sales/validate", body),
+
+    apply: (body: ApplyFlashSaleRequest) =>
+      httpClient.post<
+        ApiResponse<{ items: FlashSalePricedItem[]; discountAmount: number }>
+      >(PORTS.PROMOTION, "/promotions/flash-sales/apply", body),
+
+    refund: (body: RefundFlashSaleRequest) =>
+      httpClient.post<ApiResponse<{ orderId: string; restored: boolean }>>(
+        PORTS.PROMOTION,
+        "/promotions/flash-sales/refund",
+        body,
+      ),
+
+    getStats: (id: string) =>
+      httpClient.get<ApiResponse<FlashSaleStats>>(
+        PORTS.PROMOTION,
+        `/promotions/flash-sales/${id}/stats`,
+      ),
+  },
+};
+
+// ============================================================================
+// Notification Service (Port 3013)
+// ============================================================================
+export const notificationApi = {
+  create: (body: CreateNotificationRequest) =>
+    httpClient.post<ApiResponse<Notification>>(
+      PORTS.NOTIFICATION,
+      "/notifications",
+      body,
+    ),
+
+  getByUser: (userId: string, params?: { skip?: number; take?: number }) =>
+    httpClient.get<{
+      statusCode: number;
+      data: Notification[];
+      total: number;
+      unreadCount: number;
+    }>(PORTS.NOTIFICATION, `/notifications/user/${userId}`, { params }),
+
+  markRead: (id: string) =>
+    httpClient.patch<ApiResponse<Notification>>(
+      PORTS.NOTIFICATION,
+      `/notifications/${id}/read`,
+    ),
+
+  markAllRead: (userId: string) =>
+    httpClient.patch<{ statusCode: number }>(
+      PORTS.NOTIFICATION,
+      "/notifications/read-all",
+      {
+        userId,
+      },
+    ),
+};
+
+// ============================================================================
+// Chat Service (Port 3015) — Hội thoại tài xế ↔ khách hàng
+// ============================================================================
+export const chatApi = {
+  getOrCreateConversation: (body: GetOrCreateConversationRequest) =>
+    httpClient.post<ApiResponse<ChatConversation>>(
+      PORTS.CHAT,
+      "/chat/conversations",
+      body,
+    ),
+
+  listConversations: (userId: string) =>
+    httpClient.get<{ statusCode: number; data: ChatConversation[] }>(
+      PORTS.CHAT,
+      `/chat/conversations/user/${userId}`,
+    ),
+
+  getMessages: (conversationId: string) =>
+    httpClient.get<{ statusCode: number; data: ChatMessage[] }>(
+      PORTS.CHAT,
+      `/chat/conversations/${conversationId}/messages`,
+    ),
+
+  sendMessage: (conversationId: string, body: SendMessageRequest) =>
+    httpClient.post<ApiResponse<ChatMessage>>(
+      PORTS.CHAT,
+      `/chat/conversations/${conversationId}/messages`,
+      body,
+    ),
+
+  markDelivered: (orderId: string) =>
+    httpClient.post<{ statusCode: number; data: ChatConversation | null }>(
+      PORTS.CHAT,
+      "/chat/conversations/mark-delivered",
+      { orderId },
+    ),
+
+  /** Dùng cho admin / resolution-service: đọc tin nhắn chỉ bằng orderId. */
+  getMessagesByOrder: (orderId: string) =>
+    httpClient.get<{ statusCode: number; data: ChatMessage[] }>(
+      PORTS.CHAT,
+      `/chat/conversations/order/${orderId}/messages`,
+    ),
+};
+
+// ============================================================================
+// Resolution Service (Port 3014) — Khiếu nại · Gian lận · Xử phạt
+// ============================================================================
+export const resolutionApi = {
+  // ─── Cases ─────────────────────────────────────────────────────────────
+  listCases: (params?: {
+    status?: string;
+    type?: string;
+    category?: string;
+    severity?: string;
+    actorId?: string;
+    orderId?: string;
+    skip?: number;
+    take?: number;
+  }) =>
+    httpClient.get<{ statusCode: number; data: any[]; total: number }>(
+      PORTS.RESOLUTION,
+      "/cases",
+      { params },
+    ),
+
+  getCase: (id: string) =>
+    httpClient.get<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}`,
+    ),
+
+  getTimeline: (id: string) =>
+    httpClient.get<{ statusCode: number; data: any[] }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/timeline`,
+    ),
+
+  createCase: (body: {
+    type: string;
+    category: string;
+    orderId?: string;
+    reporterId?: string;
+    reporterType?: string;
+    respondentId: string;
+    respondentType: string;
+    subject: string;
+    description: string;
+    evidence?: string[];
+    severity?: string;
+  }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      "/cases",
+      body,
+    ),
+
+  /**
+   * Bổ sung ảnh bằng chứng — dùng được cho **cả hai bên**: người khiếu nại
+   * (ảnh vào `evidence`) và bên bị khiếu nại (ảnh vào `respondentEvidence`).
+   * Backend tự xác định bên dựa trên người gọi.
+   */
+  addEvidence: (id: string, body: { urls: string[]; actorId?: string }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/evidence`,
+      body,
+    ),
+
+  review: (id: string) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/review`,
+    ),
+
+  requestEvidence: (id: string) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/request-evidence`,
+    ),
+
+  resolve: (
+    id: string,
+    body: { verdict: string; note?: string; faultParty?: string },
+  ) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/resolve`,
+      body,
+    ),
+
+  respond: (
+    id: string,
+    body: { text: string; evidence?: string[]; actorId?: string },
+  ) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/respond`,
+      body,
+    ),
+
+  confirm: (id: string, body?: { actorId?: string }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/confirm`,
+      body,
+    ),
+
+  withdraw: (id: string, body?: { actorId?: string }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/withdraw`,
+      body,
+    ),
+
+  escalate: (id: string) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/cases/${id}/escalate`,
+    ),
+
+  // ─── Penalties ─────────────────────────────────────────────────────────
+  listPenalties: (params?: {
+    targetId?: string;
+    targetType?: string;
+    status?: string;
+    skip?: number;
+    take?: number;
+  }) =>
+    httpClient.get<{ statusCode: number; data: any[]; total: number }>(
+      PORTS.RESOLUTION,
+      "/penalties",
+      { params },
+    ),
+
+  getPenalty: (id: string) =>
+    httpClient.get<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/penalties/${id}`,
+    ),
+
+  issuePenalty: (body: {
+    caseId: string;
+    type: string;
+    targetId: string;
+    targetType: string;
+    amount?: number;
+    durationDays?: number;
+    reason: string;
+  }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      "/penalties",
+      body,
+    ),
+
+  appealPenalty: (id: string, body: { reason: string; evidence?: string[] }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/penalties/${id}/appeal`,
+      body,
+    ),
+
+  decideAppeal: (id: string, body: { upheld: boolean; note?: string }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/penalties/${id}/appeal/decide`,
+      body,
+    ),
+
+  waivePenalty: (id: string) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/penalties/${id}/waive`,
+    ),
+
+  // ─── Fraud ─────────────────────────────────────────────────────────────
+  listFraudRules: () =>
+    httpClient.get<{ statusCode: number; data: any[] }>(
+      PORTS.RESOLUTION,
+      "/fraud-rules",
+    ),
+
+  createFraudRule: (body: {
+    name: string;
+    category: string;
+    description?: string;
+    severity?: string;
+    config?: Record<string, unknown>;
+  }) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      "/fraud-rules",
+      body,
+    ),
+
+  updateFraudRule: (
+    id: string,
+    body: {
+      name?: string;
+      description?: string;
+      severity?: string;
+      enabled?: boolean;
+      config?: Record<string, unknown>;
+    },
+  ) =>
+    httpClient.patch<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/fraud-rules/${id}`,
+      body,
+    ),
+
+  deleteFraudRule: (id: string) =>
+    httpClient.delete<void>(PORTS.RESOLUTION, `/fraud-rules/${id}`),
+
+  detectFraud: () =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      "/fraud/detect",
+    ),
+
+  // ─── AI Assistant (Gemini) ────────────────────────────────────────────
+  assistantHealth: () =>
+    httpClient.get<{ statusCode: number; data: AssistantHealth }>(
+      PORTS.RESOLUTION,
+      "/assistant/health",
+    ),
+
+  getCaseAiContext: (caseId: string) =>
+    httpClient.get<{ statusCode: number; data: CaseAiContext }>(
+      PORTS.RESOLUTION,
+      `/assistant/cases/${caseId}/context`,
+    ),
+
+  /** Bản phân tích AI đã lưu (AI tự chạy nền khi khiếu nại được tạo). */
+  getCaseAiAnalysis: (caseId: string) =>
+    httpClient.get<{
+      statusCode: number;
+      data: CaseAiAnalysisRecord | null;
+      /** Chẩn đoán lần tự phân tích gần nhất (chỉ có ở resolution-service mới). */
+      auto?: CaseAiAutoStatus;
+    }>(PORTS.RESOLUTION, `/assistant/cases/${caseId}/analysis`),
+
+  /** Badge AI cho nhiều vụ việc cùng lúc (lưới vụ việc) — 1 request thay vì N. */
+  listCaseAiSummaries: (caseIds: string[]) =>
+    httpClient.get<{ statusCode: number; data: CaseAiListSummary[] }>(
+      PORTS.RESOLUTION,
+      "/assistant/analyses",
+      { params: { caseIds: caseIds.join(",") } },
+    ),
+
+  analyzeCase: (
+    caseId: string,
+    body?: { skipImages?: boolean; maxImages?: number },
+  ) =>
+    httpClient.post<{ statusCode: number; data: CaseAiSuggestion }>(
+      PORTS.RESOLUTION,
+      `/assistant/cases/${caseId}/analyze`,
+      body ?? {},
+    ),
+
+  /** Admin duyệt / bỏ qua gợi ý AI của vụ việc (duyệt = áp dụng phán quyết + hình phạt). */
+  reviewCaseAiAnalysis: (
+    caseId: string,
+    body: { decision: "ACCEPTED" | "REJECTED"; note?: string },
+  ) =>
+    httpClient.post<{ statusCode: number; data: CaseAiReviewResult | null }>(
+      PORTS.RESOLUTION,
+      `/assistant/cases/${caseId}/analysis/review`,
+      body,
+    ),
 };

@@ -45,6 +45,9 @@ export class DriverEntity {
   @Column({ type: "varchar", length: 30 })
   vehicleRegistrationNumber!: string;
 
+  @Column({ type: "varchar", length: 20, nullable: true, default: "MOTORBIKE" })
+  vehicleType!: string | null;
+
   @Column({ type: "varchar", length: 30 })
   insuranceNumber!: string;
 
@@ -53,6 +56,12 @@ export class DriverEntity {
 
   @Column({ type: "enum", enum: DriverStatus, default: DriverStatus.INACTIVE })
   status!: DriverStatus;
+
+  @Column({ type: "timestamptz", nullable: true })
+  rejectedAt!: Date | null;
+
+  @Column({ type: "varchar", length: 500, nullable: true })
+  rejectReason!: string | null;
 
   @Column({
     type: "enum",
@@ -97,8 +106,25 @@ export class DriverEntity {
   @Column({ type: "int", default: 0 })
   totalRatings!: number;
 
+  @Column({ type: "int", default: 100 })
+  reputationScore!: number;
+
+  @Column({ type: "timestamptz", nullable: true })
+  acceptBlockedUntil!: Date | null;
+
   @Column({ type: "uuid", nullable: true })
   currentOrderId!: string | null;
+
+  /**
+   * Danh sách đơn đang giữ (SAVER stacking). `currentOrderId` vẫn được giữ
+   * đồng bộ = phần tử đầu tiên để tương thích với code cũ.
+   */
+  @Column({ type: "uuid", array: true, default: () => "'{}'" })
+  currentOrderIds!: string[];
+
+  /** Số đơn tối đa tài xế được giữ cùng lúc (SAVER: 3, FAST/PRIORITY: 1). */
+  @Column({ type: "int", default: 1 })
+  maxConcurrentOrders!: number;
 
   @Column({ type: "boolean", default: false })
   isTrainingCompleted!: boolean;

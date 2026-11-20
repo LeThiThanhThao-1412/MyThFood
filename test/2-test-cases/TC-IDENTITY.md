@@ -5,19 +5,19 @@
 > **Test File:** `apps/identity-service/src/tests/unit/user.aggregate.spec.ts`  
 > **Base Path:** `/api/v1/auth`  
 > **Auth:** Public (register, login) + JWT (me)  
-> **Total Cases:** 11  
+> **Total Cases:** 11
 
 ---
 
 ## Test Environment
 
-| Item | Value |
-|------|-------|
-| Base URL | `http://localhost:3001/api/v1` |
-| Database | `mythfood_identity` (PostgreSQL 16) |
-| Auth Method | JWT Bearer Token |
-| Roles | CONSUMER, DRIVER, MERCHANT_OWNER, MERCHANT_STAFF, ADMIN |
-| Statuses | ACTIVE, INACTIVE, SUSPENDED, BANNED |
+| Item        | Value                                                   |
+| ----------- | ------------------------------------------------------- |
+| Base URL    | `http://localhost:3001/api/v1`                          |
+| Database    | `mythfood_identity` (PostgreSQL 16)                     |
+| Auth Method | JWT Bearer Token                                        |
+| Roles       | CONSUMER, DRIVER, MERCHANT_OWNER, MERCHANT_STAFF, ADMIN |
+| Statuses    | ACTIVE, INACTIVE, SUSPENDED, BANNED                     |
 
 ---
 
@@ -52,17 +52,19 @@
 
 ### TC-IDENTITY-001: Register new user with default role (CONSUMER)
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P0 (Critical) |
-| **Type** | Functional / Unit |
+| Field            | Value                       |
+| ---------------- | --------------------------- |
+| **Priority**     | P0 (Critical)               |
+| **Type**         | Functional / Unit           |
 | **Precondition** | Phone number not registered |
 
 **Steps:**
+
 1. Call `User.register()` with valid phoneNumber and password
 2. Do NOT specify roles
 
 **Input:**
+
 ```json
 {
   "phoneNumber": "+84901234567",
@@ -72,6 +74,7 @@
 ```
 
 **Expected Result:**
+
 - Returns `Result.ok(user)`
 - `user.userRoles` = `["CONSUMER"]` (default)
 - `user.currentStatus` = `"ACTIVE"`
@@ -83,16 +86,18 @@
 
 ### TC-IDENTITY-002: Register new user with specified roles
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P0 |
-| **Type** | Functional / Unit |
-| **Precondition** | None |
+| Field            | Value             |
+| ---------------- | ----------------- |
+| **Priority**     | P0                |
+| **Type**         | Functional / Unit |
+| **Precondition** | None              |
 
 **Steps:**
+
 1. Call `User.register()` with `roles: ["MERCHANT_OWNER", "DRIVER"]`
 
 **Input:**
+
 ```json
 {
   "phoneNumber": "+84908765432",
@@ -103,6 +108,7 @@
 ```
 
 **Expected Result:**
+
 - `user.userRoles` = `["MERCHANT_OWNER", "DRIVER"]`
 - Event payload contains correct roles
 
@@ -112,17 +118,19 @@
 
 ### TC-IDENTITY-003: Register emits UserRegisteredEvent with correct data
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P1 |
-| **Type** | Functional / Unit |
-| **Precondition** | None |
+| Field            | Value             |
+| ---------------- | ----------------- |
+| **Priority**     | P1                |
+| **Type**         | Functional / Unit |
+| **Precondition** | None              |
 
 **Steps:**
+
 1. Register user
 2. Pull domain events from aggregate
 
 **Expected Result:**
+
 - 1 domain event emitted
 - Event type: `UserRegisteredEvent`
 - Event payload contains: userId, phoneNumber, email, fullName, roles, deviceId, ipAddress
@@ -133,22 +141,25 @@
 
 ### TC-IDENTITY-004: Register with empty phone number → failure
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P0 |
-| **Type** | Negative / Unit |
-| **Precondition** | None |
+| Field            | Value           |
+| ---------------- | --------------- |
+| **Priority**     | P0              |
+| **Type**         | Negative / Unit |
+| **Precondition** | None            |
 
 **Steps:**
+
 1. Call `User.register()` with `phoneNumber: ""`
 
 **Expected Result:**
+
 - Returns `Result.fail()`
 - Error: `BusinessRuleViolationError("Phone number is required")`
 
 **Actual Result:** ✅ PASS
 
 **Source:** `user.aggregate.ts` line 67-70:
+
 ```typescript
 if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
   return Result.fail(
@@ -161,17 +172,19 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-005: Verify correct password → true
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P0 |
-| **Type** | Functional / Unit |
+| Field            | Value                               |
+| ---------------- | ----------------------------------- |
+| **Priority**     | P0                                  |
+| **Type**         | Functional / Unit                   |
 | **Precondition** | User registered with known password |
 
 **Steps:**
+
 1. Register user with password "MySecurePass123"
 2. Call `user.verifyPassword("MySecurePass123")`
 
 **Expected Result:**
+
 - Returns `true`
 
 **Actual Result:** ✅ PASS
@@ -180,16 +193,18 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-006: Verify wrong password → false
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P0 |
-| **Type** | Negative / Unit |
+| Field            | Value                                  |
+| ---------------- | -------------------------------------- |
+| **Priority**     | P0                                     |
+| **Type**         | Negative / Unit                        |
 | **Precondition** | User registered with "MySecurePass123" |
 
 **Steps:**
+
 1. Call `user.verifyPassword("WrongPassword")`
 
 **Expected Result:**
+
 - Returns `false`
 
 **Actual Result:** ✅ PASS
@@ -198,16 +213,18 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-007: Suspend ACTIVE user
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P1 |
-| **Type** | Functional / Unit |
+| Field            | Value                |
+| ---------------- | -------------------- |
+| **Priority**     | P1                   |
+| **Type**         | Functional / Unit    |
 | **Precondition** | User status = ACTIVE |
 
 **Steps:**
+
 1. Call `user.suspend()`
 
 **Expected Result:**
+
 - `user.currentStatus` = `"SUSPENDED"`
 
 **Actual Result:** ✅ PASS
@@ -216,16 +233,18 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-008: Ban user (irreversible)
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P1 |
-| **Type** | Functional / Unit |
+| Field            | Value                |
+| ---------------- | -------------------- |
+| **Priority**     | P1                   |
+| **Type**         | Functional / Unit    |
 | **Precondition** | User status = ACTIVE |
 
 **Steps:**
+
 1. Call `user.ban()`
 
 **Expected Result:**
+
 - `user.currentStatus` = `"BANNED"`
 
 **Actual Result:** ✅ PASS
@@ -234,16 +253,18 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-009: Record login timestamp
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P2 |
-| **Type** | Functional / Unit |
-| **Precondition** | User registered |
+| Field            | Value             |
+| ---------------- | ----------------- |
+| **Priority**     | P2                |
+| **Type**         | Functional / Unit |
+| **Precondition** | User registered   |
 
 **Steps:**
+
 1. Call `user.recordLogin()`
 
 **Expected Result:**
+
 - `user.lastLogin` is not null
 - `user.lastLogin` is a Date object equal to current time
 
@@ -253,17 +274,19 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-010: Check role membership
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P2 |
-| **Type** | Functional / Unit |
+| Field            | Value                                             |
+| ---------------- | ------------------------------------------------- |
+| **Priority**     | P2                                                |
+| **Type**         | Functional / Unit                                 |
 | **Precondition** | User registered with roles ["CONSUMER", "DRIVER"] |
 
 **Steps:**
+
 1. Call `user.hasRole("CONSUMER")`
 2. Call `user.hasRole("ADMIN")`
 
 **Expected Result:**
+
 - `hasRole("CONSUMER")` → `true`
 - `hasRole("ADMIN")` → `false`
 
@@ -273,16 +296,18 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-011: Rehydrate user from database (no events)
 
-| Field | Value |
-|-------|-------|
-| **Priority** | P2 |
-| **Type** | Functional / Unit |
-| **Precondition** | None |
+| Field            | Value             |
+| ---------------- | ----------------- |
+| **Priority**     | P2                |
+| **Type**         | Functional / Unit |
+| **Precondition** | None              |
 
 **Steps:**
+
 1. Call `User.rehydrate(id, props)` with database values
 
 **Expected Result:**
+
 - User created with correct state
 - No domain events emitted (`pullDomainEvents()` returns empty)
 
@@ -294,13 +319,14 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-API-001: POST /auth/register - Success
 
-| Field | Value |
-|-------|-------|
-| **Method** | `POST` |
+| Field        | Value            |
+| ------------ | ---------------- |
+| **Method**   | `POST`           |
 | **Endpoint** | `/auth/register` |
-| **Auth** | Public |
+| **Auth**     | Public           |
 
 **Request:**
+
 ```json
 {
   "phoneNumber": "+8490100010",
@@ -319,13 +345,14 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-API-002: POST /auth/login - Success
 
-| Field | Value |
-|-------|-------|
-| **Method** | `POST` |
+| Field        | Value         |
+| ------------ | ------------- |
+| **Method**   | `POST`        |
 | **Endpoint** | `/auth/login` |
-| **Auth** | Public |
+| **Auth**     | Public        |
 
 **Request:**
+
 ```json
 {
   "phoneNumber": "+8490100010",
@@ -341,11 +368,11 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-API-003: GET /auth/me - Authenticated
 
-| Field | Value |
-|-------|-------|
-| **Method** | `GET` |
+| Field        | Value      |
+| ------------ | ---------- |
+| **Method**   | `GET`      |
 | **Endpoint** | `/auth/me` |
-| **Auth** | JWT Bearer |
+| **Auth**     | JWT Bearer |
 
 **Expected:** `200 OK` with current user info
 
@@ -355,9 +382,9 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ### TC-IDENTITY-API-004: POST /auth/register - Duplicate phone
 
-| Field | Value |
-|-------|-------|
-| **Method** | `POST` |
+| Field        | Value            |
+| ------------ | ---------------- |
+| **Method**   | `POST`           |
 | **Endpoint** | `/auth/register` |
 
 **Expected:** `409 Conflict`
@@ -368,8 +395,8 @@ if (!props.phoneNumber || props.phoneNumber.trim().length === 0) {
 
 ## Summary
 
-| Status | Count |
-|--------|-------|
-| ✅ PASS | 11 (unit) + 3 (API) = 14 |
-| ⚠️ ISSUE | 1 (duplicate phone → 500) |
-| **Total** | **15** |
+| Status    | Count                     |
+| --------- | ------------------------- |
+| ✅ PASS   | 11 (unit) + 3 (API) = 14  |
+| ⚠️ ISSUE  | 1 (duplicate phone → 500) |
+| **Total** | **15**                    |

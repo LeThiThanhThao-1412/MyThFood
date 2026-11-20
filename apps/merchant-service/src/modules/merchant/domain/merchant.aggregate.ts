@@ -6,7 +6,11 @@ import {
 } from "@mythfood/shared-kernel";
 import { MerchantId } from "./merchant-id";
 import { MerchantRegisteredEvent } from "./events/merchant-registered.event";
-import { MenuItem, MenuItemCategory } from "./menu-item.entity";
+import {
+  MenuItem,
+  MenuItemOptionGroup,
+  MenuItemAvailabilityStatus,
+} from "./menu-item.entity";
 import { MenuItemId } from "./menu-item-id";
 import { OperatingHours, OperatingHoursProps } from "./operating-hours.vo";
 import { MerchantDocument } from "./merchant-document.entity";
@@ -34,6 +38,7 @@ export interface MerchantProps {
   longitude: number | null;
   status: MerchantStatus;
   rating: number;
+  totalRatings: number;
   totalOrders: number;
   capacityConfig: CapacityConfig;
   capacityStatus: CapacityStatus;
@@ -41,6 +46,12 @@ export interface MerchantProps {
   operatingHours: OperatingHours[];
   documents: MerchantDocument[];
   currentOrderCount: number;
+  primaryCategory: string | null;
+  secondaryCategories: string[];
+  otherCategoryDescription?: string | null;
+  isOpen: boolean;
+  rejectedAt?: Date | null;
+  rejectReason?: string | null;
 }
 
 export class Merchant extends AggregateRoot<MerchantId> {
@@ -56,6 +67,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
   private longitude: number | null;
   private status: MerchantStatus;
   private rating: number;
+  private totalRatings: number;
   private totalOrders: number;
   private capacityConfig: CapacityConfig;
   private capacityStatus: CapacityStatus;
@@ -63,6 +75,12 @@ export class Merchant extends AggregateRoot<MerchantId> {
   private operatingHours: OperatingHours[];
   private documents: MerchantDocument[];
   private currentOrderCount: number;
+  private primaryCategory: string | null;
+  private secondaryCategories: string[];
+  private otherCategoryDescription: string | null;
+  private isOpenFlag: boolean;
+  private rejectedAt: Date | null;
+  private rejectReason: string | null;
 
   private constructor(id: MerchantId, props: MerchantProps) {
     super(id);
@@ -78,6 +96,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
     this.longitude = props.longitude;
     this.status = props.status;
     this.rating = props.rating;
+    this.totalRatings = props.totalRatings;
     this.totalOrders = props.totalOrders;
     this.capacityConfig = props.capacityConfig;
     this.capacityStatus = props.capacityStatus;
@@ -85,6 +104,12 @@ export class Merchant extends AggregateRoot<MerchantId> {
     this.operatingHours = props.operatingHours;
     this.documents = props.documents;
     this.currentOrderCount = props.currentOrderCount;
+    this.primaryCategory = props.primaryCategory;
+    this.secondaryCategories = props.secondaryCategories;
+    this.otherCategoryDescription = props.otherCategoryDescription ?? null;
+    this.isOpenFlag = props.isOpen;
+    this.rejectedAt = props.rejectedAt ?? null;
+    this.rejectReason = props.rejectReason ?? null;
   }
 
   // ===================== Factory Methods =====================
@@ -102,6 +127,9 @@ export class Merchant extends AggregateRoot<MerchantId> {
     latitude?: number;
     longitude?: number;
     capacityConfig?: CapacityConfig;
+    primaryCategory?: string;
+    secondaryCategories?: string[];
+    otherCategoryDescription?: string;
   }): Result<Merchant, DomainError> {
     if (!props.name || props.name.trim().length === 0) {
       return Result.fail(
@@ -138,6 +166,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
       longitude: props.longitude ?? null,
       status: "PENDING",
       rating: 0,
+      totalRatings: 0,
       totalOrders: 0,
       capacityConfig: defaultCapacity,
       capacityStatus: "NORMAL",
@@ -145,6 +174,12 @@ export class Merchant extends AggregateRoot<MerchantId> {
       operatingHours: [],
       documents: [],
       currentOrderCount: 0,
+      primaryCategory: props.primaryCategory ?? null,
+      secondaryCategories: (props.secondaryCategories ?? []).slice(0, 3),
+      otherCategoryDescription: props.otherCategoryDescription ?? null,
+      isOpen: true,
+      rejectedAt: null,
+      rejectReason: null,
     });
 
     merchant.addDomainEvent(
@@ -184,6 +219,9 @@ export class Merchant extends AggregateRoot<MerchantId> {
     coverImageUrl?: string;
     latitude?: number;
     longitude?: number;
+    primaryCategory?: string;
+    secondaryCategories?: string[];
+    otherCategoryDescription?: string | null;
   }): void {
     if (props.name !== undefined) {
       if (!props.name.trim()) {
@@ -210,6 +248,28 @@ export class Merchant extends AggregateRoot<MerchantId> {
       this.coverImageUrl = props.coverImageUrl;
     if (props.latitude !== undefined) this.latitude = props.latitude;
     if (props.longitude !== undefined) this.longitude = props.longitude;
+    // FIX #5: Category support
+    if (props.primaryCategory !== undefined) {
+      this.primaryCategory = props.primaryCategory || null;
+    }
+    if (props.secondaryCategories !== undefined) {
+      this.secondaryCategories = (props.secondaryCategories || []).slice(0, 3);
+    }
+    if (props.otherCategoryDescription !== undefined) {
+      this.otherCategoryDescription = props.otherCategoryDescription || null;
+    }
+    this.markUpdated();
+  }
+
+  /**
+   * Update rating after a new review (called by review-service).
+   */
+  public updateRating(rating: number, totalRatings: number): void {
+    if (rating < 0 || rating > 5) {
+      throw new BusinessRuleViolationError("Rating must be between 0 and 5");
+    }
+    this.rating = rating;
+    this.totalRatings = totalRatings;
     this.markUpdated();
   }
 
@@ -226,19 +286,26 @@ export class Merchant extends AggregateRoot<MerchantId> {
       );
     }
     this.status = "APPROVED";
+    this.rejectedAt = null;
+    this.rejectReason = null;
     this.markUpdated();
   }
 
   /**
    * Reject the merchant (admin action).
+   *
+   * @param reason Lý do từ chối — được lưu lại và hiển thị cho chủ nhà hàng
+   * khi đăng nhập.
    */
-  public reject(): void {
+  public reject(reason?: string): void {
     if (this.status === "APPROVED") {
       throw new BusinessRuleViolationError(
         "Cannot reject an approved merchant",
       );
     }
     this.status = "REJECTED";
+    this.rejectedAt = new Date();
+    this.rejectReason = reason ?? null;
     this.markUpdated();
   }
 
@@ -277,13 +344,15 @@ export class Merchant extends AggregateRoot<MerchantId> {
    * Add a menu item to the merchant.
    */
   public addMenuItem(props: {
-    category: MenuItemCategory;
+    category: string;
+    categoryId?: string;
     name: string;
     description?: string;
     price: number;
     imageUrl?: string;
     isFeatured?: boolean;
     preparationTime?: number;
+    optionGroups?: MenuItemOptionGroup[];
   }): MenuItem {
     if (!props.name || props.name.trim().length === 0) {
       throw new BusinessRuleViolationError("Menu item name is required");
@@ -295,6 +364,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
     const menuItem = MenuItem.create({
       merchantId: this.id,
       category: props.category,
+      categoryId: props.categoryId,
       name: props.name,
       description: props.description,
       price: props.price,
@@ -302,6 +372,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
       isFeatured: props.isFeatured,
       preparationTime: props.preparationTime,
       sortOrder: this.menuItems.length,
+      optionGroups: props.optionGroups,
     });
 
     this.menuItems.push(menuItem);
@@ -327,13 +398,17 @@ export class Merchant extends AggregateRoot<MerchantId> {
   public updateMenuItem(
     menuItemId: MenuItemId,
     props: {
-      category?: MenuItemCategory;
+      category?: string;
+      categoryId?: string | null;
       name?: string;
       description?: string;
       price?: number;
       imageUrl?: string;
       isFeatured?: boolean;
       preparationTime?: number;
+      optionGroups?: MenuItemOptionGroup[];
+      reason?: string;
+      changedBy?: string;
     },
   ): MenuItem {
     const menuItem = this.findMenuItemOrThrow(menuItemId);
@@ -352,6 +427,8 @@ export class Merchant extends AggregateRoot<MerchantId> {
           action: "PRICE_CHANGED",
           oldPrice,
           newPrice: props.price,
+          changedBy: props.changedBy ?? null,
+          reason: props.reason ?? null,
         }),
       );
     }
@@ -366,6 +443,45 @@ export class Merchant extends AggregateRoot<MerchantId> {
   public toggleMenuItem(menuItemId: MenuItemId): MenuItem {
     const menuItem = this.findMenuItemOrThrow(menuItemId);
     menuItem.toggleAvailable();
+
+    this.addDomainEvent(
+      new MenuUpdatedEvent(this.id, {
+        merchantId: this.id.toString(),
+        menuItemId: menuItemId.toString(),
+        name: menuItem.itemName,
+        price: menuItem.itemPrice,
+        isAvailable: menuItem.available,
+        action: "TOGGLED",
+      }),
+    );
+
+    this.markUpdated();
+    return menuItem;
+  }
+
+  /**
+   * Đặt trạng thái bán của món (thay cho việc xóa món).
+   */
+  public setMenuItemAvailability(
+    menuItemId: MenuItemId,
+    status: MenuItemAvailabilityStatus,
+  ): MenuItem {
+    const menuItem = this.findMenuItemOrThrow(menuItemId);
+    switch (status) {
+      case "AVAILABLE":
+        menuItem.markAvailable();
+        break;
+      case "OUT_OF_STOCK_TODAY":
+        menuItem.markOutOfStockToday();
+        break;
+      case "OUT_OF_STOCK":
+        menuItem.markOutOfStock();
+        break;
+      default:
+        throw new BusinessRuleViolationError(
+          `Invalid availability status: ${status}`,
+        );
+    }
 
     this.addDomainEvent(
       new MenuUpdatedEvent(this.id, {
@@ -430,6 +546,7 @@ export class Merchant extends AggregateRoot<MerchantId> {
    * Check if the merchant is currently open.
    */
   public isOpen(now: Date = new Date()): boolean {
+    if (!this.isOpenFlag) return false;
     if (this.status !== "APPROVED") return false;
 
     const todayHours = this.getTodayHours(now);
@@ -437,6 +554,14 @@ export class Merchant extends AggregateRoot<MerchantId> {
     if (todayHours.isClosed) return false;
 
     return todayHours.isWithinOperatingHours(now);
+  }
+
+  /**
+   * Manually open/close the merchant (overrides operating hours).
+   */
+  public setOpen(open: boolean): void {
+    this.isOpenFlag = open;
+    this.markUpdated();
   }
 
   private getTodayHours(now: Date): OperatingHours | undefined {
@@ -589,8 +714,16 @@ export class Merchant extends AggregateRoot<MerchantId> {
     return this.status;
   }
 
+  get merchantIsOpen(): boolean {
+    return this.isOpenFlag;
+  }
+
   get merchantRating(): number {
     return this.rating;
+  }
+
+  get merchantTotalRatings(): number {
+    return this.totalRatings;
   }
 
   get merchantTotalOrders(): number {
@@ -623,6 +756,26 @@ export class Merchant extends AggregateRoot<MerchantId> {
 
   get documentList(): ReadonlyArray<MerchantDocument> {
     return [...this.documents];
+  }
+
+  get merchantPrimaryCategory(): string | null {
+    return this.primaryCategory;
+  }
+
+  get merchantSecondaryCategories(): string[] {
+    return [...this.secondaryCategories];
+  }
+
+  get merchantOtherCategoryDescription(): string | null {
+    return this.otherCategoryDescription;
+  }
+
+  get merchantRejectedAt(): Date | null {
+    return this.rejectedAt;
+  }
+
+  get merchantRejectReason(): string | null {
+    return this.rejectReason;
   }
 
   public isApproved(): boolean {

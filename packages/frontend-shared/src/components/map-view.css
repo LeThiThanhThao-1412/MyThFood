@@ -1,0 +1,87 @@
+/* ==========================================================================
+   MyThFood — lớp CSS bổ trợ cho MapLibre GL.
+   Được nạp NGAY SAU `maplibre-gl/dist/maplibre-gl.css` trong MapView.tsx.
+
+   Lưu ý: MapLibre render tile bằng <canvas> + WebGL nên KHÔNG còn gặp lỗi
+   Tailwind preflight bóp méo tile như bản Leaflet cũ (`img{max-width:100%}`
+   chỉ ảnh hưởng tới thẻ <img>). Ở đây chỉ còn 2 việc: cô lập z-index và style
+   cho marker / popup / control theo design system.
+   ========================================================================== */
+
+/* `isolation` tạo stacking context → z-index nội bộ của MapLibre (control,
+   popup) không leo ra đè lên header sticky (z-50), bottom nav (z-[100]) hay
+   LocationGate (z-[300]) của app. */
+.maplibregl-map {
+  isolation: isolate;
+  z-index: 0;
+  font-family: inherit;
+  /* Nền trung tính trong lúc style/tile đầu tiên đang tải */
+  background: #eef0f2;
+}
+
+/* ─── Marker ──────────────────────────────────────────────────────────── */
+
+.mythfood-emoji-marker {
+  font-size: 26px;
+  line-height: 26px;
+  text-align: center;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 35%));
+  cursor: pointer;
+  user-select: none;
+}
+
+.mythfood-pin-marker {
+  line-height: 0;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 35%));
+  cursor: pointer;
+}
+
+/* Marker đang kéo thả được: gợi ý bằng con trỏ */
+.mythfood-pin-marker--draggable,
+.mythfood-emoji-marker--draggable {
+  cursor: grab;
+}
+.mythfood-pin-marker--draggable:active,
+.mythfood-emoji-marker--draggable:active {
+  cursor: grabbing;
+}
+
+/* ─── Chế độ chọn điểm ────────────────────────────────────────────────── */
+
+.mythfood-map--picking .maplibregl-canvas {
+  cursor: crosshair;
+}
+
+/* ─── Popup ───────────────────────────────────────────────────────────── */
+
+.maplibregl-popup-content {
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 15%);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.mythfood-popup strong {
+  color: #1a1a2e;
+  font-weight: 600;
+}
+.mythfood-popup p {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 11px;
+}
+
+/* ─── Control ─────────────────────────────────────────────────────────── */
+
+.maplibregl-ctrl-group button {
+  width: 32px;
+  height: 32px;
+}
+
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+}
+.maplibregl-ctrl-attrib.maplibregl-compact {
+  margin: 0 6px 6px 0;
+}
+

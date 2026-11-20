@@ -5,9 +5,8 @@ import { PaymentId } from "../domain/payment-id";
 import { PaymentRepository } from "../infrastructure/payment.repository";
 import { StripeService } from "../../stripe/stripe.service";
 import { SplitPaymentService } from "./split-payment.service";
-import { WalletRepository } from "../../wallet/infrastructure/wallet.repository";
-import { OwnerType } from "../../wallet/domain/wallet.aggregate";
 import {
+  CreateAdjustmentPaymentDto,
   CreatePaymentDto,
   CreateStripePaymentDto,
   PaymentResponseDto,
@@ -18,12 +17,13 @@ import {
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
+  private readonly walletServiceUrl =
+    process.env.WALLET_SERVICE_URL || "http://localhost:3009";
 
   constructor(
     private readonly paymentRepository: PaymentRepository,
     private readonly stripeService: StripeService,
     private readonly splitPaymentService: SplitPaymentService,
-    private readonly walletRepository: WalletRepository,
   ) {}
 
   // ===================== Payment Creation =====================
@@ -55,7 +55,71 @@ export class PaymentService {
     payment.hold(paymentIntent.id);
     await this.paymentRepository.save(payment);
 
-    this.logger.log(`Stripe payment created: ${payment.id.toString()} with PI ${paymentIntent.id}`);
+    this.logger.log(
+      `Stripe payment created: ${payment.id.toString()} with PI ${paymentIntent.id}`,
+    );
+
+    return {
+      ...this.toResponseDto(payment),
+      clientSecret: paymentIntent.client_secret || "",
+    };
+  }
+
+  /**
+   * Tạo PaymentIntent bổ sung cho khoản chênh lệch khi nhà hàng chỉnh sửa đơn.
+   * Idempotent theo `adjustmentRequestId`: gọi lại sẽ trả payment cũ + clientSecret.
+   */
+  async createAdjustmentStripePayment(
+    dto: CreateAdjustmentPaymentDto,
+  ): Promise<PaymentResponseDto & { clientSecret: string }> {
+    const existing = await this.paymentRepository.findByAdjustmentRequestId(
+      dto.adjustmentRequestId,
+    );
+    if (existing) {
+      let clientSecret = "";
+      const paymentIntentId = existing.paymentStripePaymentIntentId;
+      if (paymentIntentId) {
+        try {
+          const intent =
+            await this.stripeService.retrievePaymentIntent(paymentIntentId);
+          clientSecret = intent.client_secret || "";
+        } catch (err: any) {
+          this.logger.warn(
+            `Cannot retrieve PaymentIntent ${paymentIntentId}: ${err?.message ?? err}`,
+          );
+        }
+      }
+      return { ...this.toResponseDto(existing), clientSecret };
+    }
+
+    const paymentIntent = await this.stripeService.createPaymentIntent({
+      amount: dto.amount,
+      currency: dto.currency,
+      orderId: dto.orderId,
+      consumerId: dto.consumerId,
+      description: `Order ${dto.orderId} - Adjustment ${dto.adjustmentRequestId}`,
+    });
+
+    const result = Payment.create({
+      orderId: dto.orderId,
+      consumerId: dto.consumerId,
+      merchantId: dto.merchantId,
+      amount: dto.amount,
+      paymentMethod: PaymentMethod.CREDIT_CARD,
+      adjustmentRequestId: dto.adjustmentRequestId,
+    });
+
+    if (result.isFailure) {
+      throw result.error;
+    }
+
+    const payment = result.value;
+    payment.hold(paymentIntent.id);
+    await this.paymentRepository.save(payment);
+
+    this.logger.log(
+      `Adjustment payment created: ${payment.id.toString()} for request ${dto.adjustmentRequestId} amount=${dto.amount}`,
+    );
 
     return {
       ...this.toResponseDto(payment),
@@ -83,7 +147,10 @@ export class PaymentService {
 
   // ===================== Payment Lifecycle =====================
 
-  async assignDriver(paymentId: string, driverId: string): Promise<PaymentResponseDto> {
+  async assignDriver(
+    paymentId: string,
+    driverId: string,
+  ): Promise<PaymentResponseDto> {
     const payment = await this.findByIdOrFail(paymentId);
     payment.assignDriver(driverId);
     await this.paymentRepository.save(payment);
@@ -97,16 +164,32 @@ export class PaymentService {
   ): Promise<PaymentResponseDto> {
     const payment = await this.findByIdOrFail(paymentId);
     await this.splitPaymentService.executeSplitPayment(
-      payment, merchantStripeAccountId, driverStripeAccountId,
+      payment,
+      merchantStripeAccountId,
+      driverStripeAccountId,
     );
     await this.paymentRepository.save(payment);
     this.logger.log(`Payment ${paymentId} split and completed`);
     return this.toResponseDto(payment);
   }
 
-  async complete(paymentId: string, transactionId: string): Promise<PaymentResponseDto> {
+  async complete(
+    paymentId: string,
+    transactionId: string,
+  ): Promise<PaymentResponseDto> {
     const payment = await this.findByIdOrFail(paymentId);
     payment.complete(transactionId);
+    await this.paymentRepository.save(payment);
+    return this.toResponseDto(payment);
+  }
+
+  /** Xác nhận khoản thu bổ sung đã được Stripe capture (HELD → COMPLETED). */
+  async completeAdjustmentPayment(
+    paymentId: string,
+    transactionId: string,
+  ): Promise<PaymentResponseDto> {
+    const payment = await this.findByIdOrFail(paymentId);
+    payment.completeAdjustment(transactionId || "stripe-adjustment");
     await this.paymentRepository.save(payment);
     return this.toResponseDto(payment);
   }
@@ -115,8 +198,12 @@ export class PaymentService {
     const payment = await this.findByIdOrFail(paymentId);
     if (payment.isHeld() && payment.paymentStripePaymentIntentId) {
       try {
-        await this.stripeService.cancelPaymentIntent(payment.paymentStripePaymentIntentId);
-        this.logger.log(`Cancelled PaymentIntent ${payment.paymentStripePaymentIntentId}`);
+        await this.stripeService.cancelPaymentIntent(
+          payment.paymentStripePaymentIntentId,
+        );
+        this.logger.log(
+          `Cancelled PaymentIntent ${payment.paymentStripePaymentIntentId}`,
+        );
       } catch (err) {
         this.logger.error(`Failed to cancel PaymentIntent: ${err}`);
       }
@@ -126,39 +213,116 @@ export class PaymentService {
     return this.toResponseDto(payment);
   }
 
-  async refund(paymentId: string, reason: string, refundAmount?: number): Promise<PaymentResponseDto> {
+  async refund(
+    paymentId: string,
+    reason: string,
+    refundAmount?: number,
+  ): Promise<PaymentResponseDto> {
     const payment = await this.findByIdOrFail(paymentId);
-    const refundId = await this.splitPaymentService.executeDirectRefund(payment, reason, refundAmount);
+    const refundId = await this.splitPaymentService.executeDirectRefund(
+      payment,
+      reason,
+      refundAmount,
+    );
     await this.paymentRepository.save(payment);
-    this.logger.log(`Payment ${paymentId} refunded: refundId=${refundId}, reason=${reason}`);
+    this.logger.log(
+      `Payment ${paymentId} refunded: refundId=${refundId}, reason=${reason}`,
+    );
     return this.toResponseDto(payment);
   }
 
-  // ===================== Wallet Operations =====================
+  /**
+   * Chốt payment khi đơn đã được xử lý bằng store credit (hoàn vào ví khách).
+   *
+   * Idempotent: payment không ở trạng thái HELD thì trả nguyên trạng — nhờ vậy
+   * order-service gọi lại nhiều lần (4 call-site fire-and-forget) vẫn an toàn.
+   * Đây là mắt còn thiếu của GAP G3: trước đây payment CREDIT_CARD treo HELD
+   * vĩnh viễn dù khách đã được hoàn tiền vào ví.
+   */
+  async closeAsStoreCredit(
+    paymentId: string,
+    reason: string,
+  ): Promise<PaymentResponseDto> {
+    const payment = await this.findByIdOrFail(paymentId);
+    if (!payment.isHeld()) {
+      this.logger.log(
+        `Payment ${paymentId} status=${payment.paymentStatus} — bỏ qua close store credit (${reason})`,
+      );
+      return this.toResponseDto(payment);
+    }
 
-  async getWallet(ownerId: string): Promise<WalletResponseDto | null> {
-    const wallet = await this.walletRepository.findByOwnerId(ownerId);
-    if (!wallet) return null;
-    return {
-      id: wallet.id, ownerId: wallet.walletOwnerId, ownerType: wallet.walletOwnerType,
-      balance: wallet.walletBalance, currency: wallet.walletCurrency,
-      createdAt: new Date(), updatedAt: new Date(),
-    };
+    payment.closeAsStoreCredit(
+      payment.paymentStripePaymentIntentId ||
+        `store-credit-${payment.paymentOrderId}`,
+    );
+    await this.paymentRepository.save(payment);
+    this.logger.log(`Payment ${paymentId} closed as store credit: ${reason}`);
+    return this.toResponseDto(payment);
   }
 
-  async getWalletTransactions(walletId: string): Promise<WalletTransactionResponseDto[]> {
-    const txs = await this.walletRepository.getTransactionsByWalletId(walletId);
-    return txs.map((tx: { id: string; walletId: string; ownerId: string; ownerType: string; type: string; amount: number; balanceBefore: number; balanceAfter: number; description: string | null; orderId: string | null; stripeTransferId: string | null; stripePayoutId: string | null; createdAt: Date }) => ({
-      id: tx.id, walletId: tx.walletId, ownerId: tx.ownerId, ownerType: tx.ownerType,
-      type: tx.type, amount: Number(tx.amount), balanceBefore: Number(tx.balanceBefore),
-      balanceAfter: Number(tx.balanceAfter), description: tx.description,
-      orderId: tx.orderId, stripeTransferId: tx.stripeTransferId, stripePayoutId: tx.stripePayoutId,
-      createdAt: tx.createdAt,
-    }));
+  // ===================== Wallet Operations (delegated to wallet-service) =====================
+
+  async getWallet(ownerId: string): Promise<WalletResponseDto | null> {
+    try {
+      const res = await fetch(
+        `${this.walletServiceUrl}/api/v1/wallets/${ownerId}`,
+      );
+      if (!res.ok) return null;
+      const data: any = await res.json();
+      const wallet = data.data || data;
+      return {
+        id: wallet.id,
+        ownerId: wallet.ownerId,
+        ownerType: wallet.ownerType,
+        balance: wallet.balance,
+        currency: wallet.currency || "VND",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    } catch (err) {
+      this.logger.error(`Failed to get wallet from wallet-service: ${err}`);
+      return null;
+    }
+  }
+
+  async getWalletTransactions(
+    walletId: string,
+  ): Promise<WalletTransactionResponseDto[]> {
+    try {
+      const res = await fetch(
+        `${this.walletServiceUrl}/api/v1/wallets/${walletId}/transactions`,
+      );
+      if (!res.ok) return [];
+      const data: any = await res.json();
+      const txs = data.data || data || [];
+      return txs.map((tx: any) => ({
+        id: tx.id,
+        walletId: tx.walletId,
+        ownerId: tx.ownerId,
+        ownerType: tx.ownerType,
+        type: tx.type,
+        amount: Number(tx.amount),
+        balanceBefore: Number(tx.balanceBefore),
+        balanceAfter: Number(tx.balanceAfter),
+        description: tx.description || null,
+        orderId: tx.orderId || tx.referenceId || null,
+        stripeTransferId: null,
+        stripePayoutId: null,
+        createdAt: tx.createdAt,
+      }));
+    } catch (err) {
+      this.logger.error(
+        `Failed to get wallet transactions from wallet-service: ${err}`,
+      );
+      return [];
+    }
   }
 
   async withdrawFromWallet(params: {
-    ownerId: string; ownerType: OwnerType; amount: number; stripeAccountId: string;
+    ownerId: string;
+    ownerType: string;
+    amount: number;
+    stripeAccountId: string;
   }): Promise<{ payoutId: string; newBalance: number }> {
     return this.splitPaymentService.executeWalletWithdrawal(params);
   }
@@ -166,14 +330,18 @@ export class PaymentService {
   // ===================== Stripe Account Management =====================
 
   async createConnectedAccount(params: {
-    email: string; country?: string; type?: "standard" | "express" | "custom";
+    email: string;
+    country?: string;
+    type?: "standard" | "express" | "custom";
   }): Promise<{ accountId: string }> {
     const account = await this.stripeService.createConnectedAccount(params);
     return { accountId: account.id };
   }
 
   async createAccountLink(params: {
-    accountId: string; refreshUrl: string; returnUrl: string;
+    accountId: string;
+    refreshUrl: string;
+    returnUrl: string;
   }): Promise<{ url: string }> {
     const link = await this.stripeService.createAccountLink(params);
     return { url: link.url };
@@ -189,6 +357,61 @@ export class PaymentService {
   async findByOrderId(orderId: string): Promise<PaymentResponseDto | null> {
     const payment = await this.paymentRepository.findByOrderId(orderId);
     return payment ? this.toResponseDto(payment) : null;
+  }
+
+  async findByAdjustmentRequestId(
+    adjustmentRequestId: string,
+  ): Promise<PaymentResponseDto | null> {
+    const payment =
+      await this.paymentRepository.findByAdjustmentRequestId(
+        adjustmentRequestId,
+      );
+    return payment ? this.toResponseDto(payment) : null;
+  }
+
+  /**
+   * Trả lại clientSecret của PaymentIntent bổ sung để khách tiếp tục thanh
+   * toán sau khi rời trang (request đang AWAITING_PAYMENT).
+   */
+  async getAdjustmentPaymentSecret(adjustmentRequestId: string): Promise<{
+    paymentId: string | null;
+    clientSecret: string;
+    amount: number;
+    status: string | null;
+  }> {
+    const payment =
+      await this.paymentRepository.findByAdjustmentRequestId(
+        adjustmentRequestId,
+      );
+    if (!payment) {
+      return {
+        paymentId: null,
+        clientSecret: "",
+        amount: 0,
+        status: null,
+      };
+    }
+
+    let clientSecret = "";
+    const paymentIntentId = payment.paymentStripePaymentIntentId;
+    if (paymentIntentId) {
+      try {
+        const intent =
+          await this.stripeService.retrievePaymentIntent(paymentIntentId);
+        clientSecret = intent.client_secret || "";
+      } catch (err: any) {
+        this.logger.warn(
+          `Cannot retrieve PaymentIntent ${paymentIntentId}: ${err?.message ?? err}`,
+        );
+      }
+    }
+
+    return {
+      paymentId: payment.id.toString(),
+      clientSecret,
+      amount: payment.paymentAmount,
+      status: payment.paymentStatus,
+    };
   }
 
   async findByConsumerId(consumerId: string): Promise<PaymentResponseDto[]> {
@@ -211,30 +434,42 @@ export class PaymentService {
   }
 
   // ---- Stats Daily (B8) ----
-  async getDailyStats(_startDate?: string, _endDate?: string): Promise<any> {
-    return { dailyStats: [], summary: { totalAmount: 0, totalTransactions: 0, codPercentage: 0, stripePercentage: 0 } };
+  async getDailyStats(startDate?: string, endDate?: string): Promise<any> {
+    return this.paymentRepository.getDailyStats(startDate, endDate);
   }
 
   // ===================== Helpers =====================
 
   private async findByIdOrFail(paymentId: string): Promise<Payment> {
-    const payment = await this.paymentRepository.findById(PaymentId.from(paymentId));
-    if (!payment) { throw new EntityNotFoundError("Payment", paymentId); }
+    const payment = await this.paymentRepository.findById(
+      PaymentId.from(paymentId),
+    );
+    if (!payment) {
+      throw new EntityNotFoundError("Payment", paymentId);
+    }
     return payment;
   }
 
   private toResponseDto(payment: Payment): PaymentResponseDto {
     return {
-      id: payment.id.toString(), orderId: payment.paymentOrderId,
-      consumerId: payment.paymentConsumerId, merchantId: payment.paymentMerchantId,
-      driverId: payment.paymentDriverId, amount: payment.paymentAmount,
-      paymentMethod: payment.paymentMethodType, status: payment.paymentStatus,
+      id: payment.id.toString(),
+      orderId: payment.paymentOrderId,
+      consumerId: payment.paymentConsumerId,
+      merchantId: payment.paymentMerchantId,
+      driverId: payment.paymentDriverId,
+      amount: payment.paymentAmount,
+      paymentMethod: payment.paymentMethodType,
+      status: payment.paymentStatus,
       stripePaymentIntentId: payment.paymentStripePaymentIntentId,
       stripeTransferMerchantId: payment.paymentStripeTransferMerchantId,
       stripeTransferDriverId: payment.paymentStripeTransferDriverId,
-      transactionId: payment.paymentTransactionId, failureReason: payment.paymentFailureReason,
-      refundReason: payment.paymentRefundReason, refundedAmount: payment.paymentRefundedAmount,
-      createdAt: payment.createdAt, updatedAt: payment.updatedAt,
+      transactionId: payment.paymentTransactionId,
+      failureReason: payment.paymentFailureReason,
+      refundReason: payment.paymentRefundReason,
+      refundedAmount: payment.paymentRefundedAmount,
+      adjustmentRequestId: payment.paymentAdjustmentRequestId,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
     };
   }
 }

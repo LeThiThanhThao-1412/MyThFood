@@ -37,6 +37,8 @@ export class ConsumerRepository implements IRepository<Consumer, ConsumerId> {
   async findByUserId(userId: string): Promise<Consumer | null> {
     const entity = await this.repository.findOne({
       where: { user_id: userId },
+      // Ưu tiên hồ sơ cũ nhất (hồ sơ gắn với đơn hàng) nếu lỡ tồn tại trùng
+      order: { created_at: "ASC" },
     });
     if (!entity) return null;
     return ConsumerMapper.toDomain(entity);

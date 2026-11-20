@@ -4,11 +4,13 @@ import {
 } from "@mythfood/shared-kernel";
 import { DriverId } from "./driver-id";
 import { DriverOnlineStatusChangedEvent } from "./events/driver-online-status-changed.event";
+import { DriverLocationUpdatedEvent } from "./events/driver-location-updated.event";
 
 export enum DriverStatus {
   ACTIVE = "ACTIVE",
   INACTIVE = "INACTIVE",
   SUSPENDED = "SUSPENDED",
+  REJECTED = "REJECTED",
 }
 
 export enum DriverOnlineStatus {
@@ -35,9 +37,12 @@ export class Driver extends AggregateRoot<DriverId> {
   private _idCardNumber: string;
   private _driverLicenseNumber: string;
   private _vehicleRegistrationNumber: string;
+  private _vehicleType: string | null;
   private _insuranceNumber: string;
   private _criminalRecordUrl: string | null;
   private _status: DriverStatus;
+  private _rejectedAt: Date | null;
+  private _rejectReason: string | null;
   private _onlineStatus: DriverOnlineStatus;
   private _currentLatitude: number | null;
   private _currentLongitude: number | null;
@@ -51,7 +56,11 @@ export class Driver extends AggregateRoot<DriverId> {
   private _totalOrders: number;
   private _rating: number;
   private _totalRatings: number;
+  private _reputationScore: number;
+  private _acceptBlockedUntil: Date | null;
   private _currentOrderId: string | null;
+  private _currentOrderIds: string[];
+  private _maxConcurrentOrders: number;
   private _isTrainingCompleted: boolean;
   private _depositAmount: number;
   private _creditWalletBalance: number;
@@ -68,9 +77,13 @@ export class Driver extends AggregateRoot<DriverId> {
       idCardNumber: string;
       driverLicenseNumber: string;
       vehicleRegistrationNumber: string;
+      vehicleType: string | null;
       insuranceNumber: string;
       criminalRecordUrl: string | null;
       status: DriverStatus;
+      rejectedAt?: Date | null;
+      rejectReason?: string | null;
+
       onlineStatus: DriverOnlineStatus;
       currentLatitude: number | null;
       currentLongitude: number | null;
@@ -84,7 +97,11 @@ export class Driver extends AggregateRoot<DriverId> {
       totalOrders: number;
       rating: number;
       totalRatings: number;
+      reputationScore?: number;
+      acceptBlockedUntil?: Date | null;
       currentOrderId: string | null;
+      currentOrderIds?: string[];
+      maxConcurrentOrders?: number;
       isTrainingCompleted: boolean;
       depositAmount: number;
       creditWalletBalance: number;
@@ -100,9 +117,12 @@ export class Driver extends AggregateRoot<DriverId> {
     this._idCardNumber = props.idCardNumber;
     this._driverLicenseNumber = props.driverLicenseNumber;
     this._vehicleRegistrationNumber = props.vehicleRegistrationNumber;
+    this._vehicleType = props.vehicleType ?? null;
     this._insuranceNumber = props.insuranceNumber;
     this._criminalRecordUrl = props.criminalRecordUrl;
     this._status = props.status;
+    this._rejectedAt = props.rejectedAt ?? null;
+    this._rejectReason = props.rejectReason ?? null;
     this._onlineStatus = props.onlineStatus;
     this._currentLatitude = props.currentLatitude;
     this._currentLongitude = props.currentLongitude;
@@ -116,7 +136,16 @@ export class Driver extends AggregateRoot<DriverId> {
     this._totalOrders = props.totalOrders;
     this._rating = props.rating;
     this._totalRatings = props.totalRatings;
-    this._currentOrderId = props.currentOrderId;
+    this._reputationScore = props.reputationScore ?? 100;
+    this._acceptBlockedUntil = props.acceptBlockedUntil ?? null;
+    const orderIds = props.currentOrderIds?.length
+      ? [...props.currentOrderIds]
+      : props.currentOrderId
+        ? [props.currentOrderId]
+        : [];
+    this._currentOrderIds = Array.from(new Set(orderIds));
+    this._currentOrderId = this._currentOrderIds[0] ?? null;
+    this._maxConcurrentOrders = Math.max(1, props.maxConcurrentOrders ?? 1);
     this._isTrainingCompleted = props.isTrainingCompleted;
     this._depositAmount = props.depositAmount;
     this._creditWalletBalance = props.creditWalletBalance;
@@ -133,6 +162,7 @@ export class Driver extends AggregateRoot<DriverId> {
     idCardNumber: string;
     driverLicenseNumber: string;
     vehicleRegistrationNumber: string;
+    vehicleType?: string;
     insuranceNumber: string;
     criminalRecordUrl?: string;
   }): Driver {
@@ -147,9 +177,12 @@ export class Driver extends AggregateRoot<DriverId> {
       idCardNumber: props.idCardNumber,
       driverLicenseNumber: props.driverLicenseNumber,
       vehicleRegistrationNumber: props.vehicleRegistrationNumber,
+      vehicleType: props.vehicleType ?? null,
       insuranceNumber: props.insuranceNumber,
       criminalRecordUrl: props.criminalRecordUrl ?? null,
       status: DriverStatus.INACTIVE,
+      rejectedAt: null,
+      rejectReason: null,
       onlineStatus: DriverOnlineStatus.OFFLINE,
       currentLatitude: null,
       currentLongitude: null,
@@ -163,7 +196,11 @@ export class Driver extends AggregateRoot<DriverId> {
       totalOrders: 0,
       rating: 0,
       totalRatings: 0,
+      reputationScore: 100,
+      acceptBlockedUntil: null,
       currentOrderId: null,
+      currentOrderIds: [],
+      maxConcurrentOrders: 1,
       isTrainingCompleted: false,
       depositAmount: 0,
       creditWalletBalance: 0,
@@ -182,8 +219,12 @@ export class Driver extends AggregateRoot<DriverId> {
       idCardNumber: string;
       driverLicenseNumber: string;
       vehicleRegistrationNumber: string;
+      vehicleType: string | null;
       insuranceNumber: string;
       criminalRecordUrl: string | null;
+      rejectedAt?: Date | null;
+      rejectReason?: string | null;
+
       status: DriverStatus;
       onlineStatus: DriverOnlineStatus;
       currentLatitude: number | null;
@@ -198,7 +239,11 @@ export class Driver extends AggregateRoot<DriverId> {
       totalOrders: number;
       rating: number;
       totalRatings: number;
+      reputationScore?: number;
+      acceptBlockedUntil?: Date | null;
       currentOrderId: string | null;
+      currentOrderIds?: string[];
+      maxConcurrentOrders?: number;
       isTrainingCompleted: boolean;
       depositAmount: number;
       creditWalletBalance: number;
@@ -239,6 +284,23 @@ export class Driver extends AggregateRoot<DriverId> {
       );
     }
     this._status = DriverStatus.ACTIVE;
+    this._acceptBlockedUntil = null;
+    this._rejectedAt = null;
+    this._rejectReason = null;
+    this.markUpdated();
+  }
+
+  /**
+   * Từ chối hồ sơ tài xế (admin action).
+   *
+   * @param reason Lý do từ chối — hiển thị cho tài xế khi đăng nhập.
+   */
+  public reject(reason?: string): void {
+    this._status = DriverStatus.REJECTED;
+    this._onlineStatus = DriverOnlineStatus.OFFLINE;
+    this._rejectedAt = new Date();
+    this._rejectReason = reason ?? null;
+    this._releaseCurrentSession();
     this.markUpdated();
   }
 
@@ -253,6 +315,34 @@ export class Driver extends AggregateRoot<DriverId> {
     this._status = DriverStatus.SUSPENDED;
     this._onlineStatus = DriverOnlineStatus.OFFLINE;
     this._releaseCurrentSession();
+    this.markUpdated();
+  }
+
+  /** Tạm khóa tài xế trong N ngày + chặn nhận đơn tới hết hạn. */
+  public suspendFor(durationDays: number): void {
+    this._status = DriverStatus.SUSPENDED;
+    this._onlineStatus = DriverOnlineStatus.OFFLINE;
+    this._acceptBlockedUntil = new Date(
+      Date.now() + durationDays * 24 * 60 * 60 * 1000,
+    );
+    this._releaseCurrentSession();
+    this.markUpdated();
+  }
+
+  /**
+   * Mở khóa ngay một tài xế đang bị SUSPENDED (hỗ trợ khi khóa nhầm),
+   * không cần chờ hết hạn `acceptBlockedUntil`.
+   */
+  public unlock(): void {
+    this._status = DriverStatus.ACTIVE;
+    this._onlineStatus = DriverOnlineStatus.OFFLINE;
+    this._acceptBlockedUntil = null;
+    this.markUpdated();
+  }
+
+  /** Trừ điểm uy tín (điểm không âm). */
+  public deductReputation(points: number): void {
+    this._reputationScore = Math.max(0, this._reputationScore - points);
     this.markUpdated();
   }
 
@@ -315,35 +405,96 @@ export class Driver extends AggregateRoot<DriverId> {
       );
     }
 
+    // Chặn toạ độ rác từ GPS lỗi / client gửi sai: nếu lọt vào DB, điều kiện
+    // bán kính nhận đơn và matching engine sẽ tính sai khoảng cách.
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      throw new BusinessRuleViolationError(
+        `Invalid GPS coordinates (${latitude}, ${longitude})`,
+      );
+    }
+
     this._currentLatitude = latitude;
     this._currentLongitude = longitude;
     this._lastLocationUpdateAt = new Date();
     this.markUpdated();
+
+    this.addDomainEvent(
+      new DriverLocationUpdatedEvent(this.id, latitude, longitude),
+    );
   }
 
   // ---- Order Assignment ----
 
-  public assignOrder(orderId: string): void {
+  /**
+   * Gán thêm đơn cho tài xế.
+   * - `maxConcurrentOrders` do dispatch-service truyền theo phương thức:
+   *   SAVER = 3, FAST/PRIORITY = 1.
+   * - Nếu tài xế đã có đơn và còn chỗ → gộp thêm (SAVER stacking).
+   */
+  public assignOrder(orderId: string, maxConcurrentOrders?: number): void {
     if (this._onlineStatus !== DriverOnlineStatus.ONLINE) {
       throw new BusinessRuleViolationError(
         "Cannot assign order to an offline driver",
       );
     }
-    if (this._currentOrderId) {
+    if (!orderId) {
+      throw new BusinessRuleViolationError("Order ID is required");
+    }
+    if (this._currentOrderIds.includes(orderId)) {
+      return;
+    }
+
+    if (maxConcurrentOrders != null) {
+      this._maxConcurrentOrders = Math.max(1, maxConcurrentOrders);
+    }
+    if (this._currentOrderIds.length >= this._maxConcurrentOrders) {
       throw new BusinessRuleViolationError(
-        "Driver already has an active order",
+        `Driver already has the maximum number of active orders (${this._maxConcurrentOrders})`,
       );
     }
-    this._currentOrderId = orderId;
+
+    this._currentOrderIds.push(orderId);
+    this._currentOrderId = this._currentOrderIds[0] ?? null;
     this.markUpdated();
   }
 
-  public completeOrder(): void {
-    if (!this._currentOrderId) {
+  /** Hoàn thành một đơn (mặc định đơn đầu tiên nếu không truyền orderId). */
+  public completeOrder(orderId?: string): void {
+    const target = orderId ?? this._currentOrderId;
+    if (!target || !this._currentOrderIds.includes(target)) {
       throw new BusinessRuleViolationError("Driver has no active order");
     }
-    this._currentOrderId = null;
+    this._currentOrderIds = this._currentOrderIds.filter((id) => id !== target);
+    this._currentOrderId = this._currentOrderIds[0] ?? null;
     this._totalOrders += 1;
+    this.markUpdated();
+  }
+
+  /**
+   * Giải phóng tài xế khỏi một đơn (khi hủy/giao thất bại) mà không tính vào
+   * số đơn hoàn thành. Không truyền `orderId` → giải phóng toàn bộ.
+   */
+  public releaseOrder(orderId?: string): void {
+    if (this._currentOrderIds.length === 0) {
+      throw new BusinessRuleViolationError("Driver has no active order");
+    }
+
+    if (orderId) {
+      this._currentOrderIds = this._currentOrderIds.filter(
+        (id) => id !== orderId,
+      );
+    } else {
+      this._currentOrderIds = [];
+    }
+
+    this._currentOrderId = this._currentOrderIds[0] ?? null;
     this.markUpdated();
   }
 
@@ -472,6 +623,16 @@ export class Driver extends AggregateRoot<DriverId> {
     this.markUpdated();
   }
 
+  /**
+   * Phạt tài xế khi hủy đơn sau khi đã nhận (Case 7):
+   * giảm điểm uy tín và tạm khóa nhận đơn trong `blockMinutes`.
+   */
+  public penalizeCancellation(blockMinutes: number): void {
+    this._reputationScore = Math.max(0, this._reputationScore - 5);
+    this._acceptBlockedUntil = new Date(Date.now() + blockMinutes * 60 * 1000);
+    this.markUpdated();
+  }
+
   // ---- Queries / Accessors ----
 
   get driverUserId(): string {
@@ -498,6 +659,9 @@ export class Driver extends AggregateRoot<DriverId> {
   get driverVehicleRegistrationNumber(): string {
     return this._vehicleRegistrationNumber;
   }
+  get driverVehicleType(): string | null {
+    return this._vehicleType;
+  }
   get driverInsuranceNumber(): string {
     return this._insuranceNumber;
   }
@@ -506,6 +670,12 @@ export class Driver extends AggregateRoot<DriverId> {
   }
   get driverStatus(): DriverStatus {
     return this._status;
+  }
+  get driverRejectedAt(): Date | null {
+    return this._rejectedAt;
+  }
+  get driverRejectReason(): string | null {
+    return this._rejectReason;
   }
   get driverOnlineStatus(): DriverOnlineStatus {
     return this._onlineStatus;
@@ -518,6 +688,30 @@ export class Driver extends AggregateRoot<DriverId> {
   }
   get driverLastLocationUpdateAt(): Date | null {
     return this._lastLocationUpdateAt;
+  }
+
+  /**
+   * Mốc "nhịp tim" (dấu hiệu tài xế còn kết nối) gần nhất, dùng cho cơ chế
+   * tự động chuyển OFFLINE khi tài xế đóng tab / mất mạng.
+   *
+   * Nhịp tim = giá trị MỚI NHẤT trong:
+   *  - `_lastLocationUpdateAt`: lần cuối app tài xế gửi vị trí GPS (chu kỳ 5s).
+   *  - `_currentSessionStartAt`: thời điểm tài xế vừa bật ONLINE.
+   *
+   * Việc tính cả thời điểm bật ONLINE đảm bảo tài xế vừa bật ONLINE luôn có trọn
+   * một khoảng ân hạn để app gửi vị trí đầu tiên — tránh việc vừa online đã bị
+   * quét và chuyển OFFLINE (do `lastLocationUpdateAt` còn null hoặc là mốc cũ
+   * của phiên làm việc trước).
+   *
+   * Trả về `null` khi chưa có mốc nào (thiếu dữ liệu) → không kết luận mất kết nối.
+   */
+  get driverLastHeartbeatAt(): Date | null {
+    const timestamps = [this._lastLocationUpdateAt, this._currentSessionStartAt]
+      .filter((value): value is Date => value instanceof Date)
+      .map((value) => value.getTime());
+
+    if (timestamps.length === 0) return null;
+    return new Date(Math.max(...timestamps));
   }
   get driverTotalDrivingMinutesToday(): number {
     return this._totalDrivingMinutesToday;
@@ -546,8 +740,23 @@ export class Driver extends AggregateRoot<DriverId> {
   get driverTotalRatings(): number {
     return this._totalRatings;
   }
+  get driverReputationScore(): number {
+    return this._reputationScore;
+  }
+  get driverAcceptBlockedUntil(): Date | null {
+    return this._acceptBlockedUntil;
+  }
   get driverCurrentOrderId(): string | null {
     return this._currentOrderId;
+  }
+  get driverCurrentOrderIds(): string[] {
+    return [...this._currentOrderIds];
+  }
+  get driverActiveOrderCount(): number {
+    return this._currentOrderIds.length;
+  }
+  get driverMaxConcurrentOrders(): number {
+    return this._maxConcurrentOrders;
   }
   get driverIsTrainingCompleted(): boolean {
     return this._isTrainingCompleted;
@@ -563,11 +772,28 @@ export class Driver extends AggregateRoot<DriverId> {
   }
 
   get isAvailable(): boolean {
+    return this.canAcceptMoreOrders;
+  }
+
+  /**
+   * Tài xế còn nhận được đơn không (kể cả đang có đơn SAVER nhưng còn slot).
+   * Dùng cho matching engine / dispatch khi xét gộp đơn.
+   */
+  get canAcceptMoreOrders(): boolean {
     return (
       this._status === DriverStatus.ACTIVE &&
       this._onlineStatus === DriverOnlineStatus.ONLINE &&
       this._fatigueLevel !== FatigueLevel.CRITICAL &&
-      !this._currentOrderId
+      this._currentOrderIds.length < this._maxConcurrentOrders &&
+      !this.isBlocked
+    );
+  }
+
+  /** Tài xế đang bị tạm khóa nhận đơn (do hủy đơn quá nhiều). */
+  get isBlocked(): boolean {
+    return (
+      this._acceptBlockedUntil != null &&
+      this._acceptBlockedUntil.getTime() > Date.now()
     );
   }
 

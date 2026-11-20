@@ -13,10 +13,13 @@ import {
   Req,
 } from "@nestjs/common";
 import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
 import { Request } from "express";
 import { PaymentService } from "../application/payment.service";
 import { StripeWebhookService } from "../../stripe/stripe.webhook";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import {
+  CreateAdjustmentPaymentDto,
   CreatePaymentDto,
   CreateStripePaymentDto,
   AssignDriverDto,
@@ -62,6 +65,19 @@ export class PaymentController {
     return this.paymentService.createStripePayment(dto);
   }
 
+  /**
+   * Khoản thu bổ sung khi nhà hàng chỉnh sửa đơn (delta > 0, CREDIT_CARD).
+   * Order-service gọi bằng x-service-key; consumer-app cũng có thể gọi trực
+   * tiếp bằng JWT.
+   */
+  @Post("order-adjustment/stripe")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async createAdjustmentStripe(
+    @Body() dto: CreateAdjustmentPaymentDto,
+  ): Promise<PaymentResponseDto & { clientSecret: string }> {
+    return this.paymentService.createAdjustmentStripePayment(dto);
+  }
+
   // ===================== Payment Lifecycle Commands =====================
 
   @Patch(":id/assign-driver")
@@ -95,8 +111,32 @@ export class PaymentController {
     return this.paymentService.complete(id, body.transactionId ?? "manual");
   }
 
-  @Patch(":id/fail")
+  @Patch(":id/complete-adjustment")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async completeAdjustment(
+    @Param("id") id: string,
+    @Body() body: { transactionId: string },
+  ): Promise<PaymentResponseDto> {
+    return this.paymentService.completeAdjustmentPayment(
+      id,
+      body.transactionId ?? "stripe-adjustment",
+    );
+  }
+
+  @Patch(":id/confirm")
   @UseGuards(AuthGuard("jwt"))
+  async confirm(@Param("id") id: string): Promise<PaymentResponseDto> {
+    return this.paymentService.complete(id, "manual");
+  }
+
+  @Patch(":id/settle")
+  @UseGuards(AuthGuard("jwt"))
+  async settle(@Param("id") id: string): Promise<PaymentResponseDto> {
+    return this.paymentService.complete(id, "settled");
+  }
+
+  @Patch(":id/fail")
+  @UseGuards(ServiceKeyOrJwtGuard)
   async fail(
     @Param("id") id: string,
     @Body() body: { reason: string },
@@ -111,6 +151,22 @@ export class PaymentController {
     @Body() dto: RefundPaymentDto,
   ): Promise<PaymentResponseDto> {
     return this.paymentService.refund(id, dto.reason, dto.refundAmount);
+  }
+
+  /**
+   * Chốt payment bằng store credit (dùng cho service-to-service: order-service
+   * gọi sau khi đã hoàn tiền vào ví khách ở luồng giao thất bại).
+   */
+  @Patch(":id/close-store-credit")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async closeAsStoreCredit(
+    @Param("id") id: string,
+    @Body() body: { reason?: string },
+  ): Promise<PaymentResponseDto> {
+    return this.paymentService.closeAsStoreCredit(
+      id,
+      body?.reason ?? "Store credit refund",
+    );
   }
 
   // ===================== Stripe Connected Accounts =====================
@@ -160,11 +216,25 @@ export class PaymentController {
   }
 
   @Get("order/:orderId")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(ServiceKeyOrJwtGuard)
   async findByOrderId(
     @Param("orderId") orderId: string,
   ): Promise<PaymentResponseDto | null> {
     return this.paymentService.findByOrderId(orderId);
+  }
+
+  @Get("order-adjustment/:requestId")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async findByAdjustmentRequestId(
+    @Param("requestId") requestId: string,
+  ): Promise<PaymentResponseDto | null> {
+    return this.paymentService.findByAdjustmentRequestId(requestId);
+  }
+
+  @Get("order-adjustment/:requestId/secret")
+  @UseGuards(ServiceKeyOrJwtGuard)
+  async getAdjustmentPaymentSecret(@Param("requestId") requestId: string) {
+    return this.paymentService.getAdjustmentPaymentSecret(requestId);
   }
 
   @Get("consumer/:consumerId")
@@ -184,7 +254,7 @@ export class PaymentController {
   }
 
   @Get(":id")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(ServiceKeyOrJwtGuard)
   async findById(@Param("id") id: string): Promise<PaymentResponseDto> {
     return this.paymentService.findById(id);
   }
@@ -192,7 +262,8 @@ export class PaymentController {
   // ===================== Stats Daily (B8) =====================
 
   @Get("stats/daily")
-  @UseGuards(AuthGuard("jwt"))
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
   async getDailyStats(
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string,

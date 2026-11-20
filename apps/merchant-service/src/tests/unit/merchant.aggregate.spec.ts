@@ -1,15 +1,6 @@
-import {
-  Merchant,
-  MerchantStatus,
-  CapacityStatus,
-} from "../../modules/merchant/domain/merchant.aggregate";
+import { Merchant } from "../../modules/merchant/domain/merchant.aggregate";
 import { MerchantId } from "../../modules/merchant/domain/merchant-id";
 import { MenuItemId } from "../../modules/merchant/domain/menu-item-id";
-import {
-  MenuItem,
-  MenuItemCategory,
-} from "../../modules/merchant/domain/menu-item.entity";
-import { OperatingHours } from "../../modules/merchant/domain/operating-hours.vo";
 import { MERCHANT_REGISTERED_EVENT_TYPE } from "../../modules/merchant/domain/events/merchant-registered.event";
 import { MENU_UPDATED_EVENT_TYPE } from "../../modules/merchant/domain/events/menu-updated.event";
 
@@ -152,9 +143,21 @@ describe("Merchant Aggregate", () => {
       expect(() => merchant.approve()).toThrow("Merchant is already approved");
     });
 
-    it("should reject a PENDING merchant", () => {
-      merchant.reject();
+    it("should reject a PENDING merchant with a reason", () => {
+      merchant.reject("Giấy phép kinh doanh không hợp lệ");
       expect(merchant.merchantStatus).toBe("REJECTED");
+      expect(merchant.merchantRejectReason).toBe(
+        "Giấy phép kinh doanh không hợp lệ",
+      );
+      expect(merchant.merchantRejectedAt).toBeInstanceOf(Date);
+    });
+
+    it("should clear rejection metadata when approving again", () => {
+      merchant.reject("Thiếu hồ sơ");
+      merchant.approve();
+      expect(merchant.merchantStatus).toBe("APPROVED");
+      expect(merchant.merchantRejectReason).toBeNull();
+      expect(merchant.merchantRejectedAt).toBeNull();
     });
 
     it("should not reject an approved merchant", () => {
@@ -337,6 +340,21 @@ describe("Merchant Aggregate", () => {
       expect(menuItem.available).toBe(true);
     });
 
+    it("should set menu item availability status", () => {
+      const menuItem = merchant.addMenuItem({
+        category: "DRINK",
+        name: "Tra Da",
+        price: 5000,
+      });
+
+      merchant.setMenuItemAvailability(menuItem.id, "OUT_OF_STOCK");
+      expect(menuItem.availabilityStatus).toBe("OUT_OF_STOCK");
+      expect(menuItem.available).toBe(false);
+
+      merchant.setMenuItemAvailability(menuItem.id, "AVAILABLE");
+      expect(menuItem.available).toBe(true);
+    });
+
     it("should remove a menu item", () => {
       const menuItem = merchant.addMenuItem({
         category: "DRINK",
@@ -472,6 +490,27 @@ describe("Merchant Aggregate", () => {
 
       expect(merchant.isOpen(now)).toBe(true);
     });
+
+    it("should reflect manual open/close toggle in isOpen", () => {
+      merchant.approve();
+      const now = new Date("2026-01-05T09:00:00"); // Monday 9am
+      merchant.setOperatingHours([
+        {
+          dayOfWeek: 1,
+          openTime: "08:00:00",
+          closeTime: "22:00:00",
+          isClosed: false,
+        },
+      ]);
+
+      merchant.setOpen(false);
+      expect(merchant.merchantIsOpen).toBe(false);
+      expect(merchant.isOpen(now)).toBe(false);
+
+      merchant.setOpen(true);
+      expect(merchant.merchantIsOpen).toBe(true);
+      expect(merchant.isOpen(now)).toBe(true);
+    });
   });
 
   // ===================== Capacity Tests =====================
@@ -555,6 +594,7 @@ describe("Merchant Aggregate", () => {
         longitude: null,
         status: "APPROVED",
         rating: 4.5,
+        totalRatings: 20,
         totalOrders: 100,
         capacityConfig: { maxConcurrentOrders: 10, prepTimePerOrder: 20 },
         capacityStatus: "NORMAL",
@@ -562,6 +602,9 @@ describe("Merchant Aggregate", () => {
         operatingHours: [],
         documents: [],
         currentOrderCount: 0,
+        primaryCategory: null,
+        secondaryCategories: [],
+        isOpen: true,
       });
 
       expect(merchant.id.equals(id)).toBe(true);

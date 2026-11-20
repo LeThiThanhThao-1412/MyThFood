@@ -4,6 +4,7 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { getDatabaseConfig } from "./config/database.config";
 import { AuthModule } from "./modules/auth/auth.module";
 import { DriverModule } from "./modules/driver/driver.module";
+import { TrackingModule } from "./modules/tracking/tracking.module";
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { DriverModule } from "./modules/driver/driver.module";
     }),
     AuthModule,
     DriverModule,
+    TrackingModule,
   ],
 })
 export class AppModule {}

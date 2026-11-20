@@ -41,9 +41,9 @@ export class WalletTransactionEntity {
   @Column({ type: "varchar", length: 50, nullable: true })
   referenceType!: string | null; // ORDER | TOPUP | WITHDRAW | SETTLEMENT
 
-  @Column({ type: "uuid", nullable: true })
+  @Column({ type: "varchar", length: 100, nullable: true })
   referenceId!: string | null;
 
-  @CreateDateColumn()
+  @CreateDateColumn({ type: "timestamptz" })
   createdAt!: Date;
 }

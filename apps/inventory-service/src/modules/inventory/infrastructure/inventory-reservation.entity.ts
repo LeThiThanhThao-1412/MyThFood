@@ -14,7 +14,7 @@ export class InventoryReservationEntity {
   @Column("int")
   quantity!: number;
 
-  @CreateDateColumn({ name: "reserved_at" })
+  @CreateDateColumn({ name: "reserved_at", type: "timestamptz" })
   reserved_at!: Date;
 
   @Column("timestamptz", { name: "expires_at" })

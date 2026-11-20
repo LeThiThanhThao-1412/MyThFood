@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -12,29 +13,39 @@ import {
   HttpStatus,
   UseGuards,
 } from "@nestjs/common";
-import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { DriverService } from "../application/driver.service";
 import {
   CreateDriverDto,
   UpdateDriverProfileDto,
   UpdateLocationDto,
+  UpdateLocationBatchDto,
   UpdateFatigueDto,
+  RateDriverDto,
+  PenalizeCancellationDto,
+  DriverComplianceDto,
+  AssignOrderDto,
+  ReleaseOrderDto,
+  CompleteOrderDto,
 } from "../application/dtos/driver.dto";
 
 @Controller("drivers")
-@UseGuards(AuthGuard("jwt"))
+@UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
 export class DriverController {
   constructor(private readonly driverService: DriverService) {}
 
   // ---- CRUD ----
 
   @Post()
+  @Roles("DRIVER", "ADMIN")
   async create(@Body() dto: CreateDriverDto) {
     const driver = await this.driverService.createDriver(dto);
     return { statusCode: HttpStatus.CREATED, data: this.toResponse(driver) };
   }
 
   @Get()
+  @Roles("ADMIN")
   async getAll(
     @Query("status") status?: string,
     @Query("onlineStatus") onlineStatus?: string,
@@ -52,27 +63,86 @@ export class DriverController {
   }
 
   @Get("available/list")
-  async getAvailable() {
-    const drivers = await this.driverService.getAvailableDrivers();
+  async getAvailable(@Query("includeStackable") includeStackable?: string) {
+    const drivers = await this.driverService.getAvailableDrivers(
+      includeStackable === "true",
+    );
     return {
       statusCode: HttpStatus.OK,
       data: drivers.map((d) => this.toResponse(d)),
     };
   }
 
+  /**
+   * Tài xế khả dụng gần một toạ độ, sắp xếp gần → xa (kèm `distanceKm`).
+   *
+   * dispatch-service gọi endpoint này thay cho việc tải toàn bộ danh sách rồi
+   * tự tính Haversine. driver-service dùng Redis GEOSEARCH khi có, fallback DB.
+   */
+  @Get("available/nearby")
+  async getAvailableNearby(
+    @Query("latitude") latitude?: string,
+    @Query("longitude") longitude?: string,
+    @Query("radiusKm") radiusKm?: string,
+    @Query("includeStackable") includeStackable?: string,
+    @Query("limit") limit?: string,
+  ) {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new BadRequestException("latitude and longitude are required");
+    }
+
+    const results = await this.driverService.getAvailableDriversNearby({
+      latitude: lat,
+      longitude: lng,
+      radiusKm: radiusKm != null ? Number(radiusKm) : undefined,
+      includeStackable: includeStackable === "true",
+      limit: limit != null ? Number(limit) : undefined,
+    });
+
+    return {
+      statusCode: HttpStatus.OK,
+      data: results.map((result) => ({
+        ...this.toResponse(result.driver),
+        distanceKm: result.distanceKm,
+      })),
+    };
+  }
+
   @Get("user/:userId")
+  @Roles("DRIVER", "ADMIN")
   async getByUserId(@Param("userId") userId: string) {
     const driver = await this.driverService.getByUserId(userId);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
+  @Patch("user/:userId/status")
+  @Roles("ADMIN")
+  async updateStatusByUserId(
+    @Param("userId") userId: string,
+    @Body() body: { status: string; reason?: string; durationDays?: number },
+  ) {
+    const driver = await this.driverService.setStatusByUserId(
+      userId,
+      body.status,
+      { reason: body.reason, durationDays: body.durationDays },
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      data: driver ? this.toResponse(driver) : null,
+    };
+  }
+
   @Get(":id")
+  @Roles("DRIVER", "ADMIN")
   async getById(@Param("id") id: string) {
     const driver = await this.driverService.getById(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Put(":id")
+  @Roles("DRIVER", "ADMIN")
   async updateProfile(
     @Param("id") id: string,
     @Body() dto: UpdateDriverProfileDto,
@@ -82,6 +152,7 @@ export class DriverController {
   }
 
   @Delete(":id")
+  @Roles("ADMIN")
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param("id") id: string) {
     await this.driverService.deleteDriver(id);
@@ -90,44 +161,76 @@ export class DriverController {
   // ---- Training & Activation ----
 
   @Patch(":id/complete-training")
+  @Roles("ADMIN")
   async completeTraining(@Param("id") id: string) {
     const driver = await this.driverService.completeTraining(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/activate")
+  @Roles("ADMIN")
   async activate(@Param("id") id: string) {
     const driver = await this.driverService.activateDriver(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/deactivate")
+  @Roles("ADMIN")
   async deactivate(@Param("id") id: string) {
     const driver = await this.driverService.deactivateDriver(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/suspend")
-  async suspend(@Param("id") id: string) {
-    const driver = await this.driverService.suspendDriver(id);
+  @Roles("ADMIN")
+  async suspend(
+    @Param("id") id: string,
+    @Body() body: { durationDays?: number; reason?: string },
+  ) {
+    const driver = await this.driverService.suspendDriver(
+      id,
+      body.durationDays,
+      body.reason,
+    );
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  /** Từ chối hồ sơ tài xế (kèm lý do hiển thị khi đăng nhập). */
+  @Patch(":id/reject")
+  @Roles("ADMIN")
+  async reject(
+    @Param("id") id: string,
+    @Body() body: { reason?: string } = {},
+  ) {
+    const driver = await this.driverService.rejectDriver(id, body?.reason);
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  @Patch(":id/unlock")
+  @Roles("ADMIN")
+  async unlock(@Param("id") id: string) {
+    const driver = await this.driverService.unlockDriver(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   // ---- Online/Offline ----
 
   @Patch(":id/go-online")
+  @Roles("DRIVER", "ADMIN")
   async goOnline(@Param("id") id: string) {
     const driver = await this.driverService.goOnline(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/go-offline")
+  @Roles("DRIVER", "ADMIN")
   async goOffline(@Param("id") id: string) {
     const driver = await this.driverService.goOffline(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/go-home")
+  @Roles("DRIVER", "ADMIN")
   async goHome(@Param("id") id: string) {
     const driver = await this.driverService.goHome(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
@@ -136,6 +239,7 @@ export class DriverController {
   // ---- GPS Location ----
 
   @Patch(":id/location")
+  @Roles("DRIVER", "ADMIN")
   async updateLocation(
     @Param("id") id: string,
     @Body() dto: UpdateLocationDto,
@@ -144,35 +248,114 @@ export class DriverController {
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
+  /**
+   * Ghi **lô** điểm GPS (1–100 điểm/lần) trong 1 UPDATE + 1 INSERT.
+   * App tài xế dùng endpoint này để gửi bù khi mất mạng hoặc gom nhiều mẫu
+   * `watchPosition` vào một request.
+   */
+  @Post(":id/location/batch")
+  @Roles("DRIVER", "ADMIN")
+  @HttpCode(HttpStatus.OK)
+  async updateLocationBatch(
+    @Param("id") id: string,
+    @Body() dto: UpdateLocationBatchDto,
+  ) {
+    const result = await this.driverService.updateLocationsBatch(
+      id,
+      dto.points,
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        accepted: result.accepted,
+        driver: this.toResponse(result.driver),
+      },
+    };
+  }
+
+  @Get(":id/location/history")
+  @Roles("DRIVER", "ADMIN")
+  async getLocationHistory(
+    @Param("id") id: string,
+    @Query("limit") limit?: string,
+    @Query("orderId") orderId?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+  ) {
+    const parsed = limit ? parseInt(limit, 10) : orderId ? 400 : 200;
+    const safeLimit = Number.isNaN(parsed)
+      ? 200
+      : Math.min(1000, Math.max(1, parsed));
+    const history = await this.driverService.getLocationHistory(id, {
+      limit: safeLimit,
+      orderId,
+      from,
+      to,
+    });
+    return { statusCode: HttpStatus.OK, data: history };
+  }
+
   // ---- Order Assignment ----
 
   @Patch(":id/assign-order")
-  async assignOrder(@Param("id") id: string, @Body("orderId") orderId: string) {
-    const driver = await this.driverService.assignOrder(id, orderId);
+  @Roles("DRIVER", "ADMIN")
+  async assignOrder(@Param("id") id: string, @Body() dto: AssignOrderDto) {
+    const driver = await this.driverService.assignOrder(
+      id,
+      dto.orderId,
+      dto.maxConcurrentOrders,
+    );
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/complete-order")
-  async completeOrder(@Param("id") id: string) {
-    const driver = await this.driverService.completeOrder(id);
+  @Roles("DRIVER", "ADMIN")
+  async completeOrder(@Param("id") id: string, @Body() dto?: CompleteOrderDto) {
+    const driver = await this.driverService.completeOrder(id, dto?.orderId);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  @Patch(":id/release-order")
+  @Roles("DRIVER", "ADMIN")
+  async releaseOrder(@Param("id") id: string, @Body() dto?: ReleaseOrderDto) {
+    const driver = await this.driverService.releaseOrder(id, dto?.orderId);
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  /** Danh sách đơn đang giữ — driver-app dùng để hiển thị lộ trình gộp. */
+  @Get(":id/active-orders")
+  @Roles("DRIVER", "ADMIN")
+  async getActiveOrders(@Param("id") id: string) {
+    const driver = await this.driverService.getById(id);
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        driverId: driver.id.toString(),
+        orderIds: driver.driverCurrentOrderIds,
+        maxConcurrentOrders: driver.driverMaxConcurrentOrders,
+        activeCount: driver.driverActiveOrderCount,
+      },
+    };
   }
 
   // ---- Fatigue ----
 
   @Patch(":id/fatigue")
+  @Roles("DRIVER", "ADMIN")
   async updateFatigue(@Param("id") id: string, @Body() dto: UpdateFatigueDto) {
     const driver = await this.driverService.updateFatigue(id, dto);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/take-break")
+  @Roles("DRIVER", "ADMIN")
   async takeBreak(@Param("id") id: string) {
     const driver = await this.driverService.takeBreak(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/force-break")
+  @Roles("ADMIN")
   async forceBreak(@Param("id") id: string) {
     const driver = await this.driverService.forceBreak(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
@@ -181,12 +364,14 @@ export class DriverController {
   // ---- Shift ----
 
   @Patch(":id/start-shift")
+  @Roles("DRIVER", "ADMIN")
   async startShift(@Param("id") id: string) {
     const driver = await this.driverService.startShift(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
   }
 
   @Patch(":id/end-shift")
+  @Roles("DRIVER", "ADMIN")
   async endShift(@Param("id") id: string) {
     const driver = await this.driverService.endShift(id);
     return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
@@ -195,18 +380,92 @@ export class DriverController {
   // ---- Earnings & Stats (B4) ----
 
   @Get("stats")
+  @Roles("ADMIN")
   async getDriverStats() {
     const stats = await this.driverService.getDriverStats();
     return { statusCode: HttpStatus.OK, data: stats };
   }
 
   @Get(":id/earnings")
-  async getEarnings(
-    @Param("id") id: string,
-    @Query("period") period?: string,
-  ) {
-    const earnings = await this.driverService.getEarnings(id, period || "today");
+  @Roles("DRIVER", "ADMIN")
+  async getEarnings(@Param("id") id: string, @Query("period") period?: string) {
+    const earnings = await this.driverService.getEarnings(
+      id,
+      period || "today",
+    );
     return { statusCode: HttpStatus.OK, data: earnings };
+  }
+
+  // ---- Rating (Bổ sung: đánh giá tài xế) ----
+
+  @Patch(":id/rating")
+  @Roles("ADMIN", "DRIVER")
+  async rateDriver(@Param("id") id: string, @Body() dto: RateDriverDto) {
+    const driver = await this.driverService.rateDriver(id, dto);
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  @Patch(":id/penalize-cancellation")
+  @Roles("ADMIN")
+  async penalizeCancellation(
+    @Param("id") id: string,
+    @Body() dto: PenalizeCancellationDto,
+  ) {
+    const driver = await this.driverService.penalizeCancellation(
+      id,
+      dto.blockMinutes ?? 30,
+    );
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  // ---- Compliance (resolution-service) ----
+  @Patch(":id/compliance")
+  @Roles("ADMIN")
+  async compliance(@Param("id") id: string, @Body() dto: DriverComplianceDto) {
+    const driver = await this.driverService.applyCompliance(id, dto);
+    return { statusCode: HttpStatus.OK, data: this.toResponse(driver) };
+  }
+
+  // ---- Public profile (cho CONSUMER xem thông tin tài xế khi có đơn) ----
+
+  @Get(":id/public-profile")
+  @Roles("CONSUMER", "DRIVER", "MERCHANT_OWNER", "ADMIN")
+  async getPublicProfile(@Param("id") id: string) {
+    const driver = await this.driverService.getById(id);
+    return { statusCode: HttpStatus.OK, data: this.toPublicProfile(driver) };
+  }
+
+  /**
+   * Hồ sơ năng lực phục vụ điều tra (chỉ dữ liệu vận hành — KHÔNG PII).
+   *
+   * Dùng cho AI phân tích khiếu nại: rating/uy tín/tổng đơn/mức mệt/đơn đang
+   * giữ. Cố ý không trả tên, SĐT, email, CCCD, biển số, số ví.
+   */
+  @Get(":id/analytics-profile")
+  @Roles("ADMIN")
+  async getAnalyticsProfile(@Param("id") id: string) {
+    const driver = await this.driverService.getById(id);
+    const full = this.toResponse(driver);
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        rating: full.rating ?? null,
+        totalRatings: full.totalRatings ?? null,
+        totalOrders: full.totalOrders ?? null,
+        reputationScore: full.reputationScore ?? null,
+        status: full.status ?? null,
+        onlineStatus: full.onlineStatus ?? null,
+        vehicleType: full.vehicleType ?? null,
+        fatigueLevel: full.fatigueLevel ?? null,
+        consecutiveDrivingMinutes: full.consecutiveDrivingMinutes ?? null,
+        totalDrivingMinutesToday: full.totalDrivingMinutesToday ?? null,
+        isTrainingCompleted: full.isTrainingCompleted ?? null,
+        acceptBlockedUntil: full.acceptBlockedUntil ?? null,
+        activeOrderCount: full.activeOrderCount ?? null,
+        maxConcurrentOrders: full.maxConcurrentOrders ?? null,
+        createdAt: full.createdAt ?? null,
+      },
+    };
   }
 
   // ---- Helper ----
@@ -225,8 +484,11 @@ export class DriverController {
       vehicleRegistrationNumber:
         driver.driverVehicleRegistrationNumber ??
         driver._vehicleRegistrationNumber,
+      vehicleType: driver.driverVehicleType ?? driver._vehicleType ?? null,
       insuranceNumber: driver.driverInsuranceNumber ?? driver._insuranceNumber,
       status: driver.driverStatus ?? driver._status,
+      rejectedAt: driver.driverRejectedAt ?? driver._rejectedAt ?? null,
+      rejectReason: driver.driverRejectReason ?? driver._rejectReason ?? null,
       onlineStatus: driver.driverOnlineStatus ?? driver._onlineStatus,
       currentLatitude: driver.driverCurrentLatitude ?? driver._currentLatitude,
       currentLongitude:
@@ -244,7 +506,20 @@ export class DriverController {
         driver.driverGoHomeCountToday ?? driver._goHomeCountToday,
       totalOrders: driver.driverTotalOrders ?? driver._totalOrders,
       rating: driver.driverRating ?? driver._rating,
+      totalRatings: driver.driverTotalRatings ?? driver._totalRatings,
+      reputationScore: driver.driverReputationScore ?? driver._reputationScore,
+      acceptBlockedUntil:
+        driver.driverAcceptBlockedUntil ?? driver._acceptBlockedUntil,
       currentOrderId: driver.driverCurrentOrderId ?? driver._currentOrderId,
+      currentOrderIds:
+        driver.driverCurrentOrderIds ??
+        (driver.driverCurrentOrderId ? [driver.driverCurrentOrderId] : []),
+      maxConcurrentOrders:
+        driver.driverMaxConcurrentOrders ?? driver._maxConcurrentOrders ?? 1,
+      activeOrderCount:
+        driver.driverActiveOrderCount ??
+        driver.driverCurrentOrderIds?.length ??
+        0,
       isTrainingCompleted:
         driver.driverIsTrainingCompleted ?? driver._isTrainingCompleted,
       depositAmount: driver.driverDepositAmount ?? driver._depositAmount,
@@ -254,6 +529,20 @@ export class DriverController {
         driver.driverIncomeWalletBalance ?? driver._incomeWalletBalance,
       createdAt: driver.createdAt,
       updatedAt: driver.updatedAt,
+    };
+  }
+
+  private toPublicProfile(driver: any) {
+    return {
+      id: driver.id?.toString?.() ?? driver.id,
+      userId: driver.driverUserId ?? driver._userId,
+      fullName: driver.driverFullName ?? driver._fullName,
+      avatar: driver.driverAvatar ?? driver._avatar,
+      vehicleRegistrationNumber:
+        driver.driverVehicleRegistrationNumber ??
+        driver._vehicleRegistrationNumber,
+      rating: driver.driverRating ?? driver._rating,
+      totalRatings: driver.driverTotalRatings ?? driver._totalRatings,
     };
   }
 }

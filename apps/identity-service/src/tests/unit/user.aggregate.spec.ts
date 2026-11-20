@@ -157,6 +157,69 @@ describe("User Aggregate", () => {
     });
   });
 
+  describe("rejection flow", () => {
+    it("should reject a user and expose the rejection reason", () => {
+      const result = User.register({
+        phoneNumber: "+84901234580",
+        fullName: "Rejected Merchant",
+        password,
+        roles: ["MERCHANT_OWNER"],
+      });
+
+      const user = result.value;
+      user.reject("Hồ sơ giấy phép kinh doanh không hợp lệ");
+
+      expect(user.currentStatus).toBe("REJECTED");
+      expect(user.rejectionAt).toBeInstanceOf(Date);
+      expect(user.rejectionReason).toBe(
+        "Hồ sơ giấy phép kinh doanh không hợp lệ",
+      );
+      expect(user.isActive()).toBe(false);
+      expect(user.isRejectionExpired()).toBe(false);
+      expect(user.rejectionDeleteAt).not.toBeNull();
+    });
+
+    it("should delete a rejected account after 3 days", () => {
+      const result = User.register({
+        phoneNumber: "+84901234581",
+        fullName: "Rejected Driver",
+        password,
+        roles: ["DRIVER"],
+      });
+
+      const user = result.value;
+      const now = new Date("2026-01-01T00:00:00.000Z");
+      jest.useFakeTimers().setSystemTime(now);
+      user.reject("Không đạt yêu cầu hồ sơ");
+
+      expect(user.isRejectionExpired()).toBe(false);
+      jest.useRealTimers();
+
+      // Sau 3 ngày + 1 phút → tài khoản phải bị coi là đã quá hạn lưu trữ.
+      expect(
+        user.isRejectionExpired(new Date("2026-01-04T00:01:00.000Z")),
+      ).toBe(true);
+    });
+
+    it("should clear rejection metadata when the account is activated again", () => {
+      const result = User.register({
+        phoneNumber: "+84901234582",
+        fullName: "Restored Owner",
+        password,
+        roles: ["MERCHANT_OWNER"],
+      });
+
+      const user = result.value;
+      user.reject("Thiếu giấy tờ");
+      user.activate();
+
+      expect(user.currentStatus).toBe("ACTIVE");
+      expect(user.rejectionAt).toBeNull();
+      expect(user.rejectionReason).toBeNull();
+      expect(user.rejectionDeleteAt).toBeNull();
+    });
+  });
+
   describe("rehydrate", () => {
     it("should rehydrate without emitting events", () => {
       const id = UserId.create();

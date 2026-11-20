@@ -16,6 +16,16 @@ export class DispatchMapper {
       deliveryAddress: entity.deliveryAddress,
       deliveryLatitude: entity.deliveryLatitude,
       deliveryLongitude: entity.deliveryLongitude,
+      deliveryOption: entity.deliveryOption as any,
+      priorityRank: entity.priorityRank ?? 1,
+      promisedDeliveryAt: entity.promisedDeliveryAt ?? null,
+      batchId: entity.batchId ?? null,
+      routeSequence: entity.routeSequence ?? null,
+      maxStackedOrders: entity.maxStackedOrders ?? 1,
+      dispatchTimeoutSeconds: entity.dispatchTimeoutSeconds ?? 300,
+      driverResponseTimeoutSeconds: entity.driverResponseTimeoutSeconds ?? 60,
+      createdAt: entity.createdAt,
+      updatedAt: entity.updatedAt,
       status: entity.status as DispatchStatus,
       driverId: entity.driverId,
       matchedDriverIds: entity.matchedDriverIds ?? [],
@@ -42,6 +52,15 @@ export class DispatchMapper {
     entity.deliveryAddress = dispatch.dispatchDeliveryAddress;
     entity.deliveryLatitude = dispatch.dispatchDeliveryLatitude;
     entity.deliveryLongitude = dispatch.dispatchDeliveryLongitude;
+    entity.deliveryOption = dispatch.dispatchDeliveryOption;
+    entity.priorityRank = dispatch.dispatchPriorityRank;
+    entity.promisedDeliveryAt = dispatch.dispatchPromisedDeliveryAt;
+    entity.batchId = dispatch.dispatchBatchId;
+    entity.routeSequence = dispatch.dispatchRouteSequence;
+    entity.maxStackedOrders = dispatch.dispatchMaxStackedOrders;
+    entity.dispatchTimeoutSeconds = dispatch.dispatchTimeoutSeconds;
+    entity.driverResponseTimeoutSeconds =
+      dispatch.dispatchDriverResponseTimeoutSeconds;
     entity.status = dispatch.dispatchStatus;
     entity.driverId = dispatch.dispatchDriverId;
     entity.matchedDriverIds = dispatch.dispatchMatchedDriverIds;

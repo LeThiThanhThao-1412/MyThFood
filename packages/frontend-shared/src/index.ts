@@ -1,20 +1,126 @@
 // Stores
-export { useAuthStore } from './stores/auth.store';
-export { useCartStore } from './stores/cart.store';
-export type { CartItem } from './stores/cart.store';
+export { useAuthStore } from "./stores/auth.store";
+export {
+  useCartStore,
+  computeUnitPrice,
+  buildVariantKey,
+  computeCartItemPricing,
+  computeCartLinePricing,
+  computeCartSubtotal,
+} from "./stores/cart.store";
+export type {
+  CartItem,
+  AddCartItemInput,
+  CartItemPricing,
+} from "./stores/cart.store";
+export { useLocationStore } from "./stores/location.store";
+export type { UserLocation } from "./stores/location.store";
+export {
+  useSearchHistoryStore,
+  MAX_SEARCH_HISTORY,
+} from "./stores/search-history.store";
+export { useFavoritesStore } from "./stores/favorites.store";
+export { useFavoriteDishesStore } from "./stores/favorite-dishes.store";
+
+// Constants
+export {
+  FOOD_CATEGORIES,
+  PRIMARY_CATEGORIES,
+  SECONDARY_CATEGORIES,
+  ALL_CATEGORY,
+  OTHER_CATEGORY_KEY,
+  getFoodCategoryLabel,
+  getSecondaryCategoryLabel,
+} from "./constants/food-categories";
+export type {
+  FoodCategory,
+  FoodSubCategory,
+} from "./constants/food-categories";
+export {
+  DELIVERY_OPTION_META,
+  DELIVERY_OPTION_LIST,
+  deliveryOptionMeta,
+  deliveryPriorityRank,
+} from "./constants/delivery-options";
+export type { DeliveryOptionMeta } from "./constants/delivery-options";
+
+// Utils
+export { haversineKm, formatDistance } from "./utils/distance";
+export {
+  DRIVER_SAMPLING_PROFILES,
+  distanceMeters,
+  isValidFix,
+  shouldSendFix,
+} from "./utils/location-sampling";
+export type {
+  GeoFix,
+  GeoFixState,
+  SamplingProfile,
+} from "./utils/location-sampling";
+export { fetchRoute, fetchRouteThrough } from "./utils/route";
+export type { RouteInfo, RoutePoint } from "./utils/route";
+export { searchAddress, reverseGeocodeAddress } from "./utils/geocoding";
+export type { GeocodingSuggestion } from "./utils/geocoding";
+export { canAccessApp, APP_ALLOWED_ROLES } from "./utils/role-access";
+export type { AppKey } from "./utils/role-access";
+export {
+  getAccountBlockInfo,
+  getAccountBlockFromProfile,
+  storeAccountBlock,
+  consumeStoredAccountBlock,
+  ACCOUNT_BLOCK_STORAGE_KEY,
+  formatAccountDate,
+} from "./utils/account-status";
+export type {
+  AccountBlockCode,
+  AccountBlockInfo,
+  AccountProfileLike,
+} from "./utils/account-status";
+export {
+  MEAL_PERIODS,
+  getMealPeriod,
+  deriveFoodTheme,
+  dedupeByMerchant,
+} from "./utils/discovery";
+export type { MealPeriod } from "./utils/discovery";
 
 // Hooks
-export { useAuth } from './hooks/use-auth';
+export { useAuth } from "./hooks/use-auth";
+export { useNotifications } from "./hooks/use-notifications";
+export { useChatUnread } from "./hooks/use-chat-unread";
 
 // Providers
-export { default as AuthProvider } from './providers/AuthProvider';
+export { default as AuthProvider } from "./providers/AuthProvider";
 
 // Components
-export { default as Button } from './components/Button';
-export { default as Card } from './components/Card';
-export { default as Badge } from './components/Badge';
-export { default as StatCard } from './components/StatCard';
-export { default as Input } from './components/Input';
-export { Skeleton, StatCardSkeleton, TableRowSkeleton, CardSkeleton, EmptyState, ErrorState } from './components/Input';
-export { default as MapView } from './components/MapView';
-export { ErrorBoundary } from './components/ErrorBoundary';
+export { default as Button } from "./components/Button";
+export { default as Card } from "./components/Card";
+export { default as Badge } from "./components/Badge";
+export { default as StatCard } from "./components/StatCard";
+export { default as Input } from "./components/Input";
+export {
+  Skeleton,
+  StatCardSkeleton,
+  TableRowSkeleton,
+  CardSkeleton,
+  EmptyState,
+  ErrorState,
+} from "./components/Input";
+export { DesktopSidebar } from "./components/DesktopSidebar";
+export type { NavItem } from "./components/DesktopSidebar";
+export { AppShell } from "./components/AppShell";
+export type { AppShellProps } from "./components/AppShell";
+export { default as LocationGate } from "./components/LocationGate";
+export type { LocationGateProps } from "./components/LocationGate";
+export { default as NotificationBell } from "./components/NotificationBell";
+export { default as Drawer } from "./components/Drawer";
+export type { DrawerProps } from "./components/Drawer";
+export { default as ChatDrawer } from "./components/ChatDrawer";
+export { default as ChatListDrawer } from "./components/ChatListDrawer";
+// MapView is NOT re-exported here because it imports maplibre-gl (which needs a
+// browser/WebGL context and accesses `window`) and would break SSR for ALL pages
+// that import anything from this package.
+// Import directly from '@mythfood/frontend-shared/components/MapView' with next/dynamic + ssr:false.
+export type { MapLocation } from "./components/MapView";
+export { ErrorBoundary } from "./components/ErrorBoundary";
+export { default as AccountBlockNotice } from "./components/AccountBlockNotice";

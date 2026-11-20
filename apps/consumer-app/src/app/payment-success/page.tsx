@@ -1,13 +1,13 @@
-'use client';
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { orderApi } from '@mythfood/api-client';
-import { useAuthStore } from '@mythfood/frontend-shared';
+"use client";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { orderApi } from "@mythfood/api-client";
+import { useAuthStore } from "@mythfood/frontend-shared";
 
 function toNum(v: unknown): number {
-  if (typeof v === 'number') return v;
-  if (typeof v === 'string') return parseFloat(v) || 0;
+  if (typeof v === "number") return v;
+  if (typeof v === "string") return parseFloat(v) || 0;
   return 0;
 }
 
@@ -15,19 +15,28 @@ export default function PaymentSuccessPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isAuthenticated } = useAuthStore();
-  const orderId = searchParams.get('orderId');
+  const orderId = searchParams.get("orderId");
 
   const [order, setOrder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isAuthenticated) { router.push('/login'); return; }
-    if (!orderId) { setLoading(false); return; }
+    if (!isAuthenticated) {
+      router.push("/login");
+      return;
+    }
+    if (!orderId) {
+      setLoading(false);
+      return;
+    }
     async function load() {
       try {
         const o = await orderApi.getById(orderId!);
         setOrder(o);
-      } catch {} finally { setLoading(false); }
+      } catch {
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, [orderId, isAuthenticated, router]);
@@ -65,7 +74,9 @@ export default function PaymentSuccessPage() {
               <div className="bg-[#f8fafb] rounded-2xl p-5 mb-5 text-left text-sm">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-gray-500">Mã đơn hàng</span>
-                  <span className="font-bold text-[#ff6b35] text-base">#{order.id?.slice(0, 8)}</span>
+                  <span className="font-bold text-[#ff6b35] text-base">
+                    #{order.id?.slice(0, 8)}
+                  </span>
                 </div>
                 <div className="h-px bg-gray-100 mb-3" />
                 {order.items?.length > 0 && (
@@ -74,8 +85,15 @@ export default function PaymentSuccessPage() {
                     <div className="space-y-1.5">
                       {order.items.map((item: any, i: number) => (
                         <div key={i} className="flex justify-between text-xs">
-                          <span className="text-gray-700">{item.quantity}x {item.name}</span>
-                          <span className="text-gray-600 font-medium">{((item.unitPrice || 0) * item.quantity).toLocaleString('vi-VN')}₫</span>
+                          <span className="text-gray-700">
+                            {item.quantity}x {item.name}
+                          </span>
+                          <span className="text-gray-600 font-medium">
+                            {(
+                              (item.unitPrice || 0) * item.quantity
+                            ).toLocaleString("vi-VN")}
+                            ₫
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -85,7 +103,9 @@ export default function PaymentSuccessPage() {
                 <div className="space-y-1.5 text-xs">
                   <div className="flex justify-between text-gray-500">
                     <span>Địa chỉ giao hàng</span>
-                    <span className="text-right max-w-[180px] truncate">{order.deliveryAddress || '—'}</span>
+                    <span className="text-right max-w-[180px] truncate">
+                      {order.deliveryAddress || "—"}
+                    </span>
                   </div>
                   <div className="flex justify-between text-gray-500">
                     <span>Phương thức thanh toán</span>
@@ -94,13 +114,19 @@ export default function PaymentSuccessPage() {
                 </div>
                 <div className="h-px bg-gray-100 my-3" />
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-600 font-semibold">Tổng thanh toán</span>
-                  <span className="text-xl font-extrabold text-[#ff6b35]">{toNum(order.totalAmount).toLocaleString('vi-VN')}₫</span>
+                  <span className="text-gray-600 font-semibold">
+                    Tổng thanh toán
+                  </span>
+                  <span className="text-xl font-extrabold text-[#ff6b35]">
+                    {toNum(order.totalAmount).toLocaleString("vi-VN")}₫
+                  </span>
                 </div>
               </div>
             ) : (
               <div className="bg-green-50 rounded-2xl p-5 mb-5 text-center">
-                <p className="text-green-700 text-sm">Đơn hàng của bạn đã được ghi nhận!</p>
+                <p className="text-green-700 text-sm">
+                  Đơn hàng của bạn đã được ghi nhận!
+                </p>
               </div>
             )}
 

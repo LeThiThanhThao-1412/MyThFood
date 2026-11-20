@@ -7,6 +7,7 @@ export interface WalletProps {
   ownerId: string;
   ownerType: string;
   balance?: number;
+  heldBalance?: number;
   currency?: string;
 }
 
@@ -15,6 +16,7 @@ export class Wallet {
   readonly ownerId: string;
   readonly ownerType: string;
   private _balance: number;
+  private _heldBalance: number;
   readonly currency: string;
 
   private constructor(props: Required<WalletProps>) {
@@ -22,6 +24,7 @@ export class Wallet {
     this.ownerId = props.ownerId;
     this.ownerType = props.ownerType;
     this._balance = props.balance!;
+    this._heldBalance = props.heldBalance ?? 0;
     this.currency = props.currency!;
   }
 
@@ -31,12 +34,21 @@ export class Wallet {
       ownerId: props.ownerId,
       ownerType: props.ownerType,
       balance: props.balance || 0,
+      heldBalance: props.heldBalance || 0,
       currency: props.currency || "VND",
     });
   }
 
   get walletBalance(): number {
     return this._balance;
+  }
+
+  get walletHeldBalance(): number {
+    return this._heldBalance;
+  }
+
+  get availableBalance(): number {
+    return this._balance - this._heldBalance;
   }
 
   credit(amount: number): void {
@@ -48,5 +60,19 @@ export class Wallet {
     if (amount <= 0) throw new Error("Debit amount must be positive");
     if (amount > this._balance) throw new Error("Insufficient balance");
     this._balance -= amount;
+  }
+
+  hold(amount: number): void {
+    if (amount <= 0) throw new Error("Hold amount must be positive");
+    if (amount > this.availableBalance)
+      throw new Error("Insufficient available balance to hold");
+    this._heldBalance += amount;
+  }
+
+  release(amount: number): void {
+    if (amount <= 0) throw new Error("Release amount must be positive");
+    if (amount > this._heldBalance)
+      throw new Error("Release amount exceeds held balance");
+    this._heldBalance -= amount;
   }
 }

@@ -10,6 +10,8 @@ export interface MenuUpdatedEventPayload {
   action: "CREATED" | "UPDATED" | "DELETED" | "TOGGLED" | "PRICE_CHANGED";
   oldPrice?: number;
   newPrice?: number;
+  changedBy?: string | null;
+  reason?: string | null;
 }
 
 export const MENU_UPDATED_EVENT_TYPE = "com.mythfood.merchant.menu.updated";

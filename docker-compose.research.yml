@@ -1,0 +1,207 @@
+# =============================================================================
+# MyThFood — LỚP PHỦ (OVERLAY) CHO THỰC NGHIỆM E1–E6
+# =============================================================================
+# Tệp này KHÔNG thay thế docker-compose.yml. Môi trường dev giữ nguyên.
+# Luôn chạy kèm hai tệp:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.research.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.research.yml ps
+#
+# Quy ước (đọc trước khi sửa):
+#   1. deploy.resources.limits = TRẦN tài nguyên (Compose v2 ánh xạ sang
+#      --cpus / --memory khi tạo container). Đây là mức cấp phát của thực nghiệm.
+#   2. reservations.cpus bị Compose v2 BỎ QUA — không dùng để suy luận gì.
+#   3. healthcheck ở đây là LIVENESS: tiến trình Node còn nghe cổng và trả < 500.
+#      Nó KHÔNG chứng minh service đã sẵn sàng nghiệp vụ (DB, migration, Redis).
+#      READINESS do harness kiểm riêng trước khi bắt đầu đo (xem §2.2 giao thức).
+#   4. Mọi giá trị trong tệp này phải GIỐNG NHAU ở biến thể M2 và M1-sim.
+#      Khác biệt duy nhất được phép là biến môi trường SERVICE_CLIENT_MODE.
+#   5. Kafka + Zookeeper KHÔNG bị tắt ở đây (overlay không xoá được service).
+#      Harness dừng chúng bằng `docker stop mythfood-kafka mythfood-zookeeper`
+#      và ghi lại thời điểm dừng vào meta.json.
+# =============================================================================
+
+x-limits-512: &lim512
+  deploy:
+    resources:
+      limits:
+        cpus: "1.0"
+        memory: 512M
+
+# order-service là dịch vụ trên đường tới hạn của W2/W3/W4 (nhận 300 VU ở W4)
+# nên được cấp trần bộ nhớ cao hơn. Áp dụng NHƯ NHAU cho M2 và M1-sim.
+x-limits-1g: &lim1g
+  deploy:
+    resources:
+      limits:
+        cpus: "1.0"
+        memory: 1G
+
+# Liveness chung: 90 s start_period vì 15 service khởi động chồng nhau.
+x-hc: &hc
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 90s
+
+services:
+  # ---------------------------------------------------------------------------
+  # Hạ tầng dữ liệu — trần cao hơn backend
+  # ---------------------------------------------------------------------------
+  postgres:
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  # ---------------------------------------------------------------------------
+  # 15 dịch vụ backend — trần giống nhau, chỉ khác cổng probe
+  # ---------------------------------------------------------------------------
+  identity-service:
+    <<: *lim512
+    # Throttle của identity-service mặc định là 3 request/giây/route (app.module.ts).
+    # Đo thực tế: 100+ lần đăng nhập trong `setup()` của k6 sẽ dính 429 và làm
+    # hỏng cả run. Vì vậy lớp phủ đặt THROTTLE_TTL=0 (nhánh "tắt throttle" có sẵn
+    # trong app.module.ts) — CHỈ áp dụng cho môi trường đo, giống nhau ở cả hai
+    # biến thể, và phải khai báo ở Mục VII của bài báo. Ghi đè bằng biến môi
+    # trường THROTTLE_TTL nếu cần chạy với throttle thật.
+    environment:
+      THROTTLE_TTL: ${THROTTLE_TTL:-0}
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/v1/auth/login').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  consumer-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/api/v1/consumers/profile').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  merchant-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3003/health').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  # order-service: công tắc chế độ + thư mục log hop (đã có lớp đo: packages/instrumentation)
+  order-service:
+    <<: *lim1g
+    environment:
+      SERVICE_CLIENT_MODE: ${SERVICE_CLIENT_MODE:-http}
+      RUN_ID: ${RUN_ID:-adhoc}
+      HOP_LOG_DIR: /logs
+      # Mặc định của môi trường dev là 3 đơn đang mở / khách (chống lạm dụng).
+      # W2 và W4 đặt hàng liên tục bằng cùng một tập 100 khách, nên nếu giữ trần
+      # này thì từ đơn thứ 4 trở đi mọi yêu cầu nhận 409 và phép đo độ trễ mất
+      # nghĩa (đã quan sát thấy khi chạy thử: 409 sau 3 đơn). Lớp phủ đặt 0 =
+      # KHÔNG giới hạn, giống nhau ở cả hai biến thể — khai báo ở Mục VII.
+      MAX_ACTIVE_ORDERS_PER_CONSUMER: ${MAX_ACTIVE_ORDERS_PER_CONSUMER:-0}
+    volumes:
+      - ./logs:/logs
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3004/api/v1/orders').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  inventory-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3005/api/v1/inventory').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  payment-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3006/api/v1/payments').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  driver-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3007/api/v1/drivers').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  dispatch-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3008/api/v1/dispatches').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  wallet-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3009/api/v1/wallets').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  upload-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3010/api/v1/uploads').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  review-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3011/api/v1/reviews').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  promotion-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3012/api/v1/promotions').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  notification-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3013/api/v1/notifications').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  resolution-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3014/api/v1/resolutions').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  chat-service:
+    <<: *lim512
+    healthcheck:
+      <<: *hc
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3015/api/v1/chat/conversations').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+
+  # ---------------------------------------------------------------------------
+  # Bộ sinh tải — chạy TRONG cùng network để không đi qua port-proxy của
+  # Docker Desktop (giảm 1 tầng biến thiên, giống nhau ở cả hai biến thể).
+  # KHÔNG tính container này vào thống kê tài nguyên của SUT.
+  # Dùng:  docker compose -f docker-compose.yml -f docker-compose.research.yml \
+  #          --profile load run --rm k6 run /work/w3-lifecycle.js
+  # ---------------------------------------------------------------------------
+  k6:
+    image: ${K6_IMAGE:-grafana/k6:0.54.0}
+    container_name: mythfood-k6
+    profiles: ["load"]
+    user: "0:0"
+    working_dir: /work
+    volumes:
+      - ./k6:/work:ro
+      - ./logs:/logs
+    environment:
+      RUN_ID: ${RUN_ID:-adhoc}
+      BASE_URL: http://order-service:3004
+      IDENTITY_URL: http://identity-service:3001
+      MERCHANT_URL: http://merchant-service:3003
+      HOP_LOG_DIR: /logs
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    networks:
+      - mythfood-network

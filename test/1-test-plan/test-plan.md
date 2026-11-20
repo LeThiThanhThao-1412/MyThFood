@@ -3,26 +3,28 @@
 > **Version:** 1.0  
 > **Date:** 2026-07-28  
 > **Author:** QA Team  
-> **Project:** MyThFood - Food Delivery Platform  
+> **Project:** MyThFood - Food Delivery Platform
 
 ---
 
 ## 1. Introduction
 
 ### 1.1 Purpose
+
 This document defines the overall test strategy, scope, approach, resources, and schedule for the MyThFood platform. It serves as the foundation for all testing activities across 10 microservices, 4 frontend applications, and the infrastructure layer.
 
 ### 1.2 Scope
 
-| Layer | Components | Test Types |
-|-------|-----------|------------|
+| Layer                | Components                                                                                                          | Test Types             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------- |
 | **Backend Services** | 10 NestJS microservices (Identity, Consumer, Merchant, Order, Inventory, Payment, Driver, Dispatch, Wallet, Upload) | Unit, Integration, API |
-| **Frontend Apps** | 4 Next.js apps (consumer-app, merchant-app, driver-app, admin-portal) | UI/UX, E2E |
-| **Infrastructure** | PostgreSQL 16, Redis 7, Kafka, Docker Compose | Smoke, Configuration |
-| **Payment** | Stripe (PaymentIntent, Transfer, Payout, Webhook) | Integration |
-| **Database** | 9 PostgreSQL databases | SQL Verification |
+| **Frontend Apps**    | 4 Next.js apps (consumer-app, merchant-app, driver-app, admin-portal)                                               | UI/UX, E2E             |
+| **Infrastructure**   | PostgreSQL 16, Redis 7, Kafka, Docker Compose                                                                       | Smoke, Configuration   |
+| **Payment**          | Stripe (PaymentIntent, Transfer, Payout, Webhook)                                                                   | Integration            |
+| **Database**         | 9 PostgreSQL databases                                                                                              | SQL Verification       |
 
 ### 1.3 Out of Scope
+
 - Performance/Load testing (future phase)
 - Security penetration testing (future phase)
 - Production deployment testing
@@ -33,21 +35,23 @@ This document defines the overall test strategy, scope, approach, resources, and
 
 ### 2.1 Service Map (from `docker-compose.yml`)
 
-| # | Service | Port | Database | Source File |
-|---|---------|------|----------|-------------|
-| 1 | Identity Service | 3001 | `mythfood_identity` | `apps/identity-service/` |
-| 2 | Consumer Service | 3002 | `mythfood_consumer` | `apps/consumer-service/` |
-| 3 | Merchant Service | 3003 | `mythfood_merchant` | `apps/merchant-service/` |
-| 4 | Order Service | 3004 | `mythfood_order` | `apps/order-service/` |
-| 5 | Inventory Service | 3005 | `mythfood_inventory` | `apps/inventory-service/` |
-| 6 | Payment Service | 3006 | `mythfood_payment` | `apps/payment-service/` |
-| 7 | Driver Service | 3007 | `mythfood_driver` | `apps/driver-service/` |
-| 8 | Dispatch Service | 3008 | `mythfood_dispatch` | `apps/dispatch-service/` |
-| 9 | Wallet Service | 3009 | `mythfood_wallet` | `apps/wallet-service/` |
-| 10 | Upload Service | 3010 | N/A (file storage) | `apps/upload-service/` |
+| #   | Service           | Port | Database             | Source File               |
+| --- | ----------------- | ---- | -------------------- | ------------------------- |
+| 1   | Identity Service  | 3001 | `mythfood_identity`  | `apps/identity-service/`  |
+| 2   | Consumer Service  | 3002 | `mythfood_consumer`  | `apps/consumer-service/`  |
+| 3   | Merchant Service  | 3003 | `mythfood_merchant`  | `apps/merchant-service/`  |
+| 4   | Order Service     | 3004 | `mythfood_order`     | `apps/order-service/`     |
+| 5   | Inventory Service | 3005 | `mythfood_inventory` | `apps/inventory-service/` |
+| 6   | Payment Service   | 3006 | `mythfood_payment`   | `apps/payment-service/`   |
+| 7   | Driver Service    | 3007 | `mythfood_driver`    | `apps/driver-service/`    |
+| 8   | Dispatch Service  | 3008 | `mythfood_dispatch`  | `apps/dispatch-service/`  |
+| 9   | Wallet Service    | 3009 | `mythfood_wallet`    | `apps/wallet-service/`    |
+| 10  | Upload Service    | 3010 | N/A (file storage)   | `apps/upload-service/`    |
 
 ### 2.2 Database Initialization
+
 Source: `docker/init-db/01-create-databases.sql` - Creates 9 databases with proper grants.
+
 ```sql
 CREATE DATABASE mythfood_identity;
 CREATE DATABASE mythfood_consumer;
@@ -61,6 +65,7 @@ CREATE DATABASE mythfood_wallet;
 ```
 
 ### 2.3 API Design
+
 - **Total endpoints:** 110 (verified from controller source files)
 - **Base path:** `/api/v1`
 - **Auth:** JWT (Bearer token) for all endpoints except `/auth/register`, `/auth/login`, and Stripe webhooks
@@ -91,23 +96,23 @@ Source: `docs/API_REFERENCE_EXISTING.md` (mapped from all `*.controller.ts` file
 
 ### 3.2 Test Types
 
-| Type | Tool | Coverage | Status |
-|------|------|----------|--------|
-| Unit Test (DDD) | Jest | 238 test cases, 11 business flows | ✅ All PASS |
-| API Test | Postman / cURL | 110 endpoints | 22 PASS, 2 FAIL, 17 not tested |
-| SQL Verification | PostgreSQL | 9 databases | Manual scripts prepared |
-| Bug Tracking | Manual | 5 identified bugs | Documented |
-| E2E Flow | Postman Runner | 11-step business flow | Partially tested |
+| Type             | Tool           | Coverage                          | Status                         |
+| ---------------- | -------------- | --------------------------------- | ------------------------------ |
+| Unit Test (DDD)  | Jest           | 238 test cases, 11 business flows | ✅ All PASS                    |
+| API Test         | Postman / cURL | 110 endpoints                     | 22 PASS, 2 FAIL, 17 not tested |
+| SQL Verification | PostgreSQL     | 9 databases                       | Manual scripts prepared        |
+| Bug Tracking     | Manual         | 5 identified bugs                 | Documented                     |
+| E2E Flow         | Postman Runner | 11-step business flow             | Partially tested               |
 
 ### 3.3 Testing Dependencies
 
-| Dependency | Version | Purpose |
-|-----------|---------|---------|
-| Docker Compose | v3.9 | Local environment |
-| PostgreSQL | 16-alpine | Primary database |
-| Redis | 7-alpine | Cache & session |
-| Kafka | 7.6.0 (Confluent) | Event bus |
-| Stripe API | 2023-10-16 | Payment processing |
+| Dependency     | Version           | Purpose            |
+| -------------- | ----------------- | ------------------ |
+| Docker Compose | v3.9              | Local environment  |
+| PostgreSQL     | 16-alpine         | Primary database   |
+| Redis          | 7-alpine          | Cache & session    |
+| Kafka          | 7.6.0 (Confluent) | Event bus          |
+| Stripe API     | 2023-10-16        | Payment processing |
 
 ---
 
@@ -154,60 +159,64 @@ curl http://localhost:3001/api/v1/auth/me
 
 ## 5. Test Deliverables
 
-| # | Deliverable | Location | Format |
-|---|-------------|----------|--------|
-| 1 | Test Plan | `test/1-test-plan/test-plan.md` | Markdown |
-| 2 | Test Cases (11 services) | `test/2-test-cases/` | Markdown |
-| 3 | Bug Reports (5 bugs) | `test/3-bug-report/` | Markdown |
-| 4 | Postman Collection (110 requests) | `test/4-api-testing-postman/` | JSON + Markdown |
-| 5 | SQL Verification Scripts | `test/5-sql-verification/` | SQL + Markdown |
+| #   | Deliverable                       | Location                        | Format          |
+| --- | --------------------------------- | ------------------------------- | --------------- |
+| 1   | Test Plan                         | `test/1-test-plan/test-plan.md` | Markdown        |
+| 2   | Test Cases (11 services)          | `test/2-test-cases/`            | Markdown        |
+| 3   | Bug Reports (5 bugs)              | `test/3-bug-report/`            | Markdown        |
+| 4   | Postman Collection (110 requests) | `test/4-api-testing-postman/`   | JSON + Markdown |
+| 5   | SQL Verification Scripts          | `test/5-sql-verification/`      | SQL + Markdown  |
 
 ---
 
 ## 6. Test Schedule
 
-| Phase | Activity | Duration | Status |
-|-------|----------|----------|--------|
-| Phase 1 | Unit Testing (DDD Aggregates) | Completed | ✅ 238/238 PASS |
-| Phase 2 | API Testing (Postman) | Completed | 22/49 PASS |
-| Phase 3 | Business Flow E2E | Completed | 10/11 PASS |
-| Phase 4 | Bug Documentation | Completed | 5 bugs documented |
-| Phase 5 | SQL Verification | Prepared | Scripts ready |
-| Phase 6 | Portfolio Package | 2026-07-28 | In Progress |
+| Phase   | Activity                      | Duration   | Status            |
+| ------- | ----------------------------- | ---------- | ----------------- |
+| Phase 1 | Unit Testing (DDD Aggregates) | Completed  | ✅ 238/238 PASS   |
+| Phase 2 | API Testing (Postman)         | Completed  | 22/49 PASS        |
+| Phase 3 | Business Flow E2E             | Completed  | 10/11 PASS        |
+| Phase 4 | Bug Documentation             | Completed  | 5 bugs documented |
+| Phase 5 | SQL Verification              | Prepared   | Scripts ready     |
+| Phase 6 | Portfolio Package             | 2026-07-28 | In Progress       |
 
 ---
 
 ## 7. Risk Assessment
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Driver/Dispatch services not deployed | High - Cannot test driver flow fully | Unit tests cover domain logic; integration deferred |
-| Payment service has 2 bugs (complete/fail) | Medium - Payment flow incomplete | Bugs documented with reproduction steps |
-| Kafka not fully integrated | Medium - Event-driven flows untested | Unit tests verify domain events independently |
-| Stripe uses test keys | Low - No real money involved | Test mode with placeholder keys |
+| Risk                                       | Impact                               | Mitigation                                          |
+| ------------------------------------------ | ------------------------------------ | --------------------------------------------------- |
+| Driver/Dispatch services not deployed      | High - Cannot test driver flow fully | Unit tests cover domain logic; integration deferred |
+| Payment service has 2 bugs (complete/fail) | Medium - Payment flow incomplete     | Bugs documented with reproduction steps             |
+| Kafka not fully integrated                 | Medium - Event-driven flows untested | Unit tests verify domain events independently       |
+| Stripe uses test keys                      | Low - No real money involved         | Test mode with placeholder keys                     |
 
 ---
 
 ## 8. Business Rules (from Source Code)
 
 ### 8.1 User Registration (`user.aggregate.ts`)
+
 - Phone number is mandatory
 - Default role: CONSUMER
 - Roles: CONSUMER, DRIVER, MERCHANT_OWNER, MERCHANT_STAFF, ADMIN
 - Status: ACTIVE → SUSPENDED → BANNED (irreversible)
 
 ### 8.2 Order Lifecycle (`order.aggregate.ts`)
+
 - Status flow: PENDING → CONFIRMED → PREPARING → READY_FOR_PICKUP → OUT_FOR_DELIVERY → DELIVERED
 - Terminal states: DELIVERED, CANCELLED, REJECTED
 - Invalid transitions throw `BusinessRuleViolationError`
 
 ### 8.3 Payment Split (`split-payment.service.ts`)
+
 - Default split: Merchant 70%, Driver 20%, Platform 10%
 - Stripe fee: ~3.5%
 - Configurable via env vars: `PAYMENT_SPLIT_MERCHANT_PERCENT`, `PAYMENT_SPLIT_DRIVER_PERCENT`, `PAYMENT_SPLIT_PLATFORM_PERCENT`
 - Fallback to defaults if percentages don't sum to 100
 
 ### 8.4 Wallet (`wallet.aggregate.ts`)
+
 - Credit amount must be positive
 - Debit amount must be positive
 - Cannot debit more than balance
@@ -218,12 +227,14 @@ curl http://localhost:3001/api/v1/auth/me
 ## 9. Entry & Exit Criteria
 
 ### Entry Criteria
+
 - [x] All services deployed via Docker Compose
 - [x] Databases initialized
 - [x] API documentation completed
 - [x] Test environment configured
 
 ### Exit Criteria
+
 - [x] 238 unit tests passing
 - [ ] All critical API endpoints tested
 - [ ] All P1 bugs documented
@@ -234,11 +245,11 @@ curl http://localhost:3001/api/v1/auth/me
 
 ## 10. References
 
-| Document | Path |
-|----------|------|
-| API Reference | `docs/API_REFERENCE_EXISTING.md` |
-| Business Flow Test Cases | `docs/BUSINESS_FLOW_TEST_CASES.md` |
-| API Test Cases | `docs/API_TEST_CASES.md` |
-| Postman Collection | `docs/POSTMAN_COLLECTION.json` |
-| Docker Compose | `mythfood/docker-compose.yml` |
-| DB Init Script | `mythfood/docker/init-db/01-create-databases.sql` |
+| Document                 | Path                                              |
+| ------------------------ | ------------------------------------------------- |
+| API Reference            | `docs/API_REFERENCE_EXISTING.md`                  |
+| Business Flow Test Cases | `docs/BUSINESS_FLOW_TEST_CASES.md`                |
+| API Test Cases           | `docs/API_TEST_CASES.md`                          |
+| Postman Collection       | `docs/POSTMAN_COLLECTION.json`                    |
+| Docker Compose           | `mythfood/docker-compose.yml`                     |
+| DB Init Script           | `mythfood/docker/init-db/01-create-databases.sql` |

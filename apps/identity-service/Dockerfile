@@ -20,10 +20,15 @@ COPY packages/common/package.json packages/common/tsconfig.json packages/common/
 COPY apps/identity-service/package.json apps/identity-service/tsconfig.json apps/identity-service/tsconfig.build.json apps/identity-service/nest-cli.json apps/identity-service/
 
 # Install pnpm globally
-RUN npm install -g pnpm@9.4.0
+# Corepack luôn tải pnpm từ registry.npmjs.org (không đọc .npmrc) nên hay chết với
+# "Internal Error: Error when performing the request". -> Cài pnpm bằng npm qua mirror npmmirror.
+RUN --mount=type=cache,id=mythfood-npm,target=/root/.npm npm install -g pnpm@9.4.0 --registry=https://registry.npmmirror.com --fetch-retries=5 --fetch-timeout=120000 --no-fund --no-audit
+
+# Install native build toolchain (bcrypt compiles from source on alpine/musl)
+RUN (for i in 1 2 3 4 5; do apk add --no-cache build-base python3 && exit 0; sleep 5; done; exit 1)
 
 # Install dependencies
-RUN pnpm install --frozen-lockfile --filter @mythfood/identity-service --prod false
+RUN --mount=type=cache,id=mythfood-pnpm-store,target=/pnpm/store pnpm install --frozen-lockfile --filter @mythfood/identity-service --prod false --store-dir=/pnpm/store --prefer-offline --package-import-method=copy
 
 # Copy source code
 COPY packages/shared-kernel/src packages/shared-kernel/src/
@@ -45,7 +50,10 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # Install pnpm and wget for healthcheck
-RUN npm install -g pnpm@9.4.0 && apk add --no-cache wget
+# Corepack luôn tải pnpm từ registry.npmjs.org (không đọc .npmrc) nên hay chết với
+# "Internal Error: Error when performing the request". -> Cài pnpm bằng npm qua mirror npmmirror.
+RUN --mount=type=cache,id=mythfood-npm,target=/root/.npm npm install -g pnpm@9.4.0 --registry=https://registry.npmmirror.com --fetch-retries=5 --fetch-timeout=120000 --no-fund --no-audit \
+    && (for i in 1 2 3 4 5; do apk add --no-cache wget tzdata && exit 0; sleep 5; done; exit 1)
 
 # Copy root configs
 COPY --from=builder /app/pnpm-lock.yaml ./
@@ -68,12 +76,14 @@ COPY --from=builder /app/apps/identity-service/dist apps/identity-service/dist/
 # Remove prepare script (husky) to avoid it failing in production
 RUN node -e "const pkg=require('./package.json');delete pkg.scripts.prepare;require('fs').writeFileSync('./package.json',JSON.stringify(pkg,null,2))"
 
-# Install production dependencies only
-RUN pnpm install --frozen-lockfile --filter @mythfood/identity-service --prod
+# Install production dependencies only (bcrypt needs build toolchain; keep libstdc++ at runtime)
+RUN (for i in 1 2 3 4 5; do apk add --no-cache libstdc++ build-base python3 && exit 0; sleep 5; done; exit 1) \
+    && pnpm install --frozen-lockfile --filter @mythfood/identity-service --prod \
+    && apk del build-base python3
 
 EXPOSE 3001
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/v1/health || exit 1
 
 CMD ["node", "apps/identity-service/dist/main.js"]

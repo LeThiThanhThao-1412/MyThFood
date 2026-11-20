@@ -8,11 +8,13 @@ import {
   Param,
   Body,
   Query,
+  Headers,
   HttpCode,
   HttpStatus,
   UseGuards,
 } from "@nestjs/common";
-import { AuthGuard } from "@nestjs/passport";
+import { Roles, RolesGuard } from "@mythfood/common";
+import { ServiceKeyOrJwtGuard } from "../../auth/service-key-or-jwt.guard";
 import { DispatchService } from "../application/dispatch.service";
 import {
   CreateDispatchDto,
@@ -21,10 +23,14 @@ import {
   DriverDeclineDto,
   CancelDispatchDto,
   QueryDispatchDto,
+  DriverCancelDto,
+  DeliveryFailedDto,
+  RecordDriverDeclineDto,
+  DriverAcceptDto,
 } from "../application/dtos/dispatch.dto";
 
 @Controller("dispatches")
-@UseGuards(AuthGuard("jwt"))
+@UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
 export class DispatchController {
   constructor(private readonly dispatchService: DispatchService) {}
 
@@ -59,6 +65,42 @@ export class DispatchController {
     };
   }
 
+  @Get("stats/stacking")
+  @Roles("ADMIN")
+  async getStackingStats(@Query("days") days?: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.dispatchService.getStackingStats(
+        days ? parseInt(days, 10) : 30,
+      ),
+    };
+  }
+
+  // ---- Tỉ lệ từ chối / không phản hồi của tài xế (admin) ----
+
+  @Get("stats/driver-compliance")
+  @Roles("ADMIN")
+  async getDriverCompliance(@Query("days") days?: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.dispatchService.getDriverComplianceView(
+        days ? parseInt(days, 10) : undefined,
+      ),
+    };
+  }
+
+  @Post("stats/driver-compliance/evaluate")
+  @Roles("ADMIN")
+  @HttpCode(HttpStatus.OK)
+  async evaluateDriverCompliance() {
+    return {
+      statusCode: HttpStatus.OK,
+      data: {
+        escalated: await this.dispatchService.evaluateDriverCompliance(),
+      },
+    };
+  }
+
   @Get("matching")
   async listMatching() {
     const dispatches = await this.dispatchService.getMatchingDispatches();
@@ -66,6 +108,16 @@ export class DispatchController {
       statusCode: HttpStatus.OK,
       data: dispatches.map((d) => this._toResponse(d)),
       total: dispatches.length,
+    };
+  }
+
+  // Case 4: danh sách orderId mà tài xế đã từ chối (để driver-app ẩn triệt để).
+  @Get("declined-by/:driverId")
+  @Roles("DRIVER", "ADMIN")
+  async getDeclinedByDriver(@Param("driverId") driverId: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.dispatchService.getDeclinedOrderIds(driverId),
     };
   }
 
@@ -78,7 +130,13 @@ export class DispatchController {
   ) {
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
-    const radius = radiusKm ? parseFloat(radiusKm) : 5;
+    // Không truyền radiusKm → dùng bán kính nhận đơn cấu hình
+    // (DISPATCH_MAX_RADIUS_KM, mặc định 5km) giống luật nhận đơn.
+    const parsedRadius = radiusKm != null ? parseFloat(radiusKm) : NaN;
+    const radius =
+      Number.isFinite(parsedRadius) && parsedRadius > 0
+        ? parsedRadius
+        : undefined;
 
     if (isNaN(lat) || isNaN(lng)) {
       return {
@@ -87,14 +145,56 @@ export class DispatchController {
       };
     }
 
-    const dispatches = await this.dispatchService.getNearbyDispatches(lat, lng, radius);
+    const nearby = await this.dispatchService.getNearbyDispatches(
+      lat,
+      lng,
+      radius,
+    );
     return {
       statusCode: HttpStatus.OK,
       data: {
         driverLocation: { latitude: lat, longitude: lng },
-        nearbyDispatches: dispatches.map((d) => this._toResponse(d)),
-        total: dispatches.length,
+        nearbyDispatches: nearby.map(({ dispatch, distanceKm }) => ({
+          ...this._toResponse(dispatch),
+          distanceFromDriverKm: Number(distanceKm.toFixed(2)),
+        })),
+        total: nearby.length,
       },
+    };
+  }
+
+  /** Lộ trình gộp đơn hiện tại của tài xế (Phase 2 - SAVER stacking). */
+  @Get("driver/:driverId/route")
+  async getDriverRoute(@Param("driverId") driverId: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.dispatchService.getDriverRoute(driverId),
+    };
+  }
+
+  /** Lộ trình của một dispatch (gồm các đơn đang gộp cùng tài xế). */
+  @Get(":id/route")
+  async getDispatchRoute(@Param("id") id: string) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.dispatchService.getDispatchRoute(id),
+    };
+  }
+
+  /**
+   * Các đơn tài xế ĐỦ ĐIỀU KIỆN nhận ngay (đã áp dụng luật gộp SAVER:
+   * còn slot, cùng tuyến, đúng bán kính, không bị khóa...). Driver-app dùng
+   * danh sách này để chỉ hiển thị đơn bấm nhận được.
+   */
+  @Get("available-for-driver/:driverId")
+  @Roles("DRIVER", "ADMIN")
+  async getAvailableForDriver(@Param("driverId") driverId: string) {
+    const dispatches =
+      await this.dispatchService.getAvailableDispatchesForDriver(driverId);
+    return {
+      statusCode: HttpStatus.OK,
+      data: dispatches.map((d) => this._toResponse(d)),
+      total: dispatches.length,
     };
   }
 
@@ -167,8 +267,24 @@ export class DispatchController {
   // ---- Matching Engine ----
 
   @Patch(":id/assign-driver")
-  async assignDriver(@Param("id") id: string, @Body() dto: AssignDriverDto) {
-    const dispatch = await this.dispatchService.assignDriver(id, dto);
+  async assignDriver(
+    @Param("id") id: string,
+    @Body() dto: AssignDriverDto,
+    @Headers("authorization") authHeader?: string,
+    @Query("isCodOrder") isCodOrderQuery?: string,
+  ) {
+    // Extract token from "Bearer <token>"
+    const authToken = authHeader?.startsWith("Bearer ")
+      ? authHeader.substring(7)
+      : authHeader;
+    const isCodOrder = isCodOrderQuery === "true" || isCodOrderQuery === "1";
+
+    const dispatch = await this.dispatchService.assignDriver(
+      id,
+      dto,
+      isCodOrder,
+      authToken,
+    );
     return {
       statusCode: HttpStatus.OK,
       data: this._toResponse(dispatch),
@@ -176,8 +292,9 @@ export class DispatchController {
   }
 
   @Patch(":id/driver-accept")
-  async driverAccept(@Param("id") id: string) {
-    const dispatch = await this.dispatchService.driverAccept(id);
+  @Roles("DRIVER", "ADMIN")
+  async driverAccept(@Param("id") id: string, @Body() dto: DriverAcceptDto) {
+    const dispatch = await this.dispatchService.driverAccept(id, dto);
     return {
       statusCode: HttpStatus.OK,
       data: this._toResponse(dispatch),
@@ -185,8 +302,54 @@ export class DispatchController {
   }
 
   @Patch(":id/driver-decline")
+  @Roles("DRIVER", "ADMIN")
   async driverDecline(@Param("id") id: string, @Body() dto: DriverDeclineDto) {
     const dispatch = await this.dispatchService.driverDecline(id, dto);
+    return {
+      statusCode: HttpStatus.OK,
+      data: this._toResponse(dispatch),
+    };
+  }
+
+  // Case 4: ghi nhận tài xế đã từ chối (dù dispatch ở trạng thái nào) để không gán lại.
+  @Patch(":id/record-driver-decline")
+  @Roles("DRIVER", "ADMIN")
+  async recordDriverDecline(
+    @Param("id") id: string,
+    @Body() dto: RecordDriverDeclineDto,
+  ) {
+    const dispatch = await this.dispatchService.recordDriverDecline(
+      id,
+      dto.driverId,
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      data: this._toResponse(dispatch),
+    };
+  }
+
+  // Case 7: tài xế đã nhận đơn nhưng hủy → ghi lý do + tìm tài xế khác.
+  @Patch(":id/driver-cancel")
+  @Roles("DRIVER", "ADMIN")
+  async driverCancel(@Param("id") id: string, @Body() dto: DriverCancelDto) {
+    const dispatch = await this.dispatchService.driverCancelAfterAccept(
+      id,
+      dto,
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      data: this._toResponse(dispatch),
+    };
+  }
+
+  // Case 8: tài xế giao hàng thất bại (khách không nhận hàng).
+  @Patch(":id/delivery-failed")
+  @Roles("DRIVER", "ADMIN")
+  async deliveryFailed(
+    @Param("id") id: string,
+    @Body() dto: DeliveryFailedDto,
+  ) {
+    const dispatch = await this.dispatchService.deliveryFailed(id, dto);
     return {
       statusCode: HttpStatus.OK,
       data: this._toResponse(dispatch),
@@ -196,6 +359,7 @@ export class DispatchController {
   // ---- Dispatch Lifecycle ----
 
   @Patch(":id/driver-arrived")
+  @Roles("DRIVER", "ADMIN")
   async driverArrived(@Param("id") id: string) {
     const dispatch = await this.dispatchService.driverArrived(id);
     return {
@@ -205,6 +369,7 @@ export class DispatchController {
   }
 
   @Patch(":id/picked-up")
+  @Roles("DRIVER", "ADMIN")
   async markPickedUp(@Param("id") id: string) {
     const dispatch = await this.dispatchService.markPickedUp(id);
     return {
@@ -214,6 +379,7 @@ export class DispatchController {
   }
 
   @Patch(":id/start-delivering")
+  @Roles("DRIVER", "ADMIN")
   async startDelivering(@Param("id") id: string) {
     const dispatch = await this.dispatchService.startDelivering(id);
     return {
@@ -223,6 +389,7 @@ export class DispatchController {
   }
 
   @Patch(":id/delivered")
+  @Roles("DRIVER", "ADMIN")
   async markDelivered(@Param("id") id: string) {
     const dispatch = await this.dispatchService.markDelivered(id);
     return {
@@ -259,9 +426,20 @@ export class DispatchController {
       id: dispatch.id.value,
       orderId: dispatch.dispatchOrderId,
       merchantId: dispatch.dispatchMerchantId,
+      merchantLatitude: dispatch.dispatchMerchantLatitude,
+      merchantLongitude: dispatch.dispatchMerchantLongitude,
       deliveryAddress: dispatch.dispatchDeliveryAddress,
       deliveryLatitude: dispatch.dispatchDeliveryLatitude,
       deliveryLongitude: dispatch.dispatchDeliveryLongitude,
+      deliveryOption: dispatch.dispatchDeliveryOption,
+      priorityRank: dispatch.dispatchPriorityRank,
+      promisedDeliveryAt: dispatch.dispatchPromisedDeliveryAt,
+      batchId: dispatch.dispatchBatchId,
+      routeSequence: dispatch.dispatchRouteSequence,
+      maxStackedOrders: dispatch.dispatchMaxStackedOrders,
+      dispatchTimeoutSeconds: dispatch.dispatchTimeoutSeconds,
+      driverResponseTimeoutSeconds:
+        dispatch.dispatchDriverResponseTimeoutSeconds,
       status: dispatch.dispatchStatus,
       driverId: dispatch.dispatchDriverId,
       matchedDriverIds: dispatch.dispatchMatchedDriverIds,

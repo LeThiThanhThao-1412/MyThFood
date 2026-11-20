@@ -7,6 +7,22 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Creating Test Accounts" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 
+# ------------------------------------------------------------------
+# HELPER: Promote an account to ADMIN directly in the DB.
+# identity-service blocks self-registering ADMIN (only CONSUMER/DRIVER/
+# MERCHANT_OWNER are allowed), so the ADMIN role must be set at DB level.
+# ------------------------------------------------------------------
+function Set-AdminRole {
+    param([string]$Phone)
+    docker exec -e PGPASSWORD=$env:DB_PASSWORD mythfood-postgres psql -U mythfood -d mythfood_identity -c "UPDATE users SET roles = 'CONSUMER,ADMIN' WHERE phone_number = '$Phone';" 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "  [OK] ADMIN role set for $Phone" -ForegroundColor Green
+    } else {
+        Write-Host "  [WARN] Could not set ADMIN role (docker/DB not reachable)." -ForegroundColor Yellow
+        Write-Host "  Fix manually: docker exec -e PGPASSWORD=$env:DB_PASSWORD mythfood-postgres psql -U mythfood -d mythfood_identity -c ""UPDATE users SET roles = 'CONSUMER,ADMIN' WHERE phone_number = '$Phone';""" -ForegroundColor Yellow
+    }
+}
+
 # ==========================================
 # 1. DRIVER ACCOUNT
 # ==========================================
@@ -102,8 +118,6 @@ try {
     $consumerProfileBody = @{
         userId = $consumerUserId
         fullName = "Test User"
-        phone = $consumerPhone
-        email = "test@example.com"
     } | ConvertTo-Json
     Invoke-RestMethod -Uri "http://localhost:3002/api/v1/consumers" -Method Post -Body $consumerProfileBody -Headers $consumerHeaders | Out-Null
     Write-Host "  Consumer profile created" -ForegroundColor Green
@@ -174,6 +188,9 @@ $adminLoginBody = @{ phoneNumber = $adminPhone; password = $adminPass } | Conver
 $adminLoginResp = Invoke-RestMethod -Uri "$identityUrl/auth/login" -Method Post -Body $adminLoginBody -ContentType "application/json"
 $adminToken = $adminLoginResp.data.accessToken
 Write-Host "  Admin logged in! Token: $($adminToken.Substring(0, 30))..." -ForegroundColor Green
+
+# Promote to ADMIN at DB level (identity-service sanitizes ADMIN on self-register)
+Set-AdminRole -Phone $adminPhone
 
 # ==========================================
 # SUMMARY

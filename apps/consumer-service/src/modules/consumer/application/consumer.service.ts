@@ -4,7 +4,7 @@ import {
   DomainError,
   EntityNotFoundError,
 } from "@mythfood/shared-kernel";
-import { Consumer, Gender } from "../domain/consumer.aggregate";
+import { Consumer, ConsumerStatus, Gender } from "../domain/consumer.aggregate";
 import { ConsumerId } from "../domain/consumer-id";
 import { Address, GpsCoordinates } from "../domain/address.vo";
 import { PaymentMethod, PaymentMethodType } from "../domain/payment-method.vo";
@@ -21,6 +21,12 @@ export class ConsumerService {
     dateOfBirth?: Date;
     gender?: Gender;
   }): Promise<Result<Consumer, DomainError>> {
+    // Idempotent: nếu đã có hồ sơ cho userId thì trả về hồ sơ hiện có,
+    // tránh tạo trùng khi nhiều nơi (dashboard/checkout/profile) đồng thời auto-create.
+    const existing = await this.repository.findByUserId(props.userId);
+    if (existing) {
+      return Result.ok(existing);
+    }
     const result = Consumer.create(props);
     if (result.isFailure) return result;
     await this.repository.save(result.value);
@@ -33,6 +39,34 @@ export class ConsumerService {
 
   async getByUserId(userId: string): Promise<Consumer | null> {
     return this.repository.findByUserId(userId);
+  }
+
+  async updateStatus(
+    id: string,
+    status: ConsumerStatus,
+  ): Promise<Result<Consumer, DomainError>> {
+    const consumer = await this.repository.findById(ConsumerId.from(id));
+    if (!consumer) return Result.fail(new EntityNotFoundError("Consumer", id));
+    if (status === "SUSPENDED") {
+      consumer.suspend();
+    } else if (status === "BANNED") {
+      consumer.ban();
+    } else {
+      consumer.reactivate();
+    }
+    await this.repository.save(consumer);
+    return Result.ok(consumer);
+  }
+
+  async verify(
+    id: string,
+    idCardNumber: string,
+  ): Promise<Result<Consumer, DomainError>> {
+    const consumer = await this.repository.findById(ConsumerId.from(id));
+    if (!consumer) return Result.fail(new EntityNotFoundError("Consumer", id));
+    consumer.verify(idCardNumber);
+    await this.repository.save(consumer);
+    return Result.ok(consumer);
   }
 
   async updateProfile(
@@ -186,8 +220,11 @@ export class ConsumerService {
       type?: string;
     },
   ): Promise<Result<Consumer, DomainError>> {
-    const consumer = await this.repository.findById(ConsumerId.from(consumerId));
-    if (!consumer) return Result.fail(new EntityNotFoundError("Consumer", consumerId));
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer)
+      return Result.fail(new EntityNotFoundError("Consumer", consumerId));
     const result = consumer.updateAddress(addressId, {
       label: props.label,
       fullAddress: props.fullAddress,
@@ -215,8 +252,11 @@ export class ConsumerService {
       expiryDate?: Date;
     },
   ): Promise<Result<Consumer, DomainError>> {
-    const consumer = await this.repository.findById(ConsumerId.from(consumerId));
-    if (!consumer) return Result.fail(new EntityNotFoundError("Consumer", consumerId));
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer)
+      return Result.fail(new EntityNotFoundError("Consumer", consumerId));
     const r = consumer.removePaymentMethod(pmId);
     if (r.isFailure) return Result.fail(r.error);
     const mr = PaymentMethod.create(props);
@@ -225,5 +265,63 @@ export class ConsumerService {
     if (addR.isFailure) return Result.fail(addR.error);
     await this.repository.save(consumer);
     return Result.ok(consumer);
+  }
+
+  // ---- Favorites (Yêu thích nhà hàng) ----
+
+  async getFavorites(consumerId: string): Promise<string[]> {
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer) return [];
+    return consumer.favoriteMerchantIdList;
+  }
+
+  /** Returns the new state: `true` = added, `false` = removed. */
+  async toggleFavorite(
+    consumerId: string,
+    merchantId: string,
+  ): Promise<Result<{ added: boolean; favorites: string[] }, DomainError>> {
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer)
+      return Result.fail(new EntityNotFoundError("Consumer", consumerId));
+    const r = consumer.toggleFavorite(merchantId);
+    if (r.isFailure) return Result.fail(r.error);
+    await this.repository.save(consumer);
+    return Result.ok({
+      added: r.value,
+      favorites: consumer.favoriteMerchantIdList,
+    });
+  }
+
+  // ---- Favorite menu items (Yêu thích món ăn) ----
+
+  async getFavoriteMenuItems(consumerId: string): Promise<string[]> {
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer) return [];
+    return consumer.favoriteMenuItemIdList;
+  }
+
+  /** Returns the new state: `true` = added, `false` = removed. */
+  async toggleFavoriteMenuItem(
+    consumerId: string,
+    menuItemId: string,
+  ): Promise<Result<{ added: boolean; favorites: string[] }, DomainError>> {
+    const consumer = await this.repository.findById(
+      ConsumerId.from(consumerId),
+    );
+    if (!consumer)
+      return Result.fail(new EntityNotFoundError("Consumer", consumerId));
+    const r = consumer.toggleFavoriteMenuItem(menuItemId);
+    if (r.isFailure) return Result.fail(r.error);
+    await this.repository.save(consumer);
+    return Result.ok({
+      added: r.value,
+      favorites: consumer.favoriteMenuItemIdList,
+    });
   }
 }

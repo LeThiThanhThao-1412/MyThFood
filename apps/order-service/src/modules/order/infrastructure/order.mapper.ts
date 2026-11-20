@@ -13,6 +13,7 @@ export class OrderMapper {
     const entity = new OrderEntity();
     entity.id = order.id.toString();
     entity.consumer_id = order.orderConsumerId;
+    entity.user_id = order.orderUserId;
     entity.merchant_id = order.orderMerchantId;
     entity.order_type = order.orderTypeValue;
     entity.status = order.orderStatus;
@@ -20,15 +21,24 @@ export class OrderMapper {
     entity.delivery_fee = order.orderDeliveryFee;
     entity.service_fee = order.orderServiceFee;
     entity.discount = order.orderDiscount;
+    entity.discount_funded_by = order.orderDiscountFundedBy;
     entity.total_amount = order.orderTotalAmount;
     entity.delivery_address = order.orderDeliveryAddress;
     entity.delivery_latitude = order.orderDeliveryLatitude;
     entity.delivery_longitude = order.orderDeliveryLongitude;
     entity.estimated_delivery_time = order.orderEstimatedDeliveryTime;
+    entity.delivery_option = order.orderDeliveryOption;
+    entity.delivery_option_fee = order.orderDeliveryOptionFee;
+    entity.priority_rank = order.orderPriorityRank;
+    entity.promised_delivery_at = order.orderPromisedDeliveryAt;
     entity.notes = order.orderNotes;
     entity.driver_id = order.orderDriverId;
+    entity.delivery_proof_photo_url = order.orderDeliveryProofPhotoUrl;
     entity.cancel_reason = order.orderCancelReason;
     entity.rejection_reason = order.orderRejectionReason;
+    entity.rejection_source = order.orderRejectionSource;
+    entity.payment_method = order.orderPaymentMethod;
+    entity.items_version = order.orderItemsVersion;
     return entity;
   }
 
@@ -41,11 +51,15 @@ export class OrderMapper {
       entity.id = uuid();
       entity.order_id = order.id.toString();
       entity.menu_item_id = item.menuItemId;
+      entity.image_url = item.imageUrl;
       entity.name = item.name;
       entity.quantity = item.quantity;
       entity.unit_price = item.unitPrice;
+      entity.original_price = item.originalPrice ?? null;
+      entity.flash_sale_funded_by = item.flashSaleFundedBy ?? null;
       entity.subtotal = item.subtotal;
       entity.special_instructions = item.specialInstructions;
+      entity.options = (item.options as any) ?? null;
       return entity;
     });
   }
@@ -60,31 +74,47 @@ export class OrderMapper {
     const items: OrderItemProps[] = itemEntities.map((item) => ({
       menuItemId: item.menu_item_id,
       name: item.name,
+      imageUrl: item.image_url,
       quantity: item.quantity,
       unitPrice: item.unit_price,
+      originalPrice: item.original_price ?? null,
+      flashSaleFundedBy: item.flash_sale_funded_by ?? null,
       subtotal: item.subtotal,
       specialInstructions: item.special_instructions,
+      options: (item.options as any) ?? null,
     }));
 
     return Order.rehydrate(OrderId.from(orderEntity.id), {
       consumerId: orderEntity.consumer_id,
+      userId: orderEntity.user_id,
       merchantId: orderEntity.merchant_id,
       orderType: orderEntity.order_type as "DELIVERY" | "PICKUP",
       status: orderEntity.status as Order["orderStatus"],
       items,
-      subtotal: orderEntity.subtotal,
-      deliveryFee: orderEntity.delivery_fee,
-      serviceFee: orderEntity.service_fee,
-      discount: orderEntity.discount,
-      totalAmount: orderEntity.total_amount,
+      subtotal: Number(orderEntity.subtotal),
+      deliveryFee: Number(orderEntity.delivery_fee),
+      serviceFee: Number(orderEntity.service_fee),
+      discount: Number(orderEntity.discount),
+      discountFundedBy: orderEntity.discount_funded_by || "MERCHANT",
+      totalAmount: Number(orderEntity.total_amount),
       deliveryAddress: orderEntity.delivery_address,
       deliveryLatitude: orderEntity.delivery_latitude,
       deliveryLongitude: orderEntity.delivery_longitude,
       estimatedDeliveryTime: orderEntity.estimated_delivery_time,
+      deliveryOption: orderEntity.delivery_option as any,
+      deliveryOptionFee: Number(orderEntity.delivery_option_fee ?? 0),
+      priorityRank: orderEntity.priority_rank ?? 1,
+      promisedDeliveryAt: orderEntity.promised_delivery_at ?? null,
       notes: orderEntity.notes,
       driverId: orderEntity.driver_id,
+      deliveryProofPhotoUrl: orderEntity.delivery_proof_photo_url ?? null,
       cancelReason: orderEntity.cancel_reason,
       rejectionReason: orderEntity.rejection_reason,
+      rejectionSource: orderEntity.rejection_source,
+      paymentMethod: orderEntity.payment_method || "CASH",
+      itemsVersion: orderEntity.items_version ?? 1,
+      createdAt: orderEntity.created_at,
+      updatedAt: orderEntity.updated_at,
     });
   }
 }

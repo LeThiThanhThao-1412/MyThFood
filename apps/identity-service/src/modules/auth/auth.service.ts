@@ -8,6 +8,11 @@ import { UserId } from "../user/domain/user-id";
 import { Password } from "../user/domain/password.vo";
 import { RegisterUserCommand } from "../user/application/commands/register-user.command";
 import { UserRole } from "../user/domain/user.aggregate";
+import { UserAdminService } from "../user/application/user-admin.service";
+import {
+  accountBlockException,
+  rejectedAccountDeletedException,
+} from "./account-block.util";
 
 export interface AuthTokens {
   accessToken: string;
@@ -21,8 +26,17 @@ export interface AuthTokens {
   };
 }
 
-/** Allowed roles for self-registration (cannot self-assign elevated roles) */
-const ALLOWED_SELF_REGISTER_ROLES: UserRole[] = ["CONSUMER", "DRIVER"];
+/**
+ * Allowed roles for self-registration.
+ * CONSUMER, DRIVER and MERCHANT_OWNER can self-register (a restaurant owner
+ * signs up to open a store, then admin approves the store).
+ * MERCHANT_STAFF (assigned by owner) and ADMIN (assigned by admin) cannot.
+ */
+const ALLOWED_SELF_REGISTER_ROLES: UserRole[] = [
+  "CONSUMER",
+  "DRIVER",
+  "MERCHANT_OWNER",
+];
 
 @Injectable()
 export class AuthService {
@@ -32,6 +46,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly commandBus: CommandBus,
     private readonly userRepository: UserRepository,
+    private readonly userAdminService: UserAdminService,
   ) {}
 
   async register(dto: {
@@ -90,17 +105,41 @@ export class AuthService {
       throw new UnauthorizedException("Invalid phone number or password");
     }
 
-    if (!user.isActive()) {
-      throw new UnauthorizedException("Account is not active");
+    // Auto-unlock nếu tài khoản bị khóa có thời hạn và đã hết hạn.
+    if (user.autoUnlockIfExpired()) {
+      await this.userRepository.activateById(user.id);
+      await this.userAdminService.syncExternalAccountStatus(user, "ACTIVE");
     }
 
+    // Tài khoản bị từ chối quá 3 ngày → xóa vĩnh viễn, không thể đăng nhập.
+    if (user.isRejectionExpired()) {
+      await this.userRepository.purgeById(user.id);
+      this.logger.log(
+        `Purged rejected account ${user.id.toString()} (retention exceeded)`,
+      );
+      throw rejectedAccountDeletedException(user);
+    }
+
+    // Xác thực mật khẩu TRƯỚC khi tiết lộ trạng thái khóa/từ chối của tài khoản.
     const isValid = await user.verifyPassword(password);
     if (!isValid) {
       throw new UnauthorizedException("Invalid phone number or password");
     }
 
+    // Tài khoản bị khóa / khóa vĩnh viễn / bị từ chối / chưa kích hoạt:
+    // trả 403 kèm thông báo + lý do để app hiển thị cho người dùng.
+    const blocked = accountBlockException(user);
+    if (blocked) {
+      throw blocked;
+    }
+
     user.recordLogin();
-    await this.userRepository.save(user);
+    // Chỉ cập nhật last_login_at, tránh ghi đè trạng thái nếu admin vừa
+    // khóa/từ chối tài khoản trong lúc người dùng đang đăng nhập.
+    await this.userRepository.updateLastLogin(
+      user.id,
+      user.lastLogin ?? new Date(),
+    );
 
     return this.generateTokens(user);
   }
@@ -146,17 +185,24 @@ export class AuthService {
   }
 
   // ---- Change Password (FIX #18: removed inline require) ----
-  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
     const id = UserId.from(userId);
     const user = await this.userRepository.findById(id);
     if (!user) throw new UnauthorizedException("User not found");
 
     const isValid = await user.verifyPassword(currentPassword);
-    if (!isValid) throw new UnauthorizedException("Current password is incorrect");
+    if (!isValid)
+      throw new UnauthorizedException("Current password is incorrect");
 
     const pwResult = await Password.create(newPassword);
     if (pwResult.isFailure) {
-      throw new UnauthorizedException(pwResult.error?.message ?? "Invalid new password");
+      throw new UnauthorizedException(
+        pwResult.error?.message ?? "Invalid new password",
+      );
     }
     user.changePassword(pwResult.value);
     await this.userRepository.save(user);
@@ -165,7 +211,8 @@ export class AuthService {
   // ---- Refresh Token (FIX #7: verify separate refresh token) ----
   async refreshToken(refreshToken: string): Promise<AuthTokens> {
     try {
-      const refreshSecret = process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET;
+      const refreshSecret =
+        process.env.JWT_REFRESH_SECRET ?? process.env.JWT_SECRET;
       const payload = this.jwtService.verify(refreshToken, {
         secret: refreshSecret,
       });
@@ -177,8 +224,21 @@ export class AuthService {
       const user = await this.userRepository.findById(UserId.from(payload.sub));
       if (!user) throw new UnauthorizedException("Invalid refresh token");
 
-      if (!user.isActive()) {
-        throw new UnauthorizedException("Account is no longer active");
+      // Auto-unlock nếu tài khoản bị khóa có thời hạn và đã hết hạn.
+      if (user.autoUnlockIfExpired()) {
+        await this.userRepository.activateById(user.id);
+        await this.userAdminService.syncExternalAccountStatus(user, "ACTIVE");
+      }
+
+      // Tài khoản bị từ chối quá 3 ngày → xóa vĩnh viễn.
+      if (user.isRejectionExpired()) {
+        await this.userRepository.purgeById(user.id);
+        throw new UnauthorizedException("Account has been deleted");
+      }
+
+      const blocked = accountBlockException(user);
+      if (blocked) {
+        throw blocked;
       }
 
       return this.generateTokens(user);

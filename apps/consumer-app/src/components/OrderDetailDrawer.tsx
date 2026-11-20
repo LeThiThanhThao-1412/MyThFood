@@ -1,0 +1,541 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  orderApi,
+  reviewApi,
+  uploadApi,
+  merchantApi,
+  driverApi,
+} from "@mythfood/api-client";
+import { Drawer, deliveryOptionMeta } from "@mythfood/frontend-shared";
+
+const STATUS_LABELS: Record<string, string> = {
+  PENDING: "⏳ Chờ xác nhận",
+  CONFIRMED: "✅ Đã xác nhận",
+  PREPARING: "👨‍🍳 Đang chuẩn bị",
+  READY_FOR_PICKUP: "📦 Sẵn sàng",
+  OUT_FOR_DELIVERY: "🛵 Đang giao",
+  DELIVERED: "🏠 Đã giao",
+  CANCELLED: "❌ Đã hủy",
+  CANCELLED_NO_DRIVER: "🛑 Hủy - Không có tài xế",
+  DELIVERY_FAILED: "❌ Giao hàng thất bại",
+  REJECTED: "🚫 Từ chối",
+};
+
+/** Gợi ý đánh giá tích cực cho tài xế (giống trang /orders/[id]). */
+const DRIVER_POSITIVE_PHRASES = [
+  "Tài xế thân thiện 🤝",
+  "Giao hàng nhanh ⚡",
+  "Lái xe an toàn 🛵",
+  "Gọi điện chu đáo 📞",
+  "Rất nhiệt tình 👍",
+];
+
+function toNum(v: unknown): number {
+  if (typeof v === "number") return v;
+  if (typeof v === "string") return parseFloat(v) || 0;
+  return 0;
+}
+
+export default function OrderDetailDrawer({
+  orderId,
+  onClose,
+}: {
+  orderId: string | null;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [order, setOrder] = useState<any>(null);
+  const [merchant, setMerchant] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [existingReview, setExistingReview] = useState<any>(null);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState("");
+  const [reviewStatus, setReviewStatus] = useState("");
+  const [reviewImages, setReviewImages] = useState<string[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [pendingChange, setPendingChange] = useState<any>(null);
+  const [driverProfile, setDriverProfile] = useState<any>(null);
+  const [driverRating, setDriverRating] = useState(5);
+  const [driverComment, setDriverComment] = useState("");
+
+  useEffect(() => {
+    if (!orderId) {
+      setOrder(null);
+      setExistingReview(null);
+      setDriverProfile(null);
+      setDriverRating(5);
+      setDriverComment("");
+      setReviewRating(5);
+      setReviewComment("");
+      setReviewImages([]);
+      setReviewStatus("");
+      return;
+    }
+    // Reset form đánh giá khi chuyển sang đơn khác
+    setDriverProfile(null);
+    setDriverRating(5);
+    setDriverComment("");
+    setReviewRating(5);
+    setReviewComment("");
+    setReviewImages([]);
+    setReviewStatus("");
+    setLoading(true);
+    (async () => {
+      try {
+        const o = await orderApi.getById(orderId);
+        setOrder(o);
+        // Lấy thông tin nhà hàng (tên, ảnh, đánh giá)
+        if (o?.merchantId) {
+          const mRes = await merchantApi
+            .getById(o.merchantId)
+            .catch(() => null);
+          setMerchant((mRes as any)?.data ?? mRes ?? null);
+        }
+        // Lấy hồ sơ công khai của tài xế (tên hiển thị khi đánh giá tài xế)
+        if (o?.driverId) {
+          const pRes = await driverApi
+            .getPublicProfile(o.driverId)
+            .catch(() => null);
+          setDriverProfile((pRes as any)?.data ?? null);
+        } else {
+          setDriverProfile(null);
+        }
+        try {
+          const r: any = await reviewApi.getByOrder(orderId);
+          setExistingReview(r?.data ?? null);
+        } catch {
+          setExistingReview(null);
+        }
+        try {
+          const changes = await orderApi.listChangeRequests(orderId);
+          const list = Array.isArray(changes) ? changes : [];
+          setPendingChange(
+            list.find(
+              (request: any) =>
+                request.status === "PENDING" ||
+                request.status === "AWAITING_PAYMENT",
+            ) ?? null,
+          );
+        } catch {
+          setPendingChange(null);
+        }
+      } catch {
+        setOrder(null);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [orderId]);
+
+  async function submitReview() {
+    if (!order) return;
+    setSubmitting(true);
+    setReviewStatus("");
+    try {
+      const driverId = order.driverId || driverProfile?.id;
+      const created: any = await reviewApi.create({
+        orderId: order.id,
+        consumerId: order.consumerId,
+        merchantId: order.merchantId,
+        rating: reviewRating,
+        comment: reviewComment.trim() || undefined,
+        images: reviewImages.length ? reviewImages : undefined,
+        ...(driverId
+          ? {
+              driverId,
+              driverRating,
+              driverComment: driverComment.trim() || undefined,
+            }
+          : {}),
+      });
+      setExistingReview(
+        created?.data ?? {
+          rating: reviewRating,
+          comment: reviewComment.trim(),
+          images: reviewImages,
+          ...(driverId
+            ? {
+                driverRating,
+                driverComment: driverComment.trim() || undefined,
+              }
+            : {}),
+        },
+      );
+      setReviewStatus("✅ Đã gửi đánh giá");
+    } catch (err: any) {
+      setReviewStatus(`❌ ${err?.message || "Gửi đánh giá thất bại"}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleReviewImageUpload(e: any) {
+    const files = Array.from(e.target.files || []) as File[];
+    if (!files.length) return;
+    setUploadingImages(true);
+    setReviewStatus("");
+    const urls: string[] = [];
+    try {
+      for (const file of files) {
+        const res: any = await uploadApi.uploadImage(file, "reviews");
+        urls.push(res.data.url);
+      }
+      setReviewImages((prev) => [...prev, ...urls].slice(0, 6));
+    } catch (err: any) {
+      setReviewStatus(`❌ ${err?.message || "Tải ảnh thất bại"}`);
+    } finally {
+      setUploadingImages(false);
+      e.target.value = "";
+    }
+  }
+
+  function removeReviewImage(url: string) {
+    setReviewImages((prev) => prev.filter((u) => u !== url));
+  }
+
+  return (
+    <Drawer
+      open={!!orderId}
+      onClose={onClose}
+      title={order ? `Đơn #${order.id?.slice(0, 8)}` : "Đơn hàng"}
+    >
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-spin w-8 h-8 border-4 border-[#ff6b35] border-t-transparent rounded-full" />
+        </div>
+      ) : !order ? (
+        <p className="text-center text-gray-400 py-20">
+          Không tìm thấy đơn hàng
+        </p>
+      ) : (
+        <div className="px-5 py-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-gray-800">
+              {STATUS_LABELS[order.status] || order.status}
+            </span>
+            <span className="text-xs text-gray-400">
+              {order.createdAt
+                ? new Date(order.createdAt).toLocaleString("vi-VN")
+                : ""}
+            </span>
+          </div>
+
+          {/* Nhà hàng của đơn */}
+          {merchant && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                router.push(`/restaurants/${merchant.id}`);
+              }}
+              className="w-full flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-3 hover:border-[#ff6b35] transition text-left"
+            >
+              {merchant.logoUrl || merchant.coverImageUrl ? (
+                <img
+                  src={merchant.logoUrl || merchant.coverImageUrl}
+                  alt={merchant.name}
+                  className="w-12 h-12 rounded-xl object-cover border border-gray-100 bg-gray-50 shrink-0"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-xl bg-[#fff7ed] flex items-center justify-center text-xl shrink-0">
+                  🏪
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-gray-800 truncate">
+                  {merchant.name}
+                </p>
+                <p className="text-xs text-gray-500 flex items-center gap-1">
+                  <span className="text-yellow-500">⭐</span>{" "}
+                  {Number(merchant.rating || 0).toFixed(1)}
+                  {merchant.totalRatings
+                    ? ` (${merchant.totalRatings} đánh giá)`
+                    : ""}
+                </p>
+              </div>
+              <span className="text-[#ff6b35] text-xs font-semibold shrink-0">
+                Xem ›
+              </span>
+            </button>
+          )}
+
+          {pendingChange && (
+            <button
+              onClick={() => {
+                onClose();
+                router.push(`/orders/${order.id}`);
+              }}
+              className="w-full bg-orange-50 border border-orange-200 rounded-xl p-3 text-left hover:bg-orange-100 transition"
+            >
+              <p className="text-sm font-semibold text-orange-700">
+                🏪 Nhà hàng đề xuất chỉnh sửa đơn
+              </p>
+              <p className="text-xs text-gray-600 mt-0.5">
+                Nhấn để xem chi tiết và xác nhận / từ chối.
+              </p>
+            </button>
+          )}
+
+          <div className="bg-gray-50 rounded-xl p-4">
+            <h4 className="font-semibold text-sm text-gray-700 mb-2">
+              🍽️ Món đã đặt
+            </h4>
+            <div className="space-y-2">
+              {order.items?.map((item: any, i: number) => (
+                <div key={i} className="flex justify-between text-sm">
+                  <span className="text-gray-700">
+                    {item.quantity}x {item.name}
+                  </span>
+                  <span className="text-gray-600 font-medium">
+                    {((item.unitPrice || 0) * item.quantity).toLocaleString(
+                      "vi-VN",
+                    )}
+                    ₫
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between text-gray-600">
+              <span>Tạm tính</span>
+              <span>{toNum(order.subtotal).toLocaleString("vi-VN")}₫</span>
+            </div>
+            <div className="flex justify-between text-gray-600">
+              <span>
+                Phí giao hàng
+                {order.deliveryOption && order.deliveryOption !== "FAST" && (
+                  <span
+                    className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${deliveryOptionMeta(order.deliveryOption).badgeClass}`}
+                  >
+                    {deliveryOptionMeta(order.deliveryOption).icon}{" "}
+                    {deliveryOptionMeta(order.deliveryOption).label}
+                  </span>
+                )}
+              </span>
+              <span>{toNum(order.deliveryFee).toLocaleString("vi-VN")}₫</span>
+            </div>
+            {toNum(order.serviceFee) > 0 && (
+              <div className="flex justify-between text-gray-600">
+                <span>Phí dịch vụ</span>
+                <span>{toNum(order.serviceFee).toLocaleString("vi-VN")}₫</span>
+              </div>
+            )}
+            {toNum(order.discount) > 0 && (
+              <div className="flex justify-between text-green-600">
+                <span>
+                  {order.discountFundedBy === "PLATFORM"
+                    ? "🏢 Mã giảm của hệ thống"
+                    : "🏪 Mã giảm giá của quán"}
+                </span>
+                <span>-{toNum(order.discount).toLocaleString("vi-VN")}₫</span>
+              </div>
+            )}
+            <div className="border-t pt-2 flex justify-between font-bold">
+              <span>Tổng cộng</span>
+              <span className="text-[#ff6b35]">
+                {toNum(order.totalAmount).toLocaleString("vi-VN")}₫
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600">
+            <p>📍 {order.deliveryAddress}</p>
+          </div>
+
+          {order.status === "DELIVERED" && (
+            <div className="border-t border-gray-100 pt-4">
+              <h4 className="font-bold text-sm text-gray-800 mb-3">
+                ⭐ Đánh giá đơn hàng
+              </h4>
+              {existingReview ? (
+                <div className="text-sm">
+                  <p className="text-yellow-500 mb-1">
+                    {"⭐".repeat(
+                      Math.max(0, Math.min(5, existingReview.rating)),
+                    )}
+                  </p>
+                  {existingReview.comment && (
+                    <p className="text-gray-700">{existingReview.comment}</p>
+                  )}
+                  {existingReview.driverRating != null && (
+                    <div className="mt-2 border-t border-gray-100 pt-2">
+                      <p className="text-gray-500 text-xs mb-1">🛵 Tài xế:</p>
+                      <p className="text-yellow-500 mb-1">
+                        {"⭐".repeat(
+                          Math.max(0, Math.min(5, existingReview.driverRating)),
+                        )}
+                      </p>
+                      {existingReview.driverComment && (
+                        <p className="text-gray-700">
+                          {existingReview.driverComment}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {existingReview.images?.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {existingReview.images.map((img: string, i: number) => (
+                        <img
+                          key={i}
+                          src={img}
+                          alt={`Ảnh đánh giá ${i + 1}`}
+                          className="w-16 h-16 object-cover rounded-lg border border-gray-100"
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {existingReview.merchantReply && (
+                    <div className="mt-2 bg-[#fff7ed] rounded-xl p-3">
+                      <p className="font-semibold text-[#ff6b35] text-xs mb-1">
+                        🏪 Nhà hàng phản hồi:
+                      </p>
+                      <p className="text-gray-700">
+                        {existingReview.merchantReply}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center gap-1 mb-2">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setReviewRating(n)}
+                        className={`text-2xl ${n <= reviewRating ? "" : "opacity-30"}`}
+                      >
+                        ⭐
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={reviewComment}
+                    onChange={(e) => setReviewComment(e.target.value)}
+                    placeholder="Chia sẻ trải nghiệm của bạn..."
+                    rows={3}
+                    className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+                  />
+                  <div className="mt-3">
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      {reviewImages.map((img, i) => (
+                        <div key={i} className="relative">
+                          <img
+                            src={img}
+                            alt={`Ảnh ${i + 1}`}
+                            className="w-16 h-16 object-cover rounded-lg border border-gray-100"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeReviewImage(img)}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full text-xs leading-5"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <label className="inline-block cursor-pointer text-sm text-[#ff6b35] border border-[#ff6b35] rounded-xl px-3 py-2 hover:bg-orange-50 transition">
+                      📷 Thêm ảnh
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={handleReviewImageUpload}
+                        disabled={uploadingImages}
+                        className="hidden"
+                      />
+                    </label>
+                    {uploadingImages && (
+                      <span className="ml-2 text-sm text-gray-400">
+                        Đang tải ảnh...
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 🛵 Đánh giá tài xế (không cần ảnh) */}
+                  {(order.driverId || driverProfile) && (
+                    <div className="mt-4 border-t border-gray-100 pt-3">
+                      <p className="text-sm font-semibold text-gray-700 mb-1">
+                        🛵 Đánh giá tài xế
+                        {driverProfile?.fullName
+                          ? `: ${driverProfile.fullName}`
+                          : ""}
+                      </p>
+                      <div className="flex items-center gap-1 mb-2">
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setDriverRating(n)}
+                            className={`text-2xl ${n <= driverRating ? "" : "opacity-30"}`}
+                          >
+                            ⭐
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {DRIVER_POSITIVE_PHRASES.map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() =>
+                              setDriverComment((prev) =>
+                                prev ? `${prev} ${p}` : p,
+                              )
+                            }
+                            className="text-xs px-2.5 py-1.5 rounded-full border border-gray-200 bg-gray-50 text-gray-600 hover:border-[#ff6b35] hover:text-[#ff6b35] transition"
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                      <textarea
+                        value={driverComment}
+                        onChange={(e) => setDriverComment(e.target.value)}
+                        placeholder="Nhận xét về tài xế..."
+                        rows={2}
+                        className="w-full border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-[#ff6b35]"
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    onClick={submitReview}
+                    disabled={submitting}
+                    className="mt-2 bg-[#ff6b35] text-white px-5 py-2.5 rounded-xl font-semibold hover:bg-orange-600 transition disabled:opacity-50"
+                  >
+                    {submitting ? "Đang gửi..." : "Gửi đánh giá"}
+                  </button>
+                  {reviewStatus && (
+                    <p
+                      className={`mt-2 text-sm ${reviewStatus.startsWith("✅") ? "text-green-600" : "text-red-600"}`}
+                    >
+                      {reviewStatus}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Khiếu nại đơn hàng */}
+          <button
+            onClick={() => {
+              onClose();
+              router.push(`/complaints?orderId=${order.id}`);
+            }}
+            className="w-full border-2 border-gray-300 text-gray-600 py-3 rounded-xl font-semibold hover:bg-gray-50 transition"
+          >
+            🛡️ Khiếu nại
+          </button>
+        </div>
+      )}
+    </Drawer>
+  );
+}

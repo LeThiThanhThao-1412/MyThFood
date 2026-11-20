@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository as TypeOrmRepo, Like } from "typeorm";
+import { Repository as TypeOrmRepo, Like, LessThan } from "typeorm";
 import { IRepository } from "@mythfood/shared-kernel";
 import { User } from "../domain/user.aggregate";
 import { UserId } from "../domain/user-id";
@@ -116,6 +116,56 @@ export class UserRepository implements IRepository<User, UserId> {
   async exists(id: UserId): Promise<boolean> {
     const count = await this.repository.count({ where: { id: id.toString() } });
     return count > 0;
+  }
+
+  /** Cập nhật riêng mốc đăng nhập (không ghi đè trạng thái khóa/từ chối). */
+  async updateLastLogin(id: UserId, at: Date): Promise<void> {
+    await this.repository.update({ id: id.toString() }, { last_login_at: at });
+  }
+
+  /** Mở khóa tài khoản bằng UPDATE có mục tiêu (an toàn khi có request song song). */
+  async activateById(id: UserId): Promise<void> {
+    await this.repository.update(
+      { id: id.toString() },
+      {
+        status: "ACTIVE",
+        suspended_until: null,
+        suspended_at: null,
+        suspend_reason: null,
+        rejected_at: null,
+        reject_reason: null,
+      },
+    );
+  }
+
+  /** Lấy các user đang SUSPENDED nhưng đã hết hạn khóa (để tự mở). */
+  async findExpiredSuspended(now: Date): Promise<User[]> {
+    const entities = await this.repository.find({
+      where: {
+        status: "SUSPENDED",
+        suspended_until: LessThan(now),
+      },
+    });
+    return entities.map((entity) => UserMapper.toDomain(entity));
+  }
+
+  /**
+   * Lấy các user bị từ chối trước mốc `deadline` (thời điểm hết hạn lưu trữ
+   * 3 ngày) để xóa vĩnh viễn khỏi hệ thống.
+   */
+  async findRejectedBefore(deadline: Date): Promise<User[]> {
+    const entities = await this.repository.find({
+      where: {
+        status: "REJECTED",
+        rejected_at: LessThan(deadline),
+      },
+    });
+    return entities.map((entity) => UserMapper.toDomain(entity));
+  }
+
+  /** Xóa vĩnh viễn user (dùng khi tài khoản bị từ chối quá 3 ngày). */
+  async purgeById(id: UserId): Promise<void> {
+    await this.repository.delete(id.toString());
   }
 
   async delete(aggregate: User): Promise<void> {

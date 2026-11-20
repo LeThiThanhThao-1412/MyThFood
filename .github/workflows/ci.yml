@@ -2,13 +2,28 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [main, kiemthu]
   pull_request:
-    branches: [main]
+    branches: [main, kiemthu]
+  workflow_dispatch:
+
+# Run mới trên cùng branch sẽ huỷ run cũ để tiết kiệm CI minutes
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
 
 jobs:
+  # ============================================================
+  # 1. Lint: 15 backend services (NestJS)
+  # ============================================================
   lint:
-    name: Lint
+    name: Lint (15 backend services)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +35,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -29,6 +44,7 @@ jobs:
         run: |
           pnpm --filter @mythfood/shared-kernel build
           pnpm --filter @mythfood/event-contracts build
+          pnpm --filter @mythfood/instrumentation build
           pnpm --filter @mythfood/common build
 
       - name: Lint identity-service
@@ -60,9 +76,77 @@ jobs:
 
       - name: Lint upload-service
         run: pnpm --filter @mythfood/upload-service lint
-  test:
-    name: Unit Tests
+
+      - name: Lint promotion-service
+        run: pnpm --filter @mythfood/promotion-service lint
+
+      - name: Lint review-service
+        run: pnpm --filter @mythfood/review-service lint
+
+      - name: Lint notification-service
+        run: pnpm --filter @mythfood/notification-service lint
+
+      - name: Lint chat-service
+        run: pnpm --filter @mythfood/chat-service lint
+
+      - name: Lint resolution-service
+        run: pnpm --filter @mythfood/resolution-service lint
+
+  # ============================================================
+  # 2. Frontend: 4 Next.js apps
+  #    - 4 app chưa cấu hình ESLint (`next lint` sẽ prompt) nên gate
+  #      tĩnh dùng `tsc --noEmit`; `next build` đảm nhận type-check + bundle.
+  # ============================================================
+  frontend:
+    name: Frontend (4 apps)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.4.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck admin-portal
+        run: pnpm --filter @mythfood/admin-portal exec tsc --noEmit
+
+      - name: Typecheck consumer-app
+        run: pnpm --filter @mythfood/consumer-app exec tsc --noEmit
+
+      - name: Typecheck merchant-app
+        run: pnpm --filter @mythfood/merchant-app exec tsc --noEmit
+
+      - name: Typecheck driver-app
+        run: pnpm --filter @mythfood/driver-app exec tsc --noEmit
+
+      - name: Build admin-portal
+        run: pnpm --filter @mythfood/admin-portal build
+
+      - name: Build consumer-app
+        run: pnpm --filter @mythfood/consumer-app build
+
+      - name: Build merchant-app
+        run: pnpm --filter @mythfood/merchant-app build
+
+      - name: Build driver-app
+        run: pnpm --filter @mythfood/driver-app build
+
+  # ============================================================
+  # 3. Tests + Coverage: 15 backend services
+  # ============================================================
+  test:
+    name: Tests + Coverage (15 backend services)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16-alpine
@@ -88,7 +172,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -97,10 +181,11 @@ jobs:
         run: |
           pnpm --filter @mythfood/shared-kernel build
           pnpm --filter @mythfood/event-contracts build
+          pnpm --filter @mythfood/instrumentation build
           pnpm --filter @mythfood/common build
 
-      - name: Run identity-service unit tests
-        run: pnpm --filter @mythfood/identity-service test
+      - name: Run identity-service tests with coverage
+        run: pnpm --filter @mythfood/identity-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -110,8 +195,8 @@ jobs:
           JWT_SECRET: test_secret
           REDIS_URL: redis://localhost:6379
 
-      - name: Run consumer-service unit tests
-        run: pnpm --filter @mythfood/consumer-service test
+      - name: Run consumer-service tests with coverage
+        run: pnpm --filter @mythfood/consumer-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -121,8 +206,8 @@ jobs:
           JWT_SECRET: test_secret
           REDIS_URL: redis://localhost:6379
 
-      - name: Run merchant-service unit tests
-        run: pnpm --filter @mythfood/merchant-service test
+      - name: Run merchant-service tests with coverage
+        run: pnpm --filter @mythfood/merchant-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -131,8 +216,8 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
-      - name: Run order-service unit tests
-        run: pnpm --filter @mythfood/order-service test
+      - name: Run order-service tests with coverage
+        run: pnpm --filter @mythfood/order-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -141,8 +226,8 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
-      - name: Run inventory-service unit tests
-        run: pnpm --filter @mythfood/inventory-service test
+      - name: Run inventory-service tests with coverage
+        run: pnpm --filter @mythfood/inventory-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -151,8 +236,8 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
-      - name: Run payment-service unit tests
-        run: pnpm --filter @mythfood/payment-service test
+      - name: Run payment-service tests with coverage
+        run: pnpm --filter @mythfood/payment-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -161,8 +246,8 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
-      - name: Run driver-service unit tests
-        run: pnpm --filter @mythfood/driver-service test
+      - name: Run driver-service tests with coverage
+        run: pnpm --filter @mythfood/driver-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -171,8 +256,8 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
-      - name: Run dispatch-service unit tests
-        run: pnpm --filter @mythfood/dispatch-service test
+      - name: Run dispatch-service tests with coverage
+        run: pnpm --filter @mythfood/dispatch-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -181,8 +266,8 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
-      - name: Run wallet-service unit tests
-        run: pnpm --filter @mythfood/wallet-service test
+      - name: Run wallet-service tests with coverage
+        run: pnpm --filter @mythfood/wallet-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -191,8 +276,8 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
-      - name: Run upload-service unit tests
-        run: pnpm --filter @mythfood/upload-service test
+      - name: Run upload-service tests with coverage
+        run: pnpm --filter @mythfood/upload-service test:coverage
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5432
@@ -201,10 +286,72 @@ jobs:
           DATABASE_PASSWORD: mythfood_secret
           JWT_SECRET: test_secret
 
+      - name: Run promotion-service tests with coverage
+        run: pnpm --filter @mythfood/promotion-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_promotion
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run review-service tests with coverage
+        run: pnpm --filter @mythfood/review-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_review
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run notification-service tests with coverage
+        run: pnpm --filter @mythfood/notification-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_notification
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run chat-service tests with coverage
+        run: pnpm --filter @mythfood/chat-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_chat
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Run resolution-service tests with coverage
+        run: pnpm --filter @mythfood/resolution-service test:coverage
+        env:
+          DATABASE_HOST: localhost
+          DATABASE_PORT: 5432
+          DATABASE_NAME: mythfood_resolution
+          DATABASE_USER: mythfood
+          DATABASE_PASSWORD: mythfood_secret
+          JWT_SECRET: test_secret
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: apps/*/coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ============================================================
+  # 4. Build: 15 backend services + artifact
+  # ============================================================
   build:
-    name: Build
+    name: Build (15 backend services)
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    timeout-minutes: 45
+    needs: [lint, test, frontend]
     steps:
       - uses: actions/checkout@v4
 
@@ -215,15 +362,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build all packages
+      - name: Build shared packages
         run: |
           pnpm --filter @mythfood/shared-kernel build
           pnpm --filter @mythfood/event-contracts build
+          pnpm --filter @mythfood/instrumentation build
           pnpm --filter @mythfood/common build
 
       - name: Build identity-service
@@ -256,214 +404,148 @@ jobs:
       - name: Build upload-service
         run: pnpm --filter @mythfood/upload-service build
 
+      - name: Build promotion-service
+        run: pnpm --filter @mythfood/promotion-service build
+
+      - name: Build review-service
+        run: pnpm --filter @mythfood/review-service build
+
+      - name: Build notification-service
+        run: pnpm --filter @mythfood/notification-service build
+
+      - name: Build chat-service
+        run: pnpm --filter @mythfood/chat-service build
+
+      - name: Build resolution-service
+        run: pnpm --filter @mythfood/resolution-service build
+
       - name: Upload identity-service build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: identity-dist
           path: apps/identity-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload consumer-service build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: consumer-dist
           path: apps/consumer-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload merchant-service build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: merchant-dist
           path: apps/merchant-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload order-service build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: order-dist
           path: apps/order-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload inventory-service build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: inventory-dist
           path: apps/inventory-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload payment-service build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: payment-dist
           path: apps/payment-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload driver-service build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: driver-dist
           path: apps/driver-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload dispatch-service build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dispatch-dist
           path: apps/dispatch-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload wallet-service build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wallet-dist
           path: apps/wallet-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload upload-service build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: upload-dist
           path: apps/upload-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
-  test-coverage:
-    name: Test Coverage
-    runs-on: ubuntu-latest
-    needs: [test]
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: mythfood
-          POSTGRES_PASSWORD: mythfood_secret
-          POSTGRES_DB: mythfood_identity
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
+      - name: Upload promotion-service build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          version: 9.4.0
+          name: promotion-dist
+          path: apps/promotion-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
-      - uses: actions/setup-node@v4
+      - name: Upload review-service build artifacts
+        uses: actions/upload-artifact@v4
         with:
-          node-version: 20
-          cache: 'pnpm'
+          name: review-dist
+          path: apps/review-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Upload notification-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: notification-dist
+          path: apps/notification-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Build shared packages
-        run: |
-          pnpm --filter @mythfood/shared-kernel build
-          pnpm --filter @mythfood/event-contracts build
-          pnpm --filter @mythfood/common build
+      - name: Upload chat-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-dist
+          path: apps/chat-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Run identity-service test coverage
-        run: pnpm --filter @mythfood/identity-service test:coverage
-        env:
-          DATABASE_HOST: localhost
-          DATABASE_PORT: 5432
-          DATABASE_NAME: mythfood_identity
-          DATABASE_USER: mythfood
-          DATABASE_PASSWORD: mythfood_secret
-          JWT_SECRET: test_secret
-          REDIS_URL: redis://localhost:6379
+      - name: Upload resolution-service build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolution-dist
+          path: apps/resolution-service/dist/
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Run consumer-service test coverage
-        run: pnpm --filter @mythfood/consumer-service test:coverage
-        env:
-          DATABASE_HOST: localhost
-          DATABASE_PORT: 5432
-          DATABASE_NAME: mythfood_consumer
-          DATABASE_USER: mythfood
-          DATABASE_PASSWORD: mythfood_secret
-          JWT_SECRET: test_secret
-          REDIS_URL: redis://localhost:6379
-
-      - name: Run merchant-service test coverage
-        run: pnpm --filter @mythfood/merchant-service test:coverage
-        env:
-          DATABASE_HOST: localhost
-          DATABASE_PORT: 5432
-          DATABASE_NAME: mythfood_merchant
-          DATABASE_USER: mythfood
-          DATABASE_PASSWORD: mythfood_secret
-          JWT_SECRET: test_secret
-
-      - name: Run order-service test coverage
-        run: pnpm --filter @mythfood/order-service test:coverage
-        env:
-          DATABASE_HOST: localhost
-          DATABASE_PORT: 5432
-          DATABASE_NAME: mythfood_order
-          DATABASE_USER: mythfood
-          DATABASE_PASSWORD: mythfood_secret
-          JWT_SECRET: test_secret
-
-      - name: Run inventory-service test coverage
-        run: pnpm --filter @mythfood/inventory-service test:coverage
-        env:
-          DATABASE_HOST: localhost
-          DATABASE_PORT: 5432
-          DATABASE_NAME: mythfood_inventory
-          DATABASE_USER: mythfood
-          DATABASE_PASSWORD: mythfood_secret
-          JWT_SECRET: test_secret
-
-      - name: Run payment-service test coverage
-        run: pnpm --filter @mythfood/payment-service test:coverage
-        env:
-          DATABASE_HOST: localhost
-          DATABASE_PORT: 5432
-          DATABASE_NAME: mythfood_payment
-          DATABASE_USER: mythfood
-          DATABASE_PASSWORD: mythfood_secret
-          JWT_SECRET: test_secret
-
-      - name: Run driver-service test coverage
-        run: pnpm --filter @mythfood/driver-service test:coverage
-        env:
-          DATABASE_HOST: localhost
-          DATABASE_PORT: 5432
-          DATABASE_NAME: mythfood_driver
-          DATABASE_USER: mythfood
-          DATABASE_PASSWORD: mythfood_secret
-          JWT_SECRET: test_secret
-
-      - name: Run dispatch-service test coverage
-        run: pnpm --filter @mythfood/dispatch-service test:coverage
-        env:
-          DATABASE_HOST: localhost
-          DATABASE_PORT: 5432
-          DATABASE_NAME: mythfood_dispatch
-          DATABASE_USER: mythfood
-          DATABASE_PASSWORD: mythfood_secret
-          JWT_SECRET: test_secret
-
-      - name: Run wallet-service test coverage
-        run: pnpm --filter @mythfood/wallet-service test:coverage
-        env:
-          DATABASE_HOST: localhost
-          DATABASE_PORT: 5432
-          DATABASE_NAME: mythfood_wallet
-          DATABASE_USER: mythfood
-          DATABASE_PASSWORD: mythfood_secret
-          JWT_SECRET: test_secret
-
-      - name: Run upload-service test coverage
-        run: pnpm --filter @mythfood/upload-service test:coverage
-        env:
-          DATABASE_HOST: localhost
-          DATABASE_PORT: 5432
-          DATABASE_NAME: mythfood_upload
-          DATABASE_USER: mythfood
-          DATABASE_PASSWORD: mythfood_secret
-          JWT_SECRET: test_secret
-
-      - name: Summary
-        run: echo "Coverage reports generated. Add Codecov/Sonar integration for detailed reporting."
-
+  # ============================================================
+  # 5. Security audit (non-blocking: chỉ cảnh báo)
+  # ============================================================
   security:
     name: Security Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -474,7 +556,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -482,3 +564,22 @@ jobs:
       - name: Audit dependencies
         run: pnpm audit || echo "Audit completed with warnings"
         continue-on-error: true
+
+  # ============================================================
+  # 6. Quality gate tổng hợp — dùng làm required status check
+  # ============================================================
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    if: ${{ !cancelled() }}
+    needs: [lint, frontend, test, build, security]
+    steps:
+      - name: Verify all gates passed
+        run: |
+          echo "Gate results: ${{ join(needs.*.result, ', ') }}"
+
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "❌ CI failed"
+            exit 1
+          fi
+          echo "✅ All CI gates passed"

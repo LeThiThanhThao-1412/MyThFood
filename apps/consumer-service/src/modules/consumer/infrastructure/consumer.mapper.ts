@@ -1,5 +1,5 @@
 import { ConsumerId } from "../domain/consumer-id";
-import { Consumer, Gender } from "../domain/consumer.aggregate";
+import { Consumer, ConsumerStatus, Gender } from "../domain/consumer.aggregate";
 import { Address, GpsCoordinates, AddressType } from "../domain/address.vo";
 import { AddressId } from "../domain/address-id";
 import {
@@ -17,6 +17,12 @@ export class ConsumerMapper {
     const paymentMethods = ConsumerMapper.parsePaymentMethods(
       entity.payment_methods,
     );
+    const favoriteMerchantIds = ConsumerMapper.parseFavoriteMerchantIds(
+      entity.favorite_merchant_ids,
+    );
+    const favoriteMenuItemIds = ConsumerMapper.parseFavoriteMenuItemIds(
+      entity.favorite_menu_item_ids,
+    );
 
     return Consumer.rehydrate(id, {
       userId: entity.user_id,
@@ -24,8 +30,13 @@ export class ConsumerMapper {
       avatar: entity.avatar,
       dateOfBirth: entity.date_of_birth ? new Date(entity.date_of_birth) : null,
       gender,
+      status: (entity.status as ConsumerStatus) ?? "ACTIVE",
       addresses,
       paymentMethods,
+      favoriteMerchantIds,
+      favoriteMenuItemIds,
+      isVerified: entity.is_verified ?? false,
+      idCardNumber: entity.id_card_number ?? null,
     });
   }
 
@@ -37,13 +48,46 @@ export class ConsumerMapper {
     entity.avatar = consumer.avatarUrl;
     entity.date_of_birth = consumer.birthDate;
     entity.gender = consumer.consumerGender;
+    entity.status = consumer.consumerStatus;
+    entity.is_verified = consumer.consumerIsVerified;
+    entity.id_card_number = consumer.consumerIdCardNumber;
     entity.addresses = JSON.stringify(
       consumer.addressList.map(ConsumerMapper.serializeAddress),
     );
     entity.payment_methods = JSON.stringify(
       consumer.paymentMethodList.map(ConsumerMapper.serializePaymentMethod),
     );
+    entity.favorite_merchant_ids = JSON.stringify(
+      consumer.favoriteMerchantIdList,
+    );
+    entity.favorite_menu_item_ids = JSON.stringify(
+      consumer.favoriteMenuItemIdList,
+    );
     return entity;
+  }
+
+  private static parseFavoriteMerchantIds(json: string): string[] {
+    try {
+      const raw: unknown = JSON.parse(json ?? "[]");
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .map((item) => (typeof item === "string" ? item : String(item ?? "")))
+        .filter((id) => id.length > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  private static parseFavoriteMenuItemIds(json: string): string[] {
+    try {
+      const raw: unknown = JSON.parse(json ?? "[]");
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .map((item) => (typeof item === "string" ? item : String(item ?? "")))
+        .filter((id) => id.length > 0);
+    } catch {
+      return [];
+    }
   }
 
   private static parseAddresses(json: string): Address[] {

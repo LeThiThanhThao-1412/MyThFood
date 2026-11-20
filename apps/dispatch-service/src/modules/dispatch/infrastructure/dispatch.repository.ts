@@ -2,7 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { EntityNotFoundError } from "@mythfood/shared-kernel";
-import { Dispatch } from "../domain/dispatch.aggregate";
+import { Dispatch, DispatchStatus } from "../domain/dispatch.aggregate";
 import { DispatchId } from "../domain/dispatch-id";
 import { DispatchEntity } from "./dispatch.entity";
 import { DispatchMapper } from "./dispatch.mapper";
@@ -69,7 +69,8 @@ export class DispatchRepository {
 
     const entities = await this.repo.find({
       where,
-      order: { createdAt: "DESC" },
+      // Đơn ưu tiên luôn đứng đầu danh sách điều phối.
+      order: { priorityRank: "DESC", createdAt: "DESC" },
       skip: filter?.skip,
       take: filter?.take,
     });
@@ -82,21 +83,81 @@ export class DispatchRepository {
       .where("d.status NOT IN (:...terminalStatuses)", {
         terminalStatuses: ["DELIVERED", "EXPIRED", "CANCELLED"],
       })
-      .orderBy("d.createdAt", "DESC")
+      .orderBy("d.priorityRank", "DESC")
+      .addOrderBy("d.createdAt", "DESC")
       .getMany();
     return entities.map(DispatchMapper.toDomain);
   }
 
   async findMatchingDispatches(): Promise<Dispatch[]> {
+    // Hàng đợi điều phối: PRIORITY trước, sau đó đơn cũ nhất trước (FIFO).
     const entities = await this.repo.find({
       where: { status: "MATCHING" },
-      order: { createdAt: "ASC" },
+      order: { priorityRank: "DESC", createdAt: "ASC" },
     });
+    return entities.map(DispatchMapper.toDomain);
+  }
+
+  /** Danh sách orderId mà tài xế đã từ chối (Case 4) — để driver-app ẩn triệt để. */
+  /** Các dispatch tài xế đang giữ (dùng cho gộp đơn SAVER + lộ trình). */
+  async findActiveByDriverId(driverId: string): Promise<Dispatch[]> {
+    const entities = await this.repo
+      .createQueryBuilder("d")
+      .where("d.driverId = :driverId", { driverId })
+      .andWhere("d.status NOT IN (:...terminalStatuses)", {
+        terminalStatuses: [
+          "DELIVERED",
+          "DELIVERY_FAILED",
+          "EXPIRED",
+          "CANCELLED",
+        ],
+      })
+      .orderBy("d.routeSequence", "ASC", "NULLS LAST")
+      .addOrderBy("d.createdAt", "ASC")
+      .getMany();
+    return entities.map(DispatchMapper.toDomain);
+  }
+
+  async findDeclinedOrderIdsByDriver(driverId: string): Promise<string[]> {
+    const rows = await this.repo
+      .createQueryBuilder("d")
+      .select("d.orderId", "orderId")
+      .where("d.matchedDriverIds @> :driverIdJson", {
+        driverIdJson: JSON.stringify([driverId]),
+      })
+      .getRawMany();
+    return (rows ?? []).map((r) => r.orderId).filter(Boolean);
+  }
+
+  /** Dispatches stuck in DRIVER_ASSIGNED (driver hasn't responded) older than cutoff. */
+  async findAssignedOlderThan(cutoff: Date): Promise<Dispatch[]> {
+    const entities = await this.repo
+      .createQueryBuilder("d")
+      .where("d.status = :status", { status: "DRIVER_ASSIGNED" })
+      .andWhere("d.updatedAt < :cutoff", { cutoff })
+      .orderBy("d.updatedAt", "ASC")
+      .getMany();
     return entities.map(DispatchMapper.toDomain);
   }
 
   async deleteById(id: DispatchId): Promise<void> {
     await this.repo.delete({ id: id.value });
+  }
+
+  /**
+   * Chốt đơn cho tài xế một cách nguyên tử (Case 6):
+   * chỉ update thành công khi dispatch vẫn đang ở DRIVER_ASSIGNED.
+   * Trả về true nếu accept thành công, false nếu đã bị tài xế khác nhận trước.
+   */
+  async acceptAtomic(id: string): Promise<boolean> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(DispatchEntity)
+      .set({ status: DispatchStatus.DRIVER_ACCEPTED })
+      .where("id = :id", { id })
+      .andWhere("status = :status", { status: DispatchStatus.DRIVER_ASSIGNED })
+      .execute();
+    return (result.affected ?? 0) > 0;
   }
 
   // ═══════════════════════════════════════════════════════
@@ -107,29 +168,211 @@ export class DispatchRepository {
     lat: number,
     lng: number,
     radiusKm: number,
-  ): Promise<{ driverId: string; distanceKm: number; latitude: number; longitude: number }[]> {
-    // Query all ONLINE drivers from driver-service DB (shared postgres)
-    const result = await this.repo.query(
-      `SELECT d.id as "driverId",
-              d."currentLatitude" as latitude,
-              d."currentLongitude" as longitude,
-              (6371 * acos(
-                cos(radians($1)) * cos(radians(d."currentLatitude")) *
-                cos(radians(d."currentLongitude") - radians($2)) +
-                sin(radians($1)) * sin(radians(d."currentLatitude"))
-              )) as "distanceKm"
-       FROM drivers d
-       WHERE d.status = 'ACTIVE'
-         AND d."onlineStatus" = 'ONLINE'
-         AND d."fatigueLevel" != 'CRITICAL'
-         AND d."currentOrderId" IS NULL
-         AND d."currentLatitude" IS NOT NULL
-         AND d."currentLongitude" IS NOT NULL
-         ${radiusKm < 9999 ? 'AND (6371 * acos(cos(radians($1)) * cos(radians(d."currentLatitude")) * cos(radians(d."currentLongitude") - radians($2)) + sin(radians($1)) * sin(radians(d."currentLatitude")))) <= $3' : ''}
-       ORDER BY "distanceKm" ASC
-       LIMIT 20`,
-      radiusKm < 9999 ? [lat, lng, radiusKm] : [lat, lng],
+    includeStackable = false,
+  ): Promise<
+    {
+      driverId: string;
+      distanceKm: number;
+      latitude: number;
+      longitude: number;
+      activeOrderIds: string[];
+      maxConcurrentOrders: number;
+    }[]
+  > {
+    // Lấy danh sách tài xế khả dụng từ driver-service (HTTP) — không query xuyên DB
+    const driverUrl =
+      process.env.DRIVER_SERVICE_URL || "http://driver-service:3007";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+
+    try {
+      // Ưu tiên endpoint GEOSEARCH của driver-service (Redis GEO hot cache).
+      // Lỗi/không có kết quả → fallback danh sách đầy đủ + Haversine bên dưới.
+      try {
+        const nearbyUrl =
+          `${driverUrl}/api/v1/drivers/available/nearby` +
+          `?latitude=${lat}&longitude=${lng}&radiusKm=${radiusKm}` +
+          `&includeStackable=${includeStackable}&limit=20`;
+        const nearbyRes = await fetch(nearbyUrl, {
+          headers: { "x-service-key": serviceKey },
+        });
+        if (nearbyRes.ok) {
+          const nearbyJson: any = await nearbyRes.json();
+          const nearbyDrivers: any[] = nearbyJson?.data ?? [];
+          const nearbyResults = this._mapNearbyDrivers(
+            nearbyDrivers,
+            radiusKm,
+            includeStackable,
+          );
+          if (nearbyResults.length > 0) return nearbyResults;
+        }
+      } catch {
+        // Redis chết / driver-service phiên bản cũ → dùng đường dự phòng.
+      }
+
+      const query = includeStackable ? "?includeStackable=true" : "";
+      const res = await fetch(
+        `${driverUrl}/api/v1/drivers/available/list${query}`,
+        { headers: { "x-service-key": serviceKey } },
+      );
+      if (!res.ok) return [];
+      const json: any = await res.json();
+      const drivers: any[] = json?.data ?? json ?? [];
+
+      const results: {
+        driverId: string;
+        distanceKm: number;
+        latitude: number;
+        longitude: number;
+        activeOrderIds: string[];
+        maxConcurrentOrders: number;
+      }[] = [];
+      for (const d of drivers) {
+        // Chưa có GPS (null/undefined) → KHÔNG coi là toạ độ (0,0).
+        // Number(null) === 0 nên phải kiểm tra null trước khi ép kiểu.
+        if (d.currentLatitude == null || d.currentLongitude == null) continue;
+        const dLat = Number(d.currentLatitude);
+        const dLng = Number(d.currentLongitude);
+        if (!Number.isFinite(dLat) || !Number.isFinite(dLng)) continue;
+
+        const activeOrderIds: string[] = Array.isArray(d.currentOrderIds)
+          ? d.currentOrderIds
+          : d.currentOrderId
+            ? [d.currentOrderId]
+            : [];
+        const maxConcurrentOrders = Math.max(
+          1,
+          Number(d.maxConcurrentOrders ?? 1),
+        );
+
+        // FAST/PRIORITY chỉ gán tài xế đang rảnh hoàn toàn.
+        if (!includeStackable && activeOrderIds.length > 0) continue;
+        if (activeOrderIds.length >= maxConcurrentOrders) continue;
+
+        const distanceKm = this._haversine(lat, lng, dLat, dLng);
+        if (radiusKm < 9999 && distanceKm > radiusKm) continue;
+        results.push({
+          driverId: d.id,
+          distanceKm,
+          latitude: dLat,
+          longitude: dLng,
+          activeOrderIds,
+          maxConcurrentOrders,
+        });
+      }
+      results.sort((a, b) => a.distanceKm - b.distanceKm);
+      return results.slice(0, 20);
+    } catch {
+      return [];
+    }
+  }
+
+  /** Thống kê gộp đơn SAVER (Phase 3 - admin báo cáo). */
+  async getStackingStats(since: Date): Promise<{
+    batches: number;
+    stackedDispatches: number;
+    totalDispatches: number;
+    avgRouteSequence: number;
+  }> {
+    const raw = await this.repo.query(
+      `SELECT COUNT(DISTINCT "batchId")::int AS "batches",
+              COUNT(*) FILTER (WHERE "batchId" IS NOT NULL)::int AS "stackedDispatches",
+              COUNT(*)::int AS "totalDispatches",
+              COALESCE(AVG("routeSequence"), 0)::float AS "avgRouteSequence"
+       FROM dispatches
+       WHERE "createdAt" >= $1`,
+      [since],
     );
-    return result;
+    const row = raw[0] ?? {};
+    return {
+      batches: Number(row.batches ?? 0),
+      stackedDispatches: Number(row.stackedDispatches ?? 0),
+      totalDispatches: Number(row.totalDispatches ?? 0),
+      avgRouteSequence: Number(row.avgRouteSequence ?? 0),
+    };
+  }
+
+  /**
+   * Chuẩn hoá kết quả `GET /drivers/available/nearby` (đã có `distanceKm` từ
+   * driver-service) về cùng shape với đường dự phòng, đồng thời áp lại quy tắc
+   * gán đơn (FAST/PRIORITY chỉ nhận tài xế rảnh, không vượt số đơn tối đa).
+   */
+  private _mapNearbyDrivers(
+    drivers: any[],
+    radiusKm: number,
+    includeStackable: boolean,
+  ): {
+    driverId: string;
+    distanceKm: number;
+    latitude: number;
+    longitude: number;
+    activeOrderIds: string[];
+    maxConcurrentOrders: number;
+  }[] {
+    const results: {
+      driverId: string;
+      distanceKm: number;
+      latitude: number;
+      longitude: number;
+      activeOrderIds: string[];
+      maxConcurrentOrders: number;
+    }[] = [];
+
+    for (const d of drivers) {
+      if (d.currentLatitude == null || d.currentLongitude == null) continue;
+      const dLat = Number(d.currentLatitude);
+      const dLng = Number(d.currentLongitude);
+      const distanceKm = Number(d.distanceKm);
+      if (
+        !Number.isFinite(dLat) ||
+        !Number.isFinite(dLng) ||
+        !Number.isFinite(distanceKm)
+      ) {
+        continue;
+      }
+
+      const activeOrderIds: string[] = Array.isArray(d.currentOrderIds)
+        ? d.currentOrderIds
+        : d.currentOrderId
+          ? [d.currentOrderId]
+          : [];
+      const maxConcurrentOrders = Math.max(
+        1,
+        Number(d.maxConcurrentOrders ?? 1),
+      );
+
+      if (!includeStackable && activeOrderIds.length > 0) continue;
+      if (activeOrderIds.length >= maxConcurrentOrders) continue;
+      if (radiusKm < 9999 && distanceKm > radiusKm) continue;
+
+      results.push({
+        driverId: d.id,
+        distanceKm,
+        latitude: dLat,
+        longitude: dLng,
+        activeOrderIds,
+        maxConcurrentOrders,
+      });
+    }
+
+    results.sort((a, b) => a.distanceKm - b.distanceKm);
+    return results.slice(0, 20);
+  }
+
+  private _haversine(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+  ): number {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 }

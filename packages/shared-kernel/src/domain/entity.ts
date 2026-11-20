@@ -10,10 +10,10 @@ export abstract class Entity<T extends Identifier = Identifier> {
   private readonly _createdAt: Date;
   private _updatedAt: Date;
 
-  protected constructor(id: T) {
+  protected constructor(id: T, createdAt?: Date, updatedAt?: Date) {
     this._id = id;
-    this._createdAt = new Date();
-    this._updatedAt = new Date();
+    this._createdAt = createdAt ?? new Date();
+    this._updatedAt = updatedAt ?? new Date();
   }
 
   get id(): T {

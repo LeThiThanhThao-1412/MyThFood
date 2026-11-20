@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import { MerchantId } from "../domain/merchant-id";
 import { MenuItemId } from "../domain/menu-item-id";
 import {
@@ -6,7 +7,10 @@ import {
   MerchantStatus,
   CapacityStatus,
 } from "../domain/merchant.aggregate";
-import { MenuItem, MenuItemCategory } from "../domain/menu-item.entity";
+import {
+  MenuItem,
+  MenuItemAvailabilityStatus,
+} from "../domain/menu-item.entity";
 import { OperatingHours } from "../domain/operating-hours.vo";
 import {
   MerchantDocument,
@@ -60,6 +64,7 @@ export class MerchantMapper {
       longitude: entity.longitude,
       status: entity.status as MerchantStatus,
       rating: entity.rating,
+      totalRatings: entity.total_ratings ?? 0,
       totalOrders: entity.total_orders,
       capacityConfig,
       capacityStatus: entity.capacity_status as CapacityStatus,
@@ -67,6 +72,12 @@ export class MerchantMapper {
       operatingHours: domainHours,
       documents: domainDocs,
       currentOrderCount: entity.current_order_count ?? 0,
+      primaryCategory: entity.primary_category ?? null,
+      secondaryCategories: entity.secondary_categories ?? [],
+      otherCategoryDescription: entity.other_category_description ?? null,
+      isOpen: entity.is_open !== false,
+      rejectedAt: entity.rejected_at ?? null,
+      rejectReason: entity.reject_reason ?? null,
     });
   }
 
@@ -88,10 +99,18 @@ export class MerchantMapper {
     entity.longitude = merchant.merchantLongitude;
     entity.status = merchant.merchantStatus;
     entity.rating = merchant.merchantRating;
+    entity.total_ratings = merchant.merchantTotalRatings;
     entity.total_orders = merchant.merchantTotalOrders;
     entity.capacity_config = merchant.merchantCapacityConfig;
     entity.capacity_status = merchant.merchantCapacityStatus;
     entity.current_order_count = merchant.merchantCurrentOrderCount;
+    entity.primary_category = merchant.merchantPrimaryCategory;
+    entity.secondary_categories = merchant.merchantSecondaryCategories;
+    entity.other_category_description =
+      merchant.merchantOtherCategoryDescription;
+    entity.is_open = merchant.merchantIsOpen;
+    entity.rejected_at = merchant.merchantRejectedAt;
+    entity.reject_reason = merchant.merchantRejectReason;
     return entity;
   }
 
@@ -101,15 +120,19 @@ export class MerchantMapper {
       entity.id = mi.id.toString();
       entity.merchant_id = merchant.id.toString();
       entity.category = mi.itemCategory;
+      entity.category_id = mi.itemCategoryId;
       entity.name = mi.itemName;
       entity.description = mi.itemDescription;
       entity.price = mi.itemPrice;
       entity.original_price = mi.itemOriginalPrice;
       entity.image_url = mi.itemImageUrl;
       entity.is_available = mi.available;
+      entity.availability_status = mi.availabilityStatus;
+      entity.out_of_stock_until = mi.outOfStockUntil;
       entity.is_featured = mi.featured;
       entity.preparation_time = mi.prepTime;
       entity.sort_order = mi.order;
+      entity.option_groups = mi.itemOptionGroups as any;
       return entity;
     });
   }
@@ -119,7 +142,7 @@ export class MerchantMapper {
   ): OperatingHoursEntity[] {
     return merchant.operatingHoursList.map((oh) => {
       const entity = new OperatingHoursEntity();
-      entity.id = ""; // Will be auto-generated, or we can track existing
+      entity.id = uuidv4();
       entity.merchant_id = merchant.id.toString();
       entity.day_of_week = oh.dayOfWeek;
       entity.open_time = oh.openTime;
@@ -151,7 +174,8 @@ export class MerchantMapper {
     const id = MenuItemId.from(entity.id);
     return MenuItem.rehydrate(id, {
       merchantId: MerchantId.from(entity.merchant_id),
-      category: entity.category as MenuItemCategory,
+      category: entity.category,
+      categoryId: entity.category_id ?? null,
       name: entity.name,
       description: entity.description,
       price: Number(entity.price),
@@ -159,10 +183,15 @@ export class MerchantMapper {
         ? Number(entity.original_price)
         : null,
       imageUrl: entity.image_url,
-      isAvailable: entity.is_available,
+      availabilityStatus: (entity.availability_status ??
+        (entity.is_available
+          ? "AVAILABLE"
+          : "OUT_OF_STOCK")) as MenuItemAvailabilityStatus,
+      outOfStockUntil: entity.out_of_stock_until ?? null,
       isFeatured: entity.is_featured,
       preparationTime: entity.preparation_time,
       sortOrder: entity.sort_order,
+      optionGroups: (entity.option_groups as any) ?? [],
     });
   }
 

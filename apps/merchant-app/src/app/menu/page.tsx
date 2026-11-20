@@ -1,18 +1,27 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { merchantApi, type MenuItem } from '@mythfood/api-client';
-import { useAuthStore } from '@mythfood/frontend-shared';
+import { useEffect, useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  merchantApi,
+  uploadApi,
+  type MenuItem,
+  type MenuItemOptionGroup,
+  type MenuCategory,
+} from "@mythfood/api-client";
+import { useAuthStore } from "@mythfood/frontend-shared";
+import MerchantShell from "@/components/MerchantShell";
+import OptionGroupEditor from "@/components/OptionGroupEditor";
+import { parseMenuFile, downloadMenuTemplate } from "@/lib/menu-import";
 
 const GRADIENT_BG = [
-  'from-[#f093fb] to-[#f5576c]',
-  'from-[#43e97b] to-[#38f9d7]',
-  'from-[#fa709a] to-[#fee140]',
-  'from-[#a18cd1] to-[#fbc2eb]',
-  'from-[#ff6b35] to-[#ff8f65]',
-  'from-[#fbc2eb] to-[#a6c1ee]',
+  "from-[#f093fb] to-[#f5576c]",
+  "from-[#43e97b] to-[#38f9d7]",
+  "from-[#fa709a] to-[#fee140]",
+  "from-[#a18cd1] to-[#fbc2eb]",
+  "from-[#ff6b35] to-[#ff8f65]",
+  "from-[#fbc2eb] to-[#a6c1ee]",
 ];
 
 export default function MenuPage() {
@@ -26,23 +35,63 @@ export default function MenuPage() {
   // Add/Edit form
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ name: '', price: '', category: 'MAIN_COURSE', description: '' });
+  const [form, setForm] = useState({
+    name: "",
+    price: "",
+    category: "",
+    categoryId: "",
+    description: "",
+    imageUrl: "",
+  });
+  const [optionGroups, setOptionGroups] = useState<MenuItemOptionGroup[]>([]);
+  const [categories, setCategories] = useState<MenuCategory[]>([]);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) { router.push('/login'); return; }
+    if (!isAuthenticated) {
+      router.push("/login");
+      return;
+    }
     async function load() {
       try {
         const res = await merchantApi.list({ take: 200 });
         const m = (res.items || []).find((m2: any) => m2.userId === user?.id);
         setMerchant(m);
         if (m) {
-          const items = await merchantApi.getMenu(m.id);
+          const items = await merchantApi.getMenu(m.id, true);
           setMenuItems(Array.isArray(items) ? items : []);
+          const cats = await merchantApi.getMenuCategories(m.id);
+          setCategories(Array.isArray(cats) ? cats : []);
         }
-      } catch {} finally { setLoading(false); }
+      } catch (e: any) {
+        console.error("Load menu error:", e);
+        alert(
+          "Lỗi tải thực đơn: " + (e?.message || "Không thể kết nối server"),
+        );
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, [isAuthenticated, user, router]);
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const res = await uploadApi.uploadImage(file, "menu-items");
+      setForm((prev) => ({ ...prev, imageUrl: res.data.url }));
+    } catch {
+      alert("Upload ảnh thất bại!");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function handleAdd() {
     if (!merchant || !form.name || !form.price) return;
@@ -51,46 +100,163 @@ export default function MenuPage() {
       const created = await merchantApi.addMenuItem(merchant.id, {
         name: form.name,
         price: Number(form.price),
-        category: form.category as any,
+        category: form.category,
+        categoryId: form.categoryId || undefined,
         description: form.description,
-      });
+        imageUrl: form.imageUrl || undefined,
+        optionGroups: optionGroups.length > 0 ? optionGroups : undefined,
+      } as any);
       setMenuItems([...menuItems, created]);
       setShowForm(false);
-      setForm({ name: '', price: '', category: 'MAIN_COURSE', description: '' });
-    } catch {} finally { setSaving(false); }
+      setForm({
+        name: "",
+        price: "",
+        category: "",
+        categoryId: "",
+        description: "",
+        imageUrl: "",
+      });
+      setOptionGroups([]);
+    } catch (e: any) {
+      alert("Lỗi thêm món: " + (e?.message || "Không thể kết nối server"));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleUpdate() {
     if (!merchant || !editing) return;
     setSaving(true);
     try {
-      const updated = await merchantApi.updateMenuItem(merchant.id, editing.id, {
-        name: form.name,
-        price: Number(form.price),
-        category: form.category as any,
-        description: form.description,
-      });
-      setMenuItems(menuItems.map(i => i.id === editing.id ? updated : i));
+      const updated = await merchantApi.updateMenuItem(
+        merchant.id,
+        editing.id,
+        {
+          name: form.name,
+          price: Number(form.price),
+          category: form.category,
+          categoryId: form.categoryId || undefined,
+          description: form.description,
+          imageUrl: form.imageUrl || undefined,
+          optionGroups: optionGroups.length > 0 ? optionGroups : undefined,
+        } as any,
+      );
+      setMenuItems(menuItems.map((i) => (i.id === editing.id ? updated : i)));
       setEditing(null);
       setShowForm(false);
-      setForm({ name: '', price: '', category: 'MAIN_COURSE', description: '' });
-    } catch {} finally { setSaving(false); }
+      setForm({
+        name: "",
+        price: "",
+        category: "",
+        categoryId: "",
+        description: "",
+        imageUrl: "",
+      });
+      setOptionGroups([]);
+    } catch (e: any) {
+      alert("Lỗi cập nhật: " + (e?.message || ""));
+    } finally {
+      setSaving(false);
+    }
   }
 
-  async function handleDelete(id: string) {
-    if (!merchant || !confirm('Xac nhan xoa mon nay?')) return;
-    try {
-      await (merchantApi as any).deleteMenuItem(merchant.id, id);
-      setMenuItems(menuItems.filter(i => i.id !== id));
-    } catch {}
-  }
-
-  async function handleToggle(item: any) {
+  async function handleSetStatus(item: any, status: string) {
     if (!merchant) return;
     try {
-      const updated = await (merchantApi as any).toggleMenuItem(merchant.id, item.id);
-      setMenuItems(menuItems.map(i => i.id === item.id ? updated : i));
-    } catch {}
+      const updated = await merchantApi.setMenuItemAvailability(
+        merchant.id,
+        item.id,
+        { status: status as any },
+      );
+      setMenuItems(menuItems.map((i) => (i.id === item.id ? updated : i)));
+    } catch (e: any) {
+      alert("Lỗi: " + (e?.message || ""));
+    }
+  }
+
+  async function handleAddCategory() {
+    if (!merchant || !newCategoryName.trim()) return;
+    try {
+      const cat = await merchantApi.addMenuCategory(merchant.id, {
+        name: newCategoryName.trim(),
+        sortOrder: categories.length,
+      });
+      setCategories([...categories, cat]);
+      setNewCategoryName("");
+    } catch (e: any) {
+      alert("Lỗi thêm danh mục: " + (e?.message || ""));
+    }
+  }
+
+  async function handleRenameCategory(cat: any) {
+    if (!merchant) return;
+    const newName = prompt("Tên danh mục mới:", cat.name);
+    if (!newName || !newName.trim()) return;
+    try {
+      const updated = await merchantApi.updateMenuCategory(
+        merchant.id,
+        cat.id,
+        { name: newName.trim() },
+      );
+      setCategories(categories.map((c) => (c.id === cat.id ? updated : c)));
+    } catch (e: any) {
+      alert("Lỗi đổi tên: " + (e?.message || ""));
+    }
+  }
+
+  async function handleDeleteCategory(catId: string) {
+    if (!merchant || !confirm("Xóa danh mục này?")) return;
+    try {
+      await merchantApi.deleteMenuCategory(merchant.id, catId);
+      setCategories(categories.filter((c) => c.id !== catId));
+    } catch (e: any) {
+      alert("Lỗi xóa danh mục: " + (e?.message || ""));
+    }
+  }
+
+  async function handleToggleCategory(cat: any) {
+    if (!merchant) return;
+    try {
+      const updated = await merchantApi.updateMenuCategory(
+        merchant.id,
+        cat.id,
+        { isActive: !cat.isActive },
+      );
+      setCategories(categories.map((c) => (c.id === cat.id ? updated : c)));
+    } catch (e: any) {
+      alert("Lỗi: " + (e?.message || ""));
+    }
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !merchant) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const payload = await parseMenuFile(file);
+      if (!payload.items.length) {
+        setImportResult({
+          error:
+            "Không tìm thấy món nào trong file. Kiểm tra cột header (DanhMuc, TenMon, Gia, ...).",
+        });
+        return;
+      }
+      const result: any = await merchantApi.importMenu(
+        merchant.id,
+        payload as any,
+      );
+      setImportResult(result);
+      const items = await merchantApi.getMenu(merchant.id, true);
+      setMenuItems(Array.isArray(items) ? items : []);
+      const cats = await merchantApi.getMenuCategories(merchant.id);
+      setCategories(Array.isArray(cats) ? cats : []);
+    } catch (err: any) {
+      setImportResult({ error: err?.message || "Nhập thất bại" });
+    } finally {
+      setImporting(false);
+    }
   }
 
   if (loading) {
@@ -101,73 +267,352 @@ export default function MenuPage() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-[#f0f2f5] max-w-[420px] mx-auto pb-20">
-      <header className="bg-[#1a1a2e] px-4 py-4 text-white">
-        <div className="flex items-center justify-between">
-          <Link href="/dashboard" className="text-white/60 text-lg">←</Link>
-          <h1 className="text-lg font-bold">Menu Management</h1>
-          <button onClick={() => { setEditing(null); setShowForm(true); }} className="bg-[#ff6b35] text-white px-3 py-1.5 rounded-lg text-sm font-semibold">+ Add</button>
+  if (!merchant) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f0f2f5] px-4">
+        <div className="text-center bg-white rounded-2xl shadow-lg p-8 max-w-md">
+          <p className="text-4xl mb-3">🏪</p>
+          <p className="text-lg font-bold text-[#1a1a2e] mb-2">
+            Chưa có nhà hàng
+          </p>
+          <p className="text-sm text-gray-500 mb-4">
+            Đăng nhập bằng tài khoản chủ nhà hàng (
+            {process.env.NEXT_PUBLIC_MERCHANT_PHONE || "+84902334455"})
+          </p>
+          <Link
+            href="/register"
+            className="inline-block bg-[#ff6b35] text-white px-6 py-2.5 rounded-xl font-semibold hover:bg-orange-600 transition"
+          >
+            Đăng ký nhà hàng
+          </Link>
         </div>
-      </header>
+      </div>
+    );
+  }
 
-      <main className="px-4 py-6 space-y-4">
-        {showForm && (
-          <div className="bg-white rounded-2xl shadow-sm p-5 space-y-3">
-            <h3 className="font-bold">{editing ? 'Edit Item' : 'Add Item'}</h3>
-            <input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Name" className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]" />
-            <input type="number" value={form.price} onChange={e => setForm({...form, price: e.target.value})} placeholder="Price (VND)" className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]" />
-            <select value={form.category} onChange={e => setForm({...form, category: e.target.value})} className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none">
-              <option value="MAIN_COURSE">Main Course</option>
-              <option value="BEVERAGE">Beverage</option>
-              <option value="DESSERT">Dessert</option>
-              <option value="SIDE_DISH">Side Dish</option>
-            </select>
-            <textarea value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="Description" rows={2} className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35] resize-none" />
-            <div className="flex gap-2">
-              <button onClick={() => { setShowForm(false); setEditing(null); }} className="flex-1 bg-gray-200 py-2.5 rounded-xl text-sm font-semibold">Cancel</button>
-              <button onClick={editing ? handleUpdate : handleAdd} disabled={saving} className="flex-1 bg-[#ff6b35] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-                {saving ? 'Saving...' : editing ? 'Update' : 'Add'}
-              </button>
+  return (
+    <MerchantShell>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-2xl font-extrabold text-[#1a1a2e]">
+          🍽️ Quản lý thực đơn
+        </h1>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => {
+              setEditing(null);
+              setForm({
+                name: "",
+                price: "",
+                category: "",
+                categoryId: "",
+                description: "",
+                imageUrl: "",
+              });
+              setOptionGroups([]);
+              setShowForm(true);
+            }}
+            className="bg-[#ff6b35] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
+          >
+            + Thêm món
+          </button>
+          <button
+            onClick={downloadMenuTemplate}
+            className="bg-white border border-gray-200 text-gray-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50 transition"
+          >
+            ⬇️ Tải file mẫu
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="bg-green-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-green-700 transition disabled:opacity-50"
+          >
+            {importing ? "Đang nhập..." : "📥 Nhập menu"}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            onChange={handleImportFile}
+            className="hidden"
+          />
+        </div>
+      </div>
+
+      {importResult && (
+        <div
+          className={`rounded-2xl shadow-sm p-4 ${
+            importResult.error
+              ? "bg-red-50 border border-red-200"
+              : "bg-green-50 border border-green-200"
+          }`}
+        >
+          {importResult.error ? (
+            <p className="text-sm text-red-700">❌ {importResult.error}</p>
+          ) : (
+            <div className="text-sm text-green-800">
+              <p className="font-semibold mb-1">
+                ✅ Nhập thành công: {importResult.createdCategories} danh mục,{" "}
+                {importResult.createdItems} món
+              </p>
+              {importResult.errors && importResult.errors.length > 0 && (
+                <ul className="list-disc pl-5 text-red-700 mt-2 space-y-0.5">
+                  {importResult.errors
+                    .slice(0, 20)
+                    .map((er: any, i: number) => (
+                      <li key={i}>
+                        Dòng {er.index + 1} ({er.name || "không rõ"}):{" "}
+                        {er.message}
+                      </li>
+                    ))}
+                  {importResult.errors.length > 20 && (
+                    <li>... và {importResult.errors.length - 20} lỗi khác</li>
+                  )}
+                </ul>
+              )}
             </div>
-          </div>
-        )}
+          )}
+          <button
+            onClick={() => setImportResult(null)}
+            className="text-xs text-gray-500 underline mt-2"
+          >
+            Đóng
+          </button>
+        </div>
+      )}
 
-        {menuItems.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-2xl shadow-sm">
-            <p className="text-4xl mb-3">Empty</p>
-            <p className="text-gray-400">No menu items yet</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {menuItems.map((item: any, idx: number) => (
-              <div key={item.id} className="bg-white rounded-2xl shadow-sm p-3 text-center">
-                <div className={`h-20 bg-gradient-to-br ${GRADIENT_BG[idx % GRADIENT_BG.length]} rounded-lg mb-2`} />
-                <p className="text-sm font-semibold truncate">{item.name}</p>
-                <p className="text-sm font-bold text-[#ff6b35]">{item.price?.toLocaleString('vi-VN')} VND</p>
-                <div className="flex gap-2 mt-2 justify-center">
-                  <button onClick={() => {
-                    setEditing(item);
-                    setForm({ name: item.name, price: String(item.price), category: item.category || 'MAIN_COURSE', description: item.description || '' });
-                    setShowForm(true);
-                  }} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">Edit</button>
-                  <button onClick={() => handleDelete(item.id)} className="text-xs bg-red-100 text-red-500 px-2 py-1 rounded">Del</button>
-                  <button onClick={() => handleToggle(item)} className={`text-xs px-2 py-1 rounded ${item.available !== false ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
-                    {item.available !== false ? 'On' : 'Off'}
-                  </button>
+      {/* ===== Danh mục món ===== */}
+      <div className="bg-white rounded-2xl shadow-sm p-4">
+        <h3 className="font-bold text-sm text-gray-700 mb-2">
+          🗂️ Danh mục món
+        </h3>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {categories.length === 0 && (
+            <p className="text-xs text-gray-400">
+              Chưa có danh mục. Thêm danh mục (VD: Trà sữa, Trà trái cây, Nước
+              ép...).
+            </p>
+          )}
+          {categories.map((c) => (
+            <span
+              key={c.id}
+              className={`inline-flex items-center gap-1.5 bg-[#fff7ed] border border-orange-100 text-[#ff6b35] text-xs font-medium rounded-full px-3 py-1.5 ${
+                c.isActive === false ? "opacity-50" : ""
+              }`}
+            >
+              {c.name}
+              {c.isActive === false && (
+                <span className="text-gray-400">(tắt)</span>
+              )}
+              <button
+                onClick={() => handleToggleCategory(c)}
+                className="text-gray-400 hover:text-amber-500"
+                title={c.isActive === false ? "Bật danh mục" : "Tắt danh mục"}
+              >
+                {c.isActive === false ? "👁️" : "🚫"}
+              </button>
+              <button
+                onClick={() => handleRenameCategory(c)}
+                className="text-gray-400 hover:text-blue-500"
+                title="Đổi tên"
+              >
+                ✏️
+              </button>
+              <button
+                onClick={() => handleDeleteCategory(c.id)}
+                className="text-gray-400 hover:text-red-500"
+                title="Xóa"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleAddCategory();
+            }}
+            placeholder="Tên danh mục mới (VD: Trà sữa)"
+            className="flex-1 bg-gray-50 rounded-xl px-4 py-2.5 text-sm border outline-none focus:border-[#ff6b35]"
+          />
+          <button
+            onClick={handleAddCategory}
+            className="bg-[#ff6b35] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition"
+          >
+            + Thêm
+          </button>
+        </div>
+      </div>
+
+      {showForm && (
+        <div className="bg-white rounded-2xl shadow-sm p-5 space-y-3">
+          <h3 className="font-bold text-lg">
+            {editing ? "✏️ Sửa món" : "➕ Thêm món mới"}
+          </h3>
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            placeholder="Tên món"
+            className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]"
+          />
+          <input
+            type="number"
+            value={form.price}
+            onChange={(e) => setForm({ ...form, price: e.target.value })}
+            placeholder="Giá (VND)"
+            className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35]"
+          />
+          <select
+            value={form.categoryId}
+            onChange={(e) => {
+              const id = e.target.value;
+              const cat = categories.find((c) => c.id === id);
+              setForm({ ...form, categoryId: id, category: cat?.name || "" });
+            }}
+            className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none"
+          >
+            <option value="">-- Chọn danh mục --</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <textarea
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="Mô tả món ăn"
+            rows={2}
+            className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm border outline-none focus:border-[#ff6b35] resize-none"
+          />
+
+          {/* Image Upload */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1">
+              📸 Ảnh món ăn
+            </label>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleImageUpload}
+              className="w-full text-sm p-2 border border-dashed border-gray-300 rounded-xl bg-gray-50"
+            />
+            {form.imageUrl && (
+              <div className="mt-2 flex items-center gap-3">
+                <img
+                  src={form.imageUrl}
+                  alt="Preview"
+                  className="w-20 h-20 object-cover rounded-lg border"
+                />
+                <div>
+                  <p className="text-xs text-green-600 font-semibold">
+                    ✅ Đã upload lên S3
+                  </p>
+                  <p className="text-xs text-gray-400 truncate max-w-[200px]">
+                    {form.imageUrl}
+                  </p>
                 </div>
               </div>
-            ))}
+            )}
+            {uploading && (
+              <p className="text-xs text-blue-500 mt-1 animate-pulse">
+                ⏳ Đang upload lên S3...
+              </p>
+            )}
           </div>
-        )}
-      </main>
 
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[420px] bg-white flex justify-around py-2 pb-3 border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-[100]">
-        <Link href="/dashboard" className="flex flex-col items-center text-[10px] text-gray-400 no-underline"><span className="text-[22px]">Home</span><span>Home</span></Link>
-        <Link href="/orders" className="flex flex-col items-center text-[10px] text-gray-400 no-underline"><span className="text-[22px]">Orders</span><span>Orders</span></Link>
-        <Link href="/menu" className="flex flex-col items-center text-[10px] text-[#ff6b35] no-underline"><span className="text-[22px]">Menu</span><span>Menu</span></Link>
-        <button onClick={() => { clearAuth(); router.push('/'); }} className="flex flex-col items-center text-[10px] text-gray-400 bg-transparent border-none font-sans cursor-pointer"><span className="text-[22px]">Account</span><span>Account</span></button>
-      </nav>
-    </div>
+          <OptionGroupEditor value={optionGroups} onChange={setOptionGroups} />
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setShowForm(false);
+                setEditing(null);
+              }}
+              className="flex-1 bg-gray-200 py-2.5 rounded-xl text-sm font-semibold"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={editing ? handleUpdate : handleAdd}
+              disabled={saving}
+              className="flex-1 bg-[#ff6b35] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+            >
+              {saving ? "Đang lưu..." : editing ? "Cập nhật" : "Thêm món"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {menuItems.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-2xl shadow-sm">
+          <p className="text-4xl mb-3">📋</p>
+          <p className="text-gray-400">Chưa có món nào trong thực đơn</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+          {menuItems.map((item: any, idx: number) => (
+            <div
+              key={item.id}
+              className="bg-white rounded-2xl shadow-sm p-3 text-center hover:shadow-md transition"
+            >
+              {item.imageUrl ? (
+                <img
+                  src={item.imageUrl}
+                  alt={item.name}
+                  className="h-24 w-full object-cover rounded-lg mb-2"
+                />
+              ) : (
+                <div
+                  className={`h-24 bg-gradient-to-br ${GRADIENT_BG[idx % GRADIENT_BG.length]} rounded-lg mb-2 flex items-center justify-center text-3xl`}
+                >
+                  🍽️
+                </div>
+              )}
+              <p className="text-sm font-semibold truncate">{item.name}</p>
+              <p className="text-sm font-bold text-[#ff6b35]">
+                {item.price?.toLocaleString("vi-VN")}₫
+              </p>
+              <p className="text-xs text-gray-400">{item.category || "Khác"}</p>
+              <div className="flex gap-1 mt-2 justify-center">
+                <button
+                  onClick={() => {
+                    setEditing(item);
+                    setForm({
+                      name: item.name,
+                      price: String(item.price),
+                      category: item.category || "",
+                      categoryId: item.categoryId || "",
+                      description: item.description || "",
+                      imageUrl: item.imageUrl || "",
+                    });
+                    setOptionGroups(item.optionGroups || []);
+                    setShowForm(true);
+                  }}
+                  className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 transition"
+                >
+                  Sửa
+                </button>
+                <select
+                  value={
+                    item.availabilityStatus ||
+                    (item.isAvailable ? "AVAILABLE" : "OUT_OF_STOCK")
+                  }
+                  onChange={(e) => handleSetStatus(item, e.target.value)}
+                  className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                  title="Trạng thái bán"
+                >
+                  <option value="AVAILABLE">Đang bán</option>
+                  <option value="OUT_OF_STOCK_TODAY">Hết hôm nay</option>
+                  <option value="OUT_OF_STOCK">Hết vô thời hạn</option>
+                </select>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </MerchantShell>
   );
 }

@@ -1,7 +1,9 @@
-import { useCallback } from 'react';
-import { authApi, httpClient } from '@mythfood/api-client';
-import type { LoginRequest, RegisterRequest } from '@mythfood/api-client';
-import { useAuthStore } from '../stores/auth.store';
+import { useCallback } from "react";
+import { authApi, httpClient } from "@mythfood/api-client";
+import type { LoginRequest, RegisterRequest } from "@mythfood/api-client";
+import { useAuthStore } from "../stores/auth.store";
+import { canAccessApp as checkAppAccess } from "../utils/role-access";
+import type { AppKey } from "../utils/role-access";
 
 // Connect auth token to HTTP client
 useAuthStore.subscribe((state) => {
@@ -9,8 +11,15 @@ useAuthStore.subscribe((state) => {
 });
 
 export function useAuth() {
-  const { token, user, isAuthenticated, setAuth, clearAuth, hasRole, hasAnyRole } =
-    useAuthStore();
+  const {
+    token,
+    user,
+    isAuthenticated,
+    setAuth,
+    clearAuth,
+    hasRole,
+    hasAnyRole,
+  } = useAuthStore();
 
   const login = useCallback(
     async (data: LoginRequest) => {
@@ -30,6 +39,11 @@ export function useAuth() {
     clearAuth();
   }, [clearAuth]);
 
+  const canAccessApp = useCallback(
+    (app: AppKey) => checkAppAccess(user?.roles, app),
+    [user],
+  );
+
   return {
     token,
     user,
@@ -39,5 +53,6 @@ export function useAuth() {
     logout,
     hasRole,
     hasAnyRole,
+    canAccessApp,
   };
 }

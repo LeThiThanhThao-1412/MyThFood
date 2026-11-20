@@ -8,20 +8,21 @@ export class StripeService {
 
   constructor() {
     const secretKey = process.env.STRIPE_SECRET_KEY;
-    if (!secretKey || secretKey === "sk_test_placeholder") {
+    if (!secretKey || secretKey === "stripe_key_not_configured") {
       this.logger.warn(
         "STRIPE_SECRET_KEY is not configured. Stripe operations will fail.",
       );
     }
-    this.stripe = new Stripe(secretKey || "sk_test_placeholder", {
+    this.stripe = new Stripe(secretKey || "stripe_key_not_configured", {
       apiVersion: (process.env.STRIPE_API_VERSION as any) || "2023-10-16",
     });
   }
 
   /**
-   * Create a PaymentIntent to hold funds from the customer.
-   * We use capture_method=manual so the funds are authorized but not
-   * captured immediately. Capture happens when the order is delivered.
+   * Create a PaymentIntent to charge the customer immediately at order placement.
+   * We use capture_method=automatic so the card is charged right away and the
+   * platform holds the funds until the order is delivered (settled) or cancelled
+   * (refunded to the customer's wallet as store credit).
    */
   async createPaymentIntent(params: {
     amount: number;
@@ -35,7 +36,7 @@ export class StripeService {
     return this.stripe.paymentIntents.create({
       amount: Math.round(params.amount), // Stripe uses smallest currency unit (VND already in smallest unit)
       currency,
-      capture_method: "manual",
+      capture_method: "automatic",
       metadata: {
         orderId: params.orderId,
         consumerId: params.consumerId,
@@ -170,7 +171,7 @@ export class StripeService {
    */
   verifyWebhookSignature(payload: Buffer, signature: string): Stripe.Event {
     const webhookSecret =
-      process.env.STRIPE_WEBHOOK_SECRET || "whsec_placeholder";
+      process.env.STRIPE_WEBHOOK_SECRET || "stripe_webhook_not_configured";
     return this.stripe.webhooks.constructEvent(
       payload,
       signature,

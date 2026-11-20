@@ -1,25 +1,57 @@
-import { Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { EventBus } from "@nestjs/cqrs";
+import { HttpService } from "@nestjs/axios";
+import { firstValueFrom } from "rxjs";
 import { Merchant } from "../domain/merchant.aggregate";
 import { MerchantId } from "../domain/merchant-id";
 import { MenuItemId } from "../domain/menu-item-id";
-import { MenuItem, MenuItemCategory } from "../domain/menu-item.entity";
+import {
+  MenuItem,
+  MenuItemAvailabilityStatus,
+} from "../domain/menu-item.entity";
+import { MenuCategory } from "../domain/menu-category.entity";
 import { OperatingHoursProps } from "../domain/operating-hours.vo";
 import { MerchantRepository } from "../infrastructure/merchant.repository";
+import { MenuCategoryRepository } from "../infrastructure/menu-category.repository";
+import { PriceHistoryRepository } from "../infrastructure/price-history.repository";
 import {
   RegisterMerchantDto,
   UpdateMerchantDto,
+  UpdateRatingDto,
   MerchantQueryDto,
+  MenuSearchQueryDto,
+  MatchedMenuItemDto,
+  MenuSearchItemDto,
+  RecordFlashSalePriceHistoryDto,
 } from "./dtos/merchant.dto";
-import { CreateMenuItemDto, UpdateMenuItemDto } from "./dtos/menu.dto";
+import {
+  CreateMenuItemDto,
+  UpdateMenuItemDto,
+  SetMenuItemAvailabilityDto,
+} from "./dtos/menu.dto";
+import {
+  CreateMenuCategoryDto,
+  UpdateMenuCategoryDto,
+} from "./dtos/menu-category.dto";
+import { BulkImportMenuDto } from "./dtos/menu-import.dto";
 import { SetOperatingHoursDto } from "./dtos/operating-hours.dto";
 import { UpdateCapacityDto } from "./dtos/capacity.dto";
 
 @Injectable()
 export class MerchantService {
+  private readonly logger = new Logger(MerchantService.name);
+
   constructor(
     private readonly merchantRepository: MerchantRepository,
+    private readonly menuCategoryRepository: MenuCategoryRepository,
+    private readonly priceHistoryRepository: PriceHistoryRepository,
     private readonly eventBus: EventBus,
+    private readonly httpService: HttpService,
   ) {}
 
   // ===================== Merchant CRUD =====================
@@ -34,6 +66,9 @@ export class MerchantService {
       description: dto.description,
       latitude: dto.latitude,
       longitude: dto.longitude,
+      primaryCategory: dto.primaryCategory,
+      secondaryCategories: dto.secondaryCategories,
+      otherCategoryDescription: dto.otherCategoryDescription,
     });
 
     if (result.isFailure) {
@@ -66,8 +101,20 @@ export class MerchantService {
       coverImageUrl: dto.coverImageUrl,
       latitude: dto.latitude,
       longitude: dto.longitude,
+      primaryCategory: dto.primaryCategory,
+      secondaryCategories: dto.secondaryCategories,
+      otherCategoryDescription: dto.otherCategoryDescription,
     });
 
+    await this.merchantRepository.save(merchant);
+    return merchant;
+  }
+
+  async updateRating(id: string, dto: UpdateRatingDto): Promise<Merchant> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(id),
+    );
+    merchant.updateRating(dto.rating, dto.totalRatings);
     await this.merchantRepository.save(merchant);
     return merchant;
   }
@@ -76,15 +123,253 @@ export class MerchantService {
     return this.merchantRepository.findByIdOrFail(MerchantId.from(id));
   }
 
-  async findAll(
-    query: MerchantQueryDto,
-  ): Promise<{ items: Merchant[]; total: number }> {
-    return this.merchantRepository.findAll({
+  async getByUserId(userId: string): Promise<Merchant | null> {
+    return this.merchantRepository.findByUserId(userId);
+  }
+
+  async findAll(query: MerchantQueryDto): Promise<{
+    items: Merchant[];
+    total: number;
+    matchedMenuItems: Map<string, MatchedMenuItemDto[]>;
+  }> {
+    const result = await this.merchantRepository.findAll({
       status: query.status,
       search: query.search,
+      category: query.category,
+      categories: query.categories,
+      minRating: query.minRating,
+      openNow: query.openNow,
+      sortBy: query.sortBy,
+      sortOrder: query.sortOrder,
       skip: query.skip,
       take: query.take,
     });
+
+    // When searching, tell the client which dishes matched (feature: search by dish)
+    const matchedMenuItems = new Map<string, MatchedMenuItemDto[]>();
+    if (query.search && result.items.length > 0) {
+      const grouped = await this.merchantRepository.findMatchedMenuItems(
+        result.items.map((m) => m.id.toString()),
+        query.search,
+      );
+      for (const [merchantId, rows] of grouped) {
+        matchedMenuItems.set(
+          merchantId,
+          rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            price: Number(row.price),
+            imageUrl: row.image_url,
+          })),
+        );
+      }
+    }
+
+    return { items: result.items, total: result.total, matchedMenuItems };
+  }
+
+  /** Global dish search across all APPROVED merchants. */
+  async searchMenuItems(
+    dto: MenuSearchQueryDto,
+  ): Promise<{ items: MenuSearchItemDto[]; total: number }> {
+    const { rows, total } = await this.merchantRepository.searchMenuItems({
+      q: dto.q,
+      category: dto.category,
+      skip: dto.skip ?? 0,
+      take: dto.take ?? 20,
+    });
+
+    if (rows.length === 0) {
+      return { items: [], total };
+    }
+
+    const merchantIds = Array.from(new Set(rows.map((r) => r.merchantId)));
+    const merchants = await this.merchantRepository.findManyByIds(merchantIds);
+    const merchantById = new Map(merchants.map((m) => [m.id.toString(), m]));
+
+    const items: MenuSearchItemDto[] = [];
+    for (const row of rows) {
+      const merchant = merchantById.get(row.merchantId);
+      if (!merchant) {
+        continue;
+      }
+      const menuItem = merchant.menuItemList.find(
+        (mi) => mi.id.toString() === row.menuItemId,
+      );
+      if (!menuItem) {
+        continue;
+      }
+      items.push({
+        id: menuItem.id.toString(),
+        merchantId: row.merchantId,
+        name: menuItem.itemName,
+        description: menuItem.itemDescription,
+        price: menuItem.itemPrice,
+        imageUrl: menuItem.itemImageUrl,
+        category: menuItem.itemCategory,
+        isAvailable: menuItem.available,
+        merchant: {
+          id: merchant.id.toString(),
+          name: merchant.merchantName,
+          rating: merchant.merchantRating,
+          address: merchant.merchantAddress,
+          latitude: merchant.merchantLatitude,
+          longitude: merchant.merchantLongitude,
+          isOpen: merchant.merchantIsOpen,
+          isOpenNow: merchant.isOpen(),
+        },
+      });
+    }
+
+    return { items, total };
+  }
+
+  /**
+   * Resolve menu items (with merchant info) by a list of ids — used by the
+   * favourite-dishes feature to display names even across devices/sessions.
+   */
+  async getMenuItemsByIds(ids: string[]): Promise<MenuSearchItemDto[]> {
+    const uniqueIds = Array.from(
+      new Set((ids ?? []).map((s) => String(s).trim()).filter(Boolean)),
+    );
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    const menuItemEntities =
+      await this.merchantRepository.findMenuItemsByIds(uniqueIds);
+    if (menuItemEntities.length === 0) {
+      return [];
+    }
+
+    const merchantIds = Array.from(
+      new Set(menuItemEntities.map((e) => e.merchant_id)),
+    );
+    const merchants = await this.merchantRepository.findManyByIds(merchantIds);
+    const merchantById = new Map(merchants.map((m) => [m.id.toString(), m]));
+
+    const items: MenuSearchItemDto[] = [];
+    for (const entity of menuItemEntities) {
+      const merchant = merchantById.get(entity.merchant_id);
+      if (!merchant) {
+        continue;
+      }
+      const menuItem = merchant.menuItemList.find(
+        (mi) => mi.id.toString() === entity.id,
+      );
+      if (!menuItem) {
+        continue;
+      }
+      items.push({
+        id: menuItem.id.toString(),
+        merchantId: entity.merchant_id,
+        name: menuItem.itemName,
+        description: menuItem.itemDescription,
+        price: menuItem.itemPrice,
+        imageUrl: menuItem.itemImageUrl,
+        category: menuItem.itemCategory,
+        isAvailable: menuItem.available,
+        merchant: {
+          id: merchant.id.toString(),
+          name: merchant.merchantName,
+          rating: merchant.merchantRating,
+          address: merchant.merchantAddress,
+          latitude: merchant.merchantLatitude,
+          longitude: merchant.merchantLongitude,
+          isOpen: merchant.merchantIsOpen,
+          isOpenNow: merchant.isOpen(),
+        },
+      });
+    }
+
+    return items;
+  }
+
+  /**
+   * Global top dishes (one per merchant) — used as a fallback recommendation
+   * for new customers. Delegates order-count aggregation to order-service, then
+   * resolves full dish + merchant info here (approved + available only).
+   */
+  async getTopMenuItems(take = 12): Promise<MenuSearchItemDto[]> {
+    const url = process.env.ORDER_SERVICE_URL || "http://order-service:3004";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+
+    let topRows: Array<{
+      menuItemId: string;
+      merchantId: string;
+      name: string;
+      quantity: number;
+    }> = [];
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(`${url}/api/v1/orders/stats/top-items`, {
+          params: { take },
+          headers: { "x-service-key": serviceKey },
+        }),
+      );
+      topRows = Array.isArray(res?.data) ? res.data : [];
+    } catch (err: any) {
+      this.logger.warn(`Failed to fetch top menu items: ${err?.message}`);
+      return [];
+    }
+
+    if (topRows.length === 0) {
+      return [];
+    }
+
+    const menuItemEntities = await this.merchantRepository.findMenuItemsByIds(
+      topRows.map((r) => r.menuItemId),
+    );
+    const entityById = new Map(menuItemEntities.map((e) => [e.id, e]));
+    const merchantIds = Array.from(
+      new Set(
+        menuItemEntities
+          .filter((e) => e.is_available && !e.deleted_at)
+          .map((e) => e.merchant_id),
+      ),
+    );
+    const merchants = await this.merchantRepository.findManyByIds(merchantIds);
+    const merchantById = new Map(merchants.map((m) => [m.id.toString(), m]));
+
+    const items: MenuSearchItemDto[] = [];
+    for (const row of topRows) {
+      const entity = entityById.get(row.menuItemId);
+      if (!entity || entity.is_available === false || entity.deleted_at) {
+        continue;
+      }
+      const merchant = merchantById.get(entity.merchant_id);
+      if (!merchant || merchant.merchantStatus !== "APPROVED") {
+        continue;
+      }
+      const menuItem = merchant.menuItemList.find(
+        (mi) => mi.id.toString() === entity.id,
+      );
+      if (!menuItem) {
+        continue;
+      }
+      items.push({
+        id: menuItem.id.toString(),
+        merchantId: entity.merchant_id,
+        name: menuItem.itemName,
+        description: menuItem.itemDescription,
+        price: menuItem.itemPrice,
+        imageUrl: menuItem.itemImageUrl,
+        category: menuItem.itemCategory,
+        isAvailable: menuItem.available,
+        merchant: {
+          id: merchant.id.toString(),
+          name: merchant.merchantName,
+          rating: merchant.merchantRating,
+          address: merchant.merchantAddress,
+          latitude: merchant.merchantLatitude,
+          longitude: merchant.merchantLongitude,
+          isOpen: merchant.merchantIsOpen,
+          isOpenNow: merchant.isOpen(),
+        },
+      });
+    }
+
+    return items;
   }
 
   async softDelete(id: string): Promise<void> {
@@ -102,16 +387,161 @@ export class MerchantService {
     );
     merchant.approve();
     await this.merchantRepository.save(merchant);
+    // Mở khóa/bỏ từ chối tài khoản đăng nhập tương ứng (best-effort).
+    await this.syncIdentityAccount(merchant.ownerId, "ACTIVE");
     return merchant;
   }
 
-  async reject(id: string): Promise<Merchant> {
+  /**
+   * Từ chối nhà hàng (admin action).
+   * Lý do được lưu lại và đồng bộ sang identity-service để chủ nhà hàng thấy
+   * thông báo từ chối khi đăng nhập (tài khoản bị xóa sau 3 ngày).
+   */
+  async reject(id: string, reason?: string): Promise<Merchant> {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(id),
     );
-    merchant.reject();
+    merchant.reject(reason);
     await this.merchantRepository.save(merchant);
+    await this.syncIdentityAccount(merchant.ownerId, "REJECTED", { reason });
     return merchant;
+  }
+
+  /**
+   * Cập nhật trạng thái nhà hàng.
+   *
+   * @param options.reason Lý do khóa/từ chối (hiển thị khi đăng nhập).
+   * @param options.durationDays Số ngày khóa (bỏ trống = khóa vĩnh viễn).
+   * @param options.syncIdentity `false` khi thay đổi đến từ identity-service
+   *   (tránh gọi vòng lặp giữa 2 service).
+   */
+  async updateStatus(
+    id: string,
+    status: string,
+    options: {
+      reason?: string;
+      durationDays?: number;
+      syncIdentity?: boolean;
+    } = {},
+  ): Promise<Merchant> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(id),
+    );
+    switch (status) {
+      case "SUSPENDED":
+        merchant.suspend();
+        break;
+      case "APPROVED":
+      case "ACTIVE":
+        if (merchant.merchantStatus === "SUSPENDED") {
+          merchant.reactivate();
+        } else {
+          merchant.approve();
+        }
+        break;
+      case "REJECTED":
+        merchant.reject(options.reason);
+        break;
+      default:
+        throw new BadRequestException(`Unsupported merchant status: ${status}`);
+    }
+    await this.merchantRepository.save(merchant);
+
+    if (options.syncIdentity !== false) {
+      if (status === "SUSPENDED") {
+        await this.syncIdentityAccount(merchant.ownerId, "SUSPENDED", options);
+      } else if (status === "REJECTED") {
+        await this.syncIdentityAccount(merchant.ownerId, "REJECTED", options);
+      } else {
+        await this.syncIdentityAccount(merchant.ownerId, "ACTIVE");
+      }
+    }
+
+    return merchant;
+  }
+
+  /** Đồng bộ trạng thái nhà hàng theo user (gọi từ identity-service khi khóa/mở user). */
+  async updateStatusByUserId(
+    userId: string,
+    status: string,
+    options: { reason?: string; durationDays?: number } = {},
+  ): Promise<Merchant | null> {
+    const merchant = await this.merchantRepository.findByUserId(userId);
+    if (!merchant) return null;
+    // Chỉ đồng bộ khóa (→SUSPENDED), từ chối (→REJECTED) và mở khóa (→APPROVED),
+    // không tự approve nhà hàng đang PENDING/REJECTED.
+    if (status === "SUSPENDED" && merchant.merchantStatus === "APPROVED") {
+      return this.updateStatus(merchant.id.toString(), "SUSPENDED", {
+        ...options,
+        syncIdentity: false,
+      });
+    }
+    if (status === "REJECTED" && merchant.merchantStatus !== "REJECTED") {
+      return this.updateStatus(merchant.id.toString(), "REJECTED", {
+        ...options,
+        syncIdentity: false,
+      });
+    }
+    if (
+      (status === "APPROVED" || status === "ACTIVE") &&
+      merchant.merchantStatus === "SUSPENDED"
+    ) {
+      return this.updateStatus(merchant.id.toString(), "APPROVED", {
+        syncIdentity: false,
+      });
+    }
+    return merchant;
+  }
+
+  /**
+   * Đồng bộ trạng thái tài khoản đăng nhập sang identity-service (best-effort).
+   * - ACTIVE  → mở khóa / bỏ từ chối
+   * - SUSPENDED → khóa (có thời hạn hoặc vĩnh viễn) kèm lý do
+   * - REJECTED → từ chối hồ sơ kèm lý do
+   */
+  private async syncIdentityAccount(
+    userId: string,
+    status: "ACTIVE" | "SUSPENDED" | "REJECTED",
+    options: { reason?: string; durationDays?: number } = {},
+  ): Promise<void> {
+    const baseUrl =
+      process.env.IDENTITY_SERVICE_URL || "http://identity-service:3001";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      if (status === "ACTIVE") {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${baseUrl}/api/v1/auth/users/${userId}/unlock`,
+            {},
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      } else if (status === "REJECTED") {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${baseUrl}/api/v1/auth/users/${userId}/reject`,
+            { reason: options.reason },
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      } else {
+        await firstValueFrom(
+          this.httpService.patch(
+            `${baseUrl}/api/v1/auth/users/${userId}/status`,
+            {
+              status: "SUSPENDED",
+              reason: options.reason,
+              durationDays: options.durationDays,
+            },
+            { headers: { "x-service-key": serviceKey } },
+          ),
+        );
+      }
+    } catch (err: any) {
+      this.logger.warn(
+        `Sync identity account ${userId} (${status}) failed: ${err?.message ?? String(err)}`,
+      );
+    }
   }
 
   // ===================== Menu Management =====================
@@ -125,13 +555,15 @@ export class MerchantService {
     );
 
     const menuItem = merchant.addMenuItem({
-      category: dto.category as MenuItemCategory,
+      category: dto.category,
+      categoryId: dto.categoryId,
       name: dto.name,
       description: dto.description,
       price: dto.price,
       imageUrl: dto.imageUrl,
       isFeatured: dto.isFeatured,
       preparationTime: dto.preparationTime,
+      optionGroups: dto.optionGroups as any,
     });
 
     await this.merchantRepository.save(merchant);
@@ -144,11 +576,28 @@ export class MerchantService {
     return menuItem;
   }
 
-  async getMenuItems(merchantId: string): Promise<MenuItem[]> {
+  async getMenuItems(
+    merchantId: string,
+    includeUnavailable = false,
+  ): Promise<MenuItem[]> {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(merchantId),
     );
-    return [...merchant.activeMenuItems];
+    let items = includeUnavailable
+      ? [...merchant.menuItemList]
+      : [...merchant.activeMenuItems];
+
+    // Tắt danh mục → ẩn toàn bộ món thuộc danh mục đó khỏi menu người mua.
+    if (!includeUnavailable) {
+      const disabledIds =
+        await this.menuCategoryRepository.findDisabledIds(merchantId);
+      if (disabledIds.size > 0) {
+        items = items.filter(
+          (mi) => !mi.itemCategoryId || !disabledIds.has(mi.itemCategoryId),
+        );
+      }
+    }
+    return items;
   }
 
   async getMenuItem(merchantId: string, itemId: string): Promise<MenuItem> {
@@ -168,19 +617,24 @@ export class MerchantService {
     merchantId: string,
     itemId: string,
     dto: UpdateMenuItemDto,
+    changedBy?: string,
   ): Promise<MenuItem> {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(merchantId),
     );
 
     const menuItem = merchant.updateMenuItem(MenuItemId.from(itemId), {
-      category: dto.category as MenuItemCategory,
+      category: dto.category,
+      categoryId: dto.categoryId,
       name: dto.name,
       description: dto.description,
       price: dto.price,
       imageUrl: dto.imageUrl,
       isFeatured: dto.isFeatured,
       preparationTime: dto.preparationTime,
+      optionGroups: dto.optionGroups as any,
+      reason: dto.reason,
+      changedBy,
     });
 
     await this.merchantRepository.save(merchant);
@@ -193,17 +647,31 @@ export class MerchantService {
     return menuItem;
   }
 
-  async deleteMenuItem(merchantId: string, itemId: string): Promise<void> {
+  async setMenuItemAvailability(
+    merchantId: string,
+    itemId: string,
+    dto: SetMenuItemAvailabilityDto,
+  ): Promise<MenuItem> {
     const merchant = await this.merchantRepository.findByIdOrFail(
       MerchantId.from(merchantId),
     );
-    merchant.removeMenuItem(MenuItemId.from(itemId));
+    const menuItem = merchant.setMenuItemAvailability(
+      MenuItemId.from(itemId),
+      dto.status as MenuItemAvailabilityStatus,
+    );
     await this.merchantRepository.save(merchant);
 
     const events = merchant.pullDomainEvents();
     for (const event of events) {
       this.eventBus.publish(event);
     }
+
+    return menuItem;
+  }
+
+  /** Tự mở lại các món "hết hàng trong ngày" đã tới mốc ngày hôm sau. */
+  async reopenDueMenuItems(now: Date): Promise<number> {
+    return this.merchantRepository.reopenDueMenuItems(now);
   }
 
   async toggleMenuItem(merchantId: string, itemId: string): Promise<MenuItem> {
@@ -219,6 +687,141 @@ export class MerchantService {
     }
 
     return menuItem;
+  }
+
+  // ===================== Menu Categories =====================
+
+  async getMenuCategories(merchantId: string): Promise<MenuCategory[]> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    return this.menuCategoryRepository.findByMerchantId(merchantId);
+  }
+
+  async addMenuCategory(
+    merchantId: string,
+    dto: CreateMenuCategoryDto,
+  ): Promise<MenuCategory> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const category = MenuCategory.create({
+      merchantId,
+      name: dto.name,
+      sortOrder: dto.sortOrder,
+    });
+    await this.menuCategoryRepository.save(merchantId, category);
+    return category;
+  }
+
+  async updateMenuCategory(
+    merchantId: string,
+    categoryId: string,
+    dto: UpdateMenuCategoryDto,
+  ): Promise<MenuCategory> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const category = await this.menuCategoryRepository.findById(
+      merchantId,
+      categoryId,
+    );
+    if (!category) {
+      throw new Error(`Menu category ${categoryId} not found`);
+    }
+    if (dto.name !== undefined) category.updateName(dto.name);
+    if (dto.sortOrder !== undefined) category.updateSortOrder(dto.sortOrder);
+    if (dto.isActive !== undefined) category.setActive(dto.isActive);
+    await this.menuCategoryRepository.save(merchantId, category);
+    return category;
+  }
+
+  async deleteMenuCategory(
+    merchantId: string,
+    categoryId: string,
+  ): Promise<void> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    await this.menuCategoryRepository.delete(merchantId, categoryId);
+  }
+
+  // ===================== Bulk Menu Import =====================
+
+  async importMenu(
+    merchantId: string,
+    dto: BulkImportMenuDto,
+  ): Promise<{
+    createdCategories: number;
+    createdItems: number;
+    errors: { index: number; name?: string; message: string }[];
+  }> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
+
+    // 1. Upsert danh mục theo tên (bỏ qua nếu đã tồn tại)
+    const existingCategories =
+      await this.menuCategoryRepository.findByMerchantId(merchantId);
+    const categoryIdByName = new Map<string, string>(
+      existingCategories.map((c) => [c.name.trim().toLowerCase(), c.id]),
+    );
+
+    let createdCategories = 0;
+    let sortOrderCursor = existingCategories.length;
+    for (const cat of dto.categories ?? []) {
+      const key = (cat.name ?? "").trim().toLowerCase();
+      if (!key || categoryIdByName.has(key)) continue;
+      const category = MenuCategory.create({
+        merchantId,
+        name: cat.name,
+        sortOrder: cat.sortOrder ?? sortOrderCursor,
+      });
+      await this.menuCategoryRepository.save(merchantId, category);
+      categoryIdByName.set(key, category.id);
+      createdCategories += 1;
+      sortOrderCursor += 1;
+    }
+
+    // 2. Import món — bắt lỗi từng dòng, không fail cả batch
+    const errors: { index: number; name?: string; message: string }[] = [];
+    let createdItems = 0;
+
+    for (let i = 0; i < (dto.items ?? []).length; i++) {
+      const item = dto.items[i];
+      if (!item) continue;
+      try {
+        const category = item.category ?? "Khác";
+        let categoryId: string | undefined;
+        if (item.categoryId) {
+          categoryId = item.categoryId;
+        } else {
+          categoryId = categoryIdByName.get(category.trim().toLowerCase());
+        }
+
+        merchant.addMenuItem({
+          category,
+          categoryId,
+          name: item.name,
+          description: item.description,
+          price: item.price,
+          imageUrl: item.imageUrl,
+          isFeatured: item.isFeatured,
+          preparationTime: item.preparationTime,
+          optionGroups: item.optionGroups as any,
+        });
+        createdItems += 1;
+      } catch (err: any) {
+        errors.push({
+          index: i,
+          name: item?.name,
+          message: err?.message ?? "Lỗi không xác định",
+        });
+      }
+    }
+
+    if (createdItems > 0 || createdCategories > 0) {
+      await this.merchantRepository.save(merchant);
+
+      const events = merchant.pullDomainEvents();
+      for (const event of events) {
+        this.eventBus.publish(event);
+      }
+    }
+
+    return { createdCategories, createdItems, errors };
   }
 
   // ===================== Operating Hours =====================
@@ -263,6 +866,20 @@ export class MerchantService {
     return { isOpen: merchant.isOpen() };
   }
 
+  async toggleOpen(merchantId: string): Promise<Merchant> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
+    merchant.setOpen(!merchant.merchantIsOpen);
+    await this.merchantRepository.save(merchant);
+
+    const events = merchant.pullDomainEvents();
+    for (const event of events) {
+      this.eventBus.publish(event);
+    }
+    return merchant;
+  }
+
   // ===================== Capacity Management =====================
 
   async updateCapacity(merchantId: string, dto: UpdateCapacityDto) {
@@ -296,16 +913,435 @@ export class MerchantService {
     };
   }
 
-  // ---- Stats (B7) ----
-  async getStats(id: string, _period: string): Promise<any> {
-    await this.merchantRepository.findByIdOrFail(MerchantId.from(id));
-    return { merchantId: id, period: _period, totalOrders: 0, totalRevenue: 0, averageRating: 0, pendingOrders: 0, revenueByDay: [], topItems: [] };
+  // ---- Stats (B7): orchestrate order-service + review-service ----
+  async getStats(id: string, period: string): Promise<any> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(id),
+    );
+    const { startDate, endDate } = this.periodToRange(period);
+
+    const orderStats = await this.fetchOrderStats(id, startDate, endDate);
+    const reviewSummary = await this.fetchReviewSummary(id);
+
+    return {
+      merchantId: id,
+      period,
+      totalOrders: orderStats?.totalOrders ?? merchant.merchantTotalOrders ?? 0,
+      totalRevenue: orderStats?.totalRevenue ?? 0,
+      averageRating:
+        reviewSummary?.averageRating ?? merchant.merchantRating ?? 0,
+      pendingOrders: orderStats?.pendingOrders ?? 0,
+      revenueByDay: orderStats?.revenueByDay ?? [],
+      topItems: orderStats?.topItems ?? [],
+    };
   }
 
-  // ---- Reviews (B7) ----
-  async getReviews(id: string, _params: { skip: number; take: number; rating?: number }): Promise<any> {
+  // ---- Reviews (B7): delegate to review-service ----
+  async getReviews(
+    id: string,
+    params: { skip: number; take: number; rating?: number },
+  ): Promise<any> {
     await this.merchantRepository.findByIdOrFail(MerchantId.from(id));
-    return { items: [], total: 0, averageRating: 0, ratingDistribution: {} };
+
+    const url = process.env.REVIEW_SERVICE_URL || "http://review-service:3011";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    const res = await firstValueFrom(
+      this.httpService.get(`${url}/api/v1/reviews/merchant/${id}`, {
+        params: { skip: params.skip, take: params.take, rating: params.rating },
+        headers: { "x-service-key": serviceKey },
+      }),
+    );
+
+    const data: any = res.data ?? {};
+    return {
+      items: data.data ?? [],
+      total: data.total ?? 0,
+      averageRating: data.averageRating ?? 0,
+      ratingDistribution: data.ratingDistribution ?? {},
+    };
+  }
+
+  // ===================== Price History & Auditing =====================
+
+  async getPriceHistory(
+    merchantId: string,
+    filters: {
+      menuItemId?: string;
+      changedBy?: string;
+      from?: string;
+      to?: string;
+      skip?: number;
+      take?: number;
+    },
+  ): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const { items, total } = await this.priceHistoryRepository.findByMerchant(
+      merchantId,
+      {
+        menuItemId: filters.menuItemId,
+        changedBy: filters.changedBy,
+        from: filters.from ? new Date(filters.from) : undefined,
+        to: filters.to ? new Date(filters.to) : undefined,
+        skip: filters.skip,
+        take: filters.take,
+      },
+    );
+    return {
+      items: items.map((e) => ({
+        id: e.id,
+        merchantId: e.merchant_id,
+        menuItemId: e.menu_item_id,
+        menuItemName: e.menu_item_name,
+        oldPrice: Number(e.old_price),
+        newPrice: Number(e.new_price),
+        changedBy: e.changed_by,
+        reason: e.reason,
+        status: e.status,
+        type: e.type,
+        createdAt: e.created_at,
+      })),
+      total,
+    };
+  }
+
+  async recordFlashSalePriceHistory(
+    dto: RecordFlashSalePriceHistoryDto,
+  ): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(dto.merchantId),
+    );
+    const count = await this.priceHistoryRepository.saveFlashSaleEntries({
+      merchantId: dto.merchantId,
+      title: dto.title ?? null,
+      items: dto.items.map((it) => ({
+        menuItemId: it.menuItemId,
+        menuItemName: it.menuItemName ?? null,
+        originalPrice: it.originalPrice,
+        salePrice: it.salePrice,
+      })),
+    });
+    return { merchantId: dto.merchantId, recorded: count };
+  }
+
+  async comparePrice(
+    merchantId: string,
+    menuItemId: string,
+    at?: string,
+  ): Promise<any> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
+    const targetDate = at ? new Date(at) : new Date();
+    const nearest = await this.priceHistoryRepository.findNearestBefore(
+      merchantId,
+      menuItemId,
+      targetDate,
+    );
+    const current = merchant.menuItemList.find(
+      (mi) => mi.id.toString() === menuItemId,
+    );
+    return {
+      menuItemId,
+      currentPrice: current?.itemPrice ?? null,
+      priceAt: nearest
+        ? { price: Number(nearest.new_price), at: nearest.created_at }
+        : null,
+    };
+  }
+
+  async updatePriceHistoryStatus(
+    historyId: string,
+    status: string,
+  ): Promise<any> {
+    if (!["RECORDED", "AUDITED", "FLAGGED"].includes(status)) {
+      throw new BadRequestException("Trạng thái không hợp lệ");
+    }
+    const entity = await this.priceHistoryRepository.updateStatus(
+      historyId,
+      status as any,
+    );
+    if (!entity) {
+      throw new NotFoundException("Không tìm thấy lịch sử giá");
+    }
+    return { id: entity.id, status: entity.status };
+  }
+
+  async getPriceAlerts(
+    merchantId: string,
+    skip?: number,
+    take?: number,
+  ): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const { items, total } =
+      await this.priceHistoryRepository.findAlertsByMerchant(
+        merchantId,
+        skip ?? 0,
+        take ?? 50,
+      );
+    return {
+      items: items.map((a) => ({
+        id: a.id,
+        merchantId: a.merchant_id,
+        menuItemId: a.menu_item_id,
+        oldPrice: Number(a.old_price),
+        newPrice: Number(a.new_price),
+        changePercent: Number(a.change_percent),
+        message: a.message,
+        isRead: a.is_read,
+        createdAt: a.created_at,
+      })),
+      total,
+    };
+  }
+
+  async getPriceFluctuationReport(
+    merchantId: string,
+    from?: string,
+    to?: string,
+  ): Promise<any> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const stats = await this.priceHistoryRepository.getFluctuationStats(
+      merchantId,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+    );
+    const alerts = await this.priceHistoryRepository.findAlertsByMerchant(
+      merchantId,
+      0,
+      500,
+    );
+    return {
+      merchantId,
+      period: { from: from ?? null, to: to ?? null },
+      ...stats,
+      totalAlerts: alerts.total,
+    };
+  }
+
+  async exportPriceHistoryCsv(
+    merchantId: string,
+    filters: {
+      menuItemId?: string;
+      changedBy?: string;
+      from?: string;
+      to?: string;
+    },
+  ): Promise<string> {
+    await this.merchantRepository.findByIdOrFail(MerchantId.from(merchantId));
+    const { items } = await this.priceHistoryRepository.findByMerchant(
+      merchantId,
+      {
+        menuItemId: filters.menuItemId,
+        changedBy: filters.changedBy,
+        from: filters.from ? new Date(filters.from) : undefined,
+        to: filters.to ? new Date(filters.to) : undefined,
+        skip: 0,
+        take: 10000,
+      },
+    );
+
+    const header = [
+      "id",
+      "menu_item_id",
+      "menu_item_name",
+      "old_price",
+      "new_price",
+      "changed_by",
+      "reason",
+      "status",
+      "type",
+      "created_at",
+    ];
+    const escape = (v: unknown): string => {
+      const s = v === null || v === undefined ? "" : String(v);
+      if (/[",\n]/.test(s)) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const lines = [header.join(",")];
+    for (const e of items) {
+      lines.push(
+        [
+          e.id,
+          e.menu_item_id,
+          e.menu_item_name ?? "",
+          Number(e.old_price),
+          Number(e.new_price),
+          e.changed_by ?? "",
+          e.reason ?? "",
+          e.status,
+          e.type,
+          e.created_at?.toISOString() ?? "",
+        ]
+          .map(escape)
+          .join(","),
+      );
+    }
+    return "\uFEFF" + lines.join("\n");
+  }
+
+  async reconcileRevenue(merchantId: string, period?: string): Promise<any> {
+    const merchant = await this.merchantRepository.findByIdOrFail(
+      MerchantId.from(merchantId),
+    );
+    const range = this.periodToRange(period || "today");
+    const orderStats = await this.fetchOrderStats(
+      merchantId,
+      range.startDate,
+      range.endDate,
+    );
+    const orderItems: any[] = await this.fetchOrderItems(
+      merchantId,
+      range.startDate,
+      range.endDate,
+    );
+
+    const items: any[] = [];
+    let expectedRevenue = 0;
+    let actualRevenue = 0;
+
+    for (const it of orderItems) {
+      const menuItem = merchant.menuItemList.find(
+        (mi) => mi.id.toString() === it.menuItemId,
+      );
+      const listPrice =
+        it.originalPrice != null
+          ? Number(it.originalPrice)
+          : menuItem
+            ? menuItem.itemPrice
+            : null;
+      const unitPrice = Number(it.unitPrice ?? 0);
+      const quantity = Number(it.quantity ?? 0);
+      const lineActual = unitPrice * quantity;
+      const lineExpected = listPrice != null ? listPrice * quantity : null;
+      const difference =
+        lineExpected != null ? lineExpected - lineActual : null;
+
+      if (lineExpected != null) expectedRevenue += lineExpected;
+      actualRevenue += lineActual;
+
+      items.push({
+        orderId: it.orderId,
+        menuItemId: it.menuItemId,
+        name: it.name ?? null,
+        quantity,
+        unitPrice,
+        listPrice,
+        actualRevenue: lineActual,
+        expectedRevenue: lineExpected,
+        difference,
+        createdAt: it.createdAt,
+      });
+    }
+
+    return {
+      merchantId,
+      period: period || "today",
+      totalOrders: orderStats?.totalOrders ?? 0,
+      totalRevenue: orderStats?.totalRevenue ?? 0,
+      pendingOrders: orderStats?.pendingOrders ?? 0,
+      expectedRevenue,
+      actualRevenue,
+      difference: expectedRevenue - actualRevenue,
+      revenueByDay: orderStats?.revenueByDay ?? [],
+      items,
+    };
+  }
+
+  private periodToRange(period: string): {
+    startDate?: string;
+    endDate?: string;
+  } {
+    const endDate = new Date().toISOString();
+    let startDate: string | undefined;
+    switch (period) {
+      case "7days":
+      case "week":
+        startDate = new Date(Date.now() - 7 * 86400000).toISOString();
+        break;
+      case "30days":
+      case "month":
+        startDate = new Date(Date.now() - 30 * 86400000).toISOString();
+        break;
+      case "today":
+      default:
+        startDate = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+        break;
+    }
+    return { startDate, endDate };
+  }
+
+  private async fetchOrderStats(
+    merchantId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<any | null> {
+    const url = process.env.ORDER_SERVICE_URL || "http://order-service:3004";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(
+          `${url}/api/v1/orders/stats/merchant/${merchantId}`,
+          {
+            params: { startDate, endDate },
+            headers: { "x-service-key": serviceKey },
+          },
+        ),
+      );
+      return res.data;
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to fetch order stats for ${merchantId}: ${err?.message}`,
+      );
+      return null;
+    }
+  }
+
+  private async fetchOrderItems(
+    merchantId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<any[]> {
+    const url = process.env.ORDER_SERVICE_URL || "http://order-service:3004";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(
+          `${url}/api/v1/orders/reconciliation/merchant/${merchantId}`,
+          {
+            params: { startDate, endDate },
+            headers: { "x-service-key": serviceKey },
+          },
+        ),
+      );
+      const data: any = res.data ?? {};
+      return Array.isArray(data.items) ? data.items : [];
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to fetch order items for ${merchantId}: ${err?.message}`,
+      );
+      return [];
+    }
+  }
+
+  private async fetchReviewSummary(merchantId: string): Promise<any | null> {
+    const url = process.env.REVIEW_SERVICE_URL || "http://review-service:3011";
+    const serviceKey = process.env.SERVICE_API_KEY || "mythfood-service-key";
+    try {
+      const res = await firstValueFrom(
+        this.httpService.get(`${url}/api/v1/reviews/merchant/${merchantId}`, {
+          params: { skip: 0, take: 1 },
+          headers: { "x-service-key": serviceKey },
+        }),
+      );
+      return res.data;
+    } catch (err: any) {
+      this.logger.warn(
+        `Failed to fetch review summary for ${merchantId}: ${err?.message}`,
+      );
+      return null;
+    }
   }
 
   private getCapacityInfo(merchant: Merchant) {

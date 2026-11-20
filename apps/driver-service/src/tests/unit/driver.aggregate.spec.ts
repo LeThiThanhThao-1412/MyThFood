@@ -49,6 +49,49 @@ describe("Driver Aggregate", () => {
     });
   });
 
+  describe("unlock", () => {
+    it("should unlock a suspended driver immediately and clear the accept block", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.activate();
+      driver.suspendFor(3);
+      expect(driver.driverStatus).toBe(DriverStatus.SUSPENDED);
+      expect(driver.driverAcceptBlockedUntil).not.toBeNull();
+
+      driver.unlock();
+      expect(driver.driverStatus).toBe(DriverStatus.ACTIVE);
+      expect(driver.driverAcceptBlockedUntil).toBeNull();
+      expect(driver.isBlocked).toBe(false);
+      expect(driver.driverOnlineStatus).toBe(DriverOnlineStatus.OFFLINE);
+
+      // Sau khi mở khóa, tài xế có thể online lại bình thường.
+      expect(() => driver.goOnline()).not.toThrow();
+    });
+  });
+
+  describe("rejection", () => {
+    it("should mark the driver as REJECTED and keep the reason", () => {
+      const driver = Driver.create(createProps);
+      driver.reject("Giấy tờ không hợp lệ");
+
+      expect(driver.driverStatus).toBe(DriverStatus.REJECTED);
+      expect(driver.driverOnlineStatus).toBe(DriverOnlineStatus.OFFLINE);
+      expect(driver.driverRejectReason).toBe("Giấy tờ không hợp lệ");
+      expect(driver.driverRejectedAt).toBeInstanceOf(Date);
+    });
+
+    it("should clear rejection metadata after re-activation", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.reject("Thiếu giấy tờ");
+      driver.activate();
+
+      expect(driver.driverStatus).toBe(DriverStatus.ACTIVE);
+      expect(driver.driverRejectReason).toBeNull();
+      expect(driver.driverRejectedAt).toBeNull();
+    });
+  });
+
   describe("online/offline", () => {
     it("should only allow active drivers to go online", () => {
       const driver = Driver.create(createProps);
@@ -101,6 +144,91 @@ describe("Driver Aggregate", () => {
       const driver = Driver.create(createProps);
       expect(() => driver.updateLocation(10.775, 106.7)).toThrow(
         "Cannot update location when offline",
+      );
+    });
+
+    it("should reject invalid GPS coordinates", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.activate();
+      driver.goOnline();
+
+      expect(() => driver.updateLocation(Number.NaN, 106.7)).toThrow(
+        "Invalid GPS coordinates",
+      );
+      expect(() => driver.updateLocation(91, 106.7)).toThrow(
+        "Invalid GPS coordinates",
+      );
+      expect(() => driver.updateLocation(10.775, -181)).toThrow(
+        "Invalid GPS coordinates",
+      );
+      // Toạ độ rác không được ghi đè vị trí hợp lệ trước đó.
+      expect(driver.driverCurrentLatitude).not.toBe(91);
+    });
+  });
+
+  describe("driverLastHeartbeatAt (auto-offline heartbeat)", () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("should be null when the driver has no session and never sent GPS", () => {
+      const driver = Driver.create(createProps);
+
+      expect(driver.driverLastHeartbeatAt).toBeNull();
+    });
+
+    it("should count the moment a driver just went online as a heartbeat", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.activate();
+
+      jest.useFakeTimers().setSystemTime(new Date("2026-01-01T10:00:00.000Z"));
+      driver.goOnline();
+
+      // Chưa gửi GPS lần nào nhưng vẫn phải có nhịp tim = thời điểm vừa online
+      // → không bị auto-offline ngay sau khi bật Online.
+      expect(driver.driverLastLocationUpdateAt).toBeNull();
+      expect(driver.driverLastHeartbeatAt?.toISOString()).toBe(
+        "2026-01-01T10:00:00.000Z",
+      );
+    });
+
+    it("should use the latest GPS update when it is newer than the online time", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.activate();
+
+      jest.useFakeTimers().setSystemTime(new Date("2026-01-01T10:00:00.000Z"));
+      driver.goOnline();
+
+      jest.setSystemTime(new Date("2026-01-01T10:00:05.000Z"));
+      driver.updateLocation(10.775, 106.7);
+
+      expect(driver.driverLastHeartbeatAt?.toISOString()).toBe(
+        "2026-01-01T10:00:05.000Z",
+      );
+    });
+
+    it("should keep the online time when the last GPS update is from a previous session", () => {
+      const driver = Driver.create(createProps);
+      driver.completeTraining();
+      driver.activate();
+
+      // Phiên trước: online + gửi GPS lúc 10:00.
+      jest.useFakeTimers().setSystemTime(new Date("2026-01-01T10:00:00.000Z"));
+      driver.goOnline();
+      jest.setSystemTime(new Date("2026-01-01T10:00:10.000Z"));
+      driver.updateLocation(10.775, 106.7);
+      driver.goOffline();
+
+      // Phiên mới: vừa bật lại ONLINE lúc 11:00, chưa gửi GPS mới.
+      jest.setSystemTime(new Date("2026-01-01T11:00:00.000Z"));
+      driver.goOnline();
+
+      // Nhịp tim phải là 11:00 (mốc vừa online), không phải 10:00:10 của phiên cũ.
+      expect(driver.driverLastHeartbeatAt?.toISOString()).toBe(
+        "2026-01-01T11:00:00.000Z",
       );
     });
   });
@@ -185,7 +313,7 @@ describe("Driver Aggregate", () => {
       driver.goOnline();
       driver.assignOrder("order-1");
       expect(() => driver.assignOrder("order-2")).toThrow(
-        "Driver already has an active order",
+        /maximum number of active orders/,
       );
     });
 

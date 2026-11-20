@@ -156,7 +156,8 @@ if($oid -and $ddid) {
     $dh = @{Authorization="Bearer $dt";"Content-Type"="application/json"}
     $assignBody = @{driverId=$ddid} | ConvertTo-Json
     $t = Test-Endpoint 'PATCH /orders/:id/out-for-delivery' 'PATCH' ("$orderUrl/orders/$oid/out-for-delivery") $dh $assignBody; $results += $t; Write-Host ("[{0}] {1}" -f $(if($t.Pass){'PASS'}else{'FAIL'}), $t.Name)
-    $t = Test-Endpoint 'PATCH /orders/:id/delivered' 'PATCH' ("$orderUrl/orders/$oid/delivered") $dh $null; $results += $t; Write-Host ("[{0}] {1}" -f $(if($t.Pass){'PASS'}else{'FAIL'}), $t.Name)
+    $proofBody = @{photoUrl="http://localhost:3010/api/v1/upload/delivery-proof/test-proof.jpg"} | ConvertTo-Json
+    $t = Test-Endpoint 'PATCH /orders/:id/delivered' 'PATCH' ("$orderUrl/orders/$oid/delivered") $dh $proofBody; $results += $t; Write-Host ("[{0}] {1}" -f $(if($t.Pass){'PASS'}else{'FAIL'}), $t.Name)
 }
 
 Write-Host ''

@@ -10,6 +10,7 @@ import { PaymentMethod } from "./payment-method.vo";
 import { ConsumerProfileUpdatedEvent } from "./events/consumer-profile-updated.event";
 
 export type Gender = "MALE" | "FEMALE" | "OTHER";
+export type ConsumerStatus = "ACTIVE" | "SUSPENDED" | "BANNED";
 
 export interface ConsumerProps {
   userId: string;
@@ -17,8 +18,13 @@ export interface ConsumerProps {
   avatar: string | null;
   dateOfBirth: Date | null;
   gender: Gender | null;
+  status?: ConsumerStatus;
   addresses: Address[];
   paymentMethods: PaymentMethod[];
+  favoriteMerchantIds: string[];
+  favoriteMenuItemIds: string[];
+  isVerified?: boolean;
+  idCardNumber?: string | null;
 }
 
 export class Consumer extends AggregateRoot<ConsumerId> {
@@ -27,8 +33,13 @@ export class Consumer extends AggregateRoot<ConsumerId> {
   private avatar: string | null;
   private dateOfBirth: Date | null;
   private gender: Gender | null;
+  private status: ConsumerStatus;
   private addresses: Address[];
   private paymentMethods: PaymentMethod[];
+  private favoriteMerchantIds: string[];
+  private favoriteMenuItemIds: string[];
+  private isVerified: boolean;
+  private idCardNumber: string | null;
 
   private constructor(id: ConsumerId, props: ConsumerProps) {
     super(id);
@@ -37,8 +48,13 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     this.avatar = props.avatar;
     this.dateOfBirth = props.dateOfBirth;
     this.gender = props.gender;
+    this.status = props.status ?? "ACTIVE";
     this.addresses = props.addresses;
     this.paymentMethods = props.paymentMethods;
+    this.favoriteMerchantIds = props.favoriteMerchantIds ?? [];
+    this.favoriteMenuItemIds = props.favoriteMenuItemIds ?? [];
+    this.isVerified = props.isVerified ?? false;
+    this.idCardNumber = props.idCardNumber ?? null;
   }
 
   public static create(props: {
@@ -63,8 +79,13 @@ export class Consumer extends AggregateRoot<ConsumerId> {
       avatar: props.avatar ?? null,
       dateOfBirth: props.dateOfBirth ?? null,
       gender: props.gender ?? null,
+      status: "ACTIVE",
       addresses: [],
       paymentMethods: [],
+      favoriteMerchantIds: [],
+      favoriteMenuItemIds: [],
+      isVerified: false,
+      idCardNumber: null,
     });
 
     consumer.addDomainEvent(
@@ -83,6 +104,33 @@ export class Consumer extends AggregateRoot<ConsumerId> {
 
   public static rehydrate(id: ConsumerId, props: ConsumerProps): Consumer {
     return new Consumer(id, props);
+  }
+
+  public suspend(): void {
+    if (this.status === "BANNED") {
+      throw new BusinessRuleViolationError("Cannot suspend a banned consumer");
+    }
+    this.status = "SUSPENDED";
+    this.markUpdated();
+  }
+
+  public ban(): void {
+    this.status = "BANNED";
+    this.markUpdated();
+  }
+
+  public reactivate(): void {
+    this.status = "ACTIVE";
+    this.markUpdated();
+  }
+
+  public verify(idCardNumber: string): void {
+    if (!idCardNumber || idCardNumber.trim().length === 0) {
+      throw new BusinessRuleViolationError("ID card number is required");
+    }
+    this.isVerified = true;
+    this.idCardNumber = idCardNumber.trim();
+    this.markUpdated();
   }
 
   public updateProfile(props: {
@@ -246,6 +294,71 @@ export class Consumer extends AggregateRoot<ConsumerId> {
     return Result.ok(undefined);
   }
 
+  // ===================== Favorites =====================
+
+  public isFavorite(merchantId: string): boolean {
+    return this.favoriteMerchantIds.includes(merchantId);
+  }
+
+  /** Returns true when the merchant was added, false when it was removed. */
+  public toggleFavorite(merchantId: string): Result<boolean, DomainError> {
+    if (!merchantId || merchantId.trim().length === 0) {
+      return Result.fail(
+        new BusinessRuleViolationError("Merchant ID is required"),
+      );
+    }
+    const index = this.favoriteMerchantIds.indexOf(merchantId);
+    let added: boolean;
+    if (index === -1) {
+      this.favoriteMerchantIds = [...this.favoriteMerchantIds, merchantId];
+      added = true;
+    } else {
+      this.favoriteMerchantIds = this.favoriteMerchantIds.filter(
+        (id) => id !== merchantId,
+      );
+      added = false;
+    }
+    this.markUpdated();
+    return Result.ok(added);
+  }
+
+  public isFavoriteMenuItem(menuItemId: string): boolean {
+    return this.favoriteMenuItemIds.includes(menuItemId);
+  }
+
+  /** Returns true when the menu item was added, false when it was removed. */
+  public toggleFavoriteMenuItem(
+    menuItemId: string,
+  ): Result<boolean, DomainError> {
+    if (!menuItemId || menuItemId.trim().length === 0) {
+      return Result.fail(
+        new BusinessRuleViolationError("Menu item ID is required"),
+      );
+    }
+    const index = this.favoriteMenuItemIds.indexOf(menuItemId);
+    let added: boolean;
+    if (index === -1) {
+      this.favoriteMenuItemIds = [...this.favoriteMenuItemIds, menuItemId];
+      added = true;
+    } else {
+      this.favoriteMenuItemIds = this.favoriteMenuItemIds.filter(
+        (id) => id !== menuItemId,
+      );
+      added = false;
+    }
+    this.markUpdated();
+    return Result.ok(added);
+  }
+
+  get consumerStatus(): ConsumerStatus {
+    return this.status;
+  }
+  get consumerIsVerified(): boolean {
+    return this.isVerified;
+  }
+  get consumerIdCardNumber(): string | null {
+    return this.idCardNumber;
+  }
   get userIdValue(): string {
     return this.userId;
   }
@@ -266,6 +379,15 @@ export class Consumer extends AggregateRoot<ConsumerId> {
   }
   get paymentMethodList(): PaymentMethod[] {
     return [...this.paymentMethods];
+  }
+  get favoriteMerchantIdList(): string[] {
+    return [...this.favoriteMerchantIds];
+  }
+  get favoriteMenuItemIdList(): string[] {
+    return [...this.favoriteMenuItemIds];
+  }
+  get favoriteCount(): number {
+    return this.favoriteMerchantIds.length;
   }
   get defaultAddress(): Address | null {
     return this.addresses.find((a) => a.isDefault) ?? null;

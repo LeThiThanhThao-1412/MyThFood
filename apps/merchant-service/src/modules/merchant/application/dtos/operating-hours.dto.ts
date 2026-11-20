@@ -3,6 +3,8 @@ import {
   IsString,
   IsOptional,
   IsBoolean,
+  IsArray,
+  ValidateNested,
   Min,
   Max,
 } from "class-validator";
@@ -31,6 +33,8 @@ export class OperatingHoursDto {
 }
 
 export class SetOperatingHoursDto {
+  @IsArray()
+  @ValidateNested({ each: true })
   @Type(() => OperatingHoursDto)
   hours!: OperatingHoursDto[];
 }

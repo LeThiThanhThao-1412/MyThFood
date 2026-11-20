@@ -1,19 +1,24 @@
-'use client';
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { useAuth } from '@mythfood/frontend-shared';
+"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useAuth } from "@mythfood/frontend-shared";
 
 export default function ConsumerRegisterPage() {
   const router = useRouter();
   const { register } = useAuth();
-  const [form, setForm] = useState({ phone: '', name: '', email: '', password: '' });
-  const [error, setError] = useState('');
+  const [form, setForm] = useState({
+    phone: "",
+    name: "",
+    email: "",
+    password: "",
+  });
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
     try {
       await register({
@@ -21,11 +26,11 @@ export default function ConsumerRegisterPage() {
         fullName: form.name,
         email: form.email,
         password: form.password,
-        roles: ['CONSUMER'],
+        roles: ["CONSUMER"],
       });
-      router.push('/login?registered=1');
+      router.push("/login?registered=1");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Đăng ký thất bại');
+      setError(err instanceof Error ? err.message : "Đăng ký thất bại");
     } finally {
       setLoading(false);
     }
@@ -41,13 +46,19 @@ export default function ConsumerRegisterPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">{error}</div>
+            <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm">
+              {error}
+            </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Họ tên</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Họ tên
+            </label>
             <input
-              type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="Nguyễn Văn A"
               className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition"
               required
@@ -55,9 +66,13 @@ export default function ConsumerRegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Số điện thoại</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Số điện thoại
+            </label>
             <input
-              type="text" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
+              type="text"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
               placeholder="+84901234567"
               className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition"
               required
@@ -65,35 +80,48 @@ export default function ConsumerRegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email
+            </label>
             <input
-              type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
               placeholder="email@example.com"
               className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Mật khẩu
+            </label>
             <input
-              type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
               placeholder="Ít nhất 6 ký tự"
               className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-200 outline-none transition"
-              required minLength={6}
+              required
+              minLength={6}
             />
           </div>
 
           <button
-            type="submit" disabled={loading}
+            type="submit"
+            disabled={loading}
             className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 disabled:opacity-50 transition"
           >
-            {loading ? 'Đang đăng ký...' : 'Đăng ký'}
+            {loading ? "Đang đăng ký..." : "Đăng ký"}
           </button>
         </form>
 
         <p className="text-center text-sm text-gray-500 mt-6">
-          Đã có tài khoản?{' '}
-          <Link href="/login" className="text-orange-500 hover:underline font-medium">
+          Đã có tài khoản?{" "}
+          <Link
+            href="/login"
+            className="text-orange-500 hover:underline font-medium"
+          >
             Đăng nhập
           </Link>
         </p>

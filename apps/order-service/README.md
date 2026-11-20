@@ -85,6 +85,12 @@ PENDING ──→ CONFIRMED ──→ PREPARING ──→ READY_FOR_PICKUP ─�
 - State machine: chỉ chuyển trạng thái theo các đường dẫn được phép
 - Hủy / từ chối phải có lý do
 - `OUT_FOR_DELIVERY` phải có `driverId`
+- Khách được **đặt nhiều đơn cùng lúc** (nhiều quán / nhiều lượt trong ngày).
+  Số đơn đang hoạt động tối đa được cấu hình bằng biến môi trường
+  `MAX_ACTIVE_ORDERS_PER_CONSUMER` (`0` hoặc bỏ trống = không giới hạn;
+  cấu hình mặc định trong repo là **3**).
+- Mỗi đơn vẫn độc lập về tài xế, thanh toán và trạng thái; tài xế có thể gộp
+  nhiều đơn `SAVER` theo cấu hình stacking của dispatch-service.
 
 ## 📡 API Reference
 
@@ -150,6 +156,15 @@ PENDING ──→ CONFIRMED ──→ PREPARING ──→ READY_FOR_PICKUP ─�
 | `PATCH` | `/orders/:id/delivered`        | JWT  | DRIVER              |
 | `PATCH` | `/orders/:id/cancel`           | JWT  | CONSUMER / MERCHANT |
 | `PATCH` | `/orders/:id/reject`           | JWT  | MERCHANT            |
+
+**Delivered Request Body (bắt buộc với đơn `DELIVERY`):**
+
+```json
+{ "photoUrl": "http://localhost:3010/api/v1/upload/delivery-proof/proof.jpg" }
+```
+
+Tài xế phải chụp ảnh món ăn lúc giao cho khách. Thiếu ảnh ⇒ `400 Bad Request`;
+ảnh được lưu vào `deliveryProofPhotoUrl` để đối chiếu khi khách khiếu nại.
 
 **Status Transition Request Body (cancel/reject):**
 

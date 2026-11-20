@@ -1,6 +1,9 @@
 import { Order } from "../../modules/order/domain/order.aggregate";
 
 describe("Order Aggregate", () => {
+  const deliveryProofPhotoUrl =
+    "http://localhost:3010/api/v1/upload/delivery-proof/proof.jpg";
+
   const validPlaceOrderProps = {
     consumerId: "550e8400-e29b-41d4-a716-446655440001",
     merchantId: "550e8400-e29b-41d4-a716-446655440002",
@@ -151,13 +154,50 @@ describe("Order Aggregate", () => {
       expect(order.orderDriverId).toBe("550e8400-e29b-41d4-a716-446655440005");
     });
 
+    it("should assign and clear a driver", () => {
+      order.assignDriver("550e8400-e29b-41d4-a716-446655440005");
+      expect(order.orderDriverId).toBe("550e8400-e29b-41d4-a716-446655440005");
+      order.clearDriver();
+      expect(order.orderDriverId).toBeNull();
+    });
+
     it("should transition from OUT_FOR_DELIVERY to DELIVERED", () => {
       order.confirm();
       order.startPreparing();
       order.markReadyForPickup();
       order.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
-      order.markDelivered();
+      order.markDelivered(deliveryProofPhotoUrl);
       expect(order.orderStatus).toBe("DELIVERED");
+      expect(order.orderDeliveryProofPhotoUrl).toBe(deliveryProofPhotoUrl);
+    });
+
+    it("should require a delivery proof photo before marking DELIVERY order as delivered", () => {
+      order.confirm();
+      order.startPreparing();
+      order.markReadyForPickup();
+      order.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
+
+      expect(() => order.markDelivered()).toThrow(
+        "Phải chụp ảnh món ăn khi giao cho khách",
+      );
+      expect(order.orderStatus).toBe("OUT_FOR_DELIVERY");
+      expect(order.orderDeliveryProofPhotoUrl).toBeNull();
+    });
+
+    it("should allow PICKUP order to be delivered without a proof photo", () => {
+      const pickup = Order.place({
+        ...validPlaceOrderProps,
+        orderType: "PICKUP",
+        deliveryAddress: "",
+      }).value;
+      pickup.confirm();
+      pickup.startPreparing();
+      pickup.markReadyForPickup();
+      pickup.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
+
+      pickup.markDelivered();
+      expect(pickup.orderStatus).toBe("DELIVERED");
+      expect(pickup.orderDeliveryProofPhotoUrl).toBeNull();
     });
 
     it("should cancel order from PENDING", () => {
@@ -172,6 +212,17 @@ describe("Order Aggregate", () => {
       expect(order.orderRejectionReason).toBe("Closed for the day");
     });
 
+    it("should mark merchant rejection source by default", () => {
+      order.reject("Closed for the day");
+      expect(order.orderRejectionSource).toBe("MERCHANT");
+    });
+
+    it("should mark no-response rejection source", () => {
+      order.rejectNoResponse("Không phản hồi");
+      expect(order.orderStatus).toBe("REJECTED");
+      expect(order.orderRejectionSource).toBe("NO_RESPONSE");
+    });
+
     it("should not allow invalid transitions", () => {
       expect(() => order.markDelivered()).toThrow(
         "Cannot transition order from PENDING to DELIVERED",
@@ -183,7 +234,7 @@ describe("Order Aggregate", () => {
       order.startPreparing();
       order.markReadyForPickup();
       order.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
-      order.markDelivered();
+      order.markDelivered(deliveryProofPhotoUrl);
 
       expect(() => order.cancel("Late")).toThrow(
         "Cannot transition order from DELIVERED to CANCELLED",
@@ -208,6 +259,56 @@ describe("Order Aggregate", () => {
     });
   });
 
+  describe("cancelByCustomer()", () => {
+    it("should allow customer cancel at PENDING", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const order = result.value;
+      order.cancelByCustomer("Đổi ý");
+      expect(order.orderStatus).toBe("CANCELLED");
+    });
+
+    it("should allow customer cancel at CONFIRMED", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const order = result.value;
+      order.confirm();
+      order.cancelByCustomer("Đổi ý");
+      expect(order.orderStatus).toBe("CANCELLED");
+    });
+
+    it("should NOT allow customer cancel once PREPARING", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const order = result.value;
+      order.confirm();
+      order.startPreparing();
+      expect(() => order.cancelByCustomer("Đổi ý")).toThrow(
+        "Nhà hàng đã bắt đầu chuẩn bị món, bạn không thể hủy đơn nữa",
+      );
+    });
+
+    it("should NOT allow customer cancel at READY_FOR_PICKUP", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const order = result.value;
+      order.confirm();
+      order.startPreparing();
+      order.markReadyForPickup();
+      expect(() => order.cancelByCustomer("Đổi ý")).toThrow(
+        "Nhà hàng đã bắt đầu chuẩn bị món, bạn không thể hủy đơn nữa",
+      );
+    });
+
+    it("should NOT allow customer cancel at OUT_FOR_DELIVERY", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const order = result.value;
+      order.confirm();
+      order.startPreparing();
+      order.markReadyForPickup();
+      order.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
+      expect(() => order.cancelByCustomer("Đổi ý")).toThrow(
+        "Nhà hàng đã bắt đầu chuẩn bị món, bạn không thể hủy đơn nữa",
+      );
+    });
+  });
+
   describe("Query methods", () => {
     it("should report active for non-terminal statuses", () => {
       const result = Order.place(validPlaceOrderProps);
@@ -222,7 +323,7 @@ describe("Order Aggregate", () => {
       order.startPreparing();
       order.markReadyForPickup();
       order.markOutForDelivery("550e8400-e29b-41d4-a716-446655440005");
-      order.markDelivered();
+      order.markDelivered(deliveryProofPhotoUrl);
       expect(order.isActive()).toBe(false);
     });
 
@@ -265,11 +366,47 @@ describe("Order Aggregate", () => {
         driverId: original.orderDriverId,
         cancelReason: original.orderCancelReason,
         rejectionReason: original.orderRejectionReason,
+        paymentMethod: original.orderPaymentMethod,
       });
 
       expect(rehydrated.id.equals(original.id)).toBe(true);
       expect(rehydrated.orderStatus).toBe("PENDING");
       expect(rehydrated.pullDomainEvents()).toHaveLength(0); // No events on rehydrate
+    });
+
+    it("should preserve createdAt/updatedAt from persistence", () => {
+      const result = Order.place(validPlaceOrderProps);
+      const original = result.value;
+
+      const createdAt = new Date("2024-01-02T03:04:05.000Z");
+      const updatedAt = new Date("2024-01-02T04:05:06.000Z");
+
+      const rehydrated = Order.rehydrate(original.id, {
+        consumerId: original.orderConsumerId,
+        merchantId: original.orderMerchantId,
+        orderType: original.orderTypeValue,
+        status: original.orderStatus,
+        items: [...original.orderItems],
+        subtotal: original.orderSubtotal,
+        deliveryFee: original.orderDeliveryFee,
+        serviceFee: original.orderServiceFee,
+        discount: original.orderDiscount,
+        totalAmount: original.orderTotalAmount,
+        deliveryAddress: original.orderDeliveryAddress,
+        deliveryLatitude: original.orderDeliveryLatitude,
+        deliveryLongitude: original.orderDeliveryLongitude,
+        estimatedDeliveryTime: original.orderEstimatedDeliveryTime,
+        notes: original.orderNotes,
+        driverId: original.orderDriverId,
+        cancelReason: original.orderCancelReason,
+        rejectionReason: original.orderRejectionReason,
+        paymentMethod: original.orderPaymentMethod,
+        createdAt,
+        updatedAt,
+      });
+
+      expect(rehydrated.createdAt).toEqual(createdAt);
+      expect(rehydrated.updatedAt).toEqual(updatedAt);
     });
   });
 });

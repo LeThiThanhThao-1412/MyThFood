@@ -49,6 +49,9 @@ export class MerchantEntity {
   rating!: number;
 
   @Column({ type: "integer", default: 0 })
+  total_ratings!: number;
+
+  @Column({ type: "integer", default: 0 })
   total_orders!: number;
 
   @Column({ type: "simple-json", nullable: true })
@@ -62,6 +65,25 @@ export class MerchantEntity {
 
   @Column({ type: "integer", default: 0 })
   current_order_count!: number;
+
+  // FIX #5: Category columns
+  @Column({ type: "varchar", length: 50, nullable: true })
+  primary_category!: string | null;
+
+  @Column({ type: "simple-array", nullable: true })
+  secondary_categories!: string[];
+
+  @Column({ type: "varchar", length: 500, nullable: true })
+  other_category_description!: string | null;
+
+  @Column({ type: "boolean", default: true })
+  is_open!: boolean;
+
+  @Column({ type: "timestamptz", nullable: true })
+  rejected_at!: Date | null;
+
+  @Column({ type: "varchar", length: 500, nullable: true })
+  reject_reason!: string | null;
 
   @CreateDateColumn({ type: "timestamptz" })
   created_at!: Date;

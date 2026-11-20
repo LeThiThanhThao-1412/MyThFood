@@ -26,6 +26,7 @@ export class PaymentMapper {
       refundedAmount: entity.refundedAmount
         ? Number(entity.refundedAmount)
         : null,
+      adjustmentRequestId: entity.adjustment_request_id ?? null,
     };
 
     return Payment.rehydrate(PaymentId.from(entity.id), props);
@@ -48,6 +49,7 @@ export class PaymentMapper {
     entity.failureReason = payment.paymentFailureReason;
     entity.refundReason = payment.paymentRefundReason;
     entity.refundedAmount = payment.paymentRefundedAmount;
+    entity.adjustment_request_id = payment.paymentAdjustmentRequestId;
     return entity;
   }
 }

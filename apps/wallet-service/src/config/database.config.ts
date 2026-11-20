@@ -8,8 +8,9 @@ const databaseConfig: TypeOrmModuleOptions = {
   password: process.env.DATABASE_PASSWORD || "mythfood_secret",
   database: process.env.DATABASE_NAME || "mythfood_wallet",
   entities: [__dirname + "/../modules/**/*.entity{.ts,.js}"],
-  synchronize: process.env.NODE_ENV !== "production",
-  logging: process.env.NODE_ENV === "development" ? ["error", "query"] : ["error"],
+  synchronize: false,
+  logging:
+    process.env.NODE_ENV === "development" ? ["error", "query"] : ["error"],
 };
 
 export default databaseConfig;

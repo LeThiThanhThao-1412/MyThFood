@@ -1,0 +1,471 @@
+"use client";
+
+// ============================================================================
+// Hook điều phối chuyến giao hàng của tài xế cho 1 đơn:
+// tải order + dispatch + nhà hàng + hồ sơ tài xế, suy ra bước hiện tại,
+// tính tuyến dẫn đường và thực thi hành động của bước kế tiếp.
+// ============================================================================
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { driverApi, orderApi } from "@mythfood/api-client";
+import {
+  useAuthStore,
+  useLocationStore,
+  haversineKm,
+} from "@mythfood/frontend-shared";
+import {
+  DeliveryStage,
+  LatLng,
+  RouteInfo,
+  STAGE_META,
+  acceptOrder,
+  arriveAtRestaurant,
+  arriveStackedOrdersAtSameMerchant,
+  completeDelivery,
+  customerLocation,
+  fetchRoute,
+  friendlyError,
+  getCustomerInfo,
+  getDispatchByOrder,
+  getMerchant,
+  pickUpFood,
+  pickUpStackedOrdersAtSameMerchant,
+  resolveStage,
+  restaurantLocation,
+  toNum,
+  unwrap,
+} from "@/lib/delivery-flow";
+import { DEFAULT_SIM_SPEED_KMH, gpsSimulator } from "@/lib/gps-simulator";
+
+export interface TripMapMarker extends LatLng {
+  label: string;
+  address?: string;
+  emoji: string;
+}
+
+export function useDeliveryTrip(orderId?: string | null) {
+  const { user } = useAuthStore();
+  const { location: gps } = useLocationStore();
+
+  const [order, setOrder] = useState<any>(null);
+  const [dispatch, setDispatch] = useState<any>(null);
+  const [merchant, setMerchant] = useState<any>(null);
+  const [customerInfo, setCustomerInfo] = useState<{
+    fullName: string | null;
+    phone: string | null;
+    userId?: string | null;
+    avatar?: string | null;
+  } | null>(null);
+  const [driver, setDriver] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [route, setRoute] = useState<RouteInfo | null>(null);
+  const [routeToRestaurant, setRouteToRestaurant] = useState<RouteInfo | null>(
+    null,
+  );
+  const lastOrderIdRef = useRef<string | null>(null);
+
+  // ---- Mô phỏng GPS (demo/test) ----
+  // Không tự chạy vòng lặp riêng: dùng chung engine `gpsSimulator` với panel
+  // demo để tránh 2 nguồn vị trí ghi đè nhau. Engine ghi đè
+  // `navigator.geolocation` nên luồng GPS thật trong `useDriverLocationStream`
+  // vẫn là đường duy nhất đẩy dữ liệu lên backend.
+  const sim = useSyncExternalStore(
+    gpsSimulator.subscribe,
+    gpsSimulator.getSnapshot,
+    gpsSimulator.getServerSnapshot,
+  );
+
+  // ---- Tải dữ liệu chuyến giao ----
+  const load = useCallback(
+    async (silent = false) => {
+      if (!orderId) {
+        lastOrderIdRef.current = null;
+        setOrder(null);
+        setDispatch(null);
+        setMerchant(null);
+        return;
+      }
+
+      const isSameOrder = lastOrderIdRef.current === orderId;
+      lastOrderIdRef.current = orderId;
+
+      if (!silent) setLoading(true);
+      try {
+        const [freshOrder, freshDispatch] = await Promise.all([
+          orderApi.getById(orderId).catch(() => null),
+          getDispatchByOrder(orderId),
+        ]);
+
+        // Nếu vẫn là đơn đang xử lý mà server trả null (race) → giữ trạng thái cũ
+        setOrder((prev: any) =>
+          isSameOrder && !freshOrder ? prev : freshOrder,
+        );
+        setDispatch((prev: any) =>
+          isSameOrder && !freshDispatch ? prev : freshDispatch,
+        );
+
+        const merchantId = (freshOrder as any)?.merchantId;
+        if (merchantId) setMerchant(await getMerchant(merchantId));
+
+        // Lấy thông tin liên hệ khách hàng (tên + SĐT) cho tài xế
+        if ((freshOrder as any)?.consumerId) {
+          getCustomerInfo(freshOrder)
+            .then(setCustomerInfo)
+            .catch(() => {});
+        }
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [orderId],
+  );
+
+  const loadDriver = useCallback(async () => {
+    if (!user?.id) return null;
+    try {
+      const d = unwrap<any>(await driverApi.getByUserId(user.id));
+      setDriver(d);
+      return d;
+    } catch {
+      return null;
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    loadDriver();
+  }, [loadDriver, orderId]);
+
+  // ---- Bước hiện tại + các điểm trên bản đồ ----
+  const stage: DeliveryStage = resolveStage(dispatch?.status, order?.status);
+  const stageMeta = STAGE_META[stage];
+
+  const restaurant = useMemo(
+    () => restaurantLocation(dispatch, merchant),
+    [dispatch, merchant],
+  );
+  const customer = useMemo(
+    () => customerLocation(order, dispatch),
+    [order, dispatch],
+  );
+
+  const driverLocation = useMemo<LatLng | null>(() => {
+    if (gps) return { latitude: gps.latitude, longitude: gps.longitude };
+    if (driver?.currentLatitude != null && driver?.currentLongitude != null) {
+      return {
+        latitude: toNum(driver.currentLatitude),
+        longitude: toNum(driver.currentLongitude),
+      };
+    }
+    return null;
+  }, [gps, driver?.currentLatitude, driver?.currentLongitude]);
+
+  /** Khoảng cách (km) tới nhà hàng: ưu tiên đường đi thực tế (OSRM), fallback đường chim bay. */
+  const distanceToRestaurantKm = useMemo<number | null>(() => {
+    if (routeToRestaurant?.distanceKm != null)
+      return routeToRestaurant.distanceKm;
+    if (!driverLocation || !restaurant) return null;
+    return haversineKm(
+      driverLocation.latitude,
+      driverLocation.longitude,
+      restaurant.latitude,
+      restaurant.longitude,
+    );
+  }, [routeToRestaurant, driverLocation, restaurant]);
+
+  /** Thời gian di chuyển (phút) tới nhà hàng (chỉ có khi dùng đường thực tế). */
+  const distanceToRestaurantMin = useMemo<number | null>(
+    () => routeToRestaurant?.durationMin ?? null,
+    [routeToRestaurant],
+  );
+
+  /** Tuyến đường theo bước: tài xế→nhà hàng, rồi nhà hàng→khách. */
+  const { routeFrom, routeTo } = useMemo<{
+    routeFrom: LatLng | null;
+    routeTo: LatLng | null;
+  }>(() => {
+    if (stage === "WAITING" || stage === "GOING_TO_RESTAURANT") {
+      return { routeFrom: driverLocation, routeTo: restaurant };
+    }
+    // “Đã đến nhà hàng”: xem trước tuyến nhà hàng → khách
+    if (stage === "AT_RESTAURANT") {
+      return { routeFrom: restaurant, routeTo: customer };
+    }
+    // “Đang giao”: vẽ tuyến từ vị trí tài xế hiện tại → khách
+    if (stage === "DELIVERING") {
+      return { routeFrom: driverLocation ?? restaurant, routeTo: customer };
+    }
+    return { routeFrom: null, routeTo: null };
+  }, [stage, driverLocation, restaurant, customer]);
+
+  useEffect(() => {
+    if (!routeFrom || !routeTo) {
+      setRoute(null);
+      return;
+    }
+    let cancelled = false;
+    fetchRoute(routeFrom, routeTo).then((r) => {
+      if (!cancelled) setRoute(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    routeFrom?.latitude,
+    routeFrom?.longitude,
+    routeTo?.latitude,
+    routeTo?.longitude,
+  ]);
+
+  // Tuyến đường thực tế tài xế → nhà hàng (để tính khoảng cách + thời gian chính xác)
+  useEffect(() => {
+    if (!driverLocation || !restaurant) {
+      setRouteToRestaurant(null);
+      return;
+    }
+    let cancelled = false;
+    fetchRoute(driverLocation, restaurant)
+      .then((r) => {
+        if (!cancelled) setRouteToRestaurant(r);
+      })
+      .catch(() => {
+        if (!cancelled) setRouteToRestaurant(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    driverLocation?.latitude,
+    driverLocation?.longitude,
+    restaurant?.latitude,
+    restaurant?.longitude,
+  ]);
+
+  const mapMarkers = useMemo<TripMapMarker[]>(() => {
+    const markers: TripMapMarker[] = [];
+    const restaurantMarker = (emoji: string, label: string) => {
+      if (restaurant)
+        markers.push({
+          ...restaurant,
+          emoji,
+          label,
+          address: merchant?.address,
+        });
+    };
+    const customerMarker = (emoji: string, label: string) => {
+      if (customer)
+        markers.push({
+          ...customer,
+          emoji,
+          label,
+          address: order?.deliveryAddress,
+        });
+    };
+
+    if (stage === "WAITING" || stage === "GOING_TO_RESTAURANT") {
+      if (driverLocation)
+        markers.push({
+          ...driverLocation,
+          emoji: "🛵",
+          label: "🛵 Vị trí của bạn",
+        });
+      restaurantMarker("🏪", `🏪 ${merchant?.name || "Nhà hàng"}`);
+    } else if (stage === "AT_RESTAURANT") {
+      restaurantMarker("🛵", `🛵 Bạn đang ở ${merchant?.name || "nhà hàng"}`);
+      customerMarker("🏠", "🏠 Điểm giao hàng");
+    } else if (stage === "DELIVERING") {
+      const driverPos = driverLocation ?? restaurant;
+      if (driverPos)
+        markers.push({
+          ...driverPos,
+          emoji: "🛵",
+          label: "🛵 Tài xế",
+        });
+      customerMarker("🏠", "🏠 Khách hàng");
+    } else {
+      customerMarker("🛵", "🛵 Đã giao tại đây");
+    }
+    return markers;
+  }, [stage, driverLocation, restaurant, customer, merchant, order]);
+
+  // ---- Thực thi bước kế tiếp ----
+  /**
+   * Chuyển sang bước kế tiếp. Với bước “Giao hàng thành công”, truyền
+   * `deliveryProofPhotoUrl` (ảnh món ăn chụp lúc giao cho khách — bắt buộc).
+   * Trả về `true` khi thao tác thành công để UI đóng hộp thoại xác nhận.
+   */
+  const advance = useCallback(
+    async (deliveryProofPhotoUrl?: string): Promise<boolean> => {
+      if (!order || busy) return false;
+
+      let resolvedDriver = driver;
+      if (!resolvedDriver?.id) {
+        resolvedDriver = await loadDriver();
+      }
+      const driverId = resolvedDriver?.id || order.driverId || "";
+      if (!driverId) {
+        setError("Không tìm thấy hồ sơ tài xế của bạn.");
+        return false;
+      }
+
+      setBusy(true);
+      setError("");
+      setMessage("");
+      try {
+        if (stage === "WAITING") {
+          // Gửi kèm GPS hiện tại để server kiểm tra bán kính nhận đơn bằng
+          // toạ độ mới nhất, không phụ thuộc nhịp heartbeat.
+          setDispatch(
+            await acceptOrder(
+              order,
+              driverId,
+              merchant,
+              driverLocation ?? undefined,
+            ),
+          );
+          setMessage(
+            "✅ Đã nhận đơn — trạng thái: Đang đến quán. Đã thông báo cho khách.",
+          );
+        } else if (stage === "GOING_TO_RESTAURANT") {
+          setDispatch(
+            await arriveAtRestaurant(order, dispatch, driverId, restaurant),
+          );
+          // Cùng một nhà hàng: đánh dấu "đã đến" cho các đơn gộp còn lại để
+          // tài xế lấy món tất cả trong một lần, không phải quay lại quán.
+          const arrivedStacked = await arriveStackedOrdersAtSameMerchant(
+            order,
+            driverId,
+            restaurant,
+          );
+          setMessage(
+            arrivedStacked > 0
+              ? `📍 Đã đến nhà hàng — đã đánh dấu ${arrivedStacked + 1} đơn gộp cùng quán. Đã thông báo cho khách hàng.`
+              : "📍 Đã đến nhà hàng. Đã thông báo cho khách hàng.",
+          );
+          loadDriver();
+        } else if (stage === "AT_RESTAURANT") {
+          const res = await pickUpFood(order, dispatch, driverId);
+          setDispatch(res.dispatch);
+          if (res.order) setOrder(res.order);
+          // Lấy luôn món của các đơn gộp cùng nhà hàng (cùng quầy lấy hàng).
+          const pickedStacked = await pickUpStackedOrdersAtSameMerchant(
+            order,
+            driverId,
+          );
+          setMessage(
+            pickedStacked > 0
+              ? `📦 Đã nhận món cho ${pickedStacked + 1} đơn tại cùng nhà hàng — đang giao tới khách hàng.`
+              : "📦 Đã nhận món — đang giao tới khách hàng.",
+          );
+        } else if (stage === "DELIVERING") {
+          const res = await completeDelivery(
+            order,
+            dispatch,
+            driverId,
+            customer,
+            deliveryProofPhotoUrl,
+          );
+          setDispatch(res.dispatch);
+          if (res.order) setOrder(res.order);
+          setMessage("🎉 Giao hàng thành công! Đã thông báo cho khách hàng.");
+          loadDriver();
+        }
+
+        // Đồng bộ lại từ server để UI chắc chắn hiển thị đúng bước kế tiếp
+        await load(true);
+        return true;
+      } catch (err: any) {
+        setError(friendlyError(err, "Không thực hiện được bước này"));
+        // Đồng bộ lại trạng thái thật từ server để UI không lệch
+        load(true);
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [
+      order,
+      dispatch,
+      merchant,
+      driver,
+      stage,
+      restaurant,
+      customer,
+      driverLocation,
+      busy,
+      load,
+      loadDriver,
+    ],
+  );
+
+  /** Phí ship tài xế thực nhận (80% — 20% hoa hồng nền tảng). */
+  const driverEarning = Math.round(toNum(order?.deliveryFee, 15000) * 0.8);
+
+  // ---- Mô phỏng GPS: điều khiển chạy/dừng ----
+
+  /** Có đang mô phỏng hay không (gồm cả tạm dừng / đã tới đích). */
+  const simulating = sim.status !== "idle";
+
+  const stopSimulation = useCallback(() => {
+    gpsSimulator.stop();
+  }, []);
+
+  /**
+   * Dựng lộ trình quán → khách rồi cho tài xế "chạy" theo tuyến đó.
+   * Vị trí phát ra đi đúng luồng GPS thật (watchPosition → lấy mẫu → WS/batch)
+   * nên `driver_location_history` có vết di chuyển liên tục.
+   */
+  const startSimulation = useCallback(async () => {
+    if (!restaurant || !customer) return;
+    const route = await fetchRoute(restaurant, customer);
+    const ok = gpsSimulator.setRoute(route.points, {
+      label: "Đơn đang giao: quán → khách",
+      speedKmh: DEFAULT_SIM_SPEED_KMH,
+    });
+    if (ok) gpsSimulator.start();
+  }, [restaurant, customer]);
+
+  return {
+    order,
+    dispatch,
+    merchant,
+    driver,
+    customerInfo,
+    distanceToRestaurantKm,
+    distanceToRestaurantMin,
+    loading,
+    busy,
+    error,
+    message,
+    stage,
+    stageMeta,
+    restaurant,
+    customer,
+    driverLocation,
+    route,
+    mapMarkers,
+    driverEarning,
+    advance,
+    reload: load,
+    setError,
+    setMessage,
+    simulating,
+    startSimulation,
+    stopSimulation,
+  };
+}

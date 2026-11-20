@@ -1,0 +1,88 @@
+-- ============================================================
+-- MyThFood Driver Service - Database Tables
+-- Database: mythfood_driver
+-- ============================================================
+
+-- Connect to driver database
+\c mythfood_driver;
+
+-- Drivers table (camelCase columns to match DriverEntity)
+CREATE TABLE IF NOT EXISTS drivers (
+  id UUID PRIMARY KEY,
+  "userId" UUID NOT NULL UNIQUE,
+  "fullName" VARCHAR(255) NOT NULL,
+  "phoneNumber" VARCHAR(20) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  avatar VARCHAR(500),
+  "idCardNumber" VARCHAR(20) NOT NULL,
+  "driverLicenseNumber" VARCHAR(30) NOT NULL,
+  "vehicleRegistrationNumber" VARCHAR(30) NOT NULL,
+  "vehicleType" VARCHAR(20) DEFAULT 'MOTORBIKE',
+  "insuranceNumber" VARCHAR(30) NOT NULL,
+  "criminalRecordUrl" VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'INACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE', 'SUSPENDED', 'REJECTED')),
+  "rejectedAt" TIMESTAMPTZ,
+  "rejectReason" VARCHAR(500),
+  "onlineStatus" VARCHAR(10) NOT NULL DEFAULT 'OFFLINE' CHECK ("onlineStatus" IN ('ONLINE', 'OFFLINE')),
+  "currentLatitude" DECIMAL(10, 7),
+  "currentLongitude" DECIMAL(10, 7),
+  "lastLocationUpdateAt" TIMESTAMPTZ,
+  "totalDrivingMinutesToday" INT NOT NULL DEFAULT 0,
+  "currentSessionStartAt" TIMESTAMPTZ,
+  "consecutiveDrivingMinutes" INT NOT NULL DEFAULT 0,
+  "fatigueLevel" VARCHAR(10) NOT NULL DEFAULT 'NORMAL' CHECK ("fatigueLevel" IN ('NORMAL', 'WARNING', 'CRITICAL')),
+  "goHomeCountToday" INT NOT NULL DEFAULT 0,
+  "lastGoHomeAt" TIMESTAMPTZ,
+  "totalOrders" INT NOT NULL DEFAULT 0,
+  rating DECIMAL(3, 2) NOT NULL DEFAULT 0,
+  "totalRatings" INT NOT NULL DEFAULT 0,
+  "reputationScore" INT NOT NULL DEFAULT 100,
+  "acceptBlockedUntil" TIMESTAMPTZ,
+
+  "currentOrderId" UUID,
+  -- Phase 2: SAVER stacking
+  "currentOrderIds" UUID[] NOT NULL DEFAULT '{}',
+  "maxConcurrentOrders" INT NOT NULL DEFAULT 1,
+  "isTrainingCompleted" BOOLEAN NOT NULL DEFAULT FALSE,
+  "depositAmount" DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  "creditWalletBalance" DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  "incomeWalletBalance" DECIMAL(12, 2) NOT NULL DEFAULT 0,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers (status);
+CREATE INDEX IF NOT EXISTS idx_drivers_online_status ON drivers ("onlineStatus");
+CREATE INDEX IF NOT EXISTS idx_drivers_fatigue_level ON drivers ("fatigueLevel");
+CREATE INDEX IF NOT EXISTS idx_drivers_current_order_id ON drivers ("currentOrderId");
+CREATE INDEX IF NOT EXISTS idx_drivers_stackable
+  ON drivers ("status", "onlineStatus")
+  WHERE cardinality("currentOrderIds") < "maxConcurrentOrders";
+CREATE INDEX IF NOT EXISTS idx_drivers_available ON drivers (status, "onlineStatus", "fatigueLevel") WHERE status = 'ACTIVE' AND "onlineStatus" = 'ONLINE' AND "fatigueLevel" != 'CRITICAL';
+CREATE INDEX IF NOT EXISTS idx_drivers_created_at ON drivers ("createdAt");
+
+-- Migration: trạng thái REJECTED + lý do từ chối hồ sơ tài xế.
+ALTER TABLE drivers DROP CONSTRAINT IF EXISTS drivers_status_check;
+ALTER TABLE drivers ADD CONSTRAINT drivers_status_check
+  CHECK (status IN ('ACTIVE', 'INACTIVE', 'SUSPENDED', 'REJECTED'));
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS "rejectedAt" TIMESTAMPTZ;
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS "rejectReason" VARCHAR(500);
+
+-- Driver location history (GPS trace: appends 1 row per location update)
+CREATE TABLE IF NOT EXISTS driver_location_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "driverId" UUID NOT NULL,
+  "orderId" UUID,
+  "latitude" DECIMAL(10, 7) NOT NULL,
+  "longitude" DECIMAL(10, 7) NOT NULL,
+  "recordedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_driver_location_history_driver_id
+  ON driver_location_history ("driverId");
+CREATE INDEX IF NOT EXISTS idx_driver_location_history_driver_recorded
+  ON driver_location_history ("driverId", "recordedAt");
+
+-- Grant privileges
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO mythfood;

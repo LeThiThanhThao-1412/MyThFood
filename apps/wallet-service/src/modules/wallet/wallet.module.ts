@@ -2,9 +2,16 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { WalletController } from "./presentation/wallet.controller";
 import { WalletService } from "./application/wallet.service";
+import { WalletScheduler } from "./application/wallet.scheduler";
 import { WalletRepository } from "./infrastructure/wallet.repository";
+import { SettlementRepository } from "./infrastructure/settlement.repository";
 import { WalletEntity } from "./infrastructure/wallet.entity";
 import { WalletTransactionEntity } from "./infrastructure/wallet-transaction.entity";
+import { SettlementEntryEntity } from "./infrastructure/settlement-entry.entity";
+import { SettlementBatchEntity } from "./infrastructure/settlement-batch.entity";
+import { ClawbackLiabilityEntity } from "./infrastructure/clawback-liability.entity";
+import { ClawbackDeductionEntity } from "./infrastructure/clawback-deduction.entity";
+import { FailureSettlementEntity } from "./infrastructure/failure-settlement.entity";
 
 /**
  * FIX #8: Now using WalletRepository (encapsulates TypeORM) instead of injecting
@@ -13,10 +20,23 @@ import { WalletTransactionEntity } from "./infrastructure/wallet-transaction.ent
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([WalletEntity, WalletTransactionEntity]),
+    TypeOrmModule.forFeature([
+      WalletEntity,
+      WalletTransactionEntity,
+      SettlementEntryEntity,
+      SettlementBatchEntity,
+      ClawbackLiabilityEntity,
+      ClawbackDeductionEntity,
+      FailureSettlementEntity,
+    ]),
   ],
   controllers: [WalletController],
-  providers: [WalletService, WalletRepository],
+  providers: [
+    WalletService,
+    WalletRepository,
+    SettlementRepository,
+    WalletScheduler,
+  ],
   exports: [WalletService, WalletRepository],
 })
 export class WalletModule {}

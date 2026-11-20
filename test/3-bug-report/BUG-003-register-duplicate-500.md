@@ -1,15 +1,15 @@
 # BUG-003: Register Duplicate Phone Returns 500 Instead of 409
 
-| Field | Value |
-|-------|-------|
-| **Bug ID** | BUG-003 |
-| **Title** | Register with duplicate phone number returns 500 Internal Server Error |
-| **Severity** | Medium (P2) |
-| **Priority** | Medium |
-| **Status** | Open |
-| **Found Date** | 2026-07-15 |
-| **Service** | Identity Service (Port 3001) |
-| **Environment** | Docker Compose (local dev) |
+| Field           | Value                                                                  |
+| --------------- | ---------------------------------------------------------------------- |
+| **Bug ID**      | BUG-003                                                                |
+| **Title**       | Register with duplicate phone number returns 500 Internal Server Error |
+| **Severity**    | Medium (P2)                                                            |
+| **Priority**    | Medium                                                                 |
+| **Status**      | Open                                                                   |
+| **Found Date**  | 2026-07-15                                                             |
+| **Service**     | Identity Service (Port 3001)                                           |
+| **Environment** | Docker Compose (local dev)                                             |
 
 ---
 
@@ -31,6 +31,7 @@
 ## Evidence
 
 From `docs/API_TEST_CASES.md`:
+
 ```
 | 1.2 | Đăng ký trùng phone number | POST | /auth/register | 409 Conflict | 500 Internal Server Error (race condition) | ⚠️ ISSUE |
 ```

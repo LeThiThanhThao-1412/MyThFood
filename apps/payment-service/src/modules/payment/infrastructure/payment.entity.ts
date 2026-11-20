@@ -59,9 +59,13 @@ export class PaymentEntity {
   @Column("decimal", { precision: 12, scale: 2, nullable: true })
   refundedAmount!: number | null;
 
-  @CreateDateColumn()
+  @Index()
+  @Column("uuid", { name: "adjustment_request_id", nullable: true })
+  adjustment_request_id!: string | null;
+
+  @CreateDateColumn({ type: "timestamptz" })
   createdAt!: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: "timestamptz" })
   updatedAt!: Date;
 }

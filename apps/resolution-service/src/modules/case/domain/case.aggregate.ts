@@ -1,0 +1,416 @@
+import {
+  AggregateRoot,
+  BusinessRuleViolationError,
+} from "@mythfood/shared-kernel";
+import { CaseId } from "./case-id";
+import {
+  ActorType,
+  CaseCategory,
+  CaseStatus,
+  CaseType,
+  FaultParty,
+  Severity,
+  Verdict,
+} from "./case.enums";
+
+export interface CaseProps {
+  caseNumber: string;
+  type: CaseType;
+  category: CaseCategory;
+  severity: Severity;
+  orderId: string | null;
+  reporterId: string;
+  reporterType: ActorType;
+  respondentId: string;
+  respondentType: ActorType;
+  subject: string;
+  description: string;
+  evidence: string[];
+  verdict: Verdict | null;
+  resolutionNote: string | null;
+  status: CaseStatus;
+  penaltyIds: string[];
+  resolvedBy: string | null;
+  resolvedAt: Date | null;
+  respondentResponse: string | null;
+  respondentEvidence: string[];
+  respondentRespondedAt: Date | null;
+  responseDeadline: Date | null;
+  faultParty: FaultParty | null;
+}
+
+const ACTIVE_STATUSES: CaseStatus[] = [
+  CaseStatus.OPEN,
+  CaseStatus.UNDER_REVIEW,
+  CaseStatus.WAITING_EVIDENCE,
+];
+
+export class Case extends AggregateRoot<CaseId> {
+  private caseNumber: string;
+  private type: CaseType;
+  private category: CaseCategory;
+  private severity: Severity;
+  private orderId: string | null;
+  private reporterId: string;
+  private reporterType: ActorType;
+  private respondentId: string;
+  private respondentType: ActorType;
+  private subject: string;
+  private description: string;
+  private evidence: string[];
+  private verdict: Verdict | null;
+  private resolutionNote: string | null;
+  private status: CaseStatus;
+  private penaltyIds: string[];
+  private resolvedBy: string | null;
+  private resolvedAt: Date | null;
+  private respondentResponse: string | null;
+  private respondentEvidence: string[];
+  private respondentRespondedAt: Date | null;
+  private responseDeadline: Date | null;
+  private faultParty: FaultParty | null;
+
+  private constructor(id: CaseId, props: CaseProps) {
+    super(id);
+    this.caseNumber = props.caseNumber;
+    this.type = props.type;
+    this.category = props.category;
+    this.severity = props.severity;
+    this.orderId = props.orderId;
+    this.reporterId = props.reporterId;
+    this.reporterType = props.reporterType;
+    this.respondentId = props.respondentId;
+    this.respondentType = props.respondentType;
+    this.subject = props.subject;
+    this.description = props.description;
+    this.evidence = props.evidence;
+    this.verdict = props.verdict;
+    this.resolutionNote = props.resolutionNote;
+    this.status = props.status;
+    this.penaltyIds = props.penaltyIds;
+    this.resolvedBy = props.resolvedBy;
+    this.resolvedAt = props.resolvedAt;
+    this.respondentResponse = props.respondentResponse;
+    this.respondentEvidence = props.respondentEvidence;
+    this.respondentRespondedAt = props.respondentRespondedAt;
+    this.responseDeadline = props.responseDeadline;
+    this.faultParty = props.faultParty;
+  }
+
+  public static create(
+    props: Omit<
+      CaseProps,
+      | "evidence"
+      | "verdict"
+      | "resolutionNote"
+      | "status"
+      | "penaltyIds"
+      | "resolvedBy"
+      | "resolvedAt"
+      | "respondentResponse"
+      | "respondentEvidence"
+      | "respondentRespondedAt"
+      | "responseDeadline"
+      | "faultParty"
+    > & { evidence?: string[]; responseDeadline?: Date | null },
+  ): Case {
+    if (!props.reporterId || props.reporterId.trim().length === 0) {
+      throw new BusinessRuleViolationError("Reporter is required");
+    }
+    if (!props.respondentId || props.respondentId.trim().length === 0) {
+      throw new BusinessRuleViolationError("Respondent is required");
+    }
+    if (!props.subject || props.subject.trim().length === 0) {
+      throw new BusinessRuleViolationError("Subject is required");
+    }
+    return new Case(CaseId.create(), {
+      caseNumber: props.caseNumber,
+      type: props.type,
+      category: props.category,
+      severity: props.severity,
+      orderId: props.orderId,
+      reporterId: props.reporterId,
+      reporterType: props.reporterType,
+      respondentId: props.respondentId,
+      respondentType: props.respondentType,
+      subject: props.subject,
+      description: props.description,
+      evidence: props.evidence ?? [],
+      verdict: null,
+      resolutionNote: null,
+      status: CaseStatus.OPEN,
+      penaltyIds: [],
+      resolvedBy: null,
+      resolvedAt: null,
+      respondentResponse: null,
+      respondentEvidence: [],
+      respondentRespondedAt: null,
+      responseDeadline: props.responseDeadline ?? null,
+      faultParty: null,
+    });
+  }
+
+  public static rehydrate(id: CaseId, props: CaseProps): Case {
+    return new Case(id, props);
+  }
+
+  public review(): void {
+    this.assertActive("review");
+    this.status = CaseStatus.UNDER_REVIEW;
+    this.markUpdated();
+  }
+
+  public requestEvidence(): void {
+    this.assertActive("request evidence");
+    this.status = CaseStatus.WAITING_EVIDENCE;
+    this.markUpdated();
+  }
+
+  public resolve(
+    verdict: Verdict,
+    note: string | null,
+    resolvedBy: string,
+    faultParty?: FaultParty | null,
+  ): void {
+    this.assertActive("resolve");
+    if (verdict === Verdict.VALID) {
+      this.status = CaseStatus.RESOLVED;
+    } else if (verdict === Verdict.INVALID) {
+      this.status = CaseStatus.REJECTED;
+    } else {
+      this.status = CaseStatus.WAITING_EVIDENCE;
+    }
+    this.verdict = verdict;
+    this.resolutionNote = note ?? null;
+    this.resolvedBy = resolvedBy;
+    this.resolvedAt = new Date();
+    this.faultParty = this.resolveFaultParty(verdict, faultParty);
+    this.markUpdated();
+  }
+
+  /**
+   * Chốt bên chịu lỗi nhất quán với verdict:
+   * - INCONCLUSIVE ("chưa đủ căn cứ") → không quy lỗi cho bên cụ thể nào.
+   * - VALID / INVALID → bên lỗi phải là một bên tham gia vụ việc
+   *   (người khiếu nại, bên bị khiếu nại) hoặc SYSTEM.
+   */
+  private resolveFaultParty(
+    verdict: Verdict,
+    faultParty?: FaultParty | null,
+  ): FaultParty | null {
+    if (verdict === Verdict.INCONCLUSIVE) {
+      return FaultParty.INCONCLUSIVE;
+    }
+    if (!faultParty) {
+      return null;
+    }
+    this.assertFaultPartyIsParty(faultParty);
+    return faultParty;
+  }
+
+  private assertFaultPartyIsParty(faultParty: FaultParty): void {
+    if (
+      faultParty === FaultParty.SYSTEM ||
+      faultParty === FaultParty.INCONCLUSIVE
+    ) {
+      return;
+    }
+    const reporterFault = this.faultPartyFromActor(this.reporterType);
+    const respondentFault = this.faultPartyFromActor(this.respondentType);
+    if (faultParty !== reporterFault && faultParty !== respondentFault) {
+      throw new BusinessRuleViolationError(
+        `faultParty "${faultParty}" is not a party of this case (reporter=${this.reporterType}, respondent=${this.respondentType})`,
+      );
+    }
+  }
+
+  private faultPartyFromActor(actor: ActorType): FaultParty {
+    switch (actor) {
+      case "DRIVER":
+        return FaultParty.DRIVER;
+      case "MERCHANT":
+        return FaultParty.MERCHANT;
+      case "CONSUMER":
+        return FaultParty.CUSTOMER;
+      default:
+        return FaultParty.SYSTEM;
+    }
+  }
+
+  /** Người bị khiếu nại phản hồi kèm text + ảnh. */
+  public respond(text: string, evidence: string[]): void {
+    this.assertActive("respond");
+    if (!text || text.trim().length === 0) {
+      throw new BusinessRuleViolationError("Response text is required");
+    }
+    this.respondentResponse = text;
+    // Ảnh đã gửi trước đó (qua `addRespondentEvidence`) phải được giữ lại:
+    // phản hồi bằng lời không được xoá ảnh minh chứng đã nộp.
+    const merged = [...this.respondentEvidence];
+    for (const url of evidence ?? []) {
+      if (!merged.includes(url)) merged.push(url);
+    }
+    this.respondentEvidence = merged;
+    this.respondentRespondedAt = new Date();
+    this.status = CaseStatus.UNDER_REVIEW;
+    this.markUpdated();
+  }
+
+  /** Người bị khiếu nại xác nhận lỗi → tự chốt lỗi về phía mình. */
+  public confirmFault(resolvedBy: string, note?: string): void {
+    this.assertActive("confirm");
+    this.verdict = Verdict.VALID;
+    this.resolutionNote = note ?? "Người bị khiếu nại xác nhận lỗi";
+    this.resolvedBy = resolvedBy;
+    this.resolvedAt = new Date();
+    this.faultParty = this.faultPartyForRespondent();
+    this.status = CaseStatus.RESOLVED;
+    this.markUpdated();
+  }
+
+  private faultPartyForRespondent(): FaultParty {
+    switch (this.respondentType) {
+      case "DRIVER":
+        return FaultParty.DRIVER;
+      case "MERCHANT":
+        return FaultParty.MERCHANT;
+      default:
+        return FaultParty.CUSTOMER;
+    }
+  }
+
+  public withdraw(): void {
+    this.assertActive("withdraw");
+    this.status = CaseStatus.WITHDRAWN;
+    this.markUpdated();
+  }
+
+  public escalate(): void {
+    this.assertActive("escalate");
+    this.status = CaseStatus.ESCALATED;
+    this.markUpdated();
+  }
+
+  public close(): void {
+    const closable: CaseStatus[] = [
+      CaseStatus.RESOLVED,
+      CaseStatus.REJECTED,
+      CaseStatus.WITHDRAWN,
+    ];
+    if (!closable.includes(this.status)) {
+      throw new BusinessRuleViolationError(
+        `Only resolved/rejected/withdrawn cases can be closed, current: ${this.status}`,
+      );
+    }
+    this.status = CaseStatus.CLOSED;
+    this.markUpdated();
+  }
+
+  public addEvidence(urls: string[]): void {
+    this.assertActive("add evidence");
+    this.evidence = [...this.evidence, ...urls];
+    this.markUpdated();
+  }
+
+  /**
+   * Bên bị khiếu nại bổ sung ảnh minh chứng (không kèm văn bản phản hồi).
+   *
+   * Ghi vào `respondentEvidence` — trường riêng của bên bị khiếu nại, để AI vẫn
+   * tách được "bên khiếu nại" (`evidence`) và "bên bị khiếu nại"
+   * (`respondentEvidence`). Không đụng `respondentResponse` nên nhà hàng/tài xế
+   * có thể gửi thêm ảnh sau khi đã phản hồi mà không phải viết lại giải trình.
+   */
+  public addRespondentEvidence(urls: string[]): void {
+    this.assertActive("add respondent evidence");
+    if (!urls?.length) {
+      throw new BusinessRuleViolationError("Evidence urls are required");
+    }
+    this.respondentEvidence = [...this.respondentEvidence, ...urls];
+    this.markUpdated();
+  }
+
+  public addPenaltyId(penaltyId: string): void {
+    if (!this.penaltyIds.includes(penaltyId)) {
+      this.penaltyIds = [...this.penaltyIds, penaltyId];
+      this.markUpdated();
+    }
+  }
+
+  private assertActive(action: string): void {
+    if (!ACTIVE_STATUSES.includes(this.status)) {
+      throw new BusinessRuleViolationError(
+        `Cannot ${action} a case in status ${this.status}`,
+      );
+    }
+  }
+
+  get caseNumberValue(): string {
+    return this.caseNumber;
+  }
+  get caseType(): CaseType {
+    return this.type;
+  }
+  get caseCategory(): CaseCategory {
+    return this.category;
+  }
+  get caseSeverity(): Severity {
+    return this.severity;
+  }
+  get caseOrderId(): string | null {
+    return this.orderId;
+  }
+  get caseReporterId(): string {
+    return this.reporterId;
+  }
+  get caseReporterType(): ActorType {
+    return this.reporterType;
+  }
+  get caseRespondentId(): string {
+    return this.respondentId;
+  }
+  get caseRespondentType(): ActorType {
+    return this.respondentType;
+  }
+  get caseSubject(): string {
+    return this.subject;
+  }
+  get caseDescription(): string {
+    return this.description;
+  }
+  get caseEvidence(): string[] {
+    return [...this.evidence];
+  }
+  get caseVerdict(): Verdict | null {
+    return this.verdict;
+  }
+  get caseResolutionNote(): string | null {
+    return this.resolutionNote;
+  }
+  get caseStatus(): CaseStatus {
+    return this.status;
+  }
+  get casePenaltyIds(): string[] {
+    return [...this.penaltyIds];
+  }
+  get caseResolvedBy(): string | null {
+    return this.resolvedBy;
+  }
+  get caseResolvedAt(): Date | null {
+    return this.resolvedAt;
+  }
+  get caseRespondentResponse(): string | null {
+    return this.respondentResponse;
+  }
+  get caseRespondentEvidence(): string[] {
+    return [...this.respondentEvidence];
+  }
+  get caseRespondentRespondedAt(): Date | null {
+    return this.respondentRespondedAt;
+  }
+  get caseResponseDeadline(): Date | null {
+    return this.responseDeadline;
+  }
+  get caseFaultParty(): FaultParty | null {
+    return this.faultParty;
+  }
+}

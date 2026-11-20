@@ -9,18 +9,19 @@ import {
   HttpCode,
   HttpStatus,
 } from "@nestjs/common";
-import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { ServiceKeyOrJwtGuard } from "../../auth/guards/service-key-or-jwt.guard";
 import { RolesGuard, Roles } from "../../auth/guards/roles.guard";
 import { UserAdminService } from "../application/user-admin.service";
 import {
   QueryUsersDto,
   UpdateUserStatusDto,
+  RejectUserDto,
   UserAdminResponseDto,
   PaginatedUsersResponseDto,
 } from "../application/dtos/user-admin.dto";
 
 @Controller("auth/users")
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(ServiceKeyOrJwtGuard, RolesGuard)
 @Roles("ADMIN")
 export class UserAdminController {
   constructor(private readonly userAdminService: UserAdminService) {}
@@ -30,6 +31,17 @@ export class UserAdminController {
     @Query() query: QueryUsersDto,
   ): Promise<PaginatedUsersResponseDto> {
     return this.userAdminService.listUsers(query);
+  }
+
+  // Thông tin liên hệ cơ bản (tên + SĐT) cho tài xế khi cần gọi khách hàng.
+  @Get(":id/contact")
+  @Roles("DRIVER", "MERCHANT_OWNER", "ADMIN")
+  async getUserContact(@Param("id") id: string) {
+    const user = await this.userAdminService.getUserById(id);
+    return {
+      statusCode: HttpStatus.OK,
+      data: { id: user.id, fullName: user.fullName, phone: user.phone },
+    };
   }
 
   @Get(":id")
@@ -43,6 +55,30 @@ export class UserAdminController {
     @Param("id") id: string,
     @Body() dto: UpdateUserStatusDto,
   ): Promise<UserAdminResponseDto> {
-    return this.userAdminService.updateUserStatus(id, dto.status);
+    return this.userAdminService.updateUserStatus(
+      id,
+      dto.status,
+      dto.durationDays,
+      dto.reason,
+    );
+  }
+
+  @Patch(":id/unlock")
+  @HttpCode(HttpStatus.OK)
+  async unlockUser(@Param("id") id: string): Promise<UserAdminResponseDto> {
+    return this.userAdminService.unlockUser(id);
+  }
+
+  /**
+   * Từ chối tài khoản/hồ sơ đăng ký (nhà hàng/tài xế).
+   * Tài khoản sẽ thấy thông báo từ chối + lý do khi đăng nhập và bị xóa sau 3 ngày.
+   */
+  @Patch(":id/reject")
+  @HttpCode(HttpStatus.OK)
+  async rejectUser(
+    @Param("id") id: string,
+    @Body() dto: RejectUserDto,
+  ): Promise<UserAdminResponseDto> {
+    return this.userAdminService.rejectUser(id, dto.reason);
   }
 }

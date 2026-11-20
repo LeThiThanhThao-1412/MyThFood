@@ -9,7 +9,6 @@ import {
 } from "class-validator";
 import { Type } from "class-transformer";
 import { PaymentMethod, PaymentStatus } from "../../domain/payment.aggregate";
-import { OwnerType } from "../../../wallet/domain/wallet.aggregate";
 
 export class CreatePaymentDto {
   @IsUUID("4")
@@ -35,6 +34,37 @@ export class CreatePaymentDto {
 }
 
 export class CreateStripePaymentDto extends CreatePaymentDto {
+  @IsOptional()
+  @IsString()
+  currency?: string;
+}
+
+/**
+ * Khoản thu bổ sung cho phần chênh lệch khi nhà hàng chỉnh sửa đơn.
+ * Không dùng CreatePaymentDto vì cần gắn `adjustmentRequestId` để idempotent.
+ */
+export class CreateAdjustmentPaymentDto {
+  @IsUUID("4")
+  @IsNotEmpty()
+  orderId!: string;
+
+  @IsUUID("4")
+  @IsNotEmpty()
+  consumerId!: string;
+
+  @IsUUID("4")
+  @IsNotEmpty()
+  merchantId!: string;
+
+  @IsUUID("4")
+  @IsNotEmpty()
+  adjustmentRequestId!: string;
+
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  amount!: number;
+
   @IsOptional()
   @IsString()
   currency?: string;
@@ -73,9 +103,9 @@ export class WalletWithdrawalDto {
   @IsNotEmpty()
   ownerId!: string;
 
-  @IsEnum(OwnerType)
+  @IsString()
   @IsNotEmpty()
-  ownerType!: OwnerType;
+  ownerType!: string;
 
   @IsNumber()
   @Min(1)
@@ -117,6 +147,7 @@ export class PaymentResponseDto {
   failureReason!: string | null;
   refundReason!: string | null;
   refundedAmount!: number | null;
+  adjustmentRequestId!: string | null;
   createdAt!: Date;
   updatedAt!: Date;
 }
@@ -148,19 +179,31 @@ export class WalletTransactionResponseDto {
 }
 
 export class PaymentQueryDto {
-  @IsUUID("4")
+  @IsString()
   @IsOptional()
   consumerId?: string;
 
-  @IsUUID("4")
+  @IsString()
   @IsOptional()
   merchantId?: string;
 
-  @IsUUID("4")
+  @IsString()
   @IsOptional()
   orderId?: string;
 
   @IsOptional()
   @IsEnum(PaymentStatus)
   status?: PaymentStatus;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(1)
+  @Type(() => Number)
+  take?: number;
+
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Type(() => Number)
+  skip?: number;
 }

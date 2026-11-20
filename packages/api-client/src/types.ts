@@ -33,9 +33,9 @@ export interface LoginResponse {
   user: UserProfile;
 }
 
-export type UserRole = 'CONSUMER' | 'MERCHANT_OWNER' | 'DRIVER' | 'ADMIN';
+export type UserRole = "CONSUMER" | "MERCHANT_OWNER" | "DRIVER" | "ADMIN";
 
-export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
+export type UserStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
 
 export interface UserProfile {
   id: string;
@@ -57,7 +57,7 @@ export interface UserDetail {
 }
 
 // --- Consumer ---
-export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
+export type Gender = "MALE" | "FEMALE" | "OTHER";
 
 export interface ConsumerProfile {
   id: string;
@@ -68,13 +68,15 @@ export interface ConsumerProfile {
   gender?: Gender;
   addresses: Address[];
   paymentMethods: PaymentMethod[];
+  favoriteMerchantIds?: string[];
+  favoriteMenuItemIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
 
 export interface Address {
   id: string;
-  type: 'HOME' | 'WORK' | 'OTHER';
+  type: "HOME" | "WORK" | "OTHER";
   address: string;
   latitude?: number;
   longitude?: number;
@@ -83,9 +85,10 @@ export interface Address {
 
 export interface PaymentMethod {
   id: string;
-  type: 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH' | 'WALLET';
+  type: "CREDIT_CARD" | "DEBIT_CARD" | "E_WALLET";
   provider: string;
   lastFourDigits: string;
+  expiryDate?: string | null;
   isDefault: boolean;
 }
 
@@ -97,23 +100,39 @@ export interface CreateConsumerRequest {
 }
 
 export interface AddAddressRequest {
-  type: 'HOME' | 'WORK' | 'OTHER';
-  address: string;
-  latitude?: number;
-  longitude?: number;
-  isDefault?: boolean;
+  label: string;
+  fullAddress: string;
+  city: string;
+  district?: string;
+  ward?: string;
+  street?: string;
+  gps?: { latitude: number; longitude: number };
+  type?: "HOME" | "WORK" | "OTHER";
+}
+
+export interface UpdateConsumerProfileRequest {
+  fullName?: string;
+  avatar?: string;
+  dateOfBirth?: string;
+  gender?: Gender;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
 }
 
 export interface AddPaymentMethodRequest {
-  type: 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH' | 'WALLET';
+  type: "CREDIT_CARD" | "DEBIT_CARD" | "E_WALLET";
   provider: string;
+  token: string;
   lastFourDigits: string;
-  isDefault?: boolean;
+  expiryDate?: string;
 }
 
 // --- Merchant ---
-export type MerchantStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
-export type CapacityStatus = 'NORMAL' | 'BUSY' | 'OVERLOADED';
+export type MerchantStatus = "PENDING" | "APPROVED" | "REJECTED" | "SUSPENDED";
+export type CapacityStatus = "NORMAL" | "BUSY" | "OVERLOADED";
 
 export interface Merchant {
   id: string;
@@ -133,8 +152,69 @@ export interface Merchant {
   totalOrders: number;
   capacityStatus: CapacityStatus;
   currentOrderCount: number;
+  primaryCategory?: string | null;
+  secondaryCategories?: string[];
+  otherCategoryDescription?: string | null;
+  isOpen?: boolean;
+  isOpenNow?: boolean;
+  /** Thời điểm nhà hàng bị từ chối (nếu có). */
+  rejectedAt?: string | null;
+  /** Lý do từ chối hồ sơ nhà hàng (nếu có). */
+  rejectReason?: string | null;
+  /** Dishes that matched the `search` keyword (only present when searching). */
+  matchedMenuItems?: MatchedMenuItem[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** Dish that matched a keyword search, attached to a merchant in list results. */
+export interface MatchedMenuItem {
+  id: string;
+  name: string;
+  price: number;
+  imageUrl: string | null;
+}
+
+/** Sort keys supported by the merchant list endpoint (server-side). */
+export type MerchantSortKey = "rating" | "popular" | "newest" | "name";
+
+export interface MerchantListQuery {
+  status?: string;
+  search?: string;
+  /** Legacy single-category filter. */
+  category?: string;
+  /** CSV of category keys, e.g. `"pho,rice"`. */
+  categories?: string;
+  /** Only merchants with `rating >= minRating` (0-5). */
+  minRating?: number;
+  /** Only merchants open right now (manual flag + operating hours). */
+  openNow?: boolean;
+  sortBy?: MerchantSortKey;
+  sortOrder?: "ASC" | "DESC";
+  skip?: number;
+  take?: number;
+}
+
+/** Result row of the global dish search endpoint. */
+export interface MenuSearchItem {
+  id: string;
+  merchantId: string;
+  name: string;
+  description: string | null;
+  price: number;
+  imageUrl: string | null;
+  category: string;
+  isAvailable: boolean;
+  merchant: {
+    id: string;
+    name: string;
+    rating: number;
+    address: string;
+    latitude: number | null;
+    longitude: number | null;
+    isOpen: boolean;
+    isOpenNow: boolean;
+  };
 }
 
 export interface CreateMerchantRequest {
@@ -146,43 +226,148 @@ export interface CreateMerchantRequest {
   description?: string;
   latitude?: number;
   longitude?: number;
+  primaryCategory?: string;
+  secondaryCategories?: string[];
+  otherCategoryDescription?: string;
 }
 
-export type MenuCategory = 'FOOD' | 'DRINK' | 'DESSERT' | 'SNACK' | 'OTHER';
+export interface MenuCategory {
+  id: string;
+  merchantId: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface CreateMenuCategoryRequest {
+  name: string;
+  sortOrder?: number;
+}
+
+export interface UpdateMenuCategoryRequest {
+  name?: string;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export type OptionGroupType = "CHOICE" | "MULTI_CHOICE" | "TOGGLE" | "QUANTITY";
+
+export interface MenuItemOption {
+  id: string;
+  name: string;
+  priceDelta: number; // số tiền cộng/trừ (có thể âm)
+  isDefault?: boolean; // mặc định được chọn (CHOICE/TOGGLE)
+  minQuantity?: number; // dành cho QUANTITY
+  maxQuantity?: number; // dành cho QUANTITY
+}
+
+export interface MenuItemOptionGroup {
+  id: string;
+  name: string;
+  type: OptionGroupType;
+  required: boolean;
+  minSelections?: number; // MULTI_CHOICE: tối thiểu phải chọn
+  maxSelections?: number; // MULTI_CHOICE: tối đa
+  options: MenuItemOption[];
+}
+
+// Snapshot các option đã chọn (dùng cho cart + order)
+export interface SelectedMenuItemOption {
+  optionId: string;
+  groupId: string;
+  groupName: string;
+  name: string;
+  priceDelta: number;
+  quantity?: number; // dành cho QUANTITY
+}
+
+export interface SelectedOptionGroup {
+  groupId: string;
+  groupName: string;
+  type: OptionGroupType;
+  options: SelectedMenuItemOption[];
+}
 
 export interface MenuItem {
   id: string;
   merchantId: string;
-  category: MenuCategory;
+  category: string;
+  categoryId?: string | null;
   name: string;
   description?: string;
   price: number;
   originalPrice: number;
   imageUrl?: string | null;
   isAvailable: boolean;
+  availabilityStatus: string;
+  outOfStockUntil: string | null;
   isFeatured: boolean;
   preparationTime: number;
   sortOrder: number;
+  optionGroups?: MenuItemOptionGroup[];
   createdAt: string;
   updatedAt: string;
 }
 
 export interface CreateMenuItemRequest {
-  category: MenuCategory;
+  category: string;
+  categoryId?: string;
   name: string;
   description?: string;
   price: number;
   isFeatured?: boolean;
   preparationTime?: number;
+  optionGroups?: MenuItemOptionGroup[];
 }
 
 export interface UpdateMenuItemRequest {
   name?: string;
   description?: string;
   price?: number;
-  category?: MenuCategory;
+  category?: string;
+  categoryId?: string | null;
   isFeatured?: boolean;
   preparationTime?: number;
+  reason?: string;
+  optionGroups?: MenuItemOptionGroup[];
+}
+
+export type MenuItemAvailabilityStatus =
+  | "AVAILABLE"
+  | "OUT_OF_STOCK_TODAY"
+  | "OUT_OF_STOCK";
+
+export interface SetMenuItemAvailabilityRequest {
+  status: MenuItemAvailabilityStatus;
+}
+
+export interface ImportMenuItemRequest {
+  category?: string;
+  categoryId?: string;
+  name: string;
+  description?: string;
+  price: number;
+  imageUrl?: string;
+  isFeatured?: boolean;
+  preparationTime?: number;
+  optionGroups?: MenuItemOptionGroup[];
+}
+
+export interface BulkImportMenuRequest {
+  categories?: CreateMenuCategoryRequest[];
+  items: ImportMenuItemRequest[];
+}
+
+export interface MenuImportError {
+  index: number;
+  name?: string;
+  message: string;
+}
+
+export interface MenuImportResult {
+  createdCategories: number;
+  createdItems: number;
+  errors: MenuImportError[];
 }
 
 export interface OperatingHour {
@@ -202,24 +387,39 @@ export interface UpdateCapacityRequest {
 }
 
 // --- Order ---
-export type OrderType = 'DELIVERY' | 'PICKUP';
+export type OrderType = "DELIVERY" | "PICKUP";
+
+/**
+ * Phương thức giao hàng:
+ * - SAVER: Tiết kiệm (phí rẻ nhất, thời gian lâu hơn)
+ * - FAST: Nhanh (tiêu chuẩn, mặc định)
+ * - PRIORITY: Ưu tiên (nhà hàng xử lý trước, phí cao nhất)
+ */
+export type DeliveryOption = "SAVER" | "FAST" | "PRIORITY";
+
 export type OrderStatus =
-  | 'PENDING'
-  | 'CONFIRMED'
-  | 'PREPARING'
-  | 'READY_FOR_PICKUP'
-  | 'OUT_FOR_DELIVERY'
-  | 'DELIVERED'
-  | 'CANCELLED'
-  | 'REJECTED';
+  | "PENDING"
+  | "CONFIRMED"
+  | "PREPARING"
+  | "READY_FOR_PICKUP"
+  | "OUT_FOR_DELIVERY"
+  | "DELIVERED"
+  | "DELIVERY_FAILED"
+  | "CANCELLED"
+  | "CANCELLED_NO_DRIVER"
+  | "REJECTED";
 
 export interface OrderItem {
   menuItemId: string;
   name: string;
+  imageUrl?: string | null;
   quantity: number;
   unitPrice: number;
+  originalPrice?: number | null;
+  flashSaleFundedBy?: string | null;
   subtotal: number;
   specialInstructions?: string;
+  options?: SelectedMenuItemOption[];
 }
 
 export interface Order {
@@ -233,29 +433,77 @@ export interface Order {
   deliveryFee: number;
   serviceFee: number;
   discount: number;
+  discountFundedBy?: string;
   totalAmount: number;
   deliveryAddress: string;
   deliveryLatitude?: number;
   deliveryLongitude?: number;
   estimatedDeliveryTime?: string | null;
+  /** Phương thức giao hàng khách đã chọn. */
+  deliveryOption?: DeliveryOption;
+  deliveryOptionLabel?: string;
+  /** Phụ thu/giảm giá của phương thức so với phí FAST (VND). */
+  deliveryOptionFee?: number;
+  /** Thứ tự ưu tiên hàng đợi nhà hàng (SAVER 0, FAST 1, PRIORITY 2). */
+  priorityRank?: number;
+  /** Thời điểm cam kết giao hàng. */
+  promisedDeliveryAt?: string | null;
   notes?: string;
   driverId?: string | null;
+  /** Ảnh tài xế chụp món ăn lúc giao cho khách (bằng chứng chống khiếu nại). */
+  deliveryProofPhotoUrl?: string | null;
   cancelReason?: string | null;
   rejectionReason?: string | null;
+  paymentMethod?: string;
+  /** Số phiên bản danh sách món (tăng sau mỗi lần khách xác nhận chỉnh sửa). */
+  itemsVersion?: number;
   createdAt: string;
   updatedAt: string;
 }
 
+/**
+ * Cảnh báo gắn với đơn hàng (thay cho tiền phạt khi giao thất bại).
+ * Nhà hàng đọc banner vàng rồi bấm "Đã hiểu" ⇒ `dismissedAt` được lưu.
+ */
+export interface OrderWarning {
+  id: string;
+  orderId: string;
+  merchantId: string | null;
+  /** MERCHANT_FAULT_DELIVERY_FAILED | ... */
+  type: string;
+  /** WARNING | CRITICAL */
+  severity: string;
+  title: string;
+  message: string;
+  detail: {
+    total?: number;
+    foodTotal?: number;
+    shippingFee?: number;
+    refundAmount?: number;
+    driverCompensation?: number;
+    fine?: number;
+    severity?: string | null;
+  } | null;
+  dismissedAt: string | null;
+  dismissedBy: string | null;
+  createdAt: string;
+}
+
 export interface PlaceOrderRequest {
   consumerId: string;
+  userId?: string;
+  compensationVoucherId?: string;
   merchantId: string;
   orderType: OrderType;
   items: {
     menuItemId: string;
     name: string;
+    imageUrl?: string | null;
     quantity: number;
     unitPrice: number;
+    originalPrice?: number;
     specialInstructions?: string;
+    options?: SelectedMenuItemOption[];
   }[];
   deliveryAddress: string;
   deliveryLatitude?: number;
@@ -263,7 +511,11 @@ export interface PlaceOrderRequest {
   deliveryFee?: number;
   serviceFee?: number;
   discount?: number;
+  promotionCode?: string;
   notes?: string;
+  paymentMethod?: string;
+  /** Phương thức giao hàng — bỏ trống = FAST (tương thích ngược). */
+  deliveryOption?: DeliveryOption;
 }
 
 export interface CancelOrderRequest {
@@ -284,9 +536,115 @@ export interface UpdateOrderRequest {
   driverId?: string;
 }
 
+// --- Order change request (đổi món, khách xác nhận) ---
+export type OrderChangeRequestStatus =
+  | "PENDING"
+  | "AWAITING_PAYMENT"
+  | "APPLIED"
+  | "REJECTED"
+  | "CANCELLED"
+  | "EXPIRED";
+
+export type OrderChangeMoneyStatus =
+  | "NONE"
+  | "AWAITING_PAYMENT"
+  | "CHARGED"
+  | "REFUNDED"
+  | "FAILED"
+  | "NOT_REQUIRED";
+
+export interface OrderChangeItemSnapshot {
+  menuItemId: string;
+  name: string;
+  imageUrl?: string | null;
+  quantity: number;
+  unitPrice: number;
+  originalPrice?: number | null;
+  flashSaleFundedBy?: string | null;
+  subtotal: number;
+  specialInstructions?: string | null;
+  options?: SelectedMenuItemOption[] | null;
+}
+
+export interface OrderChangeTotals {
+  subtotal: number;
+  discount: number;
+  total: number;
+}
+
+export interface OrderChangeRequest {
+  id: string;
+  orderId: string;
+  merchantId: string;
+  consumerId: string;
+  status: OrderChangeRequestStatus;
+  reason?: string | null;
+  rejectReason?: string | null;
+  beforeItems: OrderChangeItemSnapshot[];
+  afterItems: OrderChangeItemSnapshot[];
+  before: OrderChangeTotals;
+  after: OrderChangeTotals;
+  deltaAmount: number;
+  paymentMethod: string;
+  moneyStatus: OrderChangeMoneyStatus;
+  adjustmentPaymentId?: string | null;
+  beforeItemsVersion: number;
+  expiresAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  confirmedAt?: string | null;
+}
+
+export interface OrderChangeItemInput {
+  /** Vị trí món trong order.items hiện tại; bỏ trống = món mới. */
+  sourceIndex?: number;
+  menuItemId: string;
+  quantity: number;
+  options?: {
+    optionId: string;
+    groupId: string;
+    quantity?: number;
+  }[];
+  specialInstructions?: string;
+}
+
+export interface CreateOrderChangeRequest {
+  reason: string;
+  items: OrderChangeItemInput[];
+}
+
+export interface AcceptOrderChangeRequest {
+  paymentId?: string;
+  transactionId?: string;
+}
+
+export interface AcceptOrderChangeResult {
+  changeRequest: OrderChangeRequest;
+  order?: Order;
+  requiresPayment: boolean;
+  payment?: { paymentId: string; clientSecret: string; amount: number };
+}
+
+export interface OrderAdjustment {
+  id: string;
+  orderId: string;
+  changeRequestId: string;
+  before: OrderChangeTotals;
+  after: OrderChangeTotals;
+  deltaAmount: number;
+  paymentMethod: string;
+  moneyStatus: string;
+  settlementStatus: string;
+  createdAt: string;
+}
+
 // --- Payment ---
-export type PaymentStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'REFUNDED';
-export type PaymentMethodType = 'CREDIT_CARD' | 'DEBIT_CARD' | 'CASH' | 'WALLET';
+export type PaymentStatus = "PENDING" | "COMPLETED" | "FAILED" | "REFUNDED";
+export type PaymentMethodType =
+  | "CREDIT_CARD"
+  | "DEBIT_CARD"
+  | "CASH"
+  | "WALLET";
 
 export interface Payment {
   id: string;
@@ -374,8 +732,16 @@ export interface UpdateStockRequest {
 }
 
 // --- Driver ---
-export type DriverStatus = 'ONLINE' | 'OFFLINE' | 'BUSY' | 'ON_DELIVERY';
-export type VehicleType = 'MOTORBIKE' | 'CAR' | 'BICYCLE';
+export type DriverStatus =
+  | "ACTIVE"
+  | "INACTIVE"
+  | "SUSPENDED"
+  | "REJECTED"
+  | "ONLINE"
+  | "OFFLINE"
+  | "BUSY"
+  | "ON_DELIVERY";
+export type VehicleType = "MOTORBIKE" | "CAR" | "BICYCLE";
 
 export interface Driver {
   id: string;
@@ -386,6 +752,10 @@ export interface Driver {
   vehicleType: VehicleType;
   licensePlate: string;
   status: DriverStatus;
+  /** Thời điểm hồ sơ tài xế bị từ chối (nếu có). */
+  rejectedAt?: string | null;
+  /** Lý do từ chối hồ sơ tài xế (nếu có). */
+  rejectReason?: string | null;
   currentLatitude?: number;
   currentLongitude?: number;
   rating: number;
@@ -396,11 +766,23 @@ export interface Driver {
   updatedAt: string;
 }
 
+/** Thông tin công khai của tài xế dành cho CONSUMER (không chứa dữ liệu nhạy cảm). */
+export interface DriverPublicProfile {
+  id: string;
+  userId?: string;
+  fullName: string;
+  avatar?: string | null;
+  vehicleRegistrationNumber: string;
+  rating: number;
+  totalRatings: number;
+}
+
 export interface RegisterDriverRequest {
   userId: string;
   fullName: string;
   phone: string;
   email?: string;
+  avatar?: string | null;
   vehicleType: VehicleType;
   licensePlate: string;
 }
@@ -410,29 +792,172 @@ export interface UpdateLocationRequest {
   longitude: number;
 }
 
+/**
+ * Một điểm trong lô GPS gửi lên `POST /drivers/:id/location/batch`.
+ *
+ * Client gom các điểm đã lấy mẫu (adaptive `watchPosition`) rồi gửi theo lô để
+ * giảm số request. `recordedAt` giữ nguyên thời điểm thiết bị ghi nhận, nhờ đó
+ * lịch sử GPS không bị "dồn cục" khi client gửi bù sau khi mất mạng.
+ */
+export interface DriverLocationBatchPoint {
+  latitude: number;
+  longitude: number;
+  /** ISO-8601 (mặc định: thời điểm server nhận). */
+  recordedAt?: string;
+  /** Bán kính sai số do thiết bị báo (mét) — chỉ để chẩn đoán. */
+  accuracy?: number;
+}
+
+/**
+ * Payload realtime phát trên namespace `/tracking` (event `tracking:update`).
+ * Client (app khách / điều phối) subscribe room `order:<orderId>` để nhận.
+ */
+export interface TrackingUpdate {
+  driverId: string;
+  orderId: string | null;
+  latitude: number;
+  longitude: number;
+  recordedAt: string;
+  source: "HTTP" | "WS";
+}
+
 // --- Dispatch ---
-export type DispatchStatus = 'SEARCHING' | 'ASSIGNED' | 'ACCEPTED' | 'DECLINED' | 'PICKED_UP' | 'COMPLETED' | 'CANCELLED';
+/** Trạng thái dispatch (khớp `DispatchStatus` enum của dispatch-service). */
+export type DispatchStatus =
+  | "MATCHING"
+  | "DRIVER_ASSIGNED"
+  | "DRIVER_ACCEPTED"
+  | "DRIVER_DECLINED"
+  | "DRIVER_ARRIVED"
+  | "PICKED_UP"
+  | "DELIVERING"
+  | "DELIVERED"
+  | "DELIVERY_FAILED"
+  | "EXPIRED"
+  | "CANCELLED";
+
+export type DispatchDeclineReason =
+  | "TOO_FAR"
+  | "BUSY"
+  | "FATIGUE"
+  | "COD_NOT_ENOUGH"
+  | "OTHER";
 
 export interface Dispatch {
   id: string;
   orderId: string;
-  driverId?: string | null;
+  merchantId: string;
+  /** Toạ độ nhà hàng — dùng để vẽ tuyến “tài xế → quán”. */
+  merchantLatitude?: number;
+  merchantLongitude?: number;
+  /**
+   * Khoảng cách từ GPS tài xế tới quán (km) — chỉ có trong phản hồi
+   * `GET /dispatches/nearby`.
+   */
+  distanceFromDriverKm?: number;
+  deliveryAddress: string;
+  deliveryLatitude?: number;
+  deliveryLongitude?: number;
+  /** Phương thức giao hàng của dispatch. */
+  deliveryOption?: DeliveryOption;
+  priorityRank?: number;
+  promisedDeliveryAt?: string | null;
+  /** Lô gộp đơn SAVER (Phase 2). */
+  batchId?: string | null;
+  routeSequence?: number | null;
   status: DispatchStatus;
-  searchRadius: number;
-  maxSearchTime: number;
-  declinedDriverIds: string[];
-  estimatedPickupTime?: string | null;
-  estimatedDeliveryTime?: string | null;
-  actualPickupTime?: string | null;
-  actualDeliveryTime?: string | null;
-  createdAt: string;
-  updatedAt: string;
+  driverId?: string | null;
+  matchedDriverIds?: string[];
+  retryCount?: number;
+  declineReason?: string | null;
+  declineReasonType?: DispatchDeclineReason | null;
+  pickedUpAt?: string | null;
+  deliveredAt?: string | null;
+  expiresAt?: string | null;
+  cancellationReason?: string | null;
+  notes?: string | null;
+  isActive?: boolean;
+  hasRemainingRetries?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** Một điểm dừng trong lộ trình gộp đơn SAVER. */
+export interface DriverRouteStop {
+  orderId: string;
+  sequence: number;
+  status: string;
+  merchantLatitude: number;
+  merchantLongitude: number;
+  deliveryLatitude: number;
+  deliveryLongitude: number;
+  pickupDone: boolean;
+  deliveryDone: boolean;
+  /** Thứ tự chặng lấy hàng; null nếu đã lấy xong hoặc đơn đã giao. */
+  pickupSequence?: number | null;
+  /** Thứ tự chặng giao hàng; null nếu đơn đã giao. */
+  dropoffSequence?: number | null;
+}
+
+/** Một chặng cụ thể trên lộ trình tối ưu (lấy món hoặc giao hàng). */
+export interface DriverRouteLeg {
+  orderId: string;
+  type: "PICKUP" | "DROPOFF";
+  sequence: number;
+  latitude: number;
+  longitude: number;
+  status: string;
+}
+
+export interface DriverRoute {
+  driverId: string;
+  dispatchId?: string;
+  batchId: string | null;
+  maxStackedOrders: number;
+  stops: DriverRouteStop[];
+  /** Thứ tự chặng tối ưu do dispatch-service tính (có thể đan xen pickup/dropoff). */
+  legs?: DriverRouteLeg[];
+  totalDistanceKm?: number;
+  /** Tổng thời gian di chuyển (phút) theo metric đường thực tế/fallback. */
+  totalDurationMin?: number;
+  /** Nguồn metric: osrm/google = đường thực tế, haversine = fallback. */
+  source?: "osrm" | "google" | "haversine";
 }
 
 export interface CreateDispatchRequest {
   orderId: string;
-  searchRadius?: number;
-  maxSearchTime?: number;
+  merchantId: string;
+  deliveryAddress: string;
+  deliveryLatitude: number;
+  deliveryLongitude: number;
+  merchantLatitude?: number;
+  merchantLongitude?: number;
+  deliveryOption?: DeliveryOption;
+  promisedDeliveryAt?: string;
+}
+
+export interface DeclineDispatchRequest {
+  driverId: string;
+  reason: DispatchDeclineReason;
+  detail?: string;
+}
+
+export interface DriverCancelRequest {
+  reason: string;
+}
+
+export interface DeliveryFailedRequest {
+  reason: string;
+  photoUrl?: string;
+  faultParty?: "DRIVER" | "CUSTOMER";
+}
+
+/**
+ * Xác nhận giao hàng thành công. Với đơn DELIVERY, `photoUrl` là ảnh món ăn
+ * tài xế chụp lúc giao cho khách và **bắt buộc**.
+ */
+export interface MarkDeliveredRequest {
+  photoUrl?: string;
 }
 
 // --- Socket Events ---
@@ -447,4 +972,894 @@ export interface DriverLocationUpdate {
   latitude: number;
   longitude: number;
   timestamp: string;
+}
+
+/** Một điểm trong lịch sử vị trí GPS của tài xế. */
+export interface DriverLocationPoint {
+  id: string;
+  driverId: string;
+  orderId: string | null;
+  latitude: number;
+  longitude: number;
+  recordedAt: string;
+}
+
+// --- Review ---
+export interface Review {
+  id: string;
+  orderId: string;
+  consumerId: string;
+  merchantId: string;
+  driverId?: string | null;
+  driverRating?: number | null;
+  driverComment?: string | null;
+  rating: number;
+  comment?: string | null;
+  tags?: string[];
+  images?: string[] | null;
+  merchantReply?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateReviewRequest {
+  orderId: string;
+  consumerId: string;
+  merchantId: string;
+  driverId?: string;
+  driverRating?: number;
+  driverComment?: string;
+  rating: number;
+  comment?: string;
+  tags?: string[];
+  images?: string[];
+}
+
+export interface ReplyReviewRequest {
+  reply: string;
+}
+
+// --- Promotion ---
+export type PromotionType = "PERCENT" | "FIXED";
+
+export type PromotionTarget = "FOOD" | "SHIPPING" | "ITEM";
+export type PromotionFundedBy = "MERCHANT" | "PLATFORM";
+
+export interface PromotionItem {
+  menuItemId: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface Promotion {
+  id: string;
+  merchantId: string;
+  code: string;
+  type: PromotionType;
+  target: PromotionTarget;
+  fundedBy: PromotionFundedBy;
+  menuItemId?: string | null;
+  menuItemName?: string | null;
+  value: number;
+  minOrderValue?: number | null;
+  maxDiscount?: number | null;
+  startAt?: string | null;
+  endAt?: string | null;
+  usageLimit?: number | null;
+  usageLimitPerUser?: number | null;
+  usedCount: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePromotionRequest {
+  merchantId: string;
+  code: string;
+  type: PromotionType;
+  target: PromotionTarget;
+  menuItemId?: string;
+  menuItemName?: string;
+  value: number;
+  minOrderValue?: number;
+  maxDiscount?: number;
+  startAt?: string;
+  endAt?: string;
+  usageLimit?: number;
+  usageLimitPerUser?: number;
+}
+
+export interface UpdatePromotionRequest {
+  menuItemId?: string;
+  menuItemName?: string;
+  value?: number;
+  minOrderValue?: number;
+  maxDiscount?: number;
+  startAt?: string;
+  endAt?: string;
+  usageLimit?: number;
+  usageLimitPerUser?: number;
+}
+
+export interface PromotionUsage {
+  id: string;
+  promotionId: string;
+  orderId: string;
+  consumerId: string;
+  discountAmount: number;
+  createdAt: string;
+}
+
+export interface PromotionStats {
+  usedCount: number;
+  totalDiscount: number;
+  totalOrders: number;
+}
+
+export interface ValidatePromotionRequest {
+  merchantId: string;
+  code: string;
+  foodTotal: number;
+  shippingFee?: number;
+  consumerId?: string;
+  itemTotal?: number;
+  items?: PromotionItem[];
+}
+
+export interface ApplyPromotionRequest {
+  merchantId: string;
+  code: string;
+  orderId: string;
+  consumerId: string;
+  foodTotal: number;
+  shippingFee?: number;
+  itemTotal?: number;
+  items?: PromotionItem[];
+}
+
+// --- Compensation voucher (voucher bồi thường) ---
+export interface CompensationConfig {
+  id: string;
+  value: number;
+  isActive: boolean;
+  updatedAt: string;
+}
+
+export interface CompensationVoucher {
+  id: string;
+  name: string;
+  consumerId: string;
+  value: number;
+  sourceOrderId: string;
+  isUsed: boolean;
+  usedOrderId: string | null;
+  issuedAt: string;
+  usedAt: string | null;
+  createdAt: string;
+}
+
+export interface UpdateCompensationConfigRequest {
+  value?: number;
+  isActive?: boolean;
+}
+
+export interface IssueCompensationVoucherRequest {
+  consumerId: string;
+  sourceOrderId: string;
+}
+
+export interface ApplyCompensationVoucherRequest {
+  voucherId: string;
+  consumerId: string;
+  orderId: string;
+}
+
+// --- Flash Sale ---
+export type FlashSaleStatus =
+  | "SCHEDULED"
+  | "ACTIVE"
+  | "PAUSED"
+  | "ENDED"
+  | "CANCELLED"
+  | "SOLD_OUT";
+
+export type FlashSaleDiscountType = "PERCENT" | "FIXED_PRICE";
+export type FlashSaleFundedBy = "MERCHANT" | "PLATFORM";
+
+export interface FlashSaleItem {
+  id: string;
+  flashSaleId: string;
+  menuItemId: string;
+  menuItemName: string | null;
+  imageUrl: string | null;
+  originalPrice: number;
+  discountType: FlashSaleDiscountType;
+  discountPercent: number | null;
+  salePrice: number;
+  totalQuantity: number;
+  soldQuantity: number;
+  limitPerUser: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FlashSale {
+  id: string;
+  merchantId: string;
+  title: string;
+  fundedBy: FlashSaleFundedBy;
+  status: FlashSaleStatus;
+  startAt: string;
+  endAt: string;
+  cancelledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items?: FlashSaleItem[];
+}
+
+export interface FlashSaleItemInput {
+  menuItemId: string;
+  quantity: number;
+  unitPrice?: number;
+}
+
+export interface CreateFlashSaleItemRequest {
+  menuItemId: string;
+  menuItemName?: string;
+  imageUrl?: string;
+  originalPrice: number;
+  discountType: FlashSaleDiscountType;
+  discountPercent?: number;
+  salePrice?: number;
+  totalQuantity: number;
+  limitPerUser?: number;
+}
+
+export interface CreateFlashSaleRequest {
+  merchantId: string;
+  title?: string;
+  items: CreateFlashSaleItemRequest[];
+  startAt: string;
+  endAt: string;
+  fundedBy?: FlashSaleFundedBy;
+}
+
+export interface UpdateFlashSaleItemRequest {
+  id: string;
+  totalQuantity?: number;
+  limitPerUser?: number;
+}
+
+export interface UpdateFlashSaleRequest {
+  title?: string;
+  startAt?: string;
+  endAt?: string;
+  items?: UpdateFlashSaleItemRequest[];
+}
+
+export interface FlashSalePricedItem {
+  menuItemId: string;
+  originalPrice: number;
+  salePrice: number;
+  /** Tổng số lượng khách đặt cho món này. */
+  quantity: number;
+  /**
+   * Số phần được hưởng giá flash sale (tối đa theo `limitPerUser` và số suất
+   * còn lại). Phần chênh lệch (`quantity - saleQuantity`) tính giá thường.
+   */
+  saleQuantity?: number;
+  hasFlashSale?: boolean;
+  remainingStock?: number | null;
+  limitPerUser?: number | null;
+  /** Số suất còn lại của riêng khách (chỉ có khi truyền consumerId). */
+  remainingUserQuota?: number;
+  fundedBy?: FlashSaleFundedBy | null;
+}
+
+export interface ValidateFlashSaleRequest {
+  merchantId: string;
+  items: FlashSaleItemInput[];
+  consumerId?: string;
+}
+
+export interface ApplyFlashSaleRequest {
+  merchantId: string;
+  consumerId: string;
+  orderId: string;
+  items: FlashSaleItemInput[];
+}
+
+export interface RefundFlashSaleRequest {
+  orderId: string;
+}
+
+export interface FlashSaleStats {
+  totalOrders: number;
+  totalSoldQuantity: number;
+  totalDiscount: number;
+  totalRevenue: number;
+}
+
+// --- Price Management ---
+export type PriceHistoryStatus = "RECORDED" | "AUDITED" | "FLAGGED";
+export type PriceHistoryType = "MANUAL" | "FLASH_SALE";
+
+export interface PriceHistory {
+  id: string;
+  merchantId: string;
+  menuItemId: string;
+  menuItemName: string | null;
+  oldPrice: number;
+  newPrice: number;
+  changedBy: string | null;
+  reason: string | null;
+  status: PriceHistoryStatus;
+  type: PriceHistoryType;
+  createdAt: string;
+}
+
+export interface PriceAlert {
+  id: string;
+  merchantId: string;
+  menuItemId: string;
+  oldPrice: number;
+  newPrice: number;
+  changePercent: number;
+  message: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface PriceFluctuationReport {
+  merchantId: string;
+  period: { from: string | null; to: string | null };
+  totalChanges: number;
+  flaggedCount: number;
+  avgChangePercent: number;
+  maxChangePercent: number;
+  totalAlerts: number;
+}
+
+export interface RevenueReconciliation {
+  merchantId: string;
+  period: string;
+  totalOrders: number;
+  totalRevenue: number;
+  pendingOrders: number;
+  expectedRevenue: number;
+  actualRevenue: number;
+  difference: number;
+  revenueByDay: { date: string; orders: number; revenue: number }[];
+  items: {
+    orderId: string;
+    menuItemId: string;
+    name: string | null;
+    quantity: number;
+    unitPrice: number;
+    listPrice: number | null;
+    actualRevenue: number;
+    expectedRevenue: number | null;
+    difference: number | null;
+    createdAt: string;
+  }[];
+}
+
+// --- Notification ---
+export interface Notification {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  body?: string | null;
+  data?: Record<string, unknown>;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface CreateNotificationRequest {
+  userId: string;
+  type: string;
+  title: string;
+  body?: string;
+  data?: Record<string, unknown>;
+}
+
+// --- Chat ---
+export type ChatMessageType = "TEXT" | "IMAGE";
+export type ChatSenderRole = "CONSUMER" | "DRIVER";
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderRole: ChatSenderRole;
+  type: ChatMessageType;
+  content: string;
+  createdAt: string;
+}
+
+export interface ChatConversation {
+  id: string;
+  orderId: string;
+  consumerUserId: string;
+  driverUserId: string;
+  lastMessageAt: string | null;
+  createdAt: string;
+  expiresAt: string | null;
+  hardDeleteAt: string | null;
+  lastMessage?: ChatMessage | null;
+}
+
+export interface GetOrCreateConversationRequest {
+  orderId: string;
+  consumerUserId: string;
+  driverUserId: string;
+}
+
+export interface SendMessageRequest {
+  type: ChatMessageType;
+  content: string;
+}
+
+// --- Resolution Service: AI Assistant (Gemini) ---
+
+export type AiVerdict = "VALID" | "INVALID" | "INCONCLUSIVE";
+export type AiFaultParty =
+  | "CUSTOMER"
+  | "DRIVER"
+  | "MERCHANT"
+  | "SYSTEM"
+  | "INCONCLUSIVE";
+export type AiSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type AiActionType =
+  | "NO_ACTION"
+  | "WARNING"
+  | "FINE"
+  | "COMPENSATION"
+  | "SUSPEND"
+  | "BAN"
+  | "REPUTATION_DEDUCTION"
+  | "RESTRICT_ACTIVITY";
+export type AiTargetType = "CONSUMER" | "DRIVER" | "MERCHANT";
+
+/** Ảnh bằng chứng có khớp với mô tả khiếu nại hay không. */
+export type AiImageSupport =
+  | "SUPPORTS"
+  | "CONTRADICTS"
+  | "NEUTRAL"
+  | "NO_IMAGE";
+
+export interface AiSuggestedAction {
+  type: AiActionType;
+  targetType: AiTargetType;
+  amount: number | null;
+  durationDays: number | null;
+  reason: string;
+}
+
+/**
+ * Trọng số bằng chứng (%) của một lần phân tích: ảnh giao hàng hệ thống 35 +
+ * ảnh bên khiếu nại 25 + ảnh bên bị khiếu nại 15 + dữ liệu hệ thống 20 + lời
+ * khai 5 (tổng tối đa 100).
+ */
+export interface AiEvidenceWeight {
+  images: number;
+  system: number;
+  testimony: number;
+  /** images + system — ≥ 50 nghĩa là đủ căn cứ kết luận. */
+  objective: number;
+  basis: "IMAGES" | "SYSTEM" | "TESTIMONY";
+  /** Ảnh của chính bên khiếu nại mâu thuẫn với lời khai. */
+  reporterSelfContradiction: boolean;
+}
+
+/** Ảnh giao hàng có khớp MÓN ĐÃ ĐẶT không (AI đọc ảnh). */
+export type AiDeliveryMatch = "MATCH" | "MISMATCH" | "UNCLEAR";
+
+/** Ảnh bằng chứng của **một bên**, đã phân tích riêng. */
+export interface AiSideImageAnalysis {
+  attached: number;
+  analyzed: number;
+  support: AiImageSupport;
+  analysis: string;
+}
+
+/** Máy đếm món trên ảnh (so với đơn đã đặt / ảnh thực đơn) kết luận gì. */
+export type AiInventoryVerdict = "MATCH" | "MISSING" | "EXTRA" | "UNCLEAR";
+
+/** Kết luận tất định của code từ điểm khớp ảnh (không phải model tự phán). */
+export type AiImageMatchDecision =
+  | "AUTO_APPROVE"
+  | "AUTO_REJECT"
+  | "NEEDS_REVIEW";
+
+/** Một dòng đơn đã được ghép cặp với ảnh khách chụp. */
+export interface AiPairComparisonDetail {
+  orderItemId: string;
+  name: string;
+  orderedQuantity: number;
+  quantitySeen: number;
+  sameDish: boolean;
+  similarityPercent: number | null;
+}
+
+/**
+ * Kết quả GHÉP CẶP ảnh [thực đơn của quán] ↔ [ảnh khách chụp] do **code** tổng
+ * hợp — cho admin đọc thẳng "thiếu món nào, thiếu mấy phần" thay vì suy luận từ
+ * câu văn của model.
+ *
+ * Vắng mặt khi vụ việc không thuộc nhóm sự cố món ăn, hoặc không dựng được cặp
+ * ảnh nào (thiếu ảnh một bên / tải hỏng).
+ */
+export interface AiPairComparison {
+  /** Số cặp ảnh đã dựng được. */
+  pairs: number;
+  /** Số cặp model đọc được (ảnh quá mờ ⇒ không đọc được). */
+  readable: number;
+  /** Điểm giống trung bình 0–100 giữa ảnh chuẩn và ảnh khách chụp. */
+  similarityAvg: number | null;
+  /** Tên món bị nhận sai món (khác món đã đặt). */
+  wrongItems: string[];
+  /** Món đã đặt nhưng không dựng được cặp ảnh nào để đối chiếu. */
+  missingPairs: string[];
+  /** Code được phép lật kết luận của model khi điểm khớp ảnh đủ rõ. */
+  canOverride: boolean;
+  details: AiPairComparisonDetail[];
+}
+
+/** Bản rút gọn một phép chấm điểm ảnh tất định của code. */
+export interface AiImageMatchSummary {
+  side: "DELIVERY_PROOF" | "REPORTER";
+  verdict: AiInventoryVerdict;
+  matchedQuantity: number;
+  totalQuantity: number;
+  matchScore: number | null;
+  decision: AiImageMatchDecision;
+  reason: string;
+  missingText: string;
+  extraText: string;
+  refundCap: number | null;
+  pairCount?: number;
+  pairsTotal?: number;
+  similarityAvg?: number | null;
+  wrongItemsText?: string;
+}
+
+/**
+ * Vì sao lượt phân tích vừa rồi không đọc được ảnh (hoặc đọc bình thường).
+ *
+ * - `OK` — model đã đọc ảnh.
+ * - `NO_IMAGES` — vụ việc không có ảnh nào.
+ * - `DOWNLOAD_FAILED` — có ảnh nhưng tải hỏng (404 / DNS / quá dung lượng).
+ * - `VISION_OVERLOADED` — model đọc ảnh quá tải (429/1302/1305): đợi 30–60 giây
+ *   rồi bấm "Phân tích lại".
+ * - `VISION_DISABLED` — chưa bật model ảnh (`GLM_VISION_MODEL=none`).
+ * - `VISION_ERROR` — model ảnh lỗi khác (404/1210/JSON hỏng).
+ */
+export type AiImageReadStatus =
+  | "OK"
+  | "NO_IMAGES"
+  | "DOWNLOAD_FAILED"
+  | "VISION_OVERLOADED"
+  | "VISION_DISABLED"
+  | "VISION_ERROR";
+
+/** Chẩn đoán lượt đọc ảnh của AI (banner trong panel trợ lý). */
+export interface AiImageReadDiagnostics {
+  status: AiImageReadStatus;
+  attached: number;
+  analyzed: number;
+  /** Model đã thử ở lượt ảnh, theo thứ tự gọi. */
+  modelsTried: string[];
+  /** Lý do kỹ thuật ngắn (`429/1305`, `404`, `mạng`…) — null khi OK. */
+  detail: string | null;
+  /** Việc admin nên làm — null khi không cần làm gì. */
+  hint: string | null;
+}
+
+/** Một phát hiện chi tiết của AI (tầng phân tích sâu). */
+export interface AiDetailedFinding {
+  signal: string;
+  facts: string;
+  source: string;
+  interpretation: string;
+  weight: "STRONG" | "MEDIUM" | "WEAK";
+}
+
+/** Đánh giá một nguồn dữ liệu: dùng được / thiếu / mâu thuẫn / không liên quan. */
+export interface AiSourceAssessment {
+  sourceId: string;
+  status: "USED" | "MISSING" | "CONTRADICTS" | "NOT_RELEVANT";
+  note: string;
+}
+
+export interface AiContradiction {
+  between: string;
+  detail: string;
+}
+
+export interface AiTimelineHighlight {
+  at: string;
+  source: string;
+  event: string;
+}
+
+export interface AiVerdictChange {
+  missingData: string;
+  couldChangeTo: string;
+}
+
+export interface CaseAiSuggestion {
+  caseId: string;
+  caseNumber: string;
+  generatedAt: string;
+  model: string;
+  summary: string;
+  /** Tổng số ảnh bằng chứng đã gửi cho model (0 = không có ảnh). */
+  imagesAnalyzed: number;
+  /** Chẩn đoán lượt đọc ảnh: model đã thử, vì sao mất ảnh, admin nên làm gì. */
+  imageDiagnostics?: AiImageReadDiagnostics;
+  /** Số ảnh chuẩn món từ thực đơn đã gửi cho model. */
+  menuImagesAnalyzed?: number;
+  /** Phân tích ảnh của bên khiếu nại. */
+  reporterImages: AiSideImageAnalysis;
+  /** Phân tích ảnh của bên bị khiếu nại. */
+  respondentImages: AiSideImageAnalysis;
+  /** Ảnh giao hàng (tài xế chụp lúc bấm giao thành công) — bằng chứng hệ thống. */
+  deliveryProof: {
+    photoUrl: string | null;
+    analyzed: boolean;
+    /** Ảnh giao hàng khớp/không khớp món đã đặt. */
+    matchesOrder?: AiDeliveryMatch | null;
+    /** Món/bao bì AI nhìn thấy trong ảnh giao hàng. */
+    itemsSeen?: string | null;
+    /** Nhận xét ngắn về ảnh giao hàng. */
+    analysis?: string | null;
+  };
+  /**
+   * Kết quả ghép cặp ảnh do **code** tính (chỉ có khi vụ việc thuộc nhóm món ăn
+   * và bật `AI_IMAGE_PAIRWISE`). `undefined` ⇒ panel ẩn khối ghép cặp.
+   */
+  pairComparison?: AiPairComparison;
+  /**
+   * Điểm khớp ảnh tất định do code chấm (`AI_IMAGE_MATCH_SCORING != off`).
+   * Rỗng/`undefined` ⇒ panel ẩn khối điểm khớp.
+   */
+  imageMatch?: AiImageMatchSummary[];
+  /** Trọng số bằng chứng (%) đã dùng để kết luận — ảnh & hệ thống > lời khai. */
+  evidenceWeight: AiEvidenceWeight;
+  /** ≤ 3 câu so sánh lời khai/ảnh của hai bên trước khi kết luận. */
+  sideComparison: string;
+  suggestedVerdict: AiVerdict;
+  suggestedFaultParty: AiFaultParty;
+  suggestedSeverity: AiSeverity;
+  confidence: number;
+  keyFindings: string[];
+  evidenceGaps: string[];
+  riskFlags: string[];
+  suggestedActions: AiSuggestedAction[];
+  suggestedResolutionNote: string;
+  followUpQuestions: string[];
+  /** Yêu cầu bổ sung gửi bên bị khiếu nại (tối đa 2, rỗng nếu đã kết luận được). */
+  respondentQuestions: string[];
+  sourcesUsed: string[];
+  sourcesMissing: string[];
+  warnings: string[];
+  /** Tầng phân tích chi tiết (tùy chọn — bản ngắn phía trên vẫn là bản chính). */
+  sourceAssessment?: AiSourceAssessment[];
+  detailedFindings?: AiDetailedFinding[];
+  contradictions?: AiContradiction[];
+  timelineHighlights?: AiTimelineHighlight[];
+  whatWouldChangeVerdict?: AiVerdictChange[];
+  usage: {
+    promptTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+  };
+}
+
+export interface CaseAiContextSource {
+  id: string;
+  name: string;
+  available: boolean;
+  detail?: string;
+  payload?: unknown;
+}
+
+export interface CaseAiMenuItem {
+  menuItemId: string | null;
+  name: string;
+  description: string | null;
+  price: number | null;
+  originalPrice: number | null;
+  imageUrl: string | null;
+  isAvailable: boolean | null;
+  availabilityStatus: string | null;
+  outOfStockUntil: string | null;
+  preparationTime: number | null;
+  isFeatured: boolean | null;
+  optionGroups: string[];
+  orderedQuantity: number;
+  orderUnitPrice: number | null;
+  priceMismatch: boolean | null;
+}
+
+export interface CaseAiContext {
+  generatedAt: string;
+  case: {
+    id: string;
+    caseNumber: string;
+    type: string;
+    category: string;
+    severity: string;
+    status: string;
+    orderId: string | null;
+    reporterId: string;
+    reporterType: string;
+    respondentId: string;
+    respondentType: string;
+    subject: string;
+    description: string;
+    evidence: string[];
+    respondentResponse: string | null;
+    respondentEvidence: string[];
+    respondentRespondedAt: string | null;
+    createdAt: string | null;
+    responseDeadline: string | null;
+  };
+  sources: CaseAiContextSource[];
+  missingSourceIds: string[];
+  criticalMissingSourceIds: string[];
+  imagesAttached: number;
+  imagesSkipped: string[];
+  /**
+   * Nguyên nhân từng ảnh không gửi được cho AI (song song với `imagesSkipped`).
+   *
+   * Giúp admin trả lời "khách bảo đã gửi ảnh mà AI bảo không có ảnh?": ảnh 404,
+   * quá dung lượng, content-type không phải ảnh, redirect S3 lỗi…
+   */
+  imageSkipReasons?: AiImageSkipReason[];
+  /** URL ảnh hai bên đã tải thành công (đúng thứ tự gửi model vision). */
+  reporterImageUrls?: string[];
+  respondentImageUrls?: string[];
+  /**
+   * Ảnh **có sẵn** theo từng nhóm (đếm URL, không tải) — dùng cho màn xem
+   * trước ngữ cảnh, nơi `imagePlan` luôn bằng 0 vì không tải ảnh.
+   */
+  imagesAvailable?: Record<string, number>;
+  /** Ảnh món ăn tài xế chụp lúc giao cho khách (bằng chứng hệ thống của đơn). */
+  deliveryProofPhotoUrl?: string | null;
+  /** Ảnh giao hàng của tài xế có được gửi cho AI phân tích hay không. */
+  deliveryProofImageAttached?: boolean;
+  /** Thực đơn của các món đã đặt (D15) — đối chiếu giá/tồn kho/ảnh chuẩn. */
+  menuItems?: CaseAiMenuItem[];
+  /** Ưu đãi của đơn/nhà hàng (D16). */
+  promotions?: unknown;
+  /** Đánh giá của đơn + lịch sử quán/tài xế (D17/D18). */
+  reviews?: unknown;
+  /** Hồ sơ năng lực tài xế (D19, không PII). */
+  driverProfile?: unknown;
+  /** Dòng thời gian hợp nhất. */
+  timeline?: Array<{ at: string; source: string; event: string }>;
+  /** Tín hiệu GPS dẫn xuất (không có toạ độ thô). */
+  gpsSignals?: unknown;
+  /** Báo cáo ẩn danh PII. */
+  pii?: {
+    mode: string;
+    redactedFields: number;
+    redactedKinds: string[];
+    pseudonymizedIds: number;
+  };
+  /** Kích thước ngữ cảnh (đo token/latency). */
+  contextStats?: {
+    totalChars: number;
+    estimatedTokens: number;
+    perSourceChars: Record<string, number>;
+    gpsPoints: number;
+    imagesByKind: Record<string, number>;
+  };
+  /** Kế hoạch ảnh đã gửi theo loại. */
+  imagePlan?: Record<string, number>;
+  /** Thứ tự ảnh thực tế đã gửi (theo danh mục). */
+  imageOrder?: string[];
+  menuImagesAttached?: number;
+  reviewImagesAttached?: number;
+}
+
+export interface AssistantHealth {
+  /** `glm` hoặc `gemini` (theo AI_PROVIDER). */
+  provider: string;
+  enabled: boolean;
+  hasApiKey: boolean;
+  /** Biến môi trường chứa key của provider đang chọn (vd `GLM_API_KEY`). */
+  apiKeyEnv: string;
+  apiBase: string;
+  model: string;
+  /** Model đọc ảnh bằng chứng (GLM tách riêng model vision). */
+  visionModel?: string | null;
+  maxEvidenceImages: number;
+  /** Số ảnh chuẩn món tối đa đính kèm. */
+  maxMenuImages?: number;
+  sourceCount: number;
+  /** Các nguồn ngữ cảnh đang bật (D1..D19). */
+  enabledContextSources?: string[];
+  /** `off` | `shadow` | `enforce`. */
+  piiMode?: string;
+  promptCharBudget?: number;
+  deepOutput?: boolean;
+  /** AI có tự phân tích khi có khiếu nại mới hay không. */
+  autoAnalyze: boolean;
+}
+
+export type AiAnalysisSource = "AUTO" | "MANUAL";
+export type AiReviewDecision = "ACCEPTED" | "REJECTED";
+
+/** Một ảnh bằng chứng không gửi được cho AI, kèm lý do. */
+export interface AiImageSkipReason {
+  /** URL gốc lưu trong vụ việc. */
+  url: string;
+  /** Nguyên nhân: `404 File not found`, `6.2MB > 5.0MB`, `application/json (không phải ảnh)`… */
+  reason: string;
+}
+
+/**
+ * Trạng thái lần AI tự phân tích gần nhất của vụ việc.
+ *
+ * Chỉ là thông tin chẩn đoán (giữ trong RAM của resolution-service): khi tự phân
+ * tích lỗi, panel hiển thị lý do và gợi ý bấm "Phân tích lại" thay vì chỉ nói
+ * "Chưa có bản phân tích nào".
+ */
+export interface CaseAiAutoStatus {
+  caseId: string;
+  autoAnalyze: boolean;
+  status: "PENDING" | "RUNNING" | "DONE" | "FAILED" | "SKIPPED";
+  attemptedAt: string | null;
+  detail: string | null;
+}
+
+/** Kết quả sau khi admin duyệt gợi ý (áp dụng phán quyết/hình phạt/thông báo). */
+export interface AiDecisionOutcome {
+  applied: boolean;
+  verdict: string | null;
+  caseStatus: string | null;
+  penalties: number;
+  notified: string[];
+  evidenceRequestedFrom: string[];
+  summary: string;
+}
+
+export interface CaseAiReviewResult {
+  analysis: CaseAiAnalysisRecord | null;
+  outcome: AiDecisionOutcome;
+}
+
+/** Vết admin duyệt / bỏ qua gợi ý AI. */
+export interface CaseAiAnalysisReview {
+  decision: AiReviewDecision;
+  by: string;
+  at: string;
+  note: string | null;
+}
+
+/** Bản phân tích AI đã lưu cho một vụ việc. */
+export interface CaseAiAnalysisRecord {
+  caseId: string;
+  caseNumber: string;
+  source: AiAnalysisSource;
+  createdAt: string;
+  suggestion: CaseAiSuggestion;
+  review: CaseAiAnalysisReview | null;
+  /** Bản phân tích đã cũ (vụ việc có phản hồi mới sau thời điểm phân tích). */
+  stale: boolean;
+}
+
+/** Bản rút gọn dùng cho badge AI trên lưới vụ việc. */
+export interface CaseAiListSummary {
+  caseId: string;
+  verdict: AiVerdict;
+  confidence: number;
+  summary: string;
+  source: AiAnalysisSource;
+  reviewDecision: AiReviewDecision | null;
+  createdAt: string;
 }

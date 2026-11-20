@@ -10,8 +10,39 @@ import {
   Min,
   IsDateString,
   ArrayMinSize,
+  IsInt,
+  IsIn,
+  IsBoolean,
 } from "class-validator";
 import { Type } from "class-transformer";
+
+export class OrderItemOptionDto {
+  @IsString()
+  @IsNotEmpty()
+  optionId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  groupId!: string;
+
+  @IsString()
+  @IsOptional()
+  groupName?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @IsNumber()
+  @Type(() => Number)
+  priceDelta!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Type(() => Number)
+  quantity?: number;
+}
 
 export class OrderItemDto {
   @IsUUID("4")
@@ -21,6 +52,10 @@ export class OrderItemDto {
   @IsString()
   @IsNotEmpty()
   name!: string;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
 
   @IsNumber()
   @Min(1)
@@ -32,15 +67,35 @@ export class OrderItemDto {
   @Type(() => Number)
   unitPrice!: number;
 
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Type(() => Number)
+  originalPrice?: number;
+
   @IsString()
   @IsOptional()
   specialInstructions?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemOptionDto)
+  options?: OrderItemOptionDto[];
 }
 
 export class PlaceOrderDto {
   @IsUUID("4")
   @IsNotEmpty()
   consumerId!: string;
+
+  @IsUUID("4")
+  @IsOptional()
+  userId?: string;
+
+  @IsUUID("4")
+  @IsOptional()
+  compensationVoucherId?: string;
 
   @IsUUID("4")
   @IsNotEmpty()
@@ -89,6 +144,10 @@ export class PlaceOrderDto {
   @Type(() => Number)
   discount?: number;
 
+  @IsString()
+  @IsOptional()
+  promotionCode?: string;
+
   @IsDateString()
   @IsOptional()
   estimatedDeliveryTime?: string;
@@ -96,6 +155,18 @@ export class PlaceOrderDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @IsString()
+  @IsOptional()
+  paymentMethod?: string;
+
+  /**
+   * Phương thức giao hàng: SAVER (tiết kiệm) | FAST (nhanh, mặc định) |
+   * PRIORITY (ưu tiên). Bỏ trống = FAST (tương thích ngược).
+   */
+  @IsOptional()
+  @IsIn(["SAVER", "FAST", "PRIORITY"])
+  deliveryOption?: string;
 }
 
 export class UpdateOrderDto {
@@ -112,6 +183,26 @@ export class UpdateOrderDto {
   driverId?: string;
 }
 
+export class RecordDriverCancelDto {
+  @IsString()
+  @IsNotEmpty()
+  reason!: string;
+}
+
+export class DeliveryFailedDto {
+  @IsString()
+  @IsNotEmpty()
+  reason!: string;
+
+  @IsString()
+  @IsOptional()
+  photoUrl?: string;
+
+  @IsOptional()
+  @IsIn(["DRIVER", "CUSTOMER"])
+  faultParty?: string;
+}
+
 export class StatusTransitionDto {
   @IsString()
   @IsOptional()
@@ -120,6 +211,20 @@ export class StatusTransitionDto {
   @IsUUID("4")
   @IsOptional()
   driverId?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  noResponse?: boolean;
+}
+
+/**
+ * Xác nhận giao hàng thành công. Với đơn DELIVERY, `photoUrl` là ảnh tài xế
+ * chụp món ăn lúc giao cho khách và là **bắt buộc** (kiểm tra ở domain).
+ */
+export class MarkDeliveredDto {
+  @IsString()
+  @IsOptional()
+  photoUrl?: string;
 }
 
 export class OrderQueryDto {
@@ -155,15 +260,31 @@ export class OrderResponseDto {
   deliveryFee!: number;
   serviceFee!: number;
   discount!: number;
+  discountFundedBy!: string;
   totalAmount!: number;
   deliveryAddress!: string | null;
   deliveryLatitude!: number | null;
   deliveryLongitude!: number | null;
   estimatedDeliveryTime!: string | null;
+  /** Phương thức giao hàng khách đã chọn. */
+  deliveryOption!: string;
+  deliveryOptionLabel!: string;
+  /** Phụ thu/giảm giá của phương thức so với phí FAST (VND). */
+  deliveryOptionFee!: number;
+  /** Thứ tự ưu tiên hàng đợi nhà hàng (SAVER 0, FAST 1, PRIORITY 2). */
+  priorityRank!: number;
+  /** Thời điểm cam kết giao hàng. */
+  promisedDeliveryAt!: string | null;
   notes!: string | null;
   driverId!: string | null;
+  /** Ảnh xác nhận giao hàng (tài xế chụp món ăn lúc giao cho khách). */
+  deliveryProofPhotoUrl!: string | null;
   cancelReason!: string | null;
   rejectionReason!: string | null;
+  rejectionSource!: string | null;
+  paymentMethod!: string;
+  /** Số phiên bản danh sách món (tăng sau mỗi lần khách xác nhận chỉnh sửa). */
+  itemsVersion!: number;
   createdAt!: Date;
   updatedAt!: Date;
 }
@@ -171,8 +292,12 @@ export class OrderResponseDto {
 export class OrderItemResponseDto {
   menuItemId!: string;
   name!: string;
+  imageUrl!: string | null;
   quantity!: number;
   unitPrice!: number;
+  originalPrice!: number | null;
+  flashSaleFundedBy!: string | null;
   subtotal!: number;
   specialInstructions!: string | null;
+  options!: OrderItemOptionDto[] | null;
 }

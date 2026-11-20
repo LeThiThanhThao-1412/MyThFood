@@ -13,8 +13,8 @@ export abstract class AggregateRoot<
   private _domainEvents: DomainEvent[] = [];
   private _version: number = 0;
 
-  protected constructor(id: T) {
-    super(id);
+  protected constructor(id: T, createdAt?: Date, updatedAt?: Date) {
+    super(id, createdAt, updatedAt);
   }
 
   get version(): number {

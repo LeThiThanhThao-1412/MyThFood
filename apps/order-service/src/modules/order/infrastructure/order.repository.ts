@@ -1,8 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository as TypeOrmRepo } from "typeorm";
+import { DataSource, Repository as TypeOrmRepo } from "typeorm";
 import { IRepository } from "@mythfood/shared-kernel";
-import { Order } from "../domain/order.aggregate";
+import { Order, ACTIVE_ORDER_STATUSES } from "../domain/order.aggregate";
 import { OrderId } from "../domain/order-id";
 import { OrderEntity } from "./order.entity";
 import { OrderItemEntity } from "./order-item.entity";
@@ -15,6 +15,7 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     private readonly repository: TypeOrmRepo<OrderEntity>,
     @InjectRepository(OrderItemEntity)
     private readonly orderItemRepo: TypeOrmRepo<OrderItemEntity>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async save(aggregate: Order): Promise<void> {
@@ -27,6 +28,26 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     // Save order items
     const itemEntities = OrderMapper.itemsToPersistence(aggregate);
     await this.orderItemRepo.save(itemEntities);
+  }
+
+  /**
+   * Lưu order + toàn bộ items trong MỘT transaction.
+   *
+   * Dùng khi áp dụng yêu cầu chỉnh sửa món đã được khách xác nhận để tránh
+   * trạng thái nửa vời (order đã đổi tổng tiền nhưng items chưa đổi hoặc
+   * ngược lại) do `save()` chạy nhiều câu lệnh rời nhau.
+   */
+  async saveWithItemsTx(aggregate: Order): Promise<void> {
+    const entity = OrderMapper.toPersistence(aggregate);
+    const itemEntities = OrderMapper.itemsToPersistence(aggregate);
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.save(OrderEntity, entity);
+      await manager.delete(OrderItemEntity, { order_id: entity.id });
+      if (itemEntities.length > 0) {
+        await manager.save(OrderItemEntity, itemEntities);
+      }
+    });
   }
 
   async findById(id: OrderId): Promise<Order | null> {
@@ -47,6 +68,14 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     return order;
   }
 
+  async getCreatedAt(id: string): Promise<Date | null> {
+    const entity = await this.repository.findOne({
+      where: { id },
+      select: ["id", "created_at"],
+    });
+    return entity?.created_at ?? null;
+  }
+
   async findByConsumerId(consumerId: string): Promise<Order[]> {
     const entities = await this.repository.find({
       where: { consumer_id: consumerId },
@@ -55,11 +84,59 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     return Promise.all(entities.map((e) => this.loadRelatedAndMap(e)));
   }
 
+  /**
+   * Đếm số đơn còn đang hoạt động của một khách (chưa giao xong / chưa hủy).
+   *
+   * Dùng cho trần "đặt nhiều đơn cùng lúc" — khách được phép có nhiều đơn đồng
+   * thời nên chỉ cần con số, không còn chặn cứng ở mức 1 đơn.
+   */
+  async countActiveOrdersByConsumerId(consumerId: string): Promise<number> {
+    return this.repository
+      .createQueryBuilder("order")
+      .where("order.consumer_id = :consumerId", { consumerId })
+      .andWhere("order.deleted_at IS NULL")
+      .andWhere("order.status IN (:...statuses)", {
+        statuses: ACTIVE_ORDER_STATUSES,
+      })
+      .getCount();
+  }
+
   async findByMerchantId(merchantId: string): Promise<Order[]> {
     const entities = await this.repository.find({
       where: { merchant_id: merchantId },
       order: { created_at: "DESC" },
     });
+
+    // Hàng đợi nhà hàng:
+    // 1. Đơn đang xử lý (PENDING/CONFIRMED/PREPARING/READY) lên trước.
+    // 2. Trong nhóm đang xử lý: PRIORITY trước, SAVER sau (priority_rank DESC),
+    //    cùng hạng thì đơn cũ nhất trước (FIFO).
+    // 3. Đơn đã kết thúc: mới nhất trước.
+    const openStatuses = new Set([
+      "PENDING",
+      "CONFIRMED",
+      "PREPARING",
+      "READY_FOR_PICKUP",
+    ]);
+
+    entities.sort((a, b) => {
+      const aOpen = openStatuses.has(a.status);
+      const bOpen = openStatuses.has(b.status);
+      if (aOpen !== bOpen) return aOpen ? -1 : 1;
+
+      if (aOpen) {
+        const rankDiff = (b.priority_rank ?? 1) - (a.priority_rank ?? 1);
+        if (rankDiff !== 0) return rankDiff;
+        return (
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+      }
+
+      return (
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    });
+
     return Promise.all(entities.map((e) => this.loadRelatedAndMap(e)));
   }
 
@@ -120,6 +197,363 @@ export class OrderRepository implements IRepository<Order, OrderId> {
 
   async deleteById(id: OrderId): Promise<void> {
     await this.repository.softDelete(id.toString());
+  }
+
+  async findPendingOlderThan(cutoff: Date): Promise<Order[]> {
+    const entities = await this.repository.find({
+      where: { status: "PENDING" },
+      order: { created_at: "ASC" },
+    });
+
+    // Filter in-memory: only orders created before cutoff
+    const expired = entities.filter((e) => new Date(e.created_at) < cutoff);
+    return Promise.all(expired.map((e) => this.loadRelatedAndMap(e)));
+  }
+
+  /**
+   * Các đơn đang READY_FOR_PICKUP (chờ tài xế) quá lâu → để tự hủy do không có tài xế.
+   * Dùng updated_at (thời điểm merchant bấm "Sẵn sàng") làm mốc.
+   */
+  async findReadyForPickupOlderThan(cutoff: Date): Promise<Order[]> {
+    const entities = await this.repository.find({
+      where: { status: "READY_FOR_PICKUP" },
+      order: { updated_at: "ASC" },
+    });
+    const expired = entities.filter((e) => new Date(e.updated_at) < cutoff);
+    return Promise.all(expired.map((e) => this.loadRelatedAndMap(e)));
+  }
+
+  /**
+   * Thống kê tỉ lệ từ chối / không phản hồi theo nhà hàng trong cửa sổ đánh giá.
+   * total = các đơn nhà hàng đã đến hạn xử lý (bỏ PENDING và CANCELLED),
+   * rejected/noResponse = đơn REJECTED theo nguồn.
+   */
+  async getMerchantComplianceStats(since: Date): Promise<
+    Array<{
+      merchantId: string;
+      total: number;
+      rejected: number;
+      noResponse: number;
+    }>
+  > {
+    const rows: Array<{
+      merchantId: string;
+      total: string | number;
+      rejected: string | number;
+      noResponse: string | number;
+    }> = await this.repository.query(
+      `SELECT
+         o.merchant_id AS "merchantId",
+         COUNT(*)::int AS "total",
+         COUNT(*) FILTER (
+           WHERE o.status = 'REJECTED' AND o.rejection_source = 'MERCHANT'
+         )::int AS "rejected",
+         COUNT(*) FILTER (
+           WHERE o.status = 'REJECTED' AND o.rejection_source = 'NO_RESPONSE'
+         )::int AS "noResponse"
+       FROM orders o
+       WHERE o.deleted_at IS NULL AND o.created_at >= $1
+         AND o.status NOT IN ('PENDING', 'CANCELLED')
+       GROUP BY o.merchant_id
+       ORDER BY "merchantId"`,
+      [since],
+    );
+
+    return rows.map((r) => ({
+      merchantId: r.merchantId,
+      total: Number(r.total),
+      rejected: Number(r.rejected),
+      noResponse: Number(r.noResponse),
+    }));
+  }
+
+  async getDailyStats(options?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ dailyStats: any[]; summary: any }> {
+    const qb = this.repository
+      .createQueryBuilder("o")
+      .select("TO_CHAR(o.created_at, 'YYYY-MM-DD')", "date")
+      .addSelect("COUNT(*)", "totalOrders")
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN o.status NOT IN ('CANCELLED','REJECTED') THEN o.total_amount ELSE 0 END), 0)",
+        "totalRevenue",
+      )
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN o.status = 'CANCELLED' THEN 1 ELSE 0 END), 0)",
+        "cancelledOrders",
+      )
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN o.status = 'DELIVERED' THEN 1 ELSE 0 END), 0)",
+        "completedOrders",
+      )
+      .where("o.deleted_at IS NULL");
+
+    if (options?.startDate) {
+      qb.andWhere("o.created_at >= :startDate", {
+        startDate: new Date(options.startDate),
+      });
+    }
+    if (options?.endDate) {
+      qb.andWhere("o.created_at <= :endDate", {
+        endDate: new Date(options.endDate),
+      });
+    }
+
+    qb.groupBy("TO_CHAR(o.created_at, 'YYYY-MM-DD')").orderBy("date", "ASC");
+    const rows = await qb.getRawMany();
+
+    const dailyStats = rows.map((r) => ({
+      date: r.date,
+      totalOrders: Number(r.totalOrders ?? 0),
+      totalRevenue: Number(r.totalRevenue ?? 0),
+      cancelledOrders: Number(r.cancelledOrders ?? 0),
+      completedOrders: Number(r.completedOrders ?? 0),
+    }));
+
+    const summary = dailyStats.reduce(
+      (acc, d) => {
+        acc.totalOrders += d.totalOrders;
+        acc.totalRevenue += d.totalRevenue;
+        acc.cancelledOrders += d.cancelledOrders;
+        acc.completedOrders += d.completedOrders;
+        return acc;
+      },
+      {
+        totalOrders: 0,
+        totalRevenue: 0,
+        cancelledOrders: 0,
+        completedOrders: 0,
+      },
+    ) as any;
+
+    summary.averageOrderValue =
+      summary.totalOrders > 0
+        ? Math.round(summary.totalRevenue / summary.totalOrders)
+        : 0;
+
+    return { dailyStats, summary };
+  }
+
+  async getMerchantStats(
+    merchantId: string,
+    options?: { startDate?: string; endDate?: string },
+  ): Promise<any> {
+    const applyDateRange = (qb: any) => {
+      if (options?.startDate) {
+        qb.andWhere("o.created_at >= :startDate", {
+          startDate: new Date(options.startDate),
+        });
+      }
+      if (options?.endDate) {
+        qb.andWhere("o.created_at <= :endDate", {
+          endDate: new Date(options.endDate),
+        });
+      }
+    };
+
+    const totalOrdersQb = this.repository
+      .createQueryBuilder("o")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL");
+    applyDateRange(totalOrdersQb);
+    const totalOrders = await totalOrdersQb.getCount();
+
+    const revenueQb = this.repository
+      .createQueryBuilder("o")
+      .select("COALESCE(SUM(o.total_amount), 0)", "revenue")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status != :cancelled", { cancelled: "CANCELLED" })
+      .andWhere("o.status != :rejected", { rejected: "REJECTED" });
+    applyDateRange(revenueQb);
+    const revenueRow = await revenueQb.getRawOne();
+
+    const pendingOrders = await this.repository
+      .createQueryBuilder("o")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status = :pending", { pending: "PENDING" })
+      .getCount();
+
+    const byDayQb = this.repository
+      .createQueryBuilder("o")
+      .select("TO_CHAR(o.created_at, 'YYYY-MM-DD')", "date")
+      .addSelect("COUNT(*)", "orders")
+      .addSelect("COALESCE(SUM(o.total_amount), 0)", "revenue")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status != :cancelled", { cancelled: "CANCELLED" })
+      .andWhere("o.status != :rejected", { rejected: "REJECTED" });
+    applyDateRange(byDayQb);
+    byDayQb
+      .groupBy("TO_CHAR(o.created_at, 'YYYY-MM-DD')")
+      .orderBy("date", "ASC");
+    const revenueByDay = (await byDayQb.getRawMany()).map((r) => ({
+      date: r.date,
+      orders: Number(r.orders ?? 0),
+      revenue: Number(r.revenue ?? 0),
+    }));
+
+    const topItemsQb = this.orderItemRepo
+      .createQueryBuilder("mi")
+      .select("mi.menu_item_id", "menuItemId")
+      .addSelect("MAX(mi.name)", "name")
+      .addSelect("SUM(mi.quantity)", "quantity")
+      .addSelect("COALESCE(SUM(mi.quantity * mi.unit_price), 0)", "revenue")
+      .innerJoin(OrderEntity, "o", "o.id = mi.order_id")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status != :cancelled", { cancelled: "CANCELLED" })
+      .andWhere("o.status != :rejected", { rejected: "REJECTED" });
+    applyDateRange(topItemsQb);
+    topItemsQb.groupBy("mi.menu_item_id").orderBy("quantity", "DESC").limit(10);
+    const topItems = (await topItemsQb.getRawMany()).map((r) => ({
+      menuItemId: r.menuItemId,
+      name: r.name,
+      quantity: Number(r.quantity ?? 0),
+      revenue: Number(r.revenue ?? 0),
+    }));
+
+    return {
+      merchantId,
+      totalOrders,
+      totalRevenue: Number(revenueRow?.revenue ?? 0),
+      pendingOrders,
+      revenueByDay,
+      topItems,
+    };
+  }
+
+  async getMerchantOrderItems(
+    merchantId: string,
+    options?: { startDate?: string; endDate?: string },
+  ): Promise<any[]> {
+    const qb = this.orderItemRepo
+      .createQueryBuilder("mi")
+      .innerJoin(OrderEntity, "o", "o.id = mi.order_id")
+      .select("o.id", "orderId")
+      .addSelect("mi.menu_item_id", "menuItemId")
+      .addSelect("mi.name", "name")
+      .addSelect("mi.quantity", "quantity")
+      .addSelect("mi.unit_price", "unitPrice")
+      .addSelect("mi.original_price", "originalPrice")
+      .addSelect("mi.subtotal", "subtotal")
+      .addSelect("o.created_at", "createdAt")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status != :cancelled", { cancelled: "CANCELLED" })
+      .andWhere("o.status != :rejected", { rejected: "REJECTED" });
+
+    if (options?.startDate) {
+      qb.andWhere("o.created_at >= :startDate", {
+        startDate: new Date(options.startDate),
+      });
+    }
+    if (options?.endDate) {
+      qb.andWhere("o.created_at <= :endDate", {
+        endDate: new Date(options.endDate),
+      });
+    }
+    qb.orderBy("o.created_at", "ASC");
+
+    const rows = await qb.getRawMany();
+    return rows.map((r) => ({
+      orderId: r.orderId,
+      menuItemId: r.menuItemId,
+      name: r.name,
+      quantity: Number(r.quantity ?? 0),
+      unitPrice: Number(r.unitPrice ?? 0),
+      originalPrice: r.originalPrice != null ? Number(r.originalPrice) : null,
+      subtotal: Number(r.subtotal ?? 0),
+      createdAt: r.createdAt,
+    }));
+  }
+
+  /**
+   * Global "top dishes" across all merchants: aggregates order items and keeps
+   * only the single best-selling dish per merchant, ordered by total quantity.
+   * Used by the consumer app to show popular dishes for new customers.
+   */
+  async getTopMenuItems(take = 12): Promise<
+    Array<{
+      menuItemId: string;
+      merchantId: string;
+      name: string;
+      quantity: number;
+    }>
+  > {
+    const raw: Array<{
+      menuItemId: string;
+      merchantId: string;
+      name: string;
+      quantity: string;
+    }> = await this.orderItemRepo.query(
+      `SELECT * FROM (
+         SELECT DISTINCT ON (o.merchant_id)
+           mi.menu_item_id AS "menuItemId",
+           o.merchant_id AS "merchantId",
+           MAX(mi.name) AS name,
+           SUM(mi.quantity) AS quantity
+         FROM order_items mi
+         INNER JOIN orders o ON o.id = mi.order_id
+         WHERE o.deleted_at IS NULL
+           AND o.status NOT IN ('CANCELLED', 'REJECTED')
+         GROUP BY mi.menu_item_id, o.merchant_id
+         ORDER BY o.merchant_id, SUM(mi.quantity) DESC
+       ) top
+       ORDER BY top.quantity DESC
+       LIMIT $1`,
+      [take],
+    );
+
+    return raw.map((r) => ({
+      menuItemId: r.menuItemId,
+      merchantId: r.merchantId,
+      name: r.name,
+      quantity: Number(r.quantity ?? 0),
+    }));
+  }
+
+  /** Thống kê theo phương thức giao hàng (Phase 3 - admin báo cáo). */
+  async getDeliveryOptionStats(since: Date): Promise<
+    Array<{
+      deliveryOption: string;
+      total: number;
+      delivered: number;
+      late: number;
+      deliveryFees: number;
+      avgFee: number;
+      revenue: number;
+    }>
+  > {
+    const raw = await this.repository.query(
+      `SELECT delivery_option AS "deliveryOption",
+              COUNT(*)::int AS "total",
+              COUNT(*) FILTER (WHERE status = 'DELIVERED')::int AS "delivered",
+              COUNT(*) FILTER (
+                WHERE status = 'DELIVERED'
+                  AND promised_delivery_at IS NOT NULL
+                  AND updated_at > promised_delivery_at
+              )::int AS "late",
+              COALESCE(SUM(delivery_fee), 0)::float AS "deliveryFees",
+              COALESCE(AVG(delivery_fee), 0)::float AS "avgFee",
+              COALESCE(SUM(total_amount), 0)::float AS "revenue"
+       FROM orders
+       WHERE created_at >= $1 AND deleted_at IS NULL
+       GROUP BY delivery_option`,
+      [since],
+    );
+
+    return raw.map((r: any) => ({
+      deliveryOption: r.deliveryOption,
+      total: Number(r.total ?? 0),
+      delivered: Number(r.delivered ?? 0),
+      late: Number(r.late ?? 0),
+      deliveryFees: Number(r.deliveryFees ?? 0),
+      avgFee: Number(r.avgFee ?? 0),
+      revenue: Number(r.revenue ?? 0),
+    }));
   }
 
   private async loadRelatedAndMap(entity: OrderEntity): Promise<Order> {
