@@ -165,24 +165,53 @@ pnpm test
 
 ### Services
 
-| Service           | Port | Database             |
-| ----------------- | ---- | -------------------- |
-| Identity Service  | 3001 | `mythfood_identity`  |
-| Consumer Service  | 3002 | `mythfood_consumer`  |
-| Merchant Service  | 3003 | `mythfood_merchant`  |
-| Order Service     | 3004 | `mythfood_order`     |
-| Inventory Service | 3005 | `mythfood_inventory` |
-| Payment Service   | 3006 | `mythfood_payment`   |
-| Driver Service    | 3007 | `mythfood_driver`    |
-| Dispatch Service  | 3008 | `mythfood_dispatch`  |
-| Wallet Service    | 3009 | `mythfood_wallet`    |
-| Upload Service    | 3010 | N/A                  |
-| Kong Gateway      | 8000 | N/A (DB-less)        |
-| Kong Admin API    | 8001 | N/A (chỉ dev)        |
+| Service           | Port | Database                |
+| ----------------- | ---- | ----------------------- |
+| Identity Service  | 3001 | `mythfood_identity`     |
+| Consumer Service  | 3002 | `mythfood_consumer`     |
+| Merchant Service  | 3003 | `mythfood_merchant`     |
+| Order Service     | 3004 | `mythfood_order`        |
+| Inventory Service | 3005 | `mythfood_inventory`    |
+| Payment Service   | 3006 | `mythfood_payment`      |
+| Driver Service    | 3007 | `mythfood_driver`       |
+| Dispatch Service  | 3008 | `mythfood_dispatch`     |
+| Wallet Service    | 3009 | `mythfood_wallet`       |
+| Upload Service    | 3010 | N/A                     |
+| Review Service    | 3011 | `mythfood_review`       |
+| Promotion Service | 3012 | `mythfood_promotion`    |
+| Notification Svc  | 3013 | `mythfood_notification` |
+| Resolution Svc    | 3014 | `mythfood_resolution`   |
+| Chat Service      | 3015 | `mythfood_chat`         |
+| Kong Gateway      | 8000 | N/A (DB-less)           |
+| Kong Admin API    | 8001 | N/A (chỉ dev)           |
 
 > Frontend gọi HTTP qua gateway: `http://localhost:8000/api/v1/...`.
 > WebSocket vẫn gọi trực tiếp service. Chi tiết: [`docs/API_GATEWAY.md`](docs/API_GATEWAY.md).
 > Smoke test gateway: `pwsh scripts/test-gateway.ps1` (35 kiểm tra: route, login, upload, webhook, rate-limit).
+
+---
+
+## ⚙️ CI/CD (GitHub Actions)
+
+| Workflow                               | Kích hoạt                                            | Nội dung                                                                                                                                                                                                                                                                |
+| -------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`ci.yml`](.github/workflows/ci.yml)   | push / pull request lên `main`, `kiemthu`            | lint 15 backend, `tsc --noEmit` + `next build` 4 frontend, test + coverage 15 service, build 15 service (upload artifact `dist`), `pnpm audit` (không chặn), gate tổng hợp `ci-success`                                                                                 |
+| [`cd.yml`](.github/workflows/cd.yml)   | push `main`, push tag `v*`, `workflow_dispatch`      | build & push 15 image lên GHCR, integration test docker compose (khi push tag / chạy tay), GitHub Release, deploy `staging` (main) và `production` (tag)                                                                                                                |
+| [`e2e.yml`](.github/workflows/e2e.yml) | push `main`, nightly 01:00 (VN), `workflow_dispatch` | dựng stack thật bằng `docker compose` (15 service + Kong), seed 4 user test, build + start 4 Next.js app rồi chạy Playwright; mặc định **smoke 4 spec auth (18 test)**, nightly/chạy tay có thể bật **full suite (71 test)**; upload HTML report + trace/video khi fail |
+
+- **Push `main`** → build & push image `latest` + `sha-xxxxx` → deploy `staging`.
+- **Release** → `git tag v1.0.0 && git push origin v1.0.0` → integration test → GitHub Release → deploy `production`
+  (bật _Settings → Environments → production → Required reviewers_ để duyệt tay).
+- **Chạy tay** → `workflow_dispatch` cho phép chọn service (`all` hoặc danh sách cách nhau dấu phẩy), bật integration test, chọn môi trường deploy (`none` = chỉ build image).
+- **E2E:** `workflow_dispatch` → bật `full_suite` (71 test) và/hoặc chọn project (`consumer,merchant,driver,admin,full-flow`).
+  Chạy local: `pnpm install` → `docker compose up -d --build` → `pnpm dev:apps` → `pnpm --filter @mythfood/e2e-tests test:e2e:smoke`.
+  User test (`scripts/e2e/seed-e2e-users.sql`): `0987654321`/`Test@123` (consumer), `0987654322` (merchant),
+  `0987654323` (driver), `0987654324`/`Admin@123` (admin).
+- **Image:** `ghcr.io/<owner>/<repo>/<service>:<tag>`.
+- **Docker compose kéo image sẵn:** mỗi service backend có `image: ghcr.io/lethithanhthao-1412/mythfood/<service>:${TAG:-latest}` **và** `build:` (fallback).
+  `TAG=v1.0.0 docker compose pull && TAG=v1.0.0 docker compose up -d` (~1–2 phút thay vì build 25–40 phút); dev vẫn dùng `docker compose up -d --build`.
+
+- **Secrets cho deploy thật:** `DEPLOY_HOST`, `DEPLOY_USER`, `SSH_DEPLOY_KEY` (hiện bước deploy chạy dry-run vì chưa cấu hình).
 
 ---
 

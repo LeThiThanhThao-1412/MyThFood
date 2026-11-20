@@ -1,0 +1,277 @@
+name: E2E Pipeline (Playwright)
+
+# ============================================================
+# E2E: dựng stack thật bằng docker compose (15 backend services + Kong)
+#      + build & start 4 Next.js app, seed user test rồi chạy Playwright.
+#
+# Chạy khi:
+#   - push lên main (giữ E2E ngoài đường găng của PR để tiết kiệm CI minutes)
+#   - schedule hằng ngày (01:00 giờ VN) → chạy full suite
+#   - workflow_dispatch: chọn full_suite / project cụ thể
+#
+# Mặc định (push) chỉ chạy smoke: 4 spec auth (18 test) để giữ thời gian CI
+# thấp; nightly và khi chọn `full_suite` sẽ chạy toàn bộ 71 test.
+# ============================================================
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 18:00 UTC = 01:00 sáng giờ Việt Nam
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+    inputs:
+      full_suite:
+        description: "Chạy toàn bộ suite (mặc định chỉ smoke 4 spec auth)"
+        type: boolean
+        default: false
+      projects:
+        description: "Playwright project, cách nhau bởi dấu phẩy (consumer,merchant,driver,admin,full-flow). Bỏ trống = tất cả"
+        type: string
+        required: false
+        default: ""
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+  # Biến môi trường cho docker compose (xem docker-compose.yml)
+  DB_USER: mythfood
+  DB_PASSWORD: e2e_pg_password
+  DB_NAME: mythfood_identity
+  REDIS_PASSWORD: e2e_redis_password
+  SERVICE_API_KEY: e2e_service_api_key
+  JWT_SECRET_IDENTITY: e2e_identity_secret_change_me
+  JWT_REFRESH_SECRET_IDENTITY: e2e_identity_refresh_secret_change_me
+  JWT_SECRET_WALLET: e2e_wallet_secret_change_me
+  STRIPE_SECRET_KEY: ""
+  STRIPE_WEBHOOK_SECRET: ""
+
+  # 4 app Next.js gọi API qua Kong (api-client mặc định cũng là URL này)
+  NEXT_PUBLIC_API_GATEWAY: http://localhost:8000
+
+  # true khi chạy nightly schedule hoặc được chọn thủ công
+  FULL_SUITE: ${{ github.event_name == 'schedule' || inputs.full_suite == true }}
+  PROJECTS_INPUT: ${{ inputs.projects }}
+
+jobs:
+  e2e:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.4.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare env files
+        # docker-compose.yml khai báo env_file: apps/upload-service/.env — compose v2
+        # báo lỗi khi file không tồn tại, nên tạo rỗng trước khi up stack.
+        run: touch apps/upload-service/.env
+
+      - name: Log in to GHCR
+        # Image do cd.yml push lên GHCR. Nếu package để private thì cần login
+        # (GITHUB_TOKEN đủ quyền đọc package của chính repo này).
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull images (fallback = build from source)
+        # Trên push: cd.yml push tag `sha-<7 ký tự>` cho đúng commit này → pull để
+        # test đúng code vừa merge. Nếu CD chưa kịp push (image chưa tồn tại) thì
+        # `||` chuyển sang build tại chỗ như trước.
+        # Nightly/dispatch: dùng `latest` (nhanh nhất, ~1-2 phút thay vì 25-40 phút).
+        run: |
+          set -uo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            TAG="sha-$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          else
+            TAG="latest"
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "Image tag: $TAG"
+          docker compose pull || docker compose build
+
+      - name: Start full stack (docker compose)
+        run: docker compose up -d
+
+      - name: Wait for infrastructure & services
+        run: |
+          set -euo pipefail
+
+          wait_ready() {
+            local service="$1" status="" id=""
+            for _ in $(seq 1 90); do
+              id=$(docker compose ps -q "$service" || true)
+              if [ -n "$id" ]; then
+                status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id" 2>/dev/null || echo missing)
+              else
+                status="missing"
+              fi
+              # identity/consumer-service (image cũ) có HEALTHCHECK trỏ route
+              # /health không tồn tại → container "unhealthy" dù service vẫn
+              # phục vụ. Image mới (đã thêm GET /api/v1/health) sẽ báo healthy.
+              # Vì vậy chấp nhận cả 3 trạng thái; readiness thật kiểm tra bằng
+              # HTTP ở step sau.
+              case "$status" in
+                healthy)
+                  echo "$service → healthy"
+                  return 0
+                  ;;
+                running | unhealthy)
+                  echo "::warning::$service → $status (image cũ chưa có /api/v1/health?)"
+                  return 0
+                  ;;
+              esac
+              sleep 5
+            done
+            echo "::error::$service không sẵn sàng (status=$status)"
+            docker compose logs --tail 80 "$service" || true
+            return 1
+          }
+
+          for svc in postgres redis; do wait_ready "$svc"; done
+
+          for svc in \
+            identity-service consumer-service merchant-service order-service \
+            inventory-service payment-service driver-service dispatch-service \
+            wallet-service upload-service review-service promotion-service \
+            notification-service resolution-service chat-service gateway; do
+            wait_ready "$svc"
+          done
+
+      - name: Wait for API gateway & identity-service
+        run: |
+          set -euo pipefail
+
+          wait_http() {
+            local label="$1" url="$2" expected="$3" code="" attempt=0
+            for attempt in $(seq 1 60); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || echo 000)
+              if printf '%s' "$code" | grep -qE "^($expected)$"; then
+                echo "✅ $label → HTTP $code"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::$label → HTTP $code sau $attempt lần thử (mong đợi $expected)"
+            return 1
+          }
+
+          wait_http "Kong /gateway/health" "http://localhost:8000/gateway/health" "200"
+          wait_http "identity qua Kong /api/v1/auth/me (no token)" \
+            "http://localhost:8000/api/v1/auth/me" "401|403"
+
+      - name: Seed E2E users (Playwright)
+        # 4 user khớp test/playwright/utils/test-data.ts:
+        #   0987654321/Test@123 (CONSUMER), 0987654322/Test@123 (MERCHANT_OWNER)
+        #   0987654323/Test@123 (DRIVER),   0987654324/Admin@123 (ADMIN)
+        run: |
+          set -euo pipefail
+          docker compose exec -T postgres \
+            psql -U "$DB_USER" -d mythfood_identity -v ON_ERROR_STOP=1 \
+            < scripts/e2e/seed-e2e-users.sql
+          docker compose exec -T postgres \
+            psql -U "$DB_USER" -d mythfood_identity -c \
+            "select phone_number, roles, status from users where phone_number like '098765432%' order by phone_number;"
+
+      - name: Build 4 frontend apps
+        run: |
+          pnpm --filter @mythfood/admin-portal build
+          pnpm --filter @mythfood/consumer-app build
+          pnpm --filter @mythfood/merchant-app build
+          pnpm --filter @mythfood/driver-app build
+
+      - name: Install Playwright (Chromium)
+        run: pnpm --filter @mythfood/e2e-tests exec playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        # Start 4 Next.js app ngay trong step này để process còn sống khi test chạy.
+        run: |
+          set -uo pipefail
+          mkdir -p test/playwright/reports/logs
+
+          pnpm --filter @mythfood/consumer-app start > test/playwright/reports/logs/consumer-app.log 2>&1 &
+          pnpm --filter @mythfood/merchant-app start > test/playwright/reports/logs/merchant-app.log 2>&1 &
+          pnpm --filter @mythfood/driver-app start > test/playwright/reports/logs/driver-app.log 2>&1 &
+          pnpm --filter @mythfood/admin-portal start > test/playwright/reports/logs/admin-portal.log 2>&1 &
+
+          wait_for_app() {
+            local name="$1" url="$2" code=""
+            for _ in $(seq 1 60); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || echo 000)
+              [ "$code" = "200" ] && { echo "✅ $name sẵn sàng ($url)"; return 0; }
+              sleep 3
+            done
+            echo "::error::$name không phản hồi tại $url (code=$code)"
+            tail -40 "test/playwright/reports/logs/$name.log" || true
+            return 1
+          }
+
+          wait_for_app consumer-app http://localhost:4001/login || exit 1
+          wait_for_app merchant-app http://localhost:4002/login || exit 1
+          wait_for_app driver-app http://localhost:4003/login || exit 1
+          wait_for_app admin-portal http://localhost:4004/login || exit 1
+
+          cd test/playwright
+
+          args=()
+          if [ -n "${PROJECTS_INPUT:-}" ]; then
+            IFS=',' read -ra projects <<< "$PROJECTS_INPUT"
+            for p in "${projects[@]}"; do
+              p_trimmed="$(printf '%s' "$p" | tr -d ' ')"
+              [ -n "$p_trimmed" ] && args+=("--project=$p_trimmed")
+            done
+          fi
+
+          if [ "${FULL_SUITE}" = "true" ]; then
+            echo "▶ Chạy full suite (${args[*]:-tất cả project})"
+            pnpm exec playwright test "${args[@]}"
+          else
+            echo "▶ Chạy smoke: 4 spec auth (${args[*]:-tất cả project})"
+            pnpm exec playwright test \
+              specs/consumer/auth.spec.ts \
+              specs/merchant/auth.spec.ts \
+              specs/driver/auth.spec.ts \
+              specs/admin/auth.spec.ts \
+              "${args[@]}"
+          fi
+
+      - name: Upload Playwright report & artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: |
+            test/playwright/reports/html
+            test/playwright/reports/results.json
+            test/playwright/reports/logs
+            test/playwright/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Dump docker logs on failure
+        if: failure()
+        run: docker compose logs --tail 150 --no-color || true
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v --remove-orphans

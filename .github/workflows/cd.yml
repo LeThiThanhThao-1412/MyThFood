@@ -1,155 +1,525 @@
-name: CD - Build & Deploy Docker Images
+name: CD - Build, Push & Deploy
 
+# ============================================================================
+# Pipeline CD duy nhất (gộp cd.yml cũ: docker compose build + integration test
+# + deploy, và deploy.yml cũ: build & push image lên GHCR)
+#
+#   • push lên main      → build & push 15 image lên GHCR + deploy staging
+#   • push tag v*        → build & push + integration test + GitHub Release
+#                          + deploy production (environment production có thể
+#                          bật "Required reviewers" để duyệt tay)
+#   • workflow_dispatch  → chọn service cần build, bật integration test,
+#                          chọn môi trường deploy (none = chỉ build image)
+#
+# KHÔNG tự tạo git tag trong workflow: tag v* cũng kích hoạt pipeline nên
+# auto-tag sẽ sinh thêm một run trùng lặp (build 15 image lần 2).
+# Cách release: git tag v1.0.0 && git push origin v1.0.0
+# ============================================================================
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
-      service:
-        description: "Service to deploy (leave empty for all)"
-        required: false
-        default: ""
+      services:
+        description: 'Service cần build: "all" hoặc danh sách cách nhau bằng dấu phẩy'
+        type: string
+        default: "all"
+      run_integration_test:
+        description: "Chạy integration test (docker compose) trước khi deploy"
+        type: boolean
+        default: false
+      deploy_environment:
+        description: "Môi trường deploy (none = chỉ build & push image)"
+        type: choice
+        options:
+          - none
+          - staging
+          - production
+        default: none
+
+# Không huỷ run đang deploy giữa chừng (khác CI)
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read # job release tự nâng lên contents: write
+  packages: write # push image lên GitHub Container Registry
 
 env:
-  NODE_VERSION: "20"
-  PNPM_VERSION: "9.4.0"
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+  # Danh sách 15 backend service (dùng cho matrix động ở job prepare)
+  ALL_SERVICES: >-
+    identity-service consumer-service merchant-service
+    order-service inventory-service payment-service
+    driver-service dispatch-service wallet-service
+    upload-service review-service promotion-service
+    notification-service resolution-service chat-service
 
 jobs:
   # ============================================================
-  # Job: Build & Push Docker images for all services
+  # 1. Chuẩn bị matrix: chọn danh sách service cần build
+  #    + xác định môi trường deploy từ event/ref/input
+
   # ============================================================
-  build-images:
-    name: "🐳 Build Docker Images"
+  prepare:
+    name: Prepare matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      services: ${{ steps.matrix.outputs.services }}
+      deploy_env: ${{ steps.matrix.outputs.deploy_env }}
+      # Tag image mà compose sẽ dùng (`image: ...:<TAG>`) ở integration-test/deploy
+      image_tag: ${{ steps.matrix.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build service matrix
+        id: matrix
+        env:
+          REQUESTED: ${{ inputs.services }}
+          REQUESTED_ENV: ${{ inputs.deploy_environment }}
+        run: |
+          set -euo pipefail
+
+          # ---- Danh sách service ----
+          requested="${REQUESTED:-all}"
+          if [ -z "$requested" ] || [ "$requested" = "all" ]; then
+            selected="$ALL_SERVICES"
+          else
+            selected="$(printf '%s' "$requested" | tr ',' ' ')"
+          fi
+
+          json=""
+          for svc in $selected; do
+            if [ ! -f "apps/$svc/Dockerfile" ]; then
+              echo "::error::Không tìm thấy apps/$svc/Dockerfile (service '$svc')"
+              exit 1
+            fi
+            json="${json:+$json,}\"$svc\""
+          done
+
+          echo "matrix={\"service\":[$json]}" >> "$GITHUB_OUTPUT"
+          echo "services=[$json]" >> "$GITHUB_OUTPUT"
+
+          # ---- Môi trường deploy ----
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            deploy_env="${REQUESTED_ENV:-none}"
+          elif [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            deploy_env="production"
+          else
+            deploy_env="staging"
+          fi
+          echo "deploy_env=$deploy_env" >> "$GITHUB_OUTPUT"
+
+          # ---- Tag image (khớp với docker-compose.yml: ${TAG:-latest}) ----
+          # build-and-push gắn `latest` cho nhánh mặc định và `v*` cho tag, nên
+          # integration-test/deploy phải pull đúng tag đó.
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            image_tag="$GITHUB_REF_NAME"
+          else
+            image_tag="latest"
+          fi
+          echo "image_tag=$image_tag" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### CD plan"
+            echo ""
+            echo "- Event: \`$GITHUB_EVENT_NAME\` (ref: \`$GITHUB_REF\`)"
+            echo "- Services: \`[$json]\`"
+            echo "- Deploy environment: \`$deploy_env\`"
+            echo "- Image tag: \`$image_tag\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "📦 Services: [$json]"
+          echo "🚀 Deploy environment: $deploy_env"
+
+  # ============================================================
+  # 2. Build & push image lên GHCR (matrix động)
+  #    Cache BuildKit dùng scope riêng theo service nên lần sau rất nhanh.
+
+  # ============================================================
+  build-and-push:
+    name: Build & Push ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [prepare]
+    permissions:
+      contents: read
+      packages: write
     strategy:
-      matrix:
-        service:
-          - identity-service
-          - consumer-service
-          - merchant-service
-          - order-service
-          - inventory-service
-          - payment-service
-          - driver-service
-          - dispatch-service
-          - wallet-service
-          - upload-service
       fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Cache Docker layers
-        uses: actions/cache@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ matrix.service }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-${{ matrix.service }}-
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Docker image for ${{ matrix.service }}
-        run: |
-          docker compose build ${{ matrix.service }} 2>&1 | tail -30
-        env:
-          DOCKER_BUILDKIT: 1
-          STRIPE_SECRET_KEY: ""
-          STRIPE_WEBHOOK_SECRET: ""
-          DB_PASSWORD: "ci_build_password"
-          REDIS_PASSWORD: "ci_build_redis"
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Verify image exists
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Job summary
         run: |
-          docker images --filter "reference=mythfood-${{ matrix.service }}" --format "{{.Repository}}:{{.Tag}} - {{.Size}}"
+          {
+            echo "### 🐳 ${{ matrix.service }}"
+            echo ""
+            echo "- Digest: \`${{ steps.meta.outputs.digest }}\`"
+            echo "- Tags:"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ============================================================
-  # Job: Integration Test (after all images built)
+  # 3. Integration test: dựng stack tối thiểu bằng docker compose rồi smoke
+  #    test qua HTTP.
+  #    - identity-service/wallet-service lấy image thẳng từ GHCR (job
+  #      build-and-push vừa push, tag `latest` hoặc `v*`) để kiểm chứng đúng
+  #      artifact sắp deploy; nếu registry chưa có (dispatch ở nhánh lạ, repo
+  #      mới) thì compose tự build từ source như trước.
+  #    - Không dùng `docker compose up --wait`: chỉ cần container đã lên,
+  #      readiness thật do step HTTP smoke test kiểm tra (401/403/200).
+  #    - Chỉ dựng postgres + redis + identity + wallet + gateway để giữ thời
+  #      gian chạy chấp nhận được (full stack & luồng nghiệp vụ nằm ở e2e.yml).
   # ============================================================
+
   integration-test:
-    name: "🧪 Integration Test"
+    name: Integration Test (docker compose)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [build-images]
+    timeout-minutes: 75
+    needs: [prepare, build-and-push]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.run_integration_test == true }}
+    env:
+      DB_USER: mythfood
+      DB_PASSWORD: ci_test_password
+      REDIS_PASSWORD: ci_redis_password
+      SERVICE_API_KEY: ci_service_api_key
+      JWT_SECRET_IDENTITY: ci_identity_secret_change_me
+      JWT_REFRESH_SECRET_IDENTITY: ci_identity_refresh_secret_change_me
+      JWT_SECRET_WALLET: ci_wallet_secret_change_me
+      STRIPE_SECRET_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
+      # docker-compose.yml dùng image: ...:<TAG> → phải pull đúng tag vừa push
+      TAG: ${{ needs.prepare.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start all services
-        run: |
-          docker compose up -d --wait --wait-timeout 300
-        env:
-          DB_PASSWORD: ci_test_password
-          REDIS_PASSWORD: ci_redis_password
-          JWT_SECRET_IDENTITY: ci_jwt_secret_change_me
-          JWT_REFRESH_SECRET_IDENTITY: ci_refresh_secret_change_me
+      - name: Prepare env files
+        # docker-compose.yml khai báo env_file: apps/upload-service/.env. Compose v2
+        # báo lỗi khi file không tồn tại (v3+ chỉ warning) nên tạo rỗng cho chắc,
+        # dù service này không được start trong job.
+        run: touch apps/upload-service/.env
 
-      - name: Verify services are healthy
-        run: |
-          sleep 30
-          echo "=== PostgreSQL ===" 
-          docker ps --filter "name=mythfood-postgres" --format "{{.Status}}"
-          echo "=== Redis ===" 
-          docker ps --filter "name=mythfood-redis" --format "{{.Status}}"
-          echo "=== Identity Service ===" 
-          docker logs mythfood-identity-service --tail 5
-          echo "=== Wallet Service ===" 
-          docker logs mythfood-wallet-service --tail 5
+      - name: Log in to GHCR
+        # `docker compose pull` cần quyền đọc package (kể cả khi package private)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: API smoke test
+      - name: Start smoke stack
         run: |
-          echo "Testing identity service..."
-          curl -s -o /dev/null -w "Identity register: %{http_code}\n" \
-            http://localhost:3001/api/v1/auth/register \
-            -X POST -H "Content-Type: application/json" \
-            -d '{"phoneNumber":"0999999999","fullName":"CI Test","password":"CiTest@123"}'
+          set -uo pipefail
+          services="postgres redis identity-service wallet-service gateway"
+          docker compose pull $services || echo "::warning::pull failed - building from source"
+          docker compose up -d $services
 
-          echo "Testing wallet service..."
-          curl -s -o /dev/null -w "Wallet stats: %{http_code}\n" \
-            http://localhost:3009/api/v1/wallets/stats \
-            -H "Authorization: Bearer fake"
+      - name: Wait for infrastructure healthy
+        run: |
+          set -euo pipefail
+          for container in mythfood-postgres mythfood-redis; do
+            status=""
+            for _ in $(seq 1 60); do
+              status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || echo missing)
+              [ "$status" = "healthy" ] && break
+              sleep 5
+            done
+            echo "$container → $status"
+            if [ "$status" != "healthy" ]; then
+              docker logs "$container" --tail 50 || true
+              exit 1
+            fi
+          done
+
+      - name: HTTP smoke test
+        run: |
+          set -uo pipefail
+
+          wait_for() {
+            local label="$1" url="$2" expected="$3" method="${4:-GET}" body="${5:-}"
+            local code="" attempt=0
+            for attempt in $(seq 1 60); do
+              if [ -n "$body" ]; then
+                code=$(curl -s -o /dev/null -w '%{http_code}' -X "$method" \
+                  -H 'Content-Type: application/json' -d "$body" "$url" || echo 000)
+              else
+                code=$(curl -s -o /dev/null -w '%{http_code}' -X "$method" "$url" || echo 000)
+              fi
+              if printf '%s' "$code" | grep -qE "^($expected)$"; then
+                echo "✅ $label → HTTP $code"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::$label → HTTP $code sau $attempt lần thử (mong đợi $expected)"
+            return 1
+          }
+
+          fail=0
+
+          # 1) identity-service: đăng ký user mới (201) hoặc đã tồn tại (409)
+          wait_for "identity-service POST /auth/register" \
+            "http://localhost:3001/api/v1/auth/register" "201|409" POST \
+            '{"phoneNumber":"0999999999","fullName":"CD Smoke","password":"CdSmoke@123"}' || fail=1
+
+          # 2) wallet-service: endpoint có JWT guard, gọi không token → 401/403
+          wait_for "wallet-service GET /wallets/stats (no token)" \
+            "http://localhost:3009/api/v1/wallets/stats" "401|403" || fail=1
+
+          # 3) Kong: route meta trả 200 khi gateway đã nạp declarative config
+          wait_for "gateway GET /gateway/health" \
+            "http://localhost:8000/gateway/health" "200" || fail=1
+
+          # 4) Kong proxy thật sự forward sang wallet-service (không phải 503)
+          wait_for "gateway → wallet-service GET /api/v1/wallets/stats" \
+            "http://localhost:8000/api/v1/wallets/stats" "401|403" || fail=1
+
+          echo "=== docker compose ps ==="
+          docker compose ps
+          exit $fail
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: docker compose logs --tail 120 --no-color || true
 
       - name: Cleanup
         if: always()
-        run: docker compose down -v
+        run: docker compose down -v --remove-orphans
 
   # ============================================================
-  # Job: Tag & Push (manual trigger for production deploy)
+  # 4. GitHub Release: chỉ chạy khi push tag v* (cần contents: write)
+  #    Thay cho bước "git push origin $TAG" của cd.yml cũ — việc tạo tag
+  #    do người release chủ động làm để không sinh run trùng lặp.
+
   # ============================================================
-  deploy:
-    name: "🚀 Deploy to Production"
+  release:
+    name: Create GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [integration-test]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: production
+    needs: [prepare, build-and-push]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    permissions:
+      contents: write
+      packages: read
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create Git Tag
+      - name: Publish release ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
         run: |
-          TAG="v$(date +'%Y.%m.%d')-$(git rev-parse --short HEAD)"
-          git tag $TAG
-          git push origin $TAG
-          echo "Created tag: $TAG"
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG đã tồn tại — bỏ qua."
+            exit 0
+          fi
+          gh release create "$TAG" --title "MyThFood $TAG" --generate-notes
 
-      - name: Deploy via SSH (placeholder)
+      - name: Release summary
+        env:
+          TAG: ${{ github.ref_name }}
+          SERVICES: ${{ needs.prepare.outputs.services }}
         run: |
-          echo "🚀 Deploying to production server..."
-          echo "  - SSH to production server"
-          echo "  - docker compose pull"
-          echo "  - docker compose up -d"
-          echo "  - docker compose exec identity-service pnpm migration:run"
-          echo "⚠️ Configure SSH_DEPLOY_KEY in repository secrets"
-        # Uncomment when ready:
-        # uses: appleboy/ssh-action@v1
-        # with:
-        #   host: ${{ secrets.DEPLOY_HOST }}
-        #   username: ${{ secrets.DEPLOY_USER }}
-        #   key: ${{ secrets.SSH_DEPLOY_KEY }}
-        #   script: |
-        #     cd /opt/mythfood
-        #     git pull origin main
-        #     docker compose pull
-        #     docker compose up -d
-        #     docker compose exec identity-service npx typeorm migration:run
+          {
+            echo "### 🏷️ Release $TAG"
+            echo ""
+            echo "- Image root: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/<service>:$TAG\`"
+            echo "- Services: \`$SERVICES\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================
+  # 5. Deploy — tách 2 job để `environment` là giá trị tĩnh (GitHub chỉ
+  #    đảm bảo expression được evaluate ở `if`, không đảm bảo ở
+  #    `environment`), nhờ đó bật "Required reviewers" riêng cho
+  #    production được.
+  #    • push main / dispatch chọn staging → deploy-staging
+  #    • push tag v* / dispatch chọn prod  → deploy-production
+  #
+  #    Hiện tại chỉ dry-run vì repo CHƯA cấu hình secrets:
+  #      DEPLOY_HOST, DEPLOY_USER, SSH_DEPLOY_KEY
+  #    Khi có server thật: bỏ comment block appleboy/ssh-action.
+
+  # ============================================================
+  deploy-staging:
+    name: Deploy → staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [prepare, build-and-push, integration-test]
+    if: >-
+      ${{ always() && needs.prepare.result == 'success'
+      && needs.prepare.outputs.deploy_env == 'staging'
+      && !contains(needs['build-and-push'].result, 'failure')
+      && !contains(needs['build-and-push'].result, 'cancelled')
+      && !contains(needs['integration-test'].result, 'failure')
+      && !contains(needs['integration-test'].result, 'cancelled') }}
+    environment: staging
+    env:
+      TAG: ${{ needs.prepare.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show deploy plan
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SERVICES: ${{ needs.prepare.outputs.services }}
+        run: |
+          set -euo pipefail
+          echo "Môi trường : staging"
+          echo "Ref        : $GITHUB_REF"
+          echo "Image root : ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/<service>"
+          echo "Services   : $SERVICES"
+
+          {
+            echo "### 🚀 Deploy → staging"
+            echo ""
+            echo "- Ref: \`$GITHUB_REF\`"
+            echo "- Image root: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/<service>\`"
+            echo "- Integration test: \`${{ needs['integration-test'].result }}\`"
+            echo "- Services: \`$SERVICES\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "${DEPLOY_HOST:-}" ]; then
+            echo "::warning::Chưa cấu hình secrets DEPLOY_HOST / DEPLOY_USER / SSH_DEPLOY_KEY → chạy dry-run, không SSH."
+          fi
+
+      - name: Deploy over SSH (dry-run)
+        run: |
+          echo "Các lệnh sẽ chạy trên server staging:"
+          echo "  cd /opt/mythfood"
+          echo "  git fetch --tags --prune && git checkout $GITHUB_REF_NAME"
+          echo "  docker compose pull          # image từ GHCR, tag $TAG"
+          echo "  docker compose up -d --remove-orphans"
+          echo "  docker compose ps"
+          echo "Lưu ý: schema DB do docker/init-db/*.sql tạo khi volume còn trống;"
+          echo "      repo chưa có script TypeORM migration:run."
+
+      # Khi có server: thay step dry-run ở trên bằng block dưới
+      # - name: Deploy over SSH
+      #   uses: appleboy/ssh-action@v1
+      #   with:
+      #     host: ${{ secrets.DEPLOY_HOST }}
+      #     username: ${{ secrets.DEPLOY_USER }}
+      #     key: ${{ secrets.SSH_DEPLOY_KEY }}
+      #     script: |
+      #       cd /opt/mythfood
+      #       git fetch --tags --prune
+      #       git checkout ${{ github.ref_name }}
+      #       docker compose pull
+      #       docker compose up -d --remove-orphans
+      #       docker compose ps
+
+  # ============================================================
+  # 6. Production deploy — chỉ chạy khi push tag v* (hoặc dispatch chọn
+  #    production). Bật Settings → Environments → production →
+  #    "Required reviewers" để pipeline dừng chờ duyệt trước khi deploy.
+
+  # ============================================================
+  deploy-production:
+    name: Deploy → production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [prepare, build-and-push, integration-test]
+    if: >-
+      ${{ always() && needs.prepare.result == 'success'
+      && needs.prepare.outputs.deploy_env == 'production'
+      && !contains(needs['build-and-push'].result, 'failure')
+      && !contains(needs['build-and-push'].result, 'cancelled')
+      && !contains(needs['integration-test'].result, 'failure')
+      && !contains(needs['integration-test'].result, 'cancelled') }}
+    environment: production
+    env:
+      TAG: ${{ needs.prepare.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show deploy plan
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SERVICES: ${{ needs.prepare.outputs.services }}
+        run: |
+          set -euo pipefail
+          echo "Môi trường : production"
+          echo "Ref        : $GITHUB_REF"
+          echo "Image root : ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/<service>"
+          echo "Services   : $SERVICES"
+
+          {
+            echo "### 🚀 Deploy → production"
+            echo ""
+            echo "- Ref: \`$GITHUB_REF\`"
+            echo "- Image root: \`${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/<service>\`"
+            echo "- Integration test: \`${{ needs['integration-test'].result }}\`"
+            echo "- Services: \`$SERVICES\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -z "${DEPLOY_HOST:-}" ]; then
+            echo "::warning::Chưa cấu hình secrets DEPLOY_HOST / DEPLOY_USER / SSH_DEPLOY_KEY → chạy dry-run, không SSH."
+          fi
+
+      - name: Deploy over SSH (dry-run)
+        run: |
+          echo "Các lệnh sẽ chạy trên server production:"
+          echo "  cd /opt/mythfood"
+          echo "  git fetch --tags --prune && git checkout $GITHUB_REF_NAME"
+          echo "  docker compose pull          # image từ GHCR, tag $TAG"
+          echo "  docker compose up -d --remove-orphans"
+          echo "  docker compose ps"
+          echo "Lưu ý: schema DB do docker/init-db/*.sql tạo khi volume còn trống;"
+          echo "      repo chưa có script TypeORM migration:run."
+
+      # Khi có server: thay step dry-run ở trên bằng block dưới
+      # - name: Deploy over SSH
+      #   uses: appleboy/ssh-action@v1
+      #   with:
+      #     host: ${{ secrets.DEPLOY_HOST }}
+      #     username: ${{ secrets.DEPLOY_USER }}
+      #     key: ${{ secrets.SSH_DEPLOY_KEY }}
+      #     script: |
+      #       cd /opt/mythfood
+      #       git fetch --tags --prune
+      #       git checkout ${{ github.ref_name }}
+      #       docker compose pull
+      #       docker compose up -d --remove-orphans
+      #       docker compose ps

@@ -1,5 +1,15 @@
 version: "3.9"
 
+# ============================================================================
+# Mọi service backend đều có CẢ `image:` (GHCR) và `build:`:
+#   • `docker compose pull`   → lấy image đã build sẵn bởi .github/workflows/cd.yml
+#                               (~1–2 phút thay vì 25–40 phút build 15 image)
+#   • `docker compose build`  → fallback khi chưa có image / GHCR là private
+#   • `docker compose up -d --build` (dev) → luôn build từ source, bỏ qua image
+# Chọn phiên bản bằng biến TAG (mặc định latest):
+#   TAG=v1.0.0 docker compose pull && TAG=v1.0.0 docker compose up -d
+# ============================================================================
+
 services:
   # ============================================================================
   # PostgreSQL - Primary relational database (Identity Service + others)
@@ -87,6 +97,7 @@ services:
   # Identity Service (NestJS)
   # ============================================================================
   identity-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/identity-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/identity-service/Dockerfile
@@ -123,6 +134,7 @@ services:
   # Consumer Service (NestJS)
   # ============================================================================
   consumer-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/consumer-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/consumer-service/Dockerfile
@@ -152,6 +164,7 @@ services:
   # Merchant Service (NestJS)
   # ============================================================================
   merchant-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/merchant-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/merchant-service/Dockerfile
@@ -184,6 +197,7 @@ services:
   # Order Service (NestJS)
   # ============================================================================
   order-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/order-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/order-service/Dockerfile
@@ -241,6 +255,7 @@ services:
   # Inventory Service (NestJS)
   # ============================================================================
   inventory-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/inventory-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/inventory-service/Dockerfile
@@ -269,6 +284,7 @@ services:
   # Payment Service (NestJS)
   # ============================================================================
   payment-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/payment-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/payment-service/Dockerfile
@@ -300,6 +316,7 @@ services:
   # Driver Service (NestJS)
   # ============================================================================
   driver-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/driver-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/driver-service/Dockerfile
@@ -337,6 +354,7 @@ services:
   # Dispatch Service (NestJS)
   # ============================================================================
   dispatch-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/dispatch-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/dispatch-service/Dockerfile
@@ -394,6 +412,7 @@ services:
   # Wallet Service (NestJS) - Quản lý ví Driver, Consumer, Merchant, Platform, Tax
   # ============================================================================
   wallet-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/wallet-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/wallet-service/Dockerfile
@@ -430,6 +449,7 @@ services:
   # Upload Service (NestJS) - File upload handling (local/S3)
   # ============================================================================
   upload-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/upload-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/upload-service/Dockerfile
@@ -461,6 +481,7 @@ services:
   # Review Service (NestJS) - Ratings & reviews
   # ============================================================================
   review-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/review-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/review-service/Dockerfile
@@ -492,6 +513,7 @@ services:
   # Promotion Service (NestJS) - Vouchers & campaigns
   # ============================================================================
   promotion-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/promotion-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/promotion-service/Dockerfile
@@ -521,6 +543,7 @@ services:
   # Notification Service (NestJS) - In-app notifications
   # ============================================================================
   notification-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/notification-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/notification-service/Dockerfile
@@ -550,6 +573,7 @@ services:
   # Resolution Service (NestJS) - Complaints, fraud detection & penalties
   # ============================================================================
   resolution-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/resolution-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/resolution-service/Dockerfile
@@ -646,6 +670,7 @@ services:
   # Chat Service (NestJS) - Realtime chat between driver and consumer
   # ============================================================================
   chat-service:
+    image: ghcr.io/lethithanhthao-1412/mythfood/chat-service:${TAG:-latest}
     build:
       context: .
       dockerfile: apps/chat-service/Dockerfile
