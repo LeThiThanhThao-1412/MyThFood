@@ -11,6 +11,7 @@
     "start:prod": "node dist/main",
     "lint": "echo 'ESLint not configured yet. Skipping.'",
     "test": "jest --passWithNoTests",
+    "test:coverage": "jest --coverage --passWithNoTests",
     "clean": "rm -rf dist"
   },
   "dependencies": {
