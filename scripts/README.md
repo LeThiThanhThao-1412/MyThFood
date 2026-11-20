@@ -53,10 +53,11 @@ SELECT count(*) FROM penalties WHERE reason LIKE '%?%';
 
 ## Danh mục script
 
-| File                                      | Việc                                                                  |
-| ----------------------------------------- | --------------------------------------------------------------------- |
-| `fix-a13aae84-second-case.sql`            | Mở khoá escrow treo + huỷ bút toán bồi thường ảo của CASE-2026-000002 |
-| `fix-883f25a8-late-delivery-ship-fee.sql` | Đưa đơn giao trễ về đúng chính sách "chỉ hoàn 100% phí ship"          |
-| `fix-mojibake-utf8.sql`                   | Sửa chữ tiếng Việt bị `?` do nạp SQL qua PowerShell pipe              |
-| `seed-admin-wallet.sql`                   | Nạp 100.000.000 VND vào ví admin (`PLATFORM_DEFAULT` / `PLATFORM`)    |
-| `verify_money_invariants.sql`             | 7 bất biến tiền (số dư = sổ, escrow treo, nợ khấu trừ, …)             |
+| File                                      | Việc                                                                                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `fix-a13aae84-second-case.sql`            | Mở khoá escrow treo + huỷ bút toán bồi thường ảo của CASE-2026-000002                                                     |
+| `fix-883f25a8-late-delivery-ship-fee.sql` | Đưa đơn giao trễ về đúng chính sách "chỉ hoàn 100% phí ship"                                                              |
+| `fix-mojibake-utf8.sql`                   | Sửa chữ tiếng Việt bị `?` do nạp SQL qua PowerShell pipe                                                                  |
+| `seed-admin-wallet.sql`                   | Nạp 100.000.000 VND vào ví admin (`PLATFORM_DEFAULT` / `PLATFORM`)                                                        |
+| `verify_money_invariants.sql`             | 7 bất biến tiền (số dư = sổ, escrow treo, nợ khấu trừ, …)                                                                 |
+| `db/cleanup-test-users.ps1`               | Dọn user rác (Kong Smoke / CD Smoke, tuỳ chọn seed research) + profile/ví mồ côi; mặc định dry-run, thêm `-Apply` mới xoá |
