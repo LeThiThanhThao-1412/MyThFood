@@ -135,7 +135,21 @@ jobs:
           fi
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "Image tag: $TAG"
-          docker compose pull || docker compose build
+
+          # cd.yml push đúng tag này nhưng có thể chậm hơn E2E vài phút.
+          # Thử pull 8 lần × 45s (≈6 phút) trước khi chịu build từ source
+          # (25–40 phút) — nhờ vậy E2E test đúng image vừa release.
+          for attempt in $(seq 1 8); do
+            if docker compose pull --quiet; then
+              echo "✅ Pull thành công ở lần $attempt (TAG=$TAG)"
+              exit 0
+            fi
+            echo "::warning::pull lần $attempt thất bại (TAG=$TAG) — thử lại sau 45s"
+            sleep 45
+          done
+
+          echo "::warning::GHCR chưa có $TAG sau 8 lần thử — build từ source"
+          docker compose build
 
       - name: Start full stack (docker compose)
         run: |
