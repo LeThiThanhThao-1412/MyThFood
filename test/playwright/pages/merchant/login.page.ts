@@ -1,4 +1,5 @@
 import { Page, Locator } from "@playwright/test";
+import { APP_URLS } from "../../utils/app-urls";
 
 export class MerchantLoginPage {
   readonly page: Page;
@@ -18,7 +19,7 @@ export class MerchantLoginPage {
   }
 
   async goto() {
-    await this.page.goto("http://localhost:4003/login");
+    await this.page.goto(`${APP_URLS.merchant}/login`);
   }
 
   async login(phone: string, password: string) {

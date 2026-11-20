@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { APP_URLS } from "./utils/app-urls";
 
 export default defineConfig({
   testDir: "./specs",
@@ -27,7 +28,7 @@ export default defineConfig({
       name: "consumer",
       use: {
         ...devices["Desktop Chrome"],
-        baseURL: "http://localhost:4001",
+        baseURL: APP_URLS.consumer,
         testIdAttribute: "data-testid",
       },
       testMatch: /consumer\/.*\.spec\.ts/,
@@ -36,7 +37,7 @@ export default defineConfig({
       name: "merchant",
       use: {
         ...devices["Desktop Chrome"],
-        baseURL: "http://localhost:4003",
+        baseURL: APP_URLS.merchant,
         testIdAttribute: "data-testid",
       },
       testMatch: /merchant\/.*\.spec\.ts/,
@@ -45,7 +46,7 @@ export default defineConfig({
       name: "driver",
       use: {
         ...devices["Desktop Chrome"],
-        baseURL: "http://localhost:4002",
+        baseURL: APP_URLS.driver,
         testIdAttribute: "data-testid",
       },
       testMatch: /driver\/.*\.spec\.ts/,
@@ -54,7 +55,7 @@ export default defineConfig({
       name: "admin",
       use: {
         ...devices["Desktop Chrome"],
-        baseURL: "http://localhost:4004",
+        baseURL: APP_URLS.admin,
         testIdAttribute: "data-testid",
       },
       testMatch: /admin\/.*\.spec\.ts/,
@@ -63,7 +64,7 @@ export default defineConfig({
       name: "full-flow",
       use: {
         ...devices["Desktop Chrome"],
-        baseURL: "http://localhost:4001",
+        baseURL: APP_URLS.consumer,
         testIdAttribute: "data-testid",
       },
       testMatch: /full-flow\/.*\.spec\.ts/,

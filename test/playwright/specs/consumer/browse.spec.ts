@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
+import { APP_URLS } from "../../utils/app-urls";
 
 test.describe("Consumer App - Browse Restaurants", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("http://localhost:4001");
+    await page.goto(`${APP_URLS.consumer}`);
   });
 
   test("should display landing/home page", async ({ page }) => {
@@ -21,7 +22,7 @@ test.describe("Consumer App - Browse Restaurants", () => {
   });
 
   test("should display restaurant listing", async ({ page }) => {
-    await page.goto("http://localhost:4001/restaurants");
+    await page.goto(`${APP_URLS.consumer}/restaurants`);
     await page.waitForLoadState("networkidle");
     // Should show restaurant cards or a list
     const cards = page.locator(
@@ -32,7 +33,7 @@ test.describe("Consumer App - Browse Restaurants", () => {
   });
 
   test("should navigate to restaurant detail", async ({ page }) => {
-    await page.goto("http://localhost:4001/restaurants");
+    await page.goto(`${APP_URLS.consumer}/restaurants`);
     await page.waitForLoadState("networkidle");
     const firstRestaurant = page
       .locator(
@@ -46,7 +47,7 @@ test.describe("Consumer App - Browse Restaurants", () => {
   });
 
   test("should render the discovery filter bar", async ({ page }) => {
-    await page.goto("http://localhost:4001/restaurants");
+    await page.goto(`${APP_URLS.consumer}/restaurants`);
     await page.waitForLoadState("networkidle");
 
     // Feature: lọc theo đánh giá, đang mở, phí ship, sắp xếp, danh mục
@@ -58,7 +59,7 @@ test.describe("Consumer App - Browse Restaurants", () => {
   });
 
   test("should filter by minimum rating", async ({ page }) => {
-    await page.goto("http://localhost:4001/restaurants");
+    await page.goto(`${APP_URLS.consumer}/restaurants`);
     await page.waitForLoadState("networkidle");
 
     const ratingSelect = page.getByLabel("Lọc theo đánh giá");
@@ -71,7 +72,7 @@ test.describe("Consumer App - Browse Restaurants", () => {
   });
 
   test("should toggle open-now filter", async ({ page }) => {
-    await page.goto("http://localhost:4001/restaurants");
+    await page.goto(`${APP_URLS.consumer}/restaurants`);
     await page.waitForLoadState("networkidle");
 
     await page.getByRole("button", { name: /Đang mở/ }).click();
@@ -81,18 +82,26 @@ test.describe("Consumer App - Browse Restaurants", () => {
   });
 
   test("should support search history persistence", async ({ page }) => {
-    await page.goto("http://localhost:4001/restaurants");
+    await page.goto(`${APP_URLS.consumer}/restaurants`);
     await page.waitForLoadState("networkidle");
 
+    // Lịch sử tìm kiếm chỉ được ghi khi người dùng "chốt" từ khoá (Enter),
+    // không ghi theo từng ký tự gõ dở.
     const searchBox = page.getByPlaceholder(/Tìm món ăn, nhà hàng/i).first();
     await searchBox.fill("phở bò");
-    await page.waitForTimeout(700); // wait for the 400ms debounce to commit
-    await searchBox.fill("");
-    await searchBox.focus();
+    await searchBox.press("Enter");
+    await page.waitForTimeout(500);
 
-    // Recent-search dropdown lists the keyword we just typed
-    await expect(page.getByText(/Tìm kiếm gần đây/i)).toBeVisible();
-    await expect(page.getByRole("button", { name: /phở bò/i })).toBeVisible();
+    // Dropdown lịch sử chỉ hiện khi input đang focus và rỗng → phải blur rồi focus lại.
+    await searchBox.fill("");
+    await searchBox.blur();
+    await searchBox.click();
+
+    // Dropdown render ở cả search bar desktop và mobile → dùng .first().
+    await expect(page.getByText(/Tìm kiếm gần đây/i).first()).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /phở bò/i }).first(),
+    ).toBeVisible();
   });
 
   /**
@@ -107,7 +116,7 @@ test.describe("Consumer App - Browse Restaurants", () => {
   }) => {
     for (const width of [1920, 1366, 1280, 390]) {
       await page.setViewportSize({ width, height: 900 });
-      await page.goto("http://localhost:4001/restaurants");
+      await page.goto(`${APP_URLS.consumer}/restaurants`);
       await page.waitForLoadState("networkidle");
 
       const metrics = await page.evaluate(() => ({

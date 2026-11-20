@@ -1,4 +1,5 @@
 import { Page, Locator } from "@playwright/test";
+import { APP_URLS } from "../../utils/app-urls";
 
 export class ConsumerRegisterPage {
   readonly page: Page;
@@ -22,7 +23,7 @@ export class ConsumerRegisterPage {
   }
 
   async goto() {
-    await this.page.goto("http://localhost:4001/register");
+    await this.page.goto(`${APP_URLS.consumer}/register`);
   }
 
   async register(name: string, phone: string, email: string, password: string) {

@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { TEST_USERS } from "../../utils/test-data";
+import { APP_URLS } from "../../utils/app-urls";
 
 test.describe("Merchant App - Wallet", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("http://localhost:4003/login");
+    await page.goto(`${APP_URLS.merchant}/login`);
     await page.locator('input[type="text"]').fill(TEST_USERS.merchant.phone);
     await page
       .locator('input[type="password"]')
@@ -13,19 +14,19 @@ test.describe("Merchant App - Wallet", () => {
   });
 
   test("M2.1: Navigate to wallet page", async ({ page }) => {
-    await page.goto("http://localhost:4003/wallet");
+    await page.goto(`${APP_URLS.merchant}/wallet`);
     await page.waitForLoadState("networkidle");
     await expect(page.locator("body")).toBeVisible();
   });
 
   test("M2.2: Wallet displays balance", async ({ page }) => {
-    await page.goto("http://localhost:4003/wallet");
+    await page.goto(`${APP_URLS.merchant}/wallet`);
     await page.waitForLoadState("networkidle");
     await expect(page.locator("body")).toBeVisible();
   });
 
   test("M2.3: Wallet page has transaction history", async ({ page }) => {
-    await page.goto("http://localhost:4003/wallet");
+    await page.goto(`${APP_URLS.merchant}/wallet`);
     await page.waitForLoadState("networkidle");
     await expect(page.locator("body")).toBeVisible();
   });

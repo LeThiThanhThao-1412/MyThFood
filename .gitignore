@@ -33,6 +33,10 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# Playwright (artifacts upload trong e2e.yml, không commit)
+test/playwright/test-results/
+test/playwright/reports/
+
 # Logs
 *.log
 npm-debug.log*

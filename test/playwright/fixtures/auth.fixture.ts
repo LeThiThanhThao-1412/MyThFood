@@ -3,6 +3,7 @@ import { ConsumerLoginPage } from "../pages/consumer/login.page";
 import { MerchantLoginPage } from "../pages/merchant/login.page";
 import { DriverLoginPage } from "../pages/driver/login.page";
 import { TEST_USERS } from "../utils/test-data";
+import { APP_URLS } from "../utils/app-urls";
 
 type AuthFixtures = {
   consumerLoggedInPage: Page;
@@ -54,17 +55,19 @@ export const test = base.extend<AuthFixtures>({
   adminLoggedInPage: async ({ browser }, use) => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto("http://localhost:4004/login");
+    await page.goto(`${APP_URLS.admin}/login`);
     await page
-      .getByLabel(/phone|số điện thoại/i)
-      .or(page.getByPlaceholder(/phone|số điện thoại/i))
+      .locator('input[type="text"]')
+      .first()
       .fill(TEST_USERS.admin.phone);
     await page
-      .getByLabel(/password|mật khẩu/i)
-      .or(page.getByPlaceholder(/password|mật khẩu/i))
+      .locator('input[type="password"]')
+      .first()
       .fill(TEST_USERS.admin.password);
-    await page.getByRole("button", { name: /login|đăng nhập/i }).click();
-    await page.waitForURL(/dashboard|admin/i, { timeout: 10_000 });
+    await page.getByRole("button", { name: /đăng nhập/i }).click();
+    await page.waitForURL((url) => !url.pathname.startsWith("/login"), {
+      timeout: 10_000,
+    });
     await use(page);
     await context.close();
   },

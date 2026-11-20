@@ -5,6 +5,7 @@
   "description": "MyThFood End-to-End tests with Playwright",
   "scripts": {
     "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test specs/consumer/auth.spec.ts specs/merchant/auth.spec.ts specs/driver/auth.spec.ts specs/admin/auth.spec.ts",
     "test:e2e:consumer": "playwright test --project=consumer",
     "test:e2e:merchant": "playwright test --project=merchant",
     "test:e2e:driver": "playwright test --project=driver",
