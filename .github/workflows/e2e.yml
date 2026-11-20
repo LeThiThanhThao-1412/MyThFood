@@ -46,11 +46,38 @@ env:
   DB_NAME: mythfood_identity
   REDIS_PASSWORD: e2e_redis_password
   SERVICE_API_KEY: e2e_service_api_key
-  JWT_SECRET_IDENTITY: e2e_identity_secret_change_me
-  JWT_REFRESH_SECRET_IDENTITY: e2e_identity_refresh_secret_change_me
-  JWT_SECRET_WALLET: e2e_wallet_secret_change_me
+  AI_PII_HMAC_SECRET: e2e_pii_hmac_secret_change_me
+
+  # JWT: docker-compose.yml map `JWT_SECRET_<SERVICE>` → `JWT_SECRET` của container.
+  # PHẢI khai báo ĐỦ 15 service: thiếu 1 biến ⇒ container đó nhận JWT_SECRET=""
+  # ⇒ packages/common/src/config/env-loader.ts ném
+  #   "Missing required environment variables: JWT_SECRET"
+  # ⇒ container crash-loop ⇒ step "Wait for infrastructure & services" fail.
+  # Toàn bộ dùng CHUNG 1 giá trị (giống .env khi chạy local) để token do
+  # identity-service ký được verify ở consumer/merchant/... service khác.
+  JWT_SECRET_IDENTITY: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_CONSUMER: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_MERCHANT: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_ORDER: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_INVENTORY: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_PAYMENT: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_DRIVER: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_DISPATCH: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_WALLET: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_UPLOAD: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_REVIEW: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_PROMOTION: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_NOTIFICATION: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_RESOLUTION: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_SECRET_CHAT: e2e_jwt_secret_change_me_at_least_32_chars
+  JWT_REFRESH_SECRET_IDENTITY: e2e_refresh_secret_change_me_at_least_32_chars
+
+  # E2E không gọi dịch vụ ngoài: Stripe/AI để rỗng (service chỉ log warning)
   STRIPE_SECRET_KEY: ""
   STRIPE_WEBHOOK_SECRET: ""
+  AI_ASSISTANT_ENABLED: "false"
+  GLM_API_KEY: ""
+  GEMINI_API_KEY: ""
 
   # 4 app Next.js gọi API qua Kong (api-client mặc định cũng là URL này)
   NEXT_PUBLIC_API_GATEWAY: http://localhost:8000
@@ -111,14 +138,17 @@ jobs:
           docker compose pull || docker compose build
 
       - name: Start full stack (docker compose)
-        run: docker compose up -d
+        run: |
+          docker compose up -d
+          # Xem ngay container nào chưa lên (created/exited/restarting)
+          docker compose ps -a
 
       - name: Wait for infrastructure & services
         run: |
           set -euo pipefail
 
           wait_ready() {
-            local service="$1" status="" id=""
+            local service="$1" status="" id="" bad=0
             for _ in $(seq 1 90); do
               id=$(docker compose ps -q "$service" || true)
               if [ -n "$id" ]; then
@@ -140,10 +170,26 @@ jobs:
                   echo "::warning::$service → $status (image cũ chưa có /api/v1/health?)"
                   return 0
                   ;;
+                restarting | exited | dead)
+                  # Crash-loop (vd thiếu JWT_SECRET/DATABASE_PASSWORD) thì chờ
+                  # đủ 90 vòng là phí 7,5 phút CI. 12 vòng liên tiếp (~60s) vẫn
+                  # restart/exit ⇒ in log rồi fail ngay.
+                  bad=$((bad + 1))
+                  if [ "$bad" -ge 12 ]; then
+                    echo "::error::$service crash-loop (status=$status)"
+                    docker compose ps -a "$service" || true
+                    docker compose logs --tail 80 "$service" || true
+                    return 1
+                  fi
+                  ;;
+                *)
+                  bad=0
+                  ;;
               esac
               sleep 5
             done
             echo "::error::$service không sẵn sàng (status=$status)"
+            docker compose ps -a || true
             docker compose logs --tail 80 "$service" || true
             return 1
           }
