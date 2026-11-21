@@ -742,6 +742,32 @@ export class WalletController {
   }
 
   // ═══════════════════════════════════════════════════════
+  // Admin: Platform Wallet Ledger
+  // (ví nền tảng + quỹ dự phòng + cho mượn bồi thường
+  //  + thu nợ + sổ thu chi ví tài xế)
+  // ═══════════════════════════════════════════════════════
+  @Get("admin/platform-ledger")
+  @UseGuards(AuthGuard("jwt"), RolesGuard)
+  @Roles("ADMIN")
+  async getPlatformLedger(
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("take") take?: string,
+    @Query("driverId") driverId?: string,
+    @Query("driverType") driverType?: string,
+    @Query("driverSearch") driverSearch?: string,
+  ) {
+    return this.walletService.getPlatformLedger({
+      from: from || undefined,
+      to: to || undefined,
+      take: take ? parseInt(take, 10) : undefined,
+      driverId: driverId || undefined,
+      driverType: driverType || undefined,
+      driverSearch: driverSearch || undefined,
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════
   // Transaction History (wildcard - must come AFTER static routes)
   // ═══════════════════════════════════════════════════════
   @Get(":ownerId/transactions")

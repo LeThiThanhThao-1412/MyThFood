@@ -298,6 +298,215 @@ export class WalletRepository {
     return { totalEarnings, totalOrders, earningsByDay };
   }
 
+  // ────────────────────────────────────────────────────────────────────────
+  // Sổ ví nền tảng / ví tài xế (admin-portal → trang "Ví nền tảng")
+  // ────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Tổng tiền + bảng theo `referenceType` của **một nhóm ví** (ví nền tảng +
+   * quỹ dự phòng, hoặc ví của một tài xế).
+   *
+   * Vì sao gộp theo `referenceType`: một con số "tổng thu" không nói được tiền
+   * đến từ đâu (hoa hồng, phạt, thu nợ, seed…). Admin cần thấy từng nguồn để
+   * đối soát với sổ quyết toán.
+   */
+  async sumTransactionsByReference(params: {
+    ownerIds: string[];
+    type: string;
+    from?: string;
+    to?: string;
+  }): Promise<{
+    total: number;
+    count: number;
+    rows: { referenceType: string; count: number; total: number }[];
+  }> {
+    if (!Array.isArray(params.ownerIds) || params.ownerIds.length === 0) {
+      return { total: 0, count: 0, rows: [] };
+    }
+
+    const qb = this.txRepo
+      .createQueryBuilder("tx")
+      .select(
+        `COALESCE(tx."referenceType", 'UNCATEGORIZED')`,
+        "referenceType",
+      )
+      .addSelect("COUNT(*)", "count")
+      .addSelect("COALESCE(SUM(tx.amount), 0)", "total")
+      .where("tx.type = :type", { type: params.type })
+      .andWhere("tx.ownerId IN (:...ownerIds)", { ownerIds: params.ownerIds });
+    if (params.from)
+      qb.andWhere("tx.createdAt >= :from", { from: params.from });
+    if (params.to) qb.andWhere("tx.createdAt <= :to", { to: params.to });
+
+    const raw = await qb.groupBy("tx.referenceType").getRawMany();
+    const rows = raw
+      .map((r) => ({
+        referenceType: String(r.referenceType || "UNCATEGORIZED"),
+        count: Number(r.count) || 0,
+        total: Number(r.total) || 0,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    return {
+      total: rows.reduce((s, r) => s + r.total, 0),
+      count: rows.reduce((s, r) => s + r.count, 0),
+      rows,
+    };
+  }
+
+  /** Giao dịch mới nhất của một nhóm ví (ví nền tảng + quỹ dự phòng). */
+  async findTransactionsForOwners(params: {
+    ownerIds: string[];
+    type?: string;
+    from?: string;
+    to?: string;
+    take: number;
+  }): Promise<WalletTransactionEntity[]> {
+    if (!Array.isArray(params.ownerIds) || params.ownerIds.length === 0) {
+      return [];
+    }
+
+    const qb = this.txRepo
+      .createQueryBuilder("tx")
+      .where("tx.ownerId IN (:...ownerIds)", { ownerIds: params.ownerIds });
+    if (params.type) qb.andWhere("tx.type = :type", { type: params.type });
+    if (params.from)
+      qb.andWhere("tx.createdAt >= :from", { from: params.from });
+    if (params.to) qb.andWhere("tx.createdAt <= :to", { to: params.to });
+
+    return qb
+      .orderBy("tx.createdAt", "DESC")
+      .take(Math.min(Math.max(1, params.take), 1000))
+      .getMany();
+  }
+
+  /**
+   * Giao dịch của **mọi chủ ví** theo `referenceType` — dùng cho sổ thu nợ
+   * (`DEBIT CLAWBACK_RECOVERY` ở ví bên nợ, `CREDIT DEBT_RECOVERY` ở ví nền tảng).
+   */
+  async findTransactionsByReferenceType(params: {
+    referenceType: string;
+    type?: string;
+    from?: string;
+    to?: string;
+    take: number;
+  }): Promise<WalletTransactionEntity[]> {
+    const qb = this.txRepo
+      .createQueryBuilder("tx")
+      .where("tx.referenceType = :referenceType", {
+        referenceType: params.referenceType,
+      });
+    if (params.type) qb.andWhere("tx.type = :type", { type: params.type });
+    if (params.from)
+      qb.andWhere("tx.createdAt >= :from", { from: params.from });
+    if (params.to) qb.andWhere("tx.createdAt <= :to", { to: params.to });
+
+    return qb
+      .orderBy("tx.createdAt", "DESC")
+      .take(Math.min(Math.max(1, params.take), 1000))
+      .getMany();
+  }
+
+  /**
+   * Sổ thu chi ví tài xế: danh sách giao dịch + tổng theo loại + tổng theo
+   * từng tài xế (để admin thấy ngay ai đang bị trừ nhiều nhất).
+   */
+  async getDriverLedger(params: {
+    ownerId?: string;
+    type?: string;
+    search?: string;
+    from?: string;
+    to?: string;
+    take: number;
+  }): Promise<{
+    items: WalletTransactionEntity[];
+    totals: { credit: number; debit: number; revenue: number; count: number };
+    byDriver: {
+      ownerId: string;
+      credit: number;
+      debit: number;
+      revenue: number;
+      count: number;
+    }[];
+  }> {
+    const scoped = () => {
+      const qb = this.txRepo
+        .createQueryBuilder("tx")
+        .where("tx.ownerType = :ownerType", { ownerType: "DRIVER" });
+      if (params.ownerId)
+        qb.andWhere("tx.ownerId = :ownerId", { ownerId: params.ownerId });
+      if (params.type) qb.andWhere("tx.type = :type", { type: params.type });
+      if (params.search)
+        qb.andWhere("tx.description ILIKE :search", {
+          search: `%${params.search}%`,
+        });
+      if (params.from)
+        qb.andWhere("tx.createdAt >= :from", { from: params.from });
+      if (params.to) qb.andWhere("tx.createdAt <= :to", { to: params.to });
+      return qb;
+    };
+
+    const items = await scoped()
+      .orderBy("tx.createdAt", "DESC")
+      .take(Math.min(Math.max(1, params.take), 1000))
+      .getMany();
+
+    const byType = await scoped()
+      .select("tx.type", "txType")
+      .addSelect("COALESCE(SUM(tx.amount), 0)", "total")
+      .addSelect("COUNT(*)", "count")
+      .groupBy("tx.type")
+      .getRawMany();
+
+    const totals = { credit: 0, debit: 0, revenue: 0, count: 0 };
+    for (const row of byType) {
+      const total = Number(row.total) || 0;
+      const count = Number(row.count) || 0;
+      const kind = String(row.txType || "").toUpperCase();
+      if (kind === "CREDIT") totals.credit += total;
+      else if (kind === "REVENUE") totals.revenue += total;
+      else totals.debit += total;
+      totals.count += count;
+    }
+
+    const perDriver = await scoped()
+      .select("tx.ownerId", "ownerId")
+      .addSelect("tx.type", "txType")
+      .addSelect("COALESCE(SUM(tx.amount), 0)", "total")
+      .addSelect("COUNT(*)", "count")
+      .groupBy("tx.ownerId")
+      .addGroupBy("tx.type")
+      .getRawMany();
+
+    const driverMap = new Map<
+      string,
+      { credit: number; debit: number; revenue: number; count: number }
+    >();
+    for (const row of perDriver) {
+      const ownerId = String(row.ownerId || "");
+      if (!ownerId) continue;
+      const acc = driverMap.get(ownerId) ?? {
+        credit: 0,
+        debit: 0,
+        revenue: 0,
+        count: 0,
+      };
+      const total = Number(row.total) || 0;
+      const kind = String(row.txType || "").toUpperCase();
+      if (kind === "CREDIT") acc.credit += total;
+      else if (kind === "REVENUE") acc.revenue += total;
+      else acc.debit += total;
+      acc.count += Number(row.count) || 0;
+      driverMap.set(ownerId, acc);
+    }
+
+    const byDriver = [...driverMap.entries()]
+      .map(([ownerId, v]) => ({ ownerId, ...v }))
+      .sort((a, b) => b.revenue + b.debit - (a.revenue + a.debit));
+
+    return { items, totals, byDriver };
+  }
+
   toDomain(entity: WalletEntity): Wallet {
     return Wallet.create({
       id: entity.id,

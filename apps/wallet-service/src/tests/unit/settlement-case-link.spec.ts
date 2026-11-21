@@ -125,6 +125,13 @@ describe("SettlementRepository — dấu vết case trên dòng escrow", () => {
     );
     // Dòng bị giữ rồi mở khoá vẫn phải nằm trong cửa sổ của ngày phán quyết.
     expect(sql.match(/COALESCE/g)?.length).toBe(2);
+    // `settleOn` là mốc ĐÓNG: `releaseSettlement` đóng dấu 23:00 của ngày phán
+    // quyết = đúng biên `:end` ⇒ phải so `<=`, nếu không dòng vừa giải toả bị
+    // preview bỏ sót (cron vẫn trả tiền vì dùng findAllPending).
+    expect(sql).toContain('e."settleOn" <= :end');
+    expect(sql).toContain(
+      '(e."settleOn" IS NULL AND COALESCE(e."deliveredAt", e."createdAt") < :end)',
+    );
   });
 });
 

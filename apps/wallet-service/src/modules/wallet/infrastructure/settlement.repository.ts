@@ -229,8 +229,15 @@ export class SettlementRepository {
           'COALESCE(e."settleOn", e."deliveredAt", e."createdAt") >= :start',
           { start },
         )
+        // `settleOn` là mốc **đóng** của cửa sổ: `releaseSettlement` đóng dấu
+        // 23:00 giờ VN của ngày phán quyết — đúng bằng biên `:end`. Vì vậy phải
+        // so sánh `<=`, nếu không dòng vừa được giải toả (settleOn == end) sẽ
+        // rơi ra ngoài và lô chạy theo period/preview bỏ sót nó.
+        // `deliveredAt`/`createdAt` vẫn nửa mở (`< :end`) để cửa sổ không chồng
+        // lấn giữa hai ngày.
         .andWhere(
-          'COALESCE(e."settleOn", e."deliveredAt", e."createdAt") < :end',
+          '((e."settleOn" IS NOT NULL AND e."settleOn" <= :end) OR ' +
+            '(e."settleOn" IS NULL AND COALESCE(e."deliveredAt", e."createdAt") < :end))',
           { end },
         )
         .orderBy('e."createdAt"', "ASC")
@@ -269,6 +276,48 @@ export class SettlementRepository {
       where: { ownerId, ownerType, status: "PENDING" },
       order: { createdAt: "ASC" },
     });
+  }
+
+  /**
+   * Các dòng escrow đã được quyết toán trong một lô — dùng để dựng lại bảng
+   * quyết toán **theo đơn** khi admin mở chi tiết lô trong lịch sử.
+   */
+  async findEntriesByBatchId(
+    batchId: string,
+  ): Promise<SettlementEntryEntity[]> {
+    return this.entryRepo.find({
+      where: { settlementBatchId: batchId },
+      order: { createdAt: "ASC" },
+    });
+  }
+
+  /**
+   * Tổng nợ clawback đã thu trong một lô, kê theo chủ ví.
+   *
+   * Bút toán thu hồi không mang `settlementBatchId` (chỉ có `clawback_deductions`
+   * mới biết nguồn tiền: `referenceType = 'SETTLEMENT'`, `referenceId = batchId`),
+   * nên phải join sang `clawback_liabilities` để lấy owner. Nhờ đó màn chi tiết
+   * lô hiển thị đúng "nợ đã thu" lịch sử, không phải số ước tính.
+   */
+  async sumSettlementDeductionsByOwner(
+    batchId: string,
+  ): Promise<{ ownerId: string; ownerType: string; amount: number }[]> {
+    const rows = await this.deductionRepo
+      .createQueryBuilder("d")
+      .innerJoin(ClawbackLiabilityEntity, "c", 'c.id = d."clawbackId"')
+      .select('c."ownerId"', "ownerId")
+      .addSelect('c."ownerType"', "ownerType")
+      .addSelect("SUM(d.amount)", "amount")
+      .where('d."referenceType" = :type', { type: "SETTLEMENT" })
+      .andWhere('d."referenceId" = :batchId', { batchId })
+      .groupBy('c."ownerId"')
+      .addGroupBy('c."ownerType"')
+      .getRawMany();
+    return (rows || []).map((r) => ({
+      ownerId: r.ownerId,
+      ownerType: r.ownerType,
+      amount: Number(r.amount) || 0,
+    }));
   }
 
   // ─────────────── Settlement batches ───────────────
@@ -385,6 +434,105 @@ export class SettlementRepository {
    * Danh sách chủ ví đang có nợ (OPEN/PARTIAL) kèm tổng nợ — nguồn cho cron
    * quét 30 phút để thu hồi các khoản nợ mà ví đã đủ tiền.
    */
+  /**
+   * Tổng hợp khoản nợ clawback của **mọi chủ ví** — cơ sở cho cột "cho mượn để
+   * bồi thường" ở trang Ví nền tảng.
+   *
+   * Nền tảng ứng tiền trả bên bị hại trước, bên vi phạm ghi nợ `clawback_liabilities`;
+   * vì vậy `originalAmount` = số đã ứng, `remainingAmount` = số còn phải thu.
+   */
+  async summarizeClawbacks(params: { from?: string; to?: string }): Promise<{
+    totalOriginal: number;
+    totalRemaining: number;
+    totalCount: number;
+    openRemaining: number;
+    openCount: number;
+    settledCount: number;
+    byCategory: {
+      category: string;
+      count: number;
+      original: number;
+      remaining: number;
+      openRemaining: number;
+    }[];
+  }> {
+    const qb = this.clawbackRepo
+      .createQueryBuilder("c")
+      .select(`COALESCE(c."category", 'UNCATEGORIZED')`, "category")
+      .addSelect("COUNT(*)", "count")
+      .addSelect('COALESCE(SUM(c."originalAmount"), 0)', "original")
+      .addSelect('COALESCE(SUM(c."remainingAmount"), 0)', "remaining")
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN c.status IN ('OPEN','PARTIAL') THEN c."remainingAmount" ELSE 0 END), 0)`,
+        "openRemaining",
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE c.status IN ('OPEN','PARTIAL') AND c."remainingAmount" > 0)`,
+        "openCount",
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE c.status = 'SETTLED')`,
+        "settledCount",
+      );
+    if (params.from)
+      qb.andWhere('c."createdAt" >= :from', { from: params.from });
+    if (params.to) qb.andWhere('c."createdAt" <= :to', { to: params.to });
+
+    const raw = await qb.groupBy('c."category"').getRawMany();
+    const byCategory = raw
+      .map((r) => ({
+        category: String(r.category || "UNCATEGORIZED"),
+        count: Number(r.count) || 0,
+        original: Number(r.original) || 0,
+        remaining: Number(r.remaining) || 0,
+        openRemaining: Number(r.openRemaining) || 0,
+        openCount: Number(r.openCount) || 0,
+        settledCount: Number(r.settledCount) || 0,
+      }))
+      .sort((a, b) => b.openRemaining - a.openRemaining);
+
+    const sum = (pick: (r: (typeof byCategory)[number]) => number) =>
+      byCategory.reduce((s, r) => s + pick(r), 0);
+
+    return {
+      totalOriginal: sum((r) => r.original),
+      totalRemaining: sum((r) => r.remaining),
+      totalCount: sum((r) => r.count),
+      openRemaining: sum((r) => r.openRemaining),
+      openCount: sum((r) => r.openCount),
+      settledCount: sum((r) => r.settledCount),
+      byCategory: byCategory.map((r) => ({
+        category: r.category,
+        count: r.count,
+        original: r.original,
+        remaining: r.remaining,
+        openRemaining: r.openRemaining,
+      })),
+    };
+  }
+
+  /** Danh sách khoản nợ clawback (mới nhất trước) cho sổ "cho mượn bồi thường". */
+  async listClawbacks(params: {
+    statuses?: string[];
+    from?: string;
+    to?: string;
+    take?: number;
+  }): Promise<ClawbackLiabilityEntity[]> {
+    const qb = this.clawbackRepo.createQueryBuilder("c");
+    if (params.statuses?.length)
+      qb.andWhere("c.status IN (:...statuses)", {
+        statuses: params.statuses,
+      });
+    if (params.from)
+      qb.andWhere('c."createdAt" >= :from', { from: params.from });
+    if (params.to) qb.andWhere('c."createdAt" <= :to', { to: params.to });
+
+    return qb
+      .orderBy('c."createdAt"', "DESC")
+      .take(Math.min(Math.max(1, params.take ?? 100), 500))
+      .getMany();
+  }
+
   async listOpenDebtOwners(
     limit = 200,
   ): Promise<{ ownerId: string; ownerType: string; total: number }[]> {

@@ -324,3 +324,117 @@ describe("decideCaseMoney — bồi thường theo số THỰC TRẢ", () => {
     expect(d.amount).toBe(50000);
   });
 });
+
+/**
+ * Thiếu/sai/hỏng MỘT PHẦN món: khách vẫn dùng được phần còn lại nên KHÔNG được
+ * hoàn cả đơn — chỉ chuyển đúng giá trị phần món bị lỗi từ ví bên lỗi
+ * (`ITEM_COMPENSATION`). Đây là mức RS-C1 trong `test/2-test-cases/TC-RESOLUTION.md`.
+ */
+describe("decideCaseMoney — bồi thường theo GIÁ TRỊ MÓN", () => {
+  // Đơn thực tế: món 100.000đ + ship 20.000đ + phí dịch vụ 6.038đ = 126.038đ.
+  const realOrder = {
+    status: "DELIVERED",
+    subtotal: 100000,
+    deliveryFee: 20000,
+    serviceFee: 6038,
+    discount: 0,
+    totalAmount: 126038,
+  };
+
+  it("MISSING_ITEM nhập 40.000đ: bồi thường đúng 40.000đ, KHÔNG hoàn 126.038đ", () => {
+    const d = decideCaseMoney({
+      ...base,
+      faultParty: FaultParty.MERCHANT,
+      category: CaseCategory.MISSING_ITEM,
+      order: realOrder,
+      requestedAmount: 40000,
+    });
+
+    expect(d.mode).toBe("ITEM_COMPENSATION");
+    expect(d.amount).toBe(40000);
+    expect(d.amount).not.toBe(126038);
+    expect(d.paidBasis?.itemPaid).toBe(100000);
+    expect(d.reason).toContain("40000");
+  });
+
+  it("yêu cầu vượt tiền món: coi như khách mất cả đơn ⇒ hoàn đúng tổng thực trả", () => {
+    const d = decideCaseMoney({
+      ...base,
+      category: CaseCategory.MISSING_ITEM,
+      order: realOrder,
+      requestedAmount: 500000,
+    });
+
+    expect(d.mode).toBe("ITEM_COMPENSATION");
+    expect(d.amount).toBe(126038);
+  });
+
+  it("bỏ trống số tiền: giữ nguyên chính sách hoàn 100% (không âm thầm trả thiếu)", () => {
+    const d = decideCaseMoney({
+      ...base,
+      category: CaseCategory.MISSING_ITEM,
+      order: realOrder,
+    });
+
+    expect(d.mode).toBe("FULL_REFUND");
+    expect(d.amount).toBe(126038);
+  });
+
+  it("số tiền yêu cầu không áp dụng cho danh mục phải hoàn cả đơn (NOT_RECEIVED)", () => {
+    const d = decideCaseMoney({
+      ...base,
+      category: CaseCategory.NOT_RECEIVED,
+      order: realOrder,
+      requestedAmount: 40000,
+    });
+
+    expect(d.mode).toBe("FULL_REFUND");
+    expect(d.amount).toBe(126038);
+  });
+
+  it("đơn có khuyến mãi: trần là TIỀN MÓN thực trả, không phải giá niêm yết", () => {
+    const discounted = {
+      status: "DELIVERED",
+      subtotal: 60000,
+      deliveryFee: 20000,
+      serviceFee: 0,
+      discount: 30000,
+      totalAmount: 50000,
+    };
+
+    // ship nhận 7.500đ khuyến mãi ⇒ món nhận 22.500đ ⇒ khách thực trả món 37.500đ.
+    const withinCap = decideCaseMoney({
+      ...base,
+      category: CaseCategory.WRONG_ITEM,
+      order: discounted,
+      requestedAmount: 30000,
+    });
+    expect(withinCap.mode).toBe("ITEM_COMPENSATION");
+    expect(withinCap.amount).toBe(30000);
+
+    const overCap = decideCaseMoney({
+      ...base,
+      category: CaseCategory.WRONG_ITEM,
+      order: discounted,
+      requestedAmount: 45000,
+    });
+    // 45.000đ ≥ tiền món thực trả 37.500đ ⇒ hoàn toàn bộ 50.000đ khách đã trả.
+    expect(overCap.mode).toBe("ITEM_COMPENSATION");
+    expect(overCap.amount).toBe(50000);
+  });
+
+  it("bên khiếu nại không phải khách: không bồi thường theo giá trị món", () => {
+    const d = decideCaseMoney({
+      ...base,
+      reporterType: "DRIVER",
+      category: CaseCategory.DAMAGED_ITEM,
+      order: realOrder,
+      requestedAmount: 40000,
+    });
+
+    // Tiền món chỉ được trả lại cho KHÁCH của đơn; tài xế/nhà hàng khiếu nại
+    // không được hưởng khoản này (nhánh xử lý của họ là chính sách sẵn có).
+    expect(d.mode).not.toBe("ITEM_COMPENSATION");
+    expect(d.amount).not.toBe(40000);
+  });
+});

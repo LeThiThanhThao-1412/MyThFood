@@ -311,6 +311,53 @@ describe("WalletService.settleCaseCompensation — bồi thường phí ship", (
     expect(platformCredit).toBe(SHIP_FEE);
   });
 
+  it("ví tài xế thiếu tiền: nền tảng ứng phần thiếu bằng DEBIT CLAWBACK_ADVANCE", async () => {
+    const h = buildHarness({
+      balances: {
+        [`DRIVER:${DRIVER}`]: 5000,
+        "PLATFORM:PLATFORM_DEFAULT": 100000,
+      },
+    });
+
+    const result = await h.service.settleCaseCompensation({ ...baseInput });
+    const shortfall = SHIP_FEE - 5000;
+
+    expect(result.charged).toBe(5000);
+    expect(result.clawback).toBe(shortfall);
+
+    // Tiền ứng là bút toán thật trên ví nền tảng, gắn với đúng khoản nợ clawback.
+    const advances = h.txs.filter(
+      (t) =>
+        t.ownerId === "PLATFORM_DEFAULT" &&
+        t.type === "DEBIT" &&
+        t.referenceType === "CLAWBACK_ADVANCE",
+    );
+    expect(advances).toHaveLength(1);
+    expect(advances[0].amount).toBe(shortfall);
+    expect(advances[0].referenceId).toBe(h.clawbacks[0].id);
+
+    // Ví nền tảng: +5.000 thu từ tài xế, −16.862 ứng cho khách.
+    expect(h.balance("PLATFORM", "PLATFORM_DEFAULT")).toBe(
+      100000 + 5000 - shortfall,
+    );
+  });
+
+  it("ví tài xế đủ tiền: không phát sinh bút toán ứng từ ví nền tảng", async () => {
+    const h = buildHarness({
+      balances: {
+        [`DRIVER:${DRIVER}`]: 69990,
+        "PLATFORM:PLATFORM_DEFAULT": 100000,
+      },
+    });
+
+    await h.service.settleCaseCompensation({ ...baseInput });
+
+    expect(
+      h.txs.filter((t) => t.referenceType === "CLAWBACK_ADVANCE"),
+    ).toHaveLength(0);
+    expect(h.balance("PLATFORM", "PLATFORM_DEFAULT")).toBe(100000 + SHIP_FEE);
+  });
+
   it("case thứ hai trên cùng đơn: bỏ qua để không trả khách hai lần", async () => {
     const h = buildHarness({ balances: { [`DRIVER:${DRIVER}`]: 69990 } });
 

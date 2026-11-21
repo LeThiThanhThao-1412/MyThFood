@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository as TypeOrmRepo } from "typeorm";
 import { v4 as uuid } from "uuid";
@@ -58,7 +58,9 @@ export class CaseRepository {
   async findByIdOrFail(id: string): Promise<Case> {
     const entity = await this.repo.findOne({ where: { id } });
     if (!entity) {
-      throw new Error(`Case ${id} not found`);
+      // `NotFoundException` để client nhận 404 (trước đây ném `Error` trần ⇒
+      // rơi vào 500 “Internal server error”, admin tưởng hệ thống hỏng).
+      throw new NotFoundException(`Case ${id} not found`);
     }
     return this.toDomain(entity);
   }

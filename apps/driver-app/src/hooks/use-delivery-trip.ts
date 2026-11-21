@@ -43,6 +43,7 @@ import {
   unwrap,
 } from "@/lib/delivery-flow";
 import { DEFAULT_SIM_SPEED_KMH, gpsSimulator } from "@/lib/gps-simulator";
+import { driverEarningOf } from "@/lib/order-money";
 
 export interface TripMapMarker extends LatLng {
   label: string;
@@ -413,8 +414,8 @@ export function useDeliveryTrip(orderId?: string | null) {
     ],
   );
 
-  /** Phí ship tài xế thực nhận (80% — 20% hoa hồng nền tảng). */
-  const driverEarning = Math.round(toNum(order?.deliveryFee, 15000) * 0.8);
+  /** Phí ship tài xế thực nhận (80% — 20% hoa hồng nền tảng, khớp sổ ví). */
+  const driverEarning = driverEarningOf(order);
 
   // ---- Mô phỏng GPS: điều khiển chạy/dừng ----
 

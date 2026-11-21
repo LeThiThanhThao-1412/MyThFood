@@ -95,4 +95,17 @@ export class PenaltyController {
       data: await this.penaltyService.waive(id, req.user),
     };
   }
+
+  /**
+   * Thi hành lại hình phạt EXECUTION_FAILED (ví/khoá tài khoản tạm lỗi).
+   * Bút toán ví dùng lại `referenceId = penalty.id` nên không trừ tiền 2 lần.
+   */
+  @Post(":id/retry")
+  @Roles("ADMIN")
+  async retry(@Param("id") id: string, @Req() req: any) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.penaltyService.retry(id, req.user),
+    };
+  }
 }

@@ -51,13 +51,150 @@ const PENALTY_STATUS_BADGE: Record<string, string> = {
 
 const PENALTY_TYPE_LABEL: Record<string, string> = {
   WARNING: "⚠️ Cảnh cáo",
-  FINE: "💰 Phạt tiền",
-  COMPENSATION: "🤝 Bồi thường",
-  SUSPEND: "⏸️ Tạm khóa",
-  BAN: "🚫 Khóa vĩnh viễn",
+  FINE: "💰 Phạt tiền (nộp quỹ dự phòng)",
+  COMPENSATION: "🤝 Bồi thường cho khách",
+  SUSPEND: "⏸️ Tạm khoá tài khoản",
+  BAN: "🚫 Khoá vĩnh viễn",
   REPUTATION_DEDUCTION: "⭐ Trừ điểm uy tín",
   RESTRICT_ACTIVITY: "🔒 Hạn chế hoạt động",
 };
+
+/** Nhãn tiếng Việt cho trạng thái hình phạt (thay vì hiện mã enum). */
+const PENALTY_STATUS_LABEL: Record<string, string> = {
+  ISSUED: "Vừa ban hành",
+  EXECUTING: "Đang thi hành",
+  EXECUTED: "Đã thi hành",
+  EXECUTION_FAILED: "Thi hành lỗi",
+  APPEALED: "Đang kháng nghị",
+  UPHELD: "Giữ nguyên",
+  OVERTURNED: "Đã huỷ",
+  WAIVED: "Được miễn",
+};
+
+/** Ví nào bị trừ khi bồi thường/ phạt (hiển thị trong phần xem trước). */
+const WALLET_OF_FAULT: Record<string, string> = {
+  CUSTOMER: "ví khách hàng",
+  MERCHANT: "ví nhà hàng",
+  DRIVER: "ví tài xế",
+  SYSTEM: "quỹ nền tảng",
+};
+
+/**
+ * Chế tài admin chọn tay ở bước ④ của khung “Xử lý vụ việc”.
+ *
+ * - `WARNING` / `COMPENSATION` do luồng phán quyết VALID tự ghi
+ *   (`recordResolutionPenalties`) ⇒ đưa vào form sẽ tạo bản ghi trùng.
+ * - `RESTRICT_ACTIVITY` chưa được service nào thi hành ⇒ chọn xong không có
+ *   tác dụng gì, dễ khiến admin tưởng đã xử lý.
+ */
+/**
+ * Danh mục bồi thường theo GIÁ TRỊ MÓN (khớp `PARTIAL_ITEM_CATEGORIES` ở
+ * resolution-service): khách chỉ thiếu/sai/hỏng một phần món nên không được
+ * hoàn cả đơn — admin chọn số tiền bồi thường, ví chuyển đúng phần đó từ bên lỗi.
+ */
+const ITEM_COMPENSATION_CATEGORIES = [
+  "MISSING_ITEM",
+  "WRONG_ITEM",
+  "DAMAGED_ITEM",
+];
+
+const MANUAL_PENALTY_TYPES: readonly string[] = [
+  "FINE",
+  "SUSPEND",
+  "BAN",
+  "REPUTATION_DEDUCTION",
+];
+
+const PENALTY_TYPE_HINT: Record<string, string> = {
+  FINE: "Trừ tiền trong ví của bên bị phạt",
+  SUSPEND: "Khoá tài khoản tạm thời theo số ngày",
+  BAN: "Khoá vĩnh viễn tài khoản",
+  REPUTATION_DEDUCTION: "Trừ điểm uy tín (chỉ tài xế)",
+};
+
+/** Chế tài cần nhập số tiền/điểm. */
+function penaltyNeedsAmount(type: string): boolean {
+  return type === "FINE" || type === "REPUTATION_DEDUCTION";
+}
+
+/** Chế tài cần nhập số ngày khoá. */
+function penaltyNeedsDays(type: string): boolean {
+  return type === "SUSPEND";
+}
+
+type PenaltyTargetKey = "RESPONDENT" | "REPORTER";
+
+interface PenaltyTargetOption {
+  key: PenaltyTargetKey;
+  id: string;
+  type: string;
+  label: string;
+}
+
+/** Các bên có thể bị xử phạt trong vụ việc (bỏ SYSTEM / không xác định). */
+function penaltyTargets(c: any): PenaltyTargetOption[] {
+  const options: PenaltyTargetOption[] = [];
+  const add = (key: PenaltyTargetKey, id?: string, type?: string) => {
+    const targetType = String(type || "").toUpperCase();
+    if (!id || !targetType || targetType === "SYSTEM") return;
+    const who = ACTOR_LABEL[targetType] || targetType;
+    const suffix =
+      key === "RESPONDENT" ? "bên bị khiếu nại" : "người khiếu nại";
+    options.push({ key, id, type: targetType, label: `${who} (${suffix})` });
+  };
+  add("RESPONDENT", c?.respondentId, c?.respondentType);
+  add("REPORTER", c?.reporterId, c?.reporterType);
+  return options;
+}
+
+/** Form chế tài mặc định: bên bị khiếu nại, phạt tiền, chưa nhập gì. */
+function emptyPenaltyForm(c?: any) {
+  const hasRespondent =
+    !!c?.respondentId &&
+    String(c?.respondentType || "").toUpperCase() !== "SYSTEM";
+  return {
+    type: "FINE",
+    target: (hasRespondent || !c ? "RESPONDENT" : "REPORTER") as PenaltyTargetKey,
+    amount: "",
+    durationDays: "",
+    reason: "",
+  };
+}
+
+/**
+ * Vụ việc có thể xử lý / ban hành chế tài từ drawer này không?
+ *
+ * `needsVerdict` = chưa có phán quyết VALID ⇒ nút chốt phải chạy thêm bước
+ * `/cases/:id/resolve` (phán quyết + bồi thường/cảnh cáo tự động).
+ */
+function penaltyEligibility(c: any): {
+  ok: boolean;
+  needsVerdict: boolean;
+  reason?: string;
+} {
+  if (!c) return { ok: false, needsVerdict: false, reason: "Chưa chọn vụ việc" };
+  const status = c.status;
+  const verdict = c.verdict;
+  if (status === "RESOLVED" && verdict === "VALID") {
+    return { ok: true, needsVerdict: false };
+  }
+  if (["REJECTED", "CLOSED", "WITHDRAWN"].includes(status)) {
+    return {
+      ok: false,
+      needsVerdict: false,
+      reason: "Vụ việc đã kết thúc — không thể phán quyết hợp lệ nữa",
+    };
+  }
+  if (status === "RESOLVED") {
+    return {
+      ok: false,
+      needsVerdict: false,
+      reason:
+        "Vụ việc đã phán quyết không hợp lệ (INVALID) — không thể ban hành hình phạt",
+    };
+  }
+  return { ok: true, needsVerdict: true };
+}
 
 const CATEGORY_LABEL: Record<string, string> = {
   ORDER_QUALITY: "Chất lượng món",
@@ -141,6 +278,16 @@ function formatVnd(n: unknown): string {
   return (Number(n) || 0).toLocaleString("vi-VN") + "₫";
 }
 
+/** Giá trị một dòng món trong đơn (đã nhân số lượng). */
+function itemValue(item: any): number {
+  return Math.round(
+    Number(
+      item?.subtotal ??
+        Number(item?.unitPrice || 0) * Number(item?.quantity || 1),
+    ) || 0,
+  );
+}
+
 function timeAgo(s?: string): string {
   if (!s) return "-";
   const diff = Math.floor((Date.now() - new Date(s).getTime()) / 60000);
@@ -198,16 +345,39 @@ export default function AdminCasesPage() {
   });
   const [showCreate, setShowCreate] = useState(false);
 
-  const [penaltyForm, setPenaltyForm] = useState({
-    type: "FINE",
-    amount: "",
-    durationDays: "",
-    reason: "",
-  });
-  const [showPenalty, setShowPenalty] = useState(false);
+  const [penaltyForm, setPenaltyForm] = useState(() => emptyPenaltyForm());
+  /**
+   * Kết luận admin đang chọn ở Bước 1 (`""` = chưa chọn ⇒ chưa cho chốt).
+   * Trước đây mỗi kết luận là một nút riêng nằm cạnh panel chế tài nên admin
+   * không biết bấm nút nào trước; nay là lựa chọn duy nhất của một quy trình.
+   */
+  const [verdictPick, setVerdictPick] = useState<
+    "" | "VALID" | "INVALID" | "INCONCLUSIVE"
+  >("");
+  /** Bật/tắt bước “phạt thêm” (mặc định tắt: không phạt ai là lựa chọn an toàn). */
+  const [addPenalty, setAddPenalty] = useState(false);
+  /** Món đang được tính vào tiền bồi thường (index trong `selectedOrder.items`). */
+  const [compItems, setCompItems] = useState<number[]>([]);
+  /** `ITEM` = bồi thường phần món bị lỗi; `FULL` = hoàn 100% đơn. */
+  const [compMode, setCompMode] = useState<"ITEM" | "FULL">("ITEM");
+  /** Đang gọi API phán quyết/thi hành — chặn double-click (tránh phạt 2 lần). */
+  const [penaltyBusy, setPenaltyBusy] = useState(false);
+  /**
+   * Phản hồi hiển thị NGAY TRONG drawer.
+   *
+   * `msg` cấp trang nằm sau drawer (`fixed z-40/z-50`) nên admin bấm “Thi hành
+   * ngay” xong không thấy gì — đây là lý do chính khiến luồng trông như “không
+   * hoạt động”.
+   */
+  const [penaltyMsg, setPenaltyMsg] = useState("");
+  const [penaltyTone, setPenaltyTone] = useState<"ok" | "warn" | "error">("ok");
+  /** Hình phạt đang EXECUTION_FAILED để hiện nút “Thử lại thi hành”. */
+  const [failedPenaltyId, setFailedPenaltyId] = useState<string | null>(null);
   const [resolveForm, setResolveForm] = useState({
     faultParty: "",
     note: "",
+    /** Số tiền bồi thường cho phần món bị thiếu/sai/hỏng (chuỗi số, rỗng = hoàn cả đơn). */
+    compensation: "",
   });
 
   const [penalties, setPenalties] = useState<any[]>([]);
@@ -295,16 +465,30 @@ export default function AdminCasesPage() {
     }
   }
 
-  async function openCase(c: any) {
+  async function openCase(c: any, opts?: { keepPenaltyMessage?: boolean }) {
     const token = ++openTokenRef.current;
     setSelected(c);
     setTimeline([]);
     setCasePenalties([]);
     setDeliveryProofUrl("");
     setSelectedOrder(null);
+    setPenaltyForm(emptyPenaltyForm(c));
+    // Mở vụ việc khác ⇒ xoá phản hồi cũ + đóng panel; giữ lại khi chỉ refresh
+    // sau một thao tác (để admin đọc được kết quả vừa bấm).
+    if (!opts?.keepPenaltyMessage) {
+      setPenaltyMsg("");
+      setFailedPenaltyId(null);
+    }
+    // Mỗi vụ việc bắt đầu lại từ Bước 1: không mang kết luận/món đã chọn của
+    // vụ trước sang (dễ chốt nhầm tiền cho người khác).
+    setVerdictPick("");
+    setAddPenalty(false);
+    setCompItems([]);
+    setCompMode("ITEM");
     setResolveForm({
       faultParty: RESPONDENT_TO_FAULT[c.respondentType] || "",
       note: "",
+      compensation: "",
     });
     try {
       const fresh: any = await resolutionApi.getCase(c.id);
@@ -351,6 +535,13 @@ export default function AdminCasesPage() {
   function closeCase() {
     openTokenRef.current += 1;
     setSelected(null);
+    setPenaltyMsg("");
+    setFailedPenaltyId(null);
+    setVerdictPick("");
+    setAddPenalty(false);
+    setCompItems([]);
+    setCompMode("ITEM");
+    setPenaltyForm(emptyPenaltyForm());
   }
 
   async function act(fn: () => Promise<any>, okMsg: string) {
@@ -428,52 +619,300 @@ export default function AdminCasesPage() {
     }
   }
 
-  async function handleIssuePenalty() {
-    if (!selected) return;
-    setMsg("");
+  /**
+   * Nút CHỐT duy nhất của khung “Xử lý vụ việc”.
+   *
+   * Một lần bấm thực hiện đúng những gì admin đã chọn:
+   *   ① kết luận (khách đúng / khách sai / chưa đủ căn cứ),
+   *   ② bên chịu lỗi + tiền trả khách (bồi thường phần món hoặc hoàn cả đơn),
+   *   ③ chế tài thêm (tuỳ chọn, mặc định không phạt ai).
+   *
+   * Vì sao gộp: backend chỉ cho ban hành hình phạt khi vụ việc đã RESOLVED
+   * (`penalty.service.ts`), nên trước đây admin phải bấm “Phán quyết” rồi mới
+   * bấm “Thi hành” — hai nút nằm hai chỗ, rất dễ bấm thiếu hoặc chọn nhầm.
+   *
+   * Phản hồi ghi vào `penaltyMsg` (render TRONG drawer) vì `msg` cấp trang bị
+   * drawer `fixed z-40/z-50` che khuất.
+   */
+  async function handleSubmitDecision() {
+    if (!selected || penaltyBusy) return;
+
+    const tone = (value: "ok" | "warn" | "error", message: string) => {
+      setPenaltyTone(value);
+      setPenaltyMsg(message);
+    };
+
+    const state = penaltyEligibility(selected);
+    if (!state.ok) {
+      tone("error", `❌ ${state.reason || "Vụ việc không thể xử lý"}`);
+      return;
+    }
+
+    const needsVerdict = state.needsVerdict;
+    const verdict = needsVerdict ? verdictPick : "VALID";
+    if (!verdict) {
+      tone("error", "❌ Bước ①: chọn kết luận của bạn trước khi chốt");
+      return;
+    }
+
+    const faultParty =
+      verdict === "INCONCLUSIVE" ? "INCONCLUSIVE" : resolveForm.faultParty;
+    if (needsVerdict && verdict === "VALID" && !faultParty) {
+      tone(
+        "error",
+        "❌ Bước ②: chọn bên chịu lỗi (người bị trừ tiền bồi thường)",
+      );
+      return;
+    }
+
+    // Tiền trả khách: chỉ áp dụng khi case chưa kết luận + danh mục món bị lỗi.
+    const itemMode =
+      needsVerdict && canPickItemCompensation && compMode === "ITEM";
+    const fullMode =
+      needsVerdict && canPickItemCompensation && compMode === "FULL";
+    if (verdict === "VALID" && itemMode && !(itemCompensation > 0)) {
+      tone(
+        "error",
+        "❌ Bước ③: chọn món bị lỗi, hoặc bấm “Hoàn cả đơn” nếu khách không dùng được gì",
+      );
+      return;
+    }
+    const requestedAmount = itemMode ? itemCompensation : 0;
+
+    // Chế tài thêm (tuỳ chọn) — chỉ có nghĩa khi kết luận khách đúng.
+    const wantPenalty = verdict === "VALID" && addPenalty;
+    const targets = penaltyTargets(selected);
+    const target =
+      targets.find((t) => t.key === penaltyForm.target) ?? targets[0];
+    const type = penaltyForm.type;
+    const amount = Number(penaltyForm.amount.replace(/[^\d]/g, ""));
+    const durationDays = Number(penaltyForm.durationDays.replace(/[^\d]/g, ""));
+    const penaltyReason =
+      penaltyForm.reason.trim() ||
+      resolveForm.note.trim() ||
+      selected.subject ||
+      `Xử lý vụ việc ${selected.id}`;
+
+    if (wantPenalty) {
+      if (!target) {
+        tone("error", "❌ Bước ④: vụ việc không có bên nào có thể bị xử phạt");
+        return;
+      }
+      if (type === "FINE" && !(amount > 0)) {
+        tone(
+          "error",
+          "❌ Bước ④: phạt tiền cần số tiền lớn hơn 0 (ví dụ: 50000)",
+        );
+        return;
+      }
+      if (type === "SUSPEND" && !(durationDays >= 1)) {
+        tone("error", "❌ Bước ④: tạm khoá cần số ngày >= 1");
+        return;
+      }
+      if (type === "REPUTATION_DEDUCTION") {
+        if (target.type !== "DRIVER") {
+          tone("error", "❌ Bước ④: chỉ trừ điểm uy tín của tài xế");
+          return;
+        }
+        if (!(amount > 0)) {
+          tone("error", "❌ Bước ④: cần số điểm uy tín cần trừ (> 0)");
+          return;
+        }
+      }
+    }
+
+    // Chuyển tiền là thao tác không hoàn tác ⇒ xác nhận lại đúng những gì
+    // khung “Sẽ thực hiện” đang liệt kê.
+    if (
+      typeof window !== "undefined" &&
+      verdict === "VALID" &&
+      decisionPlan.length > 0
+    ) {
+      const ok = window.confirm(
+        `Chốt vụ việc ${selected.caseNumber || selected.id}?\n\n${decisionPlan
+          .map((line) => `• ${line}`)
+          .join("\n")}\n\nTiền sẽ được chuyển ngay và không hoàn tác được.`,
+      );
+      if (!ok) return;
+    }
+
+    setPenaltyBusy(true);
+    setFailedPenaltyId(null);
+    setPenaltyMsg("");
+
+    let verdictDone = false;
     try {
-      await resolutionApi.issuePenalty({
-        caseId: selected.id,
-        type: penaltyForm.type,
-        targetId: selected.respondentId,
-        targetType: selected.respondentType,
-        amount: penaltyForm.amount ? Number(penaltyForm.amount) : undefined,
-        durationDays: penaltyForm.durationDays
-          ? Number(penaltyForm.durationDays)
-          : undefined,
-        reason: penaltyForm.reason || selected.subject,
-      });
-      setMsg("✅ Đã ban hành + thi hành hình phạt");
-      setShowPenalty(false);
+      if (needsVerdict) {
+        await resolutionApi.resolve(selected.id, {
+          verdict,
+          faultParty,
+          note:
+            resolveForm.note.trim() ||
+            `${VERDICT_LABEL[verdict] || verdict}${
+              wantPenalty ? ` + ${PENALTY_TYPE_LABEL[type] || type}` : ""
+            }`,
+          // Bồi thường phần món bị lỗi (nếu admin đã chọn) — độc lập với tiền phạt.
+          compensationAmount: requestedAmount > 0 ? requestedAmount : undefined,
+        });
+        verdictDone = true;
+      }
+
+      let executionError: string | null = null;
+      if (wantPenalty && target) {
+        const res: any = await resolutionApi.issuePenalty({
+          caseId: selected.id,
+          type,
+          targetId: target.id,
+          targetType: target.type,
+          amount: penaltyNeedsAmount(type) ? amount : undefined,
+          durationDays: penaltyNeedsDays(type) ? durationDays : undefined,
+          reason: penaltyReason,
+        });
+        executionError = res?.data?.executionError || null;
+        if (executionError) setFailedPenaltyId(res?.data?.id || null);
+      }
+
+      // Câu xác nhận đọc lại đúng việc đã làm, không dùng thuật ngữ nội bộ.
+      const done: string[] = [];
+      if (verdictDone) {
+        done.push(
+          verdict === "VALID"
+            ? "đã ghi kết luận khách đúng"
+            : verdict === "INVALID"
+              ? "đã bác khiếu nại của khách"
+              : "đã ghi chưa đủ căn cứ",
+        );
+      }
+      if (verdict === "VALID" && needsVerdict) {
+        done.push(
+          requestedAmount > 0
+            ? `trả khách ${formatVnd(requestedAmount)}`
+            : fullMode
+              ? "hoàn 100% đơn cho khách"
+              : "hoàn tiền cho khách theo chính sách danh mục",
+        );
+      }
+      if (wantPenalty) {
+        done.push(
+          `${PENALTY_TYPE_LABEL[type] || type} cho ${
+            target?.label || "bên bị xử phạt"
+          }${
+            penaltyNeedsAmount(type)
+              ? ` · ${amount.toLocaleString("vi-VN")}${
+                  type === "FINE" ? "₫" : " điểm"
+                }`
+              : ""
+          }${penaltyNeedsDays(type) ? ` · ${durationDays} ngày` : ""}`,
+        );
+      }
+
+      if (executionError) {
+        setPenaltyTone("warn");
+        setPenaltyMsg(
+          `⚠️ ${done.join(" · ")} — nhưng CHƯA thi hành được chế tài: ${executionError}`,
+        );
+      } else {
+        setPenaltyTone("ok");
+        setPenaltyMsg(`✅ Đã chốt: ${done.join(" · ")}.`);
+        setVerdictPick("");
+        setAddPenalty(false);
+        setCompItems([]);
+        setCompMode("ITEM");
+      }
+
+      await loadCases();
       await loadPenalties();
-      await openCase(selected);
+      await openCase(selected, { keepPenaltyMessage: true });
     } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Ban hành phạt thất bại"}`);
+      const detail = e?.message || "lỗi không rõ";
+      setPenaltyTone("error");
+      setPenaltyMsg(
+        verdictDone
+          ? `❌ Đã ghi kết luận nhưng ban hành chế tài thất bại: ${detail}. Vụ việc đã chuyển “Đã giải quyết” — bật “Phạt thêm bên có lỗi” rồi bấm chốt lại để thử tiếp.`
+          : `❌ Chốt vụ việc thất bại: ${detail}`,
+      );
+      await loadCases();
+      await openCase(selected, { keepPenaltyMessage: true });
+    } finally {
+      setPenaltyBusy(false);
     }
   }
 
-  async function resolveWithPenalty(verdict: string) {
-    if (!selected) return;
+  /** Thi hành lại hình phạt EXECUTION_FAILED (idempotent theo penalty.id). */
+  async function handleRetryPenalty(id: string) {
+    if (penaltyBusy) return;
+    setPenaltyBusy(true);
+    setFailedPenaltyId(null);
+    setPenaltyMsg("");
     setMsg("");
-    const faultParty =
-      verdict === "INCONCLUSIVE" ? "INCONCLUSIVE" : resolveForm.faultParty;
-    if (verdict !== "INCONCLUSIVE" && !faultParty) {
-      setMsg("❌ Chọn bên chịu lỗi trước khi phán quyết");
-      return;
-    }
     try {
-      await resolutionApi.resolve(selected.id, {
-        verdict,
-        note: resolveForm.note || undefined,
-        faultParty,
-      });
-      setMsg(`✅ Đã phán quyết: ${VERDICT_LABEL[verdict] || verdict}`);
-      await loadCases();
+      const res: any = await resolutionApi.retryPenalty(id);
+      const executionError = res?.data?.executionError;
+      if (executionError) {
+        setPenaltyTone("warn");
+        setPenaltyMsg(`⚠️ Vẫn chưa thi hành được: ${executionError}`);
+        setMsg(`⚠️ Vẫn chưa thi hành được hình phạt: ${executionError}`);
+        setFailedPenaltyId(res?.data?.id || id);
+      } else {
+        setPenaltyTone("ok");
+        setPenaltyMsg("✅ Đã thi hành lại hình phạt thành công");
+        setMsg("✅ Đã thi hành lại hình phạt thành công");
+      }
       await loadPenalties();
-      if (selected) await openCase(selected);
+      await loadCases();
+      if (selected) await openCase(selected, { keepPenaltyMessage: true });
     } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Phán quyết thất bại"}`);
+      const detail = e?.message || "lỗi không rõ";
+      setPenaltyTone("error");
+      setPenaltyMsg(`❌ Thi hành lại thất bại: ${detail}`);
+      setMsg(`❌ Thi hành lại thất bại: ${detail}`);
+    } finally {
+      setPenaltyBusy(false);
     }
+  }
+
+  /**
+   * Vụ việc có thể bồi thường THEO GIÁ TRỊ MÓN? (khớp `PARTIAL_ITEM_CATEGORIES`
+   * ở backend): khách khiếu nại thiếu/sai/hỏng một phần món trên đơn đã giao.
+   */
+  const canPickItemCompensation =
+    !!selected &&
+    String(selected.reporterType || "").toUpperCase() === "CONSUMER" &&
+    !!selected.orderId &&
+    ITEM_COMPENSATION_CATEGORIES.includes(String(selected.category || "")) &&
+    // Chỉ có hiệu lực ở lần phán quyết đầu tiên: case đã RESOLVED thì tiền đã
+    // được route, hiện ô nhập nữa chỉ gây hiểu nhầm là còn đổi được.
+    penaltyEligibility(selected).needsVerdict;
+
+  /** Số tiền bồi thường admin đang chọn (0 = chưa chọn món nào). */
+  const itemCompensation =
+    Number(resolveForm.compensation.replace(/[^\d]/g, "")) || 0;
+
+  /**
+   * Bật/tắt một món trong danh sách “món bị lỗi”.
+   *
+   * Trước đây nút “+ Bồi thường” cộng dồn nên bấm hai lần cùng một món là trả
+   * gấp đôi; nay là bật/tắt và ô tiền luôn bằng tổng các món đang bật.
+   */
+  function toggleItemCompensation(index: number) {
+    const items: any[] = selectedOrder?.items ?? [];
+    const next = compItems.includes(index)
+      ? compItems.filter((i) => i !== index)
+      : [...compItems, index];
+    setCompItems(next);
+    setCompMode("ITEM");
+    const sum = items.reduce(
+      (acc, it, i) => (next.includes(i) ? acc + itemValue(it) : acc),
+      0,
+    );
+    setResolveForm((f) => ({ ...f, compensation: sum > 0 ? String(sum) : "" }));
+  }
+
+  /** Admin tự nhập số tiền ⇒ bỏ chọn món để ô tiền không bị ghi đè. */
+  function setManualCompensation(raw: string) {
+    setCompItems([]);
+    setCompMode("ITEM");
+    setResolveForm((f) => ({ ...f, compensation: raw.replace(/[^\d]/g, "") }));
   }
 
   async function handleDetect() {
@@ -626,6 +1065,154 @@ export default function AdminCasesPage() {
     setFType("");
     setFSeverity("");
   }
+
+  // Giá trị dẫn xuất cho khung “Xử lý vụ việc” (rẻ, tính lại mỗi render).
+  const penaltyTargetList = selected ? penaltyTargets(selected) : [];
+  const eligibility = penaltyEligibility(selected);
+
+  /**
+   * Các giá trị dẫn xuất cho khung “Xử lý vụ việc”.
+   *
+   * Viết theo ngôn ngữ nghiệp vụ: admin đọc là biết ví ai bị trừ, ai nhận tiền,
+   * bấm nút thì chuyện gì xảy ra — thay cho các mã VALID/INVALID/COMPENSATION.
+   */
+  /** Case đã ở RESOLVED + VALID ⇒ chỉ còn ban hành thêm chế tài. */
+  const alreadyResolved = eligibility.ok && !eligibility.needsVerdict;
+  const verdictValue: "" | "VALID" | "INVALID" | "INCONCLUSIVE" =
+    alreadyResolved ? "VALID" : verdictPick;
+  /** Ví bị trừ theo bên chịu lỗi admin chọn. */
+  const walletLabel =
+    WALLET_OF_FAULT[resolveForm.faultParty] || "ví bên có lỗi";
+  const orderTotalText = selectedOrder?.totalAmount
+    ? formatVnd(selectedOrder.totalAmount)
+    : null;
+  const pickedItemTotal = (selectedOrder?.items ?? []).reduce(
+    (acc: number, it: any, i: number) =>
+      compItems.includes(i) ? acc + itemValue(it) : acc,
+    0,
+  );
+
+  /** Gạch đầu dòng “Sẽ thực hiện” — dùng cho xem trước và hộp thoại xác nhận. */
+  const decisionPlan: string[] = [];
+  if (alreadyResolved) {
+    decisionPlan.push(
+      "Vụ việc đã kết luận khách đúng — tiền đã được chuyển ở lần xử lý trước.",
+    );
+  } else if (!verdictPick) {
+    decisionPlan.push("Chọn kết luận ở Bước ① để xem trước kết quả.");
+  } else if (verdictPick === "INVALID") {
+    decisionPlan.push(
+      "Bác khiếu nại: khách không được hoàn tiền, không ai bị phạt.",
+    );
+  } else if (verdictPick === "INCONCLUSIVE") {
+    decisionPlan.push(
+      "Ghi chưa đủ căn cứ: đóng vụ việc, không hoàn tiền, không phạt.",
+    );
+  } else {
+    decisionPlan.push(
+      `Ghi kết luận: khách đúng — ${
+        FAULT_PARTY_LABEL[resolveForm.faultParty] || "bên có lỗi"
+      } chịu lỗi.`,
+    );
+    if (canPickItemCompensation) {
+      if (compMode === "FULL") {
+        decisionPlan.push(
+          `Hoàn 100% đơn${
+            orderTotalText ? ` (${orderTotalText})` : ""
+          } cho khách, trừ ${walletLabel}.`,
+        );
+      } else if (itemCompensation > 0) {
+        decisionPlan.push(
+          `Trả khách ${formatVnd(itemCompensation)}, trừ ${walletLabel}.`,
+        );
+      } else {
+        decisionPlan.push(
+          "Chưa chọn món bị lỗi ⇒ chưa biết số tiền trả khách.",
+        );
+      }
+    } else if (
+      String(selected?.reporterType || "").toUpperCase() !== "CONSUMER"
+    ) {
+      decisionPlan.push(
+        "Người khiếu nại không phải khách hàng ⇒ không hoàn tiền; chỉ ghi cảnh cáo/chế tài.",
+      );
+    } else {
+      decisionPlan.push(
+        "Tiền hoàn cho khách theo chính sách danh mục (có danh mục không hoàn tiền).",
+      );
+    }
+  }
+  if (verdictValue === "VALID" && addPenalty) {
+    const penaltyTargetLabel =
+      penaltyTargetList.find((t) => t.key === penaltyForm.target)?.label ||
+      "bên bị xử phạt";
+    const penaltyAmount = Number(penaltyForm.amount.replace(/[^\d]/g, "")) || 0;
+    const penaltyDays =
+      Number(penaltyForm.durationDays.replace(/[^\d]/g, "")) || 0;
+    if (penaltyForm.type === "FINE") {
+      decisionPlan.push(
+        penaltyAmount > 0
+          ? `Phạt ${penaltyTargetLabel}: trừ ${formatVnd(
+              penaltyAmount,
+            )} → quỹ dự phòng.`
+          : `Phạt tiền ${penaltyTargetLabel}: chưa nhập số tiền.`,
+      );
+    } else if (penaltyForm.type === "SUSPEND") {
+      decisionPlan.push(
+        penaltyDays > 0
+          ? `Tạm khoá ${penaltyTargetLabel} ${penaltyDays} ngày.`
+          : `Tạm khoá ${penaltyTargetLabel}: chưa nhập số ngày.`,
+      );
+    } else if (penaltyForm.type === "REPUTATION_DEDUCTION") {
+      decisionPlan.push(
+        penaltyAmount > 0
+          ? `Trừ ${penaltyAmount} điểm uy tín của ${penaltyTargetLabel}.`
+          : `Trừ điểm uy tín ${penaltyTargetLabel}: chưa nhập số điểm.`,
+      );
+    } else {
+      decisionPlan.push(`Khoá vĩnh viễn ${penaltyTargetLabel}.`);
+    }
+  }
+
+  /** Nhãn nút chốt — đọc lên là biết bấm xong chuyện gì xảy ra. */
+  const submitLabel = penaltyBusy
+    ? "⏳ Đang xử lý..."
+    : !verdictValue
+      ? "① Chọn kết luận để mở khoá nút này"
+      : verdictValue === "INVALID"
+        ? "❌ Chốt: bác khiếu nại của khách"
+        : verdictValue === "INCONCLUSIVE"
+          ? "❓ Chốt: chưa đủ căn cứ — đóng vụ việc"
+          : canPickItemCompensation
+            ? compMode === "FULL"
+              ? "✅ Chốt: khách đúng · hoàn 100% đơn"
+              : itemCompensation > 0
+                ? `✅ Chốt: khách đúng · trả khách ${formatVnd(
+                    itemCompensation,
+                  )}`
+                : "③ Chọn món bị lỗi hoặc “Hoàn cả đơn”"
+            : addPenalty
+              ? "✅ Chốt: khách đúng + thi hành chế tài"
+              : "✅ Chốt: khách đúng (chỉ cảnh cáo)";
+
+  /** Còn thiếu lựa chọn bắt buộc ⇒ khoá nút và nói rõ thiếu gì. */
+  const submitBlockedReason = !verdictValue
+    ? "Bước ①: chọn kết luận của bạn."
+    : verdictValue === "VALID" && !alreadyResolved && !resolveForm.faultParty
+      ? "Bước ②: chọn bên chịu lỗi."
+      : verdictValue === "VALID" &&
+          canPickItemCompensation &&
+          compMode === "ITEM" &&
+          !(itemCompensation > 0)
+        ? "Bước ③: chọn món bị lỗi (hoặc “Hoàn cả đơn”)."
+        : "";
+  const submitBlocked = penaltyBusy || submitBlockedReason !== "";
+
+  const PENALTY_TONE_CLASS: Record<"ok" | "warn" | "error", string> = {
+    ok: "bg-green-50 text-green-700 border-green-200",
+    warn: "bg-amber-50 text-amber-700 border-amber-200",
+    error: "bg-red-50 text-red-700 border-red-200",
+  };
 
   if (!isAuthenticated) return null;
 
@@ -1196,6 +1783,33 @@ export default function AdminCasesPage() {
                                     ? ` · ${item.specialInstructions}`
                                     : ""}
                                 </span>
+                                <span className="shrink-0 text-gray-500">
+                                  {formatVnd(
+                                    item.subtotal ??
+                                      Number(item.unitPrice || 0) *
+                                        Number(item.quantity || 1),
+                                  )}
+                                </span>
+                                {canPickItemCompensation && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleItemCompensation(i)}
+                                    title={
+                                      compItems.includes(i)
+                                        ? "Bỏ món này khỏi tiền bồi thường"
+                                        : "Cộng giá trị món này vào tiền bồi thường khách"
+                                    }
+                                    className={`shrink-0 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                                      compItems.includes(i)
+                                        ? "bg-amber-500 border-amber-500 text-white"
+                                        : "bg-white border-amber-300 text-amber-800 hover:bg-amber-100"
+                                    }`}
+                                  >
+                                    {compItems.includes(i)
+                                      ? "✓ Đã tính"
+                                      : "+ Bồi thường"}
+                                  </button>
+                                )}
                               </div>
                             );
                           })}
@@ -1313,96 +1927,530 @@ export default function AdminCasesPage() {
                         onClick={() =>
                           act(
                             () => resolutionApi.review(selected.id),
-                            "Chuyển điều tra",
+                            "Đã chuyển sang điều tra",
                           )
                         }
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100"
                       >
-                        Điều tra
+                        🔍 Chuyển sang điều tra
                       </button>
                       <button
                         onClick={() =>
                           act(
                             () => resolutionApi.requestEvidence(selected.id),
-                            "Yêu cầu thêm bằng chứng",
+                            "Đã gửi yêu cầu bổ sung bằng chứng",
                           )
                         }
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-600 hover:bg-amber-100"
                       >
-                        Cần bằng chứng
-                      </button>
-                      <button
-                        onClick={() => setShowPenalty(!showPenalty)}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-50 text-green-700 hover:bg-green-100"
-                      >
-                        + Ban hành phạt
+                        📎 Yêu cầu thêm bằng chứng
                       </button>
                       <button
                         onClick={() =>
                           act(
                             () => resolutionApi.escalate(selected.id),
-                            "Leo thang",
+                            "Đã chuyển cấp trên xử lý",
                           )
                         }
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100"
                       >
-                        Leo thang
+                        ⬆️ Chuyển cấp trên
                       </button>
                     </div>
 
-                    <div className="space-y-2 border-t border-gray-100 pt-3">
-                      <p className="text-xs font-semibold text-gray-400 uppercase">
-                        Xử lý khiếu nại theo lỗi ai
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <select
-                          value={resolveForm.faultParty}
-                          onChange={(e) =>
-                            setResolveForm((f) => ({
-                              ...f,
-                              faultParty: e.target.value,
-                            }))
-                          }
-                          className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
-                        >
-                          <option value="" disabled>
-                            — Chọn bên lỗi —
-                          </option>
-                          {Object.keys(FAULT_PARTY_LABEL).map((k) => (
-                            <option key={k} value={k}>
-                              {FAULT_PARTY_LABEL[k]}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          value={resolveForm.note}
-                          onChange={(e) =>
-                            setResolveForm((f) => ({
-                              ...f,
-                              note: e.target.value,
-                            }))
-                          }
-                          placeholder="Ghi chú phán quyết"
-                          className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
-                        />
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {["VALID", "INVALID", "INCONCLUSIVE"].map((v) => (
+                    {penaltyMsg && (
+                      <div
+                        className={`rounded-xl border px-3 py-2 text-xs font-semibold ${PENALTY_TONE_CLASS[penaltyTone]}`}
+                      >
+                        <p className="whitespace-pre-wrap">{penaltyMsg}</p>
+                        {failedPenaltyId && (
                           <button
-                            key={v}
-                            onClick={() => resolveWithPenalty(v)}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#ff6b35] text-white hover:bg-[#e85a26]"
+                            onClick={() => handleRetryPenalty(failedPenaltyId)}
+                            disabled={penaltyBusy}
+                            className="mt-2 px-2 py-1 rounded-lg text-[11px] font-semibold bg-white text-amber-700 border border-amber-300 hover:bg-amber-100 disabled:opacity-50"
                           >
-                            {VERDICT_LABEL[v] || v}
+                            {penaltyBusy
+                              ? "⏳ Đang thử lại..."
+                              : "🔁 Thử lại thi hành"}
                           </button>
-                        ))}
+                        )}
                       </div>
-                    </div>
+                    )}
+
+                    {eligibility.ok && (
+                      <div className="rounded-2xl border border-indigo-200 bg-indigo-50/30 p-3 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-bold text-[#1a1a2e]">
+                              ⚖️ Xử lý vụ việc
+                            </p>
+                            <p className="text-[11px] text-gray-500">
+                              Làm lần lượt từng bước. Khung “Sẽ thực hiện” ở cuối
+                              đọc lại đúng những gì sẽ xảy ra khi bấm nút.
+                            </p>
+                            <p className="mt-1 text-[11px] font-semibold text-indigo-700">
+                              {CATEGORY_LABEL[selected.category] ||
+                                selected.category}
+                              {orderTotalText
+                                ? ` · khách đã trả ${orderTotalText}`
+                                : ""}
+                            </p>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                              alreadyResolved
+                                ? "border-green-200 bg-green-50 text-green-700"
+                                : "border-indigo-200 bg-white text-indigo-600"
+                            }`}
+                          >
+                            {alreadyResolved ? "Đã kết luận" : "Chưa kết luận"}
+                          </span>
+                        </div>
+
+                        {!alreadyResolved && (
+                          <div className="space-y-1.5">
+                            <p className="text-[11px] font-bold uppercase text-gray-500">
+                              ① Kết luận của bạn{" "}
+                              <span className="text-red-500">*</span>
+                            </p>
+                            <div className="grid gap-1.5">
+                              {[
+                                {
+                                  v: "VALID" as const,
+                                  t: "Khách đúng",
+                                  d: "Bên kia có lỗi → hoàn/bồi thường tiền cho khách.",
+                                },
+                                {
+                                  v: "INVALID" as const,
+                                  t: "Khách sai",
+                                  d: "Khiếu nại không có căn cứ → không hoàn tiền, không phạt ai.",
+                                },
+                                {
+                                  v: "INCONCLUSIVE" as const,
+                                  t: "Chưa đủ căn cứ",
+                                  d: "Không xác định được ai đúng → đóng vụ việc.",
+                                },
+                              ].map((opt) => {
+                                const active = verdictPick === opt.v;
+                                return (
+                                  <button
+                                    key={opt.v}
+                                    type="button"
+                                    onClick={() => setVerdictPick(opt.v)}
+                                    className={`rounded-xl border p-2 text-left transition ${
+                                      active
+                                        ? "border-indigo-500 bg-white ring-2 ring-indigo-100"
+                                        : "border-gray-200 bg-white/70 hover:border-indigo-300"
+                                    }`}
+                                  >
+                                    <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
+                                      <span
+                                        className={`h-3.5 w-3.5 rounded-full border-2 ${
+                                          active
+                                            ? "border-indigo-500 bg-indigo-500"
+                                            : "border-gray-300"
+                                        }`}
+                                      />
+                                      {opt.t}
+                                    </span>
+                                    <span className="block pl-5 text-[11px] text-gray-500">
+                                      {opt.d}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {verdictValue === "VALID" && !alreadyResolved && (
+                          <div className="space-y-1.5">
+                            <p className="text-[11px] font-bold uppercase text-gray-500">
+                              ② Bên chịu lỗi
+                              <span className="text-red-500"> *</span>
+                            </p>
+                            <select
+                              value={resolveForm.faultParty}
+                              onChange={(e) =>
+                                setResolveForm((f) => ({
+                                  ...f,
+                                  faultParty: e.target.value,
+                                }))
+                              }
+                              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                            >
+                              <option value="" disabled>
+                                — Chọn bên chịu lỗi —
+                              </option>
+                              {Object.keys(FAULT_PARTY_LABEL).map((k) => (
+                                <option key={k} value={k}>
+                                  {FAULT_PARTY_LABEL[k]}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="text-[11px] text-gray-500">
+                              Tiền bồi thường (và tiền phạt nếu bật ở bước ④) sẽ
+                              trừ vào {walletLabel}.
+                            </p>
+                            <input
+                              value={resolveForm.note}
+                              onChange={(e) =>
+                                setResolveForm((f) => ({
+                                  ...f,
+                                  note: e.target.value,
+                                }))
+                              }
+                              placeholder="Ghi chú xử lý (tuỳ chọn — khách sẽ thấy trong kết quả)"
+                              className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
+                            />
+                          </div>
+                        )}
+                        {verdictValue === "VALID" && !alreadyResolved && (
+                          <div className="space-y-1.5">
+                            <p className="text-[11px] font-bold uppercase text-gray-500">
+                              ③ Tiền trả lại khách
+                            </p>
+                            {canPickItemCompensation ? (
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCompMode("ITEM");
+                                    setCompItems([]);
+                                    setResolveForm((f) => ({
+                                      ...f,
+                                      compensation: "",
+                                    }));
+                                  }}
+                                  className={`rounded-xl border p-2 text-left ${
+                                    compMode === "ITEM"
+                                      ? "border-amber-500 bg-white ring-2 ring-amber-100"
+                                      : "border-gray-200 bg-white/70 hover:border-amber-300"
+                                  }`}
+                                >
+                                  <span className="block text-xs font-semibold text-gray-800">
+                                    🍱 Chỉ món bị lỗi
+                                  </span>
+                                  <span className="block text-[10px] text-gray-500">
+                                    Trả đúng giá trị món thiếu/sai/hỏng
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCompMode("FULL");
+                                    setCompItems([]);
+                                    setResolveForm((f) => ({
+                                      ...f,
+                                      compensation: "",
+                                    }));
+                                  }}
+                                  className={`rounded-xl border p-2 text-left ${
+                                    compMode === "FULL"
+                                      ? "border-red-400 bg-white ring-2 ring-red-100"
+                                      : "border-gray-200 bg-white/70 hover:border-red-300"
+                                  }`}
+                                >
+                                  <span className="block text-xs font-semibold text-gray-800">
+                                    🧾 Hoàn cả đơn
+                                  </span>
+                                  <span className="block text-[10px] text-gray-500">
+                                    {orderTotalText
+                                      ? `100% = ${orderTotalText}`
+                                      : "100% số khách đã trả"}
+                                  </span>
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[11px] text-gray-600">
+                                Danh mục{" "}
+                                <b>
+                                  {CATEGORY_LABEL[selected.category] ||
+                                    selected.category}
+                                </b>
+                                : hệ thống tự tính tiền hoàn theo chính sách
+                                (có danh mục chỉ cảnh cáo, không hoàn tiền).
+                              </p>
+                            )}
+                            {canPickItemCompensation && compMode === "ITEM" && (
+                              <>
+                                <p className="text-[11px] text-gray-500">
+                                  Bấm chọn món bị thiếu/sai/hỏng (bấm lại để
+                                  bỏ):
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {(selectedOrder?.items ?? []).length === 0 && (
+                                    <span className="text-[11px] text-gray-400">
+                                      Chưa tải được danh sách món — nhập tay số
+                                      tiền bên dưới.
+                                    </span>
+                                  )}
+                                  {(selectedOrder?.items ?? []).map(
+                                    (item: any, i: number) => {
+                                      const picked = compItems.includes(i);
+                                      return (
+                                        <button
+                                          key={i}
+                                          type="button"
+                                          onClick={() => toggleItemCompensation(i)}
+                                          className={`rounded-full border px-2 py-1 text-[11px] font-semibold ${
+                                            picked
+                                              ? "border-amber-500 bg-amber-500 text-white"
+                                              : "border-gray-200 bg-white text-gray-700 hover:border-amber-400"
+                                          }`}
+                                        >
+                                          {picked ? "✓ " : "+ "}
+                                          {item.quantity}× {item.name} ·{" "}
+                                          {formatVnd(itemValue(item))}
+                                        </button>
+                                      );
+                                    },
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] text-gray-500">
+                                    Hoặc nhập tay:
+                                  </span>
+                                  <input
+                                    value={resolveForm.compensation}
+                                    inputMode="numeric"
+                                    disabled={penaltyBusy}
+                                    onChange={(e) =>
+                                      setManualCompensation(e.target.value)
+                                    }
+                                    placeholder="40000"
+                                    className="w-28 px-2 py-1 rounded-lg border border-gray-200 text-sm bg-white"
+                                  />
+                                  <span className="text-sm font-semibold text-gray-600">
+                                    ₫
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-gray-600">
+                                  {pickedItemTotal > 0 ? (
+                                    <>
+                                      Đang chọn {compItems.length} món ={" "}
+                                      <b>{formatVnd(pickedItemTotal)}</b> → trả
+                                      khách, trừ {walletLabel}.
+                                    </>
+                                  ) : itemCompensation > 0 ? (
+                                    <>
+                                      Sẽ trả khách{" "}
+                                      <b>{formatVnd(itemCompensation)}</b>, trừ{" "}
+                                      {walletLabel}.
+                                    </>
+                                  ) : (
+                                    "Chưa chọn món nào."
+                                  )}{" "}
+                                  Trần = tiền món khách thực trả, không đụng
+                                  tiền ship.
+                                </p>
+                              </>
+                            )}
+
+                          </div>
+                        )}
+                        {verdictValue === "VALID" && (
+                          <div className="space-y-1.5">
+                            <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-gray-200 bg-white p-2">
+                              <input
+                                type="checkbox"
+                                checked={addPenalty}
+                                disabled={penaltyBusy}
+                                onChange={(e) => setAddPenalty(e.target.checked)}
+                                className="mt-0.5"
+                              />
+                              <span>
+                                <span className="block text-xs font-semibold text-gray-800">
+                                  ④ Phạt thêm bên có lỗi (không bắt buộc)
+                                </span>
+                                <span className="block text-[10px] text-gray-500">
+                                  Phạt tiền ở đây nộp vào QUỸ DỰ PHÒNG — khác với
+                                  tiền bồi thường cho khách ở bước ③.
+                                </span>
+                              </span>
+                            </label>
+
+                            {addPenalty && (
+                              <div className="space-y-1.5 rounded-xl border border-gray-200 bg-white p-2">
+                                <label className="block text-[11px] font-semibold text-gray-500">
+                                  Phạt ai?
+                                </label>
+                                <select
+                                  value={
+                                    penaltyTargetList.some(
+                                      (t) => t.key === penaltyForm.target,
+                                    )
+                                      ? penaltyForm.target
+                                      : penaltyTargetList[0]?.key || ""
+                                  }
+                                  onChange={(e) =>
+                                    setPenaltyForm((f) => ({
+                                      ...f,
+                                      target: e.target.value as PenaltyTargetKey,
+                                    }))
+                                  }
+                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                                >
+                                  {penaltyTargetList.map((t) => (
+                                    <option key={t.key} value={t.key}>
+                                      {t.label}
+                                    </option>
+                                  ))}
+                                </select>
+
+                                <label className="block text-[11px] font-semibold text-gray-500">
+                                  Hình thức xử lý
+                                </label>
+                                <select
+                                  value={penaltyForm.type}
+                                  onChange={(e) =>
+                                    setPenaltyForm((f) => ({
+                                      ...f,
+                                      type: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                                >
+                                  {MANUAL_PENALTY_TYPES.map((k) => (
+                                    <option key={k} value={k}>
+                                      {PENALTY_TYPE_LABEL[k] || k}
+                                    </option>
+                                  ))}
+                                </select>
+                                <p className="text-[11px] text-gray-500">
+                                  {PENALTY_TYPE_HINT[penaltyForm.type] || ""}
+                                </p>
+                                {(penaltyNeedsAmount(penaltyForm.type) ||
+                                  penaltyNeedsDays(penaltyForm.type)) && (
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {penaltyNeedsAmount(penaltyForm.type) && (
+                                      <input
+                                        value={penaltyForm.amount}
+                                        inputMode="numeric"
+                                        onChange={(e) =>
+                                          setPenaltyForm((f) => ({
+                                            ...f,
+                                            amount: e.target.value.replace(
+                                              /[^\d]/g,
+                                              "",
+                                            ),
+                                          }))
+                                        }
+                                        placeholder={
+                                          penaltyForm.type ===
+                                          "REPUTATION_DEDUCTION"
+                                            ? "Số điểm uy tín"
+                                            : "Số tiền (đồng)"
+                                        }
+                                        className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                                      />
+                                    )}
+                                    {penaltyNeedsDays(penaltyForm.type) && (
+                                      <input
+                                        value={penaltyForm.durationDays}
+                                        inputMode="numeric"
+                                        onChange={(e) =>
+                                          setPenaltyForm((f) => ({
+                                            ...f,
+                                            durationDays: e.target.value.replace(
+                                              /[^\d]/g,
+                                              "",
+                                            ),
+                                          }))
+                                        }
+                                        placeholder="Số ngày khoá"
+                                        className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                                      />
+                                    )}
+                                  </div>
+                                )}
+                                {penaltyForm.type === "REPUTATION_DEDUCTION" &&
+                                  penaltyTargetList.find(
+                                    (t) => t.key === penaltyForm.target,
+                                  )?.type !== "DRIVER" && (
+                                    <p className="text-[11px] font-semibold text-red-600">
+                                      ⚠️ Chế tài này chỉ áp dụng cho tài xế — chọn
+                                      “Phạt ai?” là tài xế.
+                                    </p>
+                                  )}
+                                <input
+                                  value={penaltyForm.reason}
+                                  onChange={(e) =>
+                                    setPenaltyForm((f) => ({
+                                      ...f,
+                                      reason: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="Lý do (mặc định: tiêu đề vụ việc)"
+                                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
+                                />
+
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="rounded-xl border border-gray-200 bg-white p-2.5">
+                          <p className="text-[11px] font-bold uppercase text-gray-500">
+                            📋 Bấm nút bên dưới, hệ thống sẽ
+                          </p>
+                          <ul className="mt-1 space-y-0.5">
+                            {decisionPlan.map((line, i) => (
+                              <li
+                                key={i}
+                                className="flex gap-1.5 text-[12px] text-gray-700"
+                              >
+                                <span className="text-indigo-500">•</span>
+                                <span>{line}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <button
+                          onClick={handleSubmitDecision}
+                          disabled={submitBlocked}
+                          className={`w-full rounded-xl px-3 py-2.5 text-sm font-bold text-white ${
+                            submitBlocked
+                              ? "bg-gray-300 cursor-not-allowed"
+                              : "bg-green-600 hover:bg-green-700"
+                          }`}
+                        >
+                          {submitLabel}
+                        </button>
+                        {submitBlockedReason && !penaltyBusy && (
+                          <p className="text-[11px] text-gray-500">
+                            👉 {submitBlockedReason}
+                          </p>
+                        )}
+                        {verdictValue === "VALID" && !submitBlockedReason && (
+                          <p className="text-[10px] text-gray-400">
+                            ⚠️ Bấm là chuyển tiền ngay, không hoàn tác được. Hệ
+                            thống sẽ hỏi xác nhận lần nữa.
+                          </p>
+                        )}
+
+
+
+
+
+                      </div>
+                    )}
+
+
+                    {!eligibility.ok && (
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-[11px] text-gray-500">
+                        🔒 Không thể xử lý thêm:{" "}
+                        {eligibility.reason || "vụ việc đã kết thúc"}.
+                      </div>
+                    )}
 
                     {casePenalties.length > 0 && (
                       <div className="bg-red-50 rounded-xl p-3 space-y-2 border border-red-100">
                         <p className="text-xs font-semibold text-red-700 uppercase">
-                          🚨 Xử phạt đã ban hành
+                          🚨 Hình phạt &amp; bồi thường đã ghi
+                        </p>
+                        <p className="text-[11px] text-red-700/80">
+                          Đây là các khoản đã trừ/chuyển thật trên ví — bấm “Thử
+                          lại” nếu trạng thái là “Thi hành lỗi”.
                         </p>
                         {casePenalties.map((p: any) => {
                           const party =
@@ -1425,81 +2473,28 @@ export default function AdminCasesPage() {
                               <p className="text-xs text-gray-500">
                                 {p.reason}
                               </p>
-                              <span
-                                className={`inline-block mt-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${PENALTY_STATUS_BADGE[p.status] || "bg-gray-100 text-gray-600"}`}
-                              >
-                                {p.status}
-                              </span>
+                              <div className="mt-1 flex items-center gap-2">
+                                <span
+                                  className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${PENALTY_STATUS_BADGE[p.status] || "bg-gray-100 text-gray-600"}`}
+                                >
+                                  {PENALTY_STATUS_LABEL[p.status] || p.status}
+                                </span>
+                                {p.status === "EXECUTION_FAILED" && (
+                                  <button
+                                    onClick={() => handleRetryPenalty(p.id)}
+                                    disabled={penaltyBusy}
+                                    className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white text-amber-700 border border-amber-300 hover:bg-amber-100 disabled:opacity-50"
+                                  >
+                                    🔁 Thử lại
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           );
                         })}
                       </div>
                     )}
 
-                    {showPenalty && (
-                      <div className="border border-gray-100 rounded-xl p-3 space-y-2">
-                        <p className="text-sm font-semibold">
-                          Ban hành hình phạt
-                        </p>
-                        <select
-                          value={penaltyForm.type}
-                          onChange={(e) =>
-                            setPenaltyForm((f) => ({
-                              ...f,
-                              type: e.target.value,
-                            }))
-                          }
-                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
-                        >
-                          {Object.keys(PENALTY_TYPE_LABEL).map((k) => (
-                            <option key={k} value={k}>
-                              {PENALTY_TYPE_LABEL[k]}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            value={penaltyForm.amount}
-                            onChange={(e) =>
-                              setPenaltyForm((f) => ({
-                                ...f,
-                                amount: e.target.value,
-                              }))
-                            }
-                            placeholder="Số tiền/điểm"
-                            className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
-                          />
-                          <input
-                            value={penaltyForm.durationDays}
-                            onChange={(e) =>
-                              setPenaltyForm((f) => ({
-                                ...f,
-                                durationDays: e.target.value,
-                              }))
-                            }
-                            placeholder="Số ngày khóa"
-                            className="px-3 py-2 rounded-lg border border-gray-200 text-sm"
-                          />
-                        </div>
-                        <input
-                          value={penaltyForm.reason}
-                          onChange={(e) =>
-                            setPenaltyForm((f) => ({
-                              ...f,
-                              reason: e.target.value,
-                            }))
-                          }
-                          placeholder="Lý do"
-                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm"
-                        />
-                        <button
-                          onClick={handleIssuePenalty}
-                          className="w-full px-3 py-2 rounded-lg text-sm font-semibold bg-green-600 text-white hover:bg-green-700"
-                        >
-                          Thi hành ngay
-                        </button>
-                      </div>
-                    )}
 
                     <div>
                       <p className="text-xs font-semibold text-gray-400 uppercase mb-2">
@@ -1534,15 +2529,15 @@ export default function AdminCasesPage() {
                 onChange={(e) => setPStatus(e.target.value)}
                 className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white"
               >
-                <option value="">Tất cả trạng thái phạt</option>
-                <option value="ISSUED">ISSUED</option>
-                <option value="EXECUTING">EXECUTING</option>
-                <option value="EXECUTED">EXECUTED</option>
-                <option value="EXECUTION_FAILED">EXECUTION_FAILED</option>
-                <option value="APPEALED">APPEALED</option>
-                <option value="UPHELD">UPHELD</option>
-                <option value="OVERTURNED">OVERTURNED</option>
-                <option value="WAIVED">WAIVED</option>
+                <option value="">Tất cả trạng thái</option>
+                <option value="ISSUED">Vừa ban hành</option>
+                <option value="EXECUTING">Đang thi hành</option>
+                <option value="EXECUTED">Đã thi hành</option>
+                <option value="EXECUTION_FAILED">Thi hành lỗi</option>
+                <option value="APPEALED">Đang kháng nghị</option>
+                <option value="UPHELD">Giữ nguyên</option>
+                <option value="OVERTURNED">Đã huỷ</option>
+                <option value="WAIVED">Được miễn</option>
               </select>
               {pLoading && (
                 <span className="text-xs text-gray-400">Đang tải...</span>
@@ -1580,7 +2575,8 @@ export default function AdminCasesPage() {
                         <p className="text-xs text-gray-400">{p.reason}</p>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500">
-                        {p.targetType} · {p.targetId?.slice(0, 8)}…
+                        {ACTOR_LABEL[p.targetType] || p.targetType} ·{" "}
+                        {p.targetId?.slice(0, 8)}…
                       </td>
                       <td className="px-4 py-3 text-right text-sm">
                         {p.amount != null
@@ -1593,7 +2589,7 @@ export default function AdminCasesPage() {
                         <span
                           className={`px-2 py-0.5 rounded-full text-xs font-semibold ${PENALTY_STATUS_BADGE[p.status] || "bg-gray-100 text-gray-600"}`}
                         >
-                          {p.status}
+                          {PENALTY_STATUS_LABEL[p.status] || p.status}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
@@ -1611,7 +2607,7 @@ export default function AdminCasesPage() {
                               }
                               className="px-2 py-1 rounded text-xs bg-amber-50 text-amber-600 hover:bg-amber-100"
                             >
-                              Appeal
+                              Kháng nghị
                             </button>
                           )}
                           {p.status === "APPEALED" && (
@@ -1628,7 +2624,7 @@ export default function AdminCasesPage() {
                                 }
                                 className="px-2 py-1 rounded text-xs bg-green-50 text-green-700 hover:bg-green-100"
                               >
-                                Giữ
+                                Giữ phạt
                               </button>
                               <button
                                 onClick={() =>
@@ -1642,9 +2638,18 @@ export default function AdminCasesPage() {
                                 }
                                 className="px-2 py-1 rounded text-xs bg-purple-50 text-purple-700 hover:bg-purple-100"
                               >
-                                Hủy
+                                Huỷ phạt
                               </button>
                             </>
+                          )}
+                          {p.status === "EXECUTION_FAILED" && (
+                            <button
+                              onClick={() => handleRetryPenalty(p.id)}
+                              disabled={penaltyBusy}
+                              className="px-2 py-1 rounded text-xs bg-amber-50 text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                            >
+                              {penaltyBusy ? "Đang thử..." : "Thử lại"}
+                            </button>
                           )}
                           <button
                             onClick={() =>

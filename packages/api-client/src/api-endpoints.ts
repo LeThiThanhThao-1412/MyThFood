@@ -1376,6 +1376,39 @@ export interface StackingStats {
   avgRouteSequence: number;
 }
 
+/** Một dòng giao dịch ví (ví nền tảng / quỹ dự phòng / ví tài xế). */
+export interface PlatformLedgerTx {
+  id: string;
+  ownerId: string;
+  ownerType: string;
+  type: string;
+  amount: number;
+  balanceAfter: number;
+  description: string;
+  referenceType: string | null;
+  referenceId: string | null;
+  createdAt: string;
+}
+
+/**
+ * Một khoản nền tảng **ứng tiền bồi thường** cho bên bị hại trong khi bên vi
+ * phạm chưa đủ tiền — bên vi phạm ghi nợ clawback (nền tảng cho mượn).
+ */
+export interface PlatformLedgerLoan {
+  id: string;
+  ownerId: string;
+  ownerType: string;
+  category: string | null;
+  sourceOrderId: string | null;
+  sourceBatchId: string | null;
+  originalAmount: number;
+  remainingAmount: number;
+  description: string | null;
+  status: string;
+  createdAt: string;
+  settledAt: string | null;
+}
+
 // ============================================================================
 // ============================================================================
 // Wallet Service (Port 3009) - Quản lý ví độc lập
@@ -1659,6 +1692,94 @@ export const walletApi = {
     amount: number;
   }) =>
     httpClient.post<any>(PORTS.WALLET, "/wallets/settlement/clawback", data),
+
+  // Admin: sổ ví nền tảng (thu vào, cho mượn bồi thường, thu nợ, ví tài xế)
+  getPlatformLedger: (params?: {
+    from?: string;
+    to?: string;
+    take?: number;
+    driverId?: string;
+    driverType?: string;
+    driverSearch?: string;
+  }) =>
+    httpClient.get<{
+      generatedAt: string;
+      range: { from: string | null; to: string | null };
+      wallets: {
+        platform: {
+          ownerId: string;
+          label: string;
+          balance: number;
+          heldBalance: number;
+        };
+        reserve: {
+          ownerId: string;
+          label: string;
+          balance: number;
+          heldBalance: number;
+        };
+      };
+      inflow: {
+        total: number;
+        count: number;
+        byReferenceType: {
+          referenceType: string;
+          count: number;
+          total: number;
+        }[];
+        items: PlatformLedgerTx[];
+      };
+      outflow: {
+        total: number;
+        count: number;
+        /**
+         * Phần chi do nền tảng **ứng** hoàn/bồi thường cho người nhận
+         * (`DEBIT CLAWBACK_ADVANCE` trên ví nền tảng, đã nằm trong `total`).
+         */
+        advanceTotal: number;
+        advanceCount: number;
+        byReferenceType: {
+          referenceType: string;
+          count: number;
+          total: number;
+        }[];
+        items: PlatformLedgerTx[];
+      };
+      loans: {
+        totalOriginal: number;
+        totalRemaining: number;
+        totalCount: number;
+        openRemaining: number;
+        openCount: number;
+        settledCount: number;
+        byCategory: {
+          category: string;
+          count: number;
+          original: number;
+          remaining: number;
+          openRemaining: number;
+        }[];
+        items: PlatformLedgerLoan[];
+      };
+      recovery: { total: number; count: number; items: PlatformLedgerTx[] };
+      drivers: {
+        totals: {
+          credit: number;
+          debit: number;
+          revenue: number;
+          count: number;
+        };
+        byDriver: {
+          ownerId: string;
+          credit: number;
+          debit: number;
+          revenue: number;
+          count: number;
+          balance: number;
+        }[];
+        items: PlatformLedgerTx[];
+      };
+    }>(PORTS.WALLET, "/wallets/admin/platform-ledger", { params }),
 
   // Admin: tất cả giao dịch (paginated, filterable)
   getAdminTransactions: (params?: {
@@ -2143,7 +2264,16 @@ export const resolutionApi = {
 
   resolve: (
     id: string,
-    body: { verdict: string; note?: string; faultParty?: string },
+    body: {
+      verdict: string;
+      note?: string;
+      faultParty?: string;
+      /**
+       * Số tiền bồi thường cho phần món bị thiếu/sai/hỏng (đồng).
+       * Bỏ trống ⇒ hoàn 100% đơn theo chính sách.
+       */
+      compensationAmount?: number;
+    },
   ) =>
     httpClient.post<{ statusCode: number; data: any }>(
       PORTS.RESOLUTION,
@@ -2234,6 +2364,16 @@ export const resolutionApi = {
     httpClient.post<{ statusCode: number; data: any }>(
       PORTS.RESOLUTION,
       `/penalties/${id}/waive`,
+    ),
+
+  /**
+   * Thi hành lại hình phạt đang EXECUTION_FAILED.
+   * Ví dedupe theo `referenceId = penalty.id` nên không trừ tiền hai lần.
+   */
+  retryPenalty: (id: string) =>
+    httpClient.post<{ statusCode: number; data: any }>(
+      PORTS.RESOLUTION,
+      `/penalties/${id}/retry`,
     ),
 
   // ─── Fraud ─────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import { Drawer, ChatDrawer, useAuthStore } from "@mythfood/frontend-shared";
 import { useDeliveryTrip } from "@/hooks/use-delivery-trip";
 import DeliveryProofDialog from "@/components/DeliveryProofDialog";
 import { STAGE_ORDER, formatKm, toNum } from "@/lib/delivery-flow";
+import { isCashOrder } from "@/lib/order-money";
 
 const TERMINAL_STATUS: Record<string, { icon: string; label: string }> = {
   DELIVERY_FAILED: { icon: "❌", label: "Giao hàng thất bại" },
@@ -387,9 +388,9 @@ export default function DeliveryDrawer({
 
           <div className="text-center">
             <span
-              className={`text-sm font-semibold px-4 py-1.5 rounded-full ${order.paymentMethod === "COD" ? "bg-yellow-100 text-yellow-800" : "bg-blue-100 text-blue-800"}`}
+              className={`text-sm font-semibold px-4 py-1.5 rounded-full ${isCashOrder(order) ? "bg-yellow-100 text-yellow-800" : "bg-blue-100 text-blue-800"}`}
             >
-              {order.paymentMethod === "COD" ? "💵 COD (tiền mặt)" : "💳 Thẻ"}
+              {isCashOrder(order) ? "💵 COD (tiền mặt)" : "💳 Thẻ"}
             </span>
           </div>
 

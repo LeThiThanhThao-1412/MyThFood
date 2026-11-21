@@ -231,9 +231,28 @@ describe("CaseService.repairHeldEscrows — cron mở khoá escrow còn treo", (
     );
   });
 
-  it("case FULL_REFUND: chạy lại luồng chuyển tiền của ví (hoàn khách + trừ bên lỗi), KHÔNG release mù", async () => {
+  it("case MISSING_ITEM (bồi thường theo giá trị món): chỉ mở khoá escrow, KHÔNG tự hoàn 100% đơn", async () => {
     const c = makeCase({
       category: CaseCategory.MISSING_ITEM,
+      verdict: Verdict.VALID,
+      faultParty: FaultParty.MERCHANT,
+      respondentType: "MERCHANT",
+    });
+    const { service, integration } = buildHarness({ cases: [c] });
+
+    const repaired = await service.repairHeldEscrows(72, 200);
+
+    // Chế độ tiền (bồi thường một phần) do admin chọn lúc phán quyết và không
+    // lưu lại trên case ⇒ cron không được đoán rồi chạy hoàn 100%: làm vậy sẽ
+    // trả khách nốt phần đơn họ đã dùng và trừ oan nhà hàng.
+    expect(integration.settleFailureMoney).not.toHaveBeenCalled();
+    expect(integration.releaseSettlement).toHaveBeenCalledTimes(1);
+    expect(repaired).toBe(1);
+  });
+
+  it("case FULL_REFUND (khách không nhận được hàng): chạy lại luồng chuyển tiền của ví, KHÔNG release mù", async () => {
+    const c = makeCase({
+      category: CaseCategory.NOT_RECEIVED,
       verdict: Verdict.VALID,
       faultParty: FaultParty.MERCHANT,
       respondentType: "MERCHANT",

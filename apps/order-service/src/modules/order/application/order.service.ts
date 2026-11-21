@@ -1480,6 +1480,8 @@ export class OrderService {
       category?: string;
       faultParty: string;
       amount: number;
+      /** Trần bồi thường: `SHIPPING` (mặc định) hoặc `ITEM` (giá trị món). */
+      cap?: "SHIPPING" | "ITEM" | string;
     },
   ): Promise<CaseCompensationOutcome> {
     const skipped = (reason: string): CaseCompensationOutcome => ({
@@ -1524,15 +1526,24 @@ export class OrderService {
     }
 
     // Chặn trần ở phía server: `input.amount` đến từ resolution-service (hoặc
-    // admin gọi tay) nên không được tin tuyệt đối. Trần = phí ship khách THỰC
-    // TRẢ (đã trừ phần khuyến mãi phân bổ cho ship) và không vượt tổng đơn.
-    const shippingFeePaid = this.paidShippingFeeOf(order);
-    const amount = Math.min(requested, shippingFeePaid);
+    // admin gọi tay) nên không được tin tuyệt đối. Trần phụ thuộc loại bồi thường:
+    //  - `ITEM`     → tiền món khách THỰC TRẢ (thiếu/sai/hỏng một phần món);
+    //  - `SHIPPING` → phí ship khách THỰC TRẢ (giao trễ, thái độ).
+    // Cả hai đều không vượt tổng tiền khách đã trả cho đơn.
+    const capKind =
+      String(input.cap || "").toUpperCase() === "ITEM" ? "ITEM" : "SHIPPING";
+    const paidBasis = this.paidBasisOf(order);
+    const capAmount =
+      capKind === "ITEM" ? paidBasis.itemPaid : paidBasis.shippingFeePaid;
+    const capLabel = capKind === "ITEM" ? "tiền món" : "phí ship";
+    const amount = Math.min(requested, capAmount);
     if (amount <= 0) {
       this.logger.warn(
-        `Bỏ bồi thường phí ship #${short}: yêu cầu ${requested}đ vượt phí ship thực trả ${shippingFeePaid}đ`,
+        `Bỏ bồi thường ${capLabel} #${short}: yêu cầu ${requested}đ vượt ${capLabel} thực trả ${capAmount}đ`,
       );
-      return skipped("EXCEEDS_PAID_SHIPPING_FEE");
+      return skipped(
+        capKind === "ITEM" ? "EXCEEDS_PAID_ITEM_VALUE" : "EXCEEDS_PAID_SHIPPING_FEE",
+      );
     }
 
     const result = await this.walletRequest<{
@@ -1586,12 +1597,26 @@ export class OrderService {
    * món — cùng công thức với `allocateDiscount()` ở resolution-service. Kết quả
    * không bao giờ âm và không vượt tổng tiền khách đã trả cho đơn.
    */
-  private paidShippingFeeOf(order: Order): number {
+  /**
+   * Số tiền khách **THỰC TRẢ** cho từng phần của đơn (món / ship / phí dịch vụ).
+   *
+   * Cùng công thức với `allocateDiscount()` ở resolution-service: khuyến mãi chia
+   * theo trọng số `subtotal : deliveryFee`, phần làm tròn dồn về tiền món; không
+   * phần nào âm và tổng không vượt `orderTotalAmount`.
+   *
+   * Dùng cho cả hai loại bồi thường: `SHIPPING` (phí ship thực trả) và `ITEM`
+   * (tiền món thực trả — bồi thường món thiếu/sai/hỏng mà không hoàn cả đơn).
+   */
+  private paidBasisOf(order: Order): {
+    itemPaid: number;
+    shippingFeePaid: number;
+    totalPaid: number;
+  } {
     const deliveryFee = Math.max(0, Number(order.orderDeliveryFee) || 0);
     const subtotal = Math.max(0, Number(order.orderSubtotal) || 0);
+    const serviceFee = Math.max(0, Number(order.orderServiceFee) || 0);
     const discount = Math.max(0, Number(order.orderDiscount) || 0);
     const total = Math.max(0, Number(order.orderTotalAmount) || 0);
-    if (deliveryFee <= 0) return 0;
 
     const base = subtotal + deliveryFee;
     const rawShare =
@@ -1599,8 +1624,17 @@ export class OrderService {
         ? Math.round((discount * deliveryFee) / base)
         : 0;
     const shippingDiscountShare = Math.min(rawShare, deliveryFee, discount);
-    const paid = Math.max(0, deliveryFee - shippingDiscountShare);
-    return total > 0 ? Math.min(paid, total) : paid;
+    const itemDiscountShare = Math.min(
+      Math.max(0, discount - shippingDiscountShare),
+      subtotal,
+    );
+
+    const shippingFeePaid = Math.max(0, deliveryFee - shippingDiscountShare);
+    const itemPaid = Math.max(0, subtotal - itemDiscountShare);
+    const paidTotal = itemPaid + shippingFeePaid + serviceFee;
+    const totalPaid = total > 0 ? Math.min(total, paidTotal) : paidTotal;
+
+    return { itemPaid, shippingFeePaid, totalPaid };
   }
 
   /**

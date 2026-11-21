@@ -400,4 +400,54 @@ describe("CaseService.resolve — quyết toán tiền & escrow theo chính sác
     expect(compensationRows(penalty)).toHaveLength(0);
     expect(c.caseVerdict).toBe(Verdict.VALID);
   });
+
+  it("MISSING_ITEM + admin nhập 40.000đ → bồi thường đúng 40.000đ (cap ITEM), không hoàn cả đơn", async () => {
+    const { service, integration, penalty, c } = setup({
+      category: CaseCategory.MISSING_ITEM,
+      faultParty: FaultParty.MERCHANT,
+      order: {
+        status: "DELIVERED",
+        subtotal: 100000,
+        deliveryFee: 20000,
+        serviceFee: 6038,
+        discount: 0,
+        totalAmount: 126038,
+      },
+      compensation: {
+        settled: true,
+        amount: 40000,
+        charged: 40000,
+        clawback: 0,
+        duplicated: false,
+        skipped: null,
+      },
+    });
+
+    await service.resolve(
+      c.id.toString(),
+      {
+        verdict: Verdict.VALID,
+        faultParty: FaultParty.MERCHANT,
+        compensationAmount: 40000,
+      },
+      { userId: "admin-1", roles: ["ADMIN"] },
+    );
+
+    // Không đi luồng hoàn 100%: chỉ MỘT khoản bồi thường đúng giá trị món thiếu,
+    // order-service chặn trần bằng tiền món khách thực trả.
+    expect(integration.settleFailureMoney).not.toHaveBeenCalled();
+    expect(integration.settleCaseCompensation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: ORDER_ID,
+        category: CaseCategory.MISSING_ITEM,
+        amount: 40000,
+        cap: "ITEM",
+      }),
+    );
+    // Doanh thu của đơn vẫn phải được mở khoá để quyết toán 23:00.
+    expect(integration.releaseSettlement).toHaveBeenCalledTimes(1);
+    expect(compensationRows(penalty)).toEqual([
+      expect.objectContaining({ type: "COMPENSATION", amount: 40000 }),
+    ]);
+  });
 });

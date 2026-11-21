@@ -32,6 +32,7 @@ import {
   googleMapsDirections,
   toNum,
 } from "@/lib/delivery-flow";
+import { isCashOrder } from "@/lib/order-money";
 
 type MapMarker = {
   latitude: number;
@@ -431,7 +432,7 @@ export default function DeliveryPage() {
             </div>
 
             <p className="text-xs text-gray-400 mb-4">
-              {order.paymentMethod === "COD"
+              {isCashOrder(order)
                 ? "💵 COD: Phần tiền món đã được tự động trừ khỏi ví để chuyển cho nhà hàng & nền tảng."
                 : "Tiền đã được cộng vào ví thu nhập của bạn."}
             </p>
@@ -476,8 +477,7 @@ export default function DeliveryPage() {
   // ─── Đang trong chuyến ───────────────────────────────────────
   const stageIndex = STAGE_ORDER.indexOf(stage);
   const target = stageMeta.target === "CUSTOMER" ? customer : restaurant;
-  const paymentMethod = order.paymentMethod || "CARD";
-  const isCod = paymentMethod === "COD" || paymentMethod === "CASH";
+  const isCod = isCashOrder(order);
   const steps = [
     { icon: "📥", label: "Nhận đơn" },
     { icon: "📍", label: "Đã đến quán" },

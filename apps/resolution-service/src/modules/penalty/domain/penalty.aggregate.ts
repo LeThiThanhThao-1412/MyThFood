@@ -97,6 +97,22 @@ export class Penalty extends AggregateRoot<PenaltyId> {
     this.markUpdated();
   }
 
+  /**
+   * Cho phép thi hành lại một hình phạt đã thất bại (service bên kia tạm chết).
+   *
+   * Chỉ hình phạt EXECUTION_FAILED mới retry được; ví dedupe theo
+   * `referenceId = penalty.id` nên lần chạy lại không trừ tiền hai lần.
+   */
+  public retryExecution(): void {
+    if (this.status !== PenaltyStatus.EXECUTION_FAILED) {
+      throw new BusinessRuleViolationError(
+        `Only failed penalties can be retried, current: ${this.status}`,
+      );
+    }
+    this.status = PenaltyStatus.ISSUED;
+    this.markUpdated();
+  }
+
   public appeal(): void {
     if (this.status !== PenaltyStatus.EXECUTED) {
       throw new BusinessRuleViolationError(

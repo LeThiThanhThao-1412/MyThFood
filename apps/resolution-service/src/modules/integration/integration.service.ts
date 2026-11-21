@@ -50,12 +50,48 @@ export interface SettlementResponse {
 }
 
 /**
+ * Kết quả của một call ghi **bắt buộc thành công** (thi hành hình phạt).
+ *
+ * Khác `post()`/`patch()` fire-and-forget: người gọi phải biết ví có thật sự trừ
+ * tiền hay không, nếu không hình phạt sẽ được đánh dấu EXECUTED trong khi bên bị
+ * phạt không bị gì (đúng lỗi admin gặp: bấm “Thi hành ngay” mà không thấy tác
+ * dụng nào).
+ */
+export interface SideEffectResult {
+  ok: boolean;
+  /** Chi tiết lỗi của từng lần thử (null khi thành công). */
+  error: string | null;
+}
+
+/**
+ * Tham chiếu idempotency cho bút toán ví.
+ *
+ * Ví dedupe theo (ownerId, ownerType, referenceType, referenceId) nên retry một
+ * hình phạt không trừ/hoàn tiền hai lần — miễn là truyền đúng id hình phạt.
+ */
+export interface PenaltyReference {
+  referenceType?: string;
+  referenceId?: string;
+  /**
+   * `false` = không chuyển phần tiền trừ sang ví quỹ nền tảng.
+   *
+   * Dùng cho COMPENSATION: tiền bị trừ phải chuyển cho người khiếu nại, nếu
+   * đồng thời cộng vào quỹ nền tảng thì tổng tiền hệ thống tăng ảo.
+   */
+  transferToPlatform?: boolean;
+}
+
+/**
  * Best-effort cross-service HTTP integration.
  *
- * Every call is fire-and-forget: if the target service is unreachable or the
- * endpoint does not exist yet, we log a warning and continue. This keeps the
- * resolution-service runnable standalone while the wallet/driver/merchant/
- * notification services expose the dedicated compliance endpoints.
+ * Hai nhóm call khác nhau về cách xử lý lỗi:
+ *  - **Đọc dữ liệu / thông báo** (`getData`, `notify`): best-effort, service chết
+ *    thì log rồi bỏ qua để resolution-service vẫn chạy độc lập.
+ *  - **Ghi bắt buộc** (`debit`, `credit`, `suspendDriver`, `banDriver`,
+ *    `deductReputation`, `suspendMerchant`, `suspendConsumer`): trả
+ *    `SideEffectResult` để người gọi biết chắc chắn bên kia đã nhận hay chưa.
+ *    Trước đây nhóm này fire-and-forget ⇒ ví 503 nhưng hình phạt vẫn được ghi
+ *    EXECUTED (admin bấm “Thi hành” mà không có tác dụng gì).
  */
 @Injectable()
 export class IntegrationService {
@@ -174,13 +210,65 @@ export class IntegrationService {
     return { data: null, error: "CALL_FAILED" };
   }
 
-  private async patch(
+  /** Mô tả ngắn gọn lỗi HTTP để hiển thị cho admin (path + status + message). */
+  private describeHttpError(err: any): string {
+    const status =
+      err?.response?.status ??
+      err?.response?.statusCode ??
+      err?.status ??
+      err?.code;
+    const raw =
+      err?.response?.data?.message ??
+      err?.response?.statusText ??
+      err?.message ??
+      "unknown";
+    const message = Array.isArray(raw) ? raw.join(", ") : String(raw);
+    return `${status ?? "?"} ${message.slice(0, 200)}`;
+  }
+
+  /**
+   * POST nhưng **không nuốt lỗi** — dùng cho các side-effect bắt buộc (trừ tiền
+   * ví, khoá tài khoản). Trả về lỗi của lần thử cuối để hình phạt được đánh dấu
+   * EXECUTION_FAILED kèm nguyên nhân thật.
+   */
+  private async postExpectOk(
     envKey: string,
     dockerUrl: string,
     localUrl: string,
     path: string,
     payload: unknown,
-  ): Promise<void> {
+  ): Promise<SideEffectResult> {
+    const attempts: string[] = [];
+    for (const base of this.candidates(envKey, dockerUrl, localUrl)) {
+      try {
+        await firstValueFrom(
+          this.httpService.post(`${base}${path}`, payload, {
+            headers: {
+              "Content-Type": "application/json",
+              "x-service-key": this.serviceKey,
+            },
+            timeout: this.readTimeoutMs,
+          }),
+        );
+        return { ok: true, error: null };
+      } catch (err: any) {
+        const reason = `${base}${path} → ${this.describeHttpError(err)}`;
+        attempts.push(reason);
+        this.logger.warn(`POST ${envKey}${path} failed: ${reason}`);
+      }
+    }
+    return { ok: false, error: attempts.join(" | ") || "CALL_FAILED" };
+  }
+
+  /** PATCH nhưng không nuốt lỗi (khoá/mở tài khoản phải biết thành công thật). */
+  private async patchExpectOk(
+    envKey: string,
+    dockerUrl: string,
+    localUrl: string,
+    path: string,
+    payload: unknown,
+  ): Promise<SideEffectResult> {
+    const attempts: string[] = [];
     for (const base of this.candidates(envKey, dockerUrl, localUrl)) {
       try {
         await firstValueFrom(
@@ -189,15 +277,17 @@ export class IntegrationService {
               "Content-Type": "application/json",
               "x-service-key": this.serviceKey,
             },
+            timeout: this.readTimeoutMs,
           }),
         );
-        return;
+        return { ok: true, error: null };
       } catch (err: any) {
-        this.logger.warn(
-          `PATCH ${envKey}${path} failed against ${base}: ${err?.message}`,
-        );
+        const reason = `${base}${path} → ${this.describeHttpError(err)}`;
+        attempts.push(reason);
+        this.logger.warn(`PATCH ${envKey}${path} failed: ${reason}`);
       }
     }
+    return { ok: false, error: attempts.join(" | ") || "CALL_FAILED" };
   }
 
   private async get(
@@ -320,11 +410,15 @@ export class IntegrationService {
 
   /**
    * Bồi thường cho khách khi đơn **đã giao xong** nhưng dịch vụ có lỗi (giao
-   * trễ, thái độ...): chỉ hoàn phần phí ship và trừ đúng bên lỗi.
+   * trễ, thái độ...) hoặc khách bị thiếu/sai/hỏng một phần món: chỉ chuyển MỘT
+   * khoản từ ví bên lỗi sang ví khách.
    *
    * Khác `settleFailureMoney` (luồng đơn giao thất bại: hoàn 100% + huỷ escrow)
    * — dùng luồng này để hai con số "khách nhận" và "bên lỗi chịu" luôn bằng nhau
    * và tiền món của nhà hàng không bị đụng tới.
+   *
+   * `cap` quyết định trần ở order-service: `SHIPPING` = phí ship thực trả,
+   * `ITEM` = tiền món thực trả (bồi thường theo giá trị món bị thiếu/sai/hỏng).
    */
   async settleCaseCompensation(input: {
     orderId: string;
@@ -332,6 +426,7 @@ export class IntegrationService {
     category?: string;
     faultParty: string;
     amount: number;
+    cap?: "SHIPPING" | "ITEM";
   }): Promise<SettlementResponse | null> {
     if (!input.orderId || !(input.amount > 0)) return null;
     const { data } = await this.postForData(
@@ -344,23 +439,38 @@ export class IntegrationService {
         category: input.category,
         faultParty: input.faultParty,
         amount: input.amount,
+        cap: input.cap,
       },
     );
     return data;
   }
 
+  /**
+   * Trừ tiền bên bị phạt (FINE/COMPENSATION) và **trả về kết quả thật**.
+   *
+   * `referenceId` = id hình phạt ⇒ ví dedupe: bấm lại/retry không trừ hai lần.
+   */
   async debit(
     ownerId: string,
     ownerType: string,
     amount: number,
     description: string,
-  ): Promise<void> {
-    await this.post(
+    opts?: PenaltyReference,
+  ): Promise<SideEffectResult> {
+    return this.postExpectOk(
       "WALLET_SERVICE_URL",
       "http://wallet-service:3009",
       "http://localhost:3009",
       "/api/v1/wallets/penalty/debit",
-      { ownerId, ownerType, amount, description },
+      {
+        ownerId,
+        ownerType,
+        amount,
+        description,
+        referenceType: opts?.referenceType,
+        referenceId: opts?.referenceId,
+        transferToPlatform: opts?.transferToPlatform,
+      },
     );
   }
 
@@ -369,13 +479,21 @@ export class IntegrationService {
     ownerType: string,
     amount: number,
     description: string,
-  ): Promise<void> {
-    await this.post(
+    opts?: PenaltyReference,
+  ): Promise<SideEffectResult> {
+    return this.postExpectOk(
       "WALLET_SERVICE_URL",
       "http://wallet-service:3009",
       "http://localhost:3009",
       "/api/v1/wallets/penalty/credit",
-      { ownerId, ownerType, amount, description },
+      {
+        ownerId,
+        ownerType,
+        amount,
+        description,
+        referenceType: opts?.referenceType,
+        referenceId: opts?.referenceId,
+      },
     );
   }
 
@@ -383,8 +501,8 @@ export class IntegrationService {
     driverId: string,
     durationDays: number,
     reason?: string,
-  ): Promise<void> {
-    await this.patch(
+  ): Promise<SideEffectResult> {
+    return this.patchExpectOk(
       "DRIVER_SERVICE_URL",
       "http://driver-service:3007",
       "http://localhost:3007",
@@ -394,8 +512,8 @@ export class IntegrationService {
   }
 
   /** Khóa vĩnh viễn tài xế (BAN) kèm lý do hiển thị khi đăng nhập. */
-  async banDriver(driverId: string, reason?: string): Promise<void> {
-    await this.patch(
+  async banDriver(driverId: string, reason?: string): Promise<SideEffectResult> {
+    return this.patchExpectOk(
       "DRIVER_SERVICE_URL",
       "http://driver-service:3007",
       "http://localhost:3007",
@@ -404,8 +522,11 @@ export class IntegrationService {
     );
   }
 
-  async deductReputation(driverId: string, points: number): Promise<void> {
-    await this.patch(
+  async deductReputation(
+    driverId: string,
+    points: number,
+  ): Promise<SideEffectResult> {
+    return this.patchExpectOk(
       "DRIVER_SERVICE_URL",
       "http://driver-service:3007",
       "http://localhost:3007",
@@ -418,8 +539,8 @@ export class IntegrationService {
     merchantId: string,
     durationDays?: number,
     reason?: string,
-  ): Promise<void> {
-    await this.patch(
+  ): Promise<SideEffectResult> {
+    return this.patchExpectOk(
       "MERCHANT_SERVICE_URL",
       "http://merchant-service:3003",
       "http://localhost:3003",
@@ -431,8 +552,8 @@ export class IntegrationService {
   async suspendConsumer(
     consumerId: string,
     status: "SUSPENDED" | "BANNED",
-  ): Promise<void> {
-    await this.patch(
+  ): Promise<SideEffectResult> {
+    return this.patchExpectOk(
       "CONSUMER_SERVICE_URL",
       "http://consumer-service:3002",
       "http://localhost:3002",

@@ -257,6 +257,8 @@ export class OrderController {
       category?: string;
       faultParty: string;
       amount: number;
+      /** Trần bồi thường: `SHIPPING` (mặc định) hoặc `ITEM` (giá trị món). */
+      cap?: "SHIPPING" | "ITEM";
     },
   ) {
     const data = await this.orderService.settleCompensation(id, body);

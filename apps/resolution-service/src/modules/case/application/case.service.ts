@@ -26,6 +26,7 @@ import {
 } from "../domain/case.enums";
 import {
   CaseMoneyDecision,
+  PARTIAL_ITEM_CATEGORIES,
   decideCaseMoney,
 } from "../domain/case.money-policy";
 import {
@@ -386,10 +387,19 @@ export class CaseService {
     if (input.verdict === Verdict.INVALID && c.caseOrderId) {
       void this.releaseEscrow(c.caseOrderId, c);
     }
-    // Quyết toán tiền theo chính sách (đơn đã giao ⇒ chỉ hoàn phí ship).
+    // Quyết toán tiền theo chính sách (đơn đã giao ⇒ bồi thường phí ship hoặc
+    // đúng giá trị phần món bị lỗi mà AI đề xuất).
     let decision: CaseSettlement | undefined;
     if (input.verdict === Verdict.VALID && c.caseOrderId) {
-      decision = await this.settleCaseMoney(c);
+      const aiCompensation = input.actions.find(
+        (a) =>
+          a.type === "COMPENSATION" &&
+          a.targetType === "CUSTOMER" &&
+          Number(a.amount) > 0,
+      )?.amount;
+      decision = await this.settleCaseMoney(c, {
+        requestedAmount: aiCompensation ?? null,
+      });
     }
 
     // Hình phạt: ưu tiên đúng hình phạt AI đề xuất (admin đã đọc & duyệt);
@@ -517,8 +527,11 @@ export class CaseService {
     }
     let decision: CaseSettlement | undefined;
     if (dto.verdict === Verdict.VALID) {
-      // Đơn đã giao xong ⇒ chỉ hoàn phí ship; đơn giao thất bại ⇒ hoàn 100%.
-      decision = await this.settleCaseMoney(c);
+      // Đơn đã giao xong ⇒ chỉ bồi thường phí ship / giá trị món bị lỗi; đơn giao
+      // thất bại ⇒ hoàn 100%.
+      decision = await this.settleCaseMoney(c, {
+        requestedAmount: dto.compensationAmount ?? null,
+      });
       await this.recordResolutionPenalties(c, decision);
     }
     void this.integration.notify(
@@ -677,18 +690,8 @@ export class CaseService {
    * đơn đã giao thành công bị xử như đơn thất bại. Nay dùng `decideCaseMoney()`:
    *
    *  - `FULL_REFUND` → order-service `settle-failure-money` (hoàn 100%).
-   *  - `SHIP_COMPENSATION` → order-service `settle-compensation` (hoàn đúng
-   *    phần phí ship, trừ đúng bên lỗi, không đụng tiền món).
-   *  - `NONE` → không phát sinh dòng tiền.
-   */
-  /**
-   * Quyết toán tiền cho case có phán quyết `VALID`.
-   *
-   * Trước đây cả 4 call-site đều gọi thẳng `settleFailureMoney` (luồng của đơn
-   * **giao thất bại**: hoàn 100% + huỷ escrow) nên khiếu nại "giao trễ" trên
-   * đơn đã giao thành công bị xử như đơn thất bại. Nay dùng `decideCaseMoney()`:
-   *
-   *  - `FULL_REFUND` → order-service `settle-failure-money` (hoàn 100%).
+   *  - `ITEM_COMPENSATION` → order-service `settle-compensation` với trần là
+   *    **tiền món thực trả** (admin chọn phần món bị thiếu/sai/hỏng).
    *  - `SHIP_COMPENSATION` → order-service `settle-compensation` (hoàn đúng
    *    phần phí ship, trừ đúng bên lỗi, không đụng tiền món).
    *  - `NONE` → không phát sinh dòng tiền.
@@ -701,8 +704,15 @@ export class CaseService {
    *     chỉ nhánh INVALID/WITHDRAWN mới release, nên đơn `a13aae84` (giao trễ,
    *     VALID/DRIVER) bị treo 75.769đ `HELD_BY_DISPUTE` vĩnh viễn: nhà hàng và
    *     tài xế không bao giờ được quyết toán lúc 23:00.
+   *
+   * @param options.requestedAmount Số tiền admin chọn bồi thường cho phần món bị
+   *   thiếu/sai/hỏng. Chỉ có hiệu lực với `PARTIAL_ITEM_CATEGORIES`; bỏ trống ⇒
+   *   giữ nguyên chính sách hoàn 100%.
    */
-  private async settleCaseMoney(c: Case): Promise<CaseSettlement> {
+  private async settleCaseMoney(
+    c: Case,
+    options?: { requestedAmount?: number | null },
+  ): Promise<CaseSettlement> {
     const orderId = c.caseOrderId;
     const order = orderId ? await this.integration.getOrder(orderId) : null;
     const decision = decideCaseMoney({
@@ -711,6 +721,7 @@ export class CaseService {
       category: c.caseCategory,
       reporterType: c.caseReporterType,
       order,
+      requestedAmount: options?.requestedAmount ?? null,
     });
     const status = String((order as any)?.status ?? "").toUpperCase();
     const delivered = status === "DELIVERED" || status === "COMPLETED";
@@ -738,7 +749,12 @@ export class CaseService {
     const outcome =
       decision.mode === "FULL_REFUND"
         ? await this.settleFullRefund(orderId, c)
-        : await this.settleShipCompensation(orderId, c, decision.amount);
+        : await this.settlePartialCompensation(
+            orderId,
+            c,
+            decision.amount,
+            decision.mode === "ITEM_COMPENSATION" ? "ITEM" : "SHIPPING",
+          );
 
     this.logger.log(
       `${label}: ${decision.mode} policy=${decision.amount}đ, ví chuyển=${outcome.settledAmount}đ` +
@@ -796,11 +812,21 @@ export class CaseService {
     };
   }
 
-  /** Bồi thường đúng phần phí ship cho khách (đơn đã giao xong). */
-  private async settleShipCompensation(
+  /**
+   * Bồi thường MỘT khoản từ ví bên lỗi sang ví khách trên đơn đã giao xong.
+   *
+   * - `cap = "SHIPPING"` → hoàn tối đa phần phí ship khách thực trả (giao trễ,
+   *   thái độ...).
+   * - `cap = "ITEM"` → hoàn tối đa phần **tiền món** khách thực trả (thiếu món,
+   *   sai món, hỏng món) ⇒ khách nhận đúng giá trị phần bị lỗi, không phải cả
+   *   đơn. Đây là chốt chặn cuối ở order-service: dù payload có ghi gì thì
+   *   cũng không thể chuyển nhiều hơn số khách đã trả cho phần đó.
+   */
+  private async settlePartialCompensation(
     orderId: string,
     c: Case,
     amount: number,
+    cap: "SHIPPING" | "ITEM",
   ): Promise<Pick<CaseSettlement, "settledAmount" | "settlementNote">> {
     let res: SettlementResponse | null;
     try {
@@ -810,10 +836,12 @@ export class CaseService {
         category: c.caseCategory,
         faultParty: c.caseFaultParty ?? "",
         amount,
+        cap,
       });
     } catch (err: any) {
       this.logger.warn(
-        `Case ${c.caseNumberValue}: bồi thường phí ship đơn ${orderId.slice(0, 8)} lỗi — ${err?.message}`,
+        `Case ${c.caseNumberValue}: bồi thường ${cap === "ITEM" ? "giá trị món" : "phí ship"} ` +
+          `đơn ${orderId.slice(0, 8)} lỗi — ${err?.message}`,
       );
       res = null;
     }
@@ -893,10 +921,16 @@ export class CaseService {
    * vào lô 23:00 — đúng lỗi "case có phạt mà không được quyết toán".
    *
    * Chỉ những case mà phán quyết **không tiêu thụ escrow** (NONE /
-   * SHIP_COMPENSATION) mới release tay; case FULL_REFUND phải đi qua đúng luồng
-   * chuyển tiền của ví (hoàn khách + trừ bên lỗi + giải toả escrow trong MỘT lời
-   * gọi idempotent). Release mù ở đây sẽ đẩy doanh thu vào lô 23:00 dù khách
-   * chưa được hoàn đồng nào.
+   * SHIP_COMPENSATION / ITEM_COMPENSATION) mới release tay; case FULL_REFUND phải
+   * đi qua đúng luồng chuyển tiền của ví (hoàn khách + trừ bên lỗi + giải toả
+   * escrow trong MỘT lời gọi idempotent). Release mù ở đây sẽ đẩy doanh thu vào
+   * lô 23:00 dù khách chưa được hoàn đồng nào.
+   *
+   * Riêng danh mục bồi thường-theo-món (`PARTIAL_ITEM_CATEGORIES`), chế độ tiền
+   * do admin chọn lúc phán quyết và không thể suy lại từ dữ liệu case ⇒ ở đây
+   * TUYỆT ĐỐI không tự chạy hoàn 100%, nếu không cron này sẽ trả khách nốt phần
+   * đơn họ đã dùng và trừ oan nhà hàng chỉ vì lần phán quyết trước chọn bồi
+   * thường một phần. Chỉ mở khoá escrow như các case không tiêu thụ escrow.
    *
    * @returns số case đã xử lý xong trong lượt chạy này.
    */
@@ -922,7 +956,8 @@ export class CaseService {
           reporterType: c.caseReporterType,
           order,
         });
-        if (decision.mode === "FULL_REFUND") {
+        const itemCategory = PARTIAL_ITEM_CATEGORIES.has(c.caseCategory);
+        if (decision.mode === "FULL_REFUND" && !itemCategory) {
           // Ví idempotent theo orderId ⇒ gọi lại an toàn: nếu lượt trước đã chạy
           // thì trả `FAILURE_ALREADY_SETTLED` (không phát sinh dòng tiền mới).
           const res = await this.settleFullRefund(orderId, c);
@@ -1009,8 +1044,9 @@ export class CaseService {
       const isLegacyFine = action.type === "FINE";
 
       // COMPENSATION phải ghi ĐÚNG số tiền đã thực trả (policy), không phải con
-      // số AI tự đoán: đơn đã giao xong chỉ được hoàn phí ship, nên ghi 100%
-      // giá trị đơn lên tab hình phạt sẽ mâu thuẫn với bút toán ví.
+      // số AI tự đoán: đơn đã giao xong chỉ được hoàn phí ship hoặc đúng giá trị
+      // phần món bị lỗi, nên ghi 100% giá trị đơn lên tab hình phạt sẽ mâu thuẫn
+      // với bút toán ví.
       if (action.type === "COMPENSATION" && targetType === c.caseReporterType) {
         const settled = decision?.settledAmount ?? 0;
         if (settled <= 0) {

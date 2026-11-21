@@ -61,12 +61,12 @@ const walletOk = (amount: number) => ({
   skipped: null,
 });
 
-describe("OrderService.paidShippingFeeOf — phí ship khách THỰC TRẢ", () => {
+describe("OrderService.paidBasisOf — số tiền khách THỰC TRẢ", () => {
   it("không khuyến mãi: bằng đúng phí ship niêm yết", () => {
     const order = buildOrder({ orderDiscount: 0, orderTotalAmount: 80000 });
     const { service } = buildService(order, walletOk(20000));
 
-    expect((service as any).paidShippingFeeOf(order)).toBe(20000);
+    expect((service as any).paidBasisOf(order).shippingFeePaid).toBe(20000);
   });
 
   it("khuyến mãi chia theo trọng số món : ship", () => {
@@ -74,7 +74,9 @@ describe("OrderService.paidShippingFeeOf — phí ship khách THỰC TRẢ", () 
     const { service } = buildService(order, walletOk(0));
 
     // base = 60.000 + 20.000 = 80.000; giảm 30.000 ⇒ ship 7.500 ⇒ thực trả 12.500.
-    expect((service as any).paidShippingFeeOf(order)).toBe(12500);
+    expect((service as any).paidBasisOf(order).shippingFeePaid).toBe(12500);
+    // Tiền món thực trả: 60.000 − (30.000 − 7.500) = 37.500.
+    expect((service as any).paidBasisOf(order).itemPaid).toBe(37500);
   });
 
   it("giảm 100% đơn: khách không thực trả phí ship", () => {
@@ -85,14 +87,91 @@ describe("OrderService.paidShippingFeeOf — phí ship khách THỰC TRẢ", () 
     });
     const { service } = buildService(order, walletOk(0));
 
-    expect((service as any).paidShippingFeeOf(order)).toBe(0);
+    expect((service as any).paidBasisOf(order).shippingFeePaid).toBe(0);
+    expect((service as any).paidBasisOf(order).itemPaid).toBe(0);
   });
 
   it("đơn không có phí ship: trần bằng 0", () => {
     const order = buildOrder({ orderDeliveryFee: 0, orderTotalAmount: 0 });
     const { service } = buildService(order, walletOk(0));
 
-    expect((service as any).paidShippingFeeOf(order)).toBe(0);
+    expect((service as any).paidBasisOf(order).shippingFeePaid).toBe(0);
+  });
+});
+
+describe("OrderService.settleCompensation — trần TIỀN MÓN (món thiếu/sai/hỏng)", () => {
+  it("cap=ITEM: yêu cầu vượt tiền món thực trả ⇒ chỉ chuyển phần thực trả", async () => {
+    const order = buildOrder();
+    // Tiền món thực trả = 60.000 − (30.000 − 7.500) = 37.500đ.
+    const { service, httpService } = buildService(order, walletOk(37500));
+
+    const res = await service.settleCompensation(ORDER_ID, {
+      faultParty: "MERCHANT",
+      amount: 40000,
+      cap: "ITEM",
+    });
+
+    expect(httpService.post).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ amount: 37500 }),
+      expect.anything(),
+    );
+    expect(res.amount).toBe(37500);
+    expect(res.settled).toBe(true);
+  });
+
+  it("cap=ITEM: yêu cầu thấp hơn tiền món ⇒ giữ nguyên (bồi thường đúng món thiếu)", async () => {
+    const order = buildOrder();
+    const { service, httpService } = buildService(order, walletOk(20000));
+
+    const res = await service.settleCompensation(ORDER_ID, {
+      faultParty: "MERCHANT",
+      amount: 20000,
+      cap: "ITEM",
+    });
+
+    expect(httpService.post).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ amount: 20000 }),
+      expect.anything(),
+    );
+    expect(res.amount).toBe(20000);
+  });
+
+  it("cap=ITEM: đơn được giảm 100% ⇒ không có gì để bồi thường, không gọi ví", async () => {
+    const order = buildOrder({
+      orderSubtotal: 0,
+      orderDiscount: 20000,
+      orderTotalAmount: 0,
+    });
+    const { service, httpService } = buildService(order, walletOk(0));
+
+    const res = await service.settleCompensation(ORDER_ID, {
+      faultParty: "MERCHANT",
+      amount: 40000,
+      cap: "ITEM",
+    });
+
+    expect(res.settled).toBe(false);
+    expect(res.reason).toBe("EXCEEDS_PAID_ITEM_VALUE");
+    expect(httpService.post).not.toHaveBeenCalled();
+  });
+
+  it("không truyền cap ⇒ mặc định trần phí ship (không đổi hành vi cũ)", async () => {
+    const order = buildOrder();
+    const { service, httpService } = buildService(order, walletOk(12500));
+
+    const res = await service.settleCompensation(ORDER_ID, {
+      faultParty: "DRIVER",
+      amount: 20000,
+    });
+
+    expect(httpService.post).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ amount: 12500 }),
+      expect.anything(),
+    );
+    expect(res.amount).toBe(12500);
   });
 });
 

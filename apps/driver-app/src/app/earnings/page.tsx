@@ -16,18 +16,14 @@ import {
   Legend,
   CartesianGrid,
 } from "recharts";
+import { driverEarningOf } from "@/lib/order-money";
 
-function toNum(v: unknown): number {
-  if (typeof v === "number") return v;
-  if (typeof v === "string") return parseFloat(v) || 0;
-  return 0;
-}
-
-// Tài xế giữ 80% phí ship (20% hoa hồng nền tảng)
-const DRIVER_SHARE = 0.8;
-
+/**
+ * Thu nhập mỗi đơn = 80% phí ship (20% hoa hồng nền tảng) — dùng chung
+ * `driverEarningOf` để màn Thu nhập, Ví và Dashboard không lệch nhau.
+ */
 function earnOf(order: any): number {
-  return Math.round(toNum(order.deliveryFee) * DRIVER_SHARE);
+  return driverEarningOf(order);
 }
 
 function isToday(iso: string): boolean {

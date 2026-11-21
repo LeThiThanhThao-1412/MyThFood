@@ -16,6 +16,12 @@ import { ActorType, CaseCategory, FaultParty, Verdict } from "./case.enums";
  *  - `FULL_REFUND`      — đơn CHƯA giao xong (giao thất bại / huỷ) hoặc khách
  *                          không nhận được hàng/món dùng được ⇒ quyết toán như
  *                          giao thất bại (hoàn 100%, escrow bị huỷ).
+ *  - `ITEM_COMPENSATION`— đơn ĐÃ giao xong, khách chỉ thiếu/sai/hỏng MỘT PHẦN món
+ *                          ⇒ bồi thường đúng **giá trị phần món đó** (admin
+ *                          nhập/chọn từ danh sách món), trừ vào ví bên lỗi;
+ *                          phần món khách đã dùng vẫn được quyết toán bình
+ *                          thường. Đây là mức mặc định của RS-C1 trong
+ *                          `test/2-test-cases/TC-RESOLUTION.md`.
  *  - `SHIP_COMPENSATION`— đơn ĐÃ giao xong, lỗi đến từ dịch vụ (giao trễ, thái
  *                          độ) ⇒ chỉ hoàn tối đa **phí ship** cho khách và trừ
  *                          đúng bên lỗi; tiền món của nhà hàng không bị đụng.
@@ -27,7 +33,11 @@ import { ActorType, CaseCategory, FaultParty, Verdict } from "./case.enums";
  * tiền họ chưa từng bỏ ra và trừ oan bên lỗi.
  */
 
-export type CaseMoneyMode = "FULL_REFUND" | "SHIP_COMPENSATION" | "NONE";
+export type CaseMoneyMode =
+  | "FULL_REFUND"
+  | "ITEM_COMPENSATION"
+  | "SHIP_COMPENSATION"
+  | "NONE";
 
 /** Ảnh chụp tối thiểu của đơn hàng (order-service `GET /orders/:id`). */
 export interface CaseMoneyOrderSnapshot {
@@ -77,6 +87,14 @@ export interface CaseMoneyContext {
   category: CaseCategory;
   reporterType: ActorType;
   order: CaseMoneyOrderSnapshot | null;
+  /**
+   * Số tiền bồi thường admin chọn cho phần món bị thiếu/sai/hỏng (đồng).
+   *
+   * Chỉ dùng cho `PARTIAL_ITEM_CATEGORIES`: khách vẫn dùng được phần lớn đơn
+   * nên KHÔNG hoàn 100% mà chỉ trả lại đúng giá trị phần món bị thiếu. Bỏ trống
+   * ⇒ giữ nguyên chính sách cũ (hoàn 100% đơn) để không âm thầm trả thiếu.
+   */
+  requestedAmount?: number | null;
 }
 
 export interface CaseMoneyDecision {
@@ -97,6 +115,10 @@ const DELIVERED_ORDER_STATUSES = new Set(["DELIVERED", "COMPLETED"]);
 /**
  * Danh mục mà khách **không có được hàng/món dùng được** ⇒ hoàn 100% giá trị
  * đơn dù đơn đã được đánh dấu DELIVERED (bấm giao khống, thiếu món, hỏng...).
+ *
+ * Lưu ý: `MISSING_ITEM` / `WRONG_ITEM` / `DAMAGED_ITEM` nằm trong
+ * `PARTIAL_ITEM_CATEGORIES` — khi admin nhập số tiền bồi thường thì chỉ trả đúng
+ * phần món đó (`ITEM_COMPENSATION`); bỏ trống mới rơi về hoàn 100% ở đây.
  */
 export const FULL_REFUND_CATEGORIES: ReadonlySet<CaseCategory> = new Set([
   CaseCategory.NOT_RECEIVED,
@@ -108,6 +130,22 @@ export const FULL_REFUND_CATEGORIES: ReadonlySet<CaseCategory> = new Set([
   CaseCategory.DAMAGED_ITEM,
   CaseCategory.ORDER_QUALITY,
   CaseCategory.FOOD_SAFETY,
+]);
+
+/**
+ * Danh mục bồi thường THEO GIÁ TRỊ MÓN: đơn đã giao xong nhưng một phần món bị
+ * thiếu / sai / hỏng — khách vẫn dùng được phần còn lại.
+ *
+ * Vì sao cần: hoàn 100% đơn cho một món thiếu là trả khách số tiền họ chưa từng
+ * mất (đơn 126.038đ, thiếu món 40.000đ ⇒ khách nhận 126.038đ), đồng thời trừ
+ * oan nhà hàng toàn bộ doanh thu của đơn. Chính sách đúng là chuyển đúng giá
+ * trị phần món bị lỗi từ ví nhà hàng sang ví khách; phần còn lại quyết toán
+ * bình thường lúc 23:00 (RS-C1 trong `test/2-test-cases/TC-RESOLUTION.md`).
+ */
+export const PARTIAL_ITEM_CATEGORIES: ReadonlySet<CaseCategory> = new Set([
+  CaseCategory.MISSING_ITEM,
+  CaseCategory.WRONG_ITEM,
+  CaseCategory.DAMAGED_ITEM,
 ]);
 
 /**
@@ -239,6 +277,34 @@ export function decideCaseMoney(ctx: CaseMoneyContext): CaseMoneyDecision {
 
   // Đơn đã giao nhưng khách không có hàng để dùng ⇒ hoàn 100%.
   if (FULL_REFUND_CATEGORIES.has(ctx.category)) {
+    // Ngoại lệ: khách chỉ thiếu/sai/hỏng MỘT PHẦN món và admin đã chọn số tiền
+    // bồi thường ⇒ chỉ chuyển đúng phần đó từ ví bên lỗi, KHÔNG hoàn cả đơn.
+    const requested = toAmount(ctx.requestedAmount);
+    if (
+      requested > 0 &&
+      PARTIAL_ITEM_CATEGORIES.has(ctx.category) &&
+      ctx.reporterType === "CONSUMER" &&
+      paid.itemPaid > 0
+    ) {
+      // Yêu cầu ≥ toàn bộ tiền món ⇒ thực chất khách không dùng được gì: hoàn
+      // 100% (gồm cả ship/phí), nếu không sẽ trả thiếu so với chính sách.
+      const amount =
+        requested >= paid.itemPaid
+          ? paid.totalPaid
+          : Math.min(requested, paid.itemPaid, paid.totalPaid);
+      return {
+        mode: "ITEM_COMPENSATION",
+        amount,
+        percent: 0,
+        paidBasis: paid,
+        reason:
+          `${ctx.category}: bồi thường ${amount}đ ` +
+          (amount >= paid.totalPaid
+            ? `= toàn bộ ${paid.totalPaid}đ khách thực trả (yêu cầu ${requested}đ ≥ tiền món ${paid.itemPaid}đ)`
+            : `giá trị phần món bị lỗi (yêu cầu ${requested}đ, trần tiền món thực trả ${paid.itemPaid}đ; đơn ${paid.totalPaid}đ)`),
+      };
+    }
+
     return {
       mode: "FULL_REFUND",
       amount: paid.totalPaid,

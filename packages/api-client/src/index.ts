@@ -37,6 +37,8 @@ export type {
   UpdateDeliveryOptionConfigRequest,
   DeliveryOptionStatsRow,
   StackingStats,
+  PlatformLedgerTx,
+  PlatformLedgerLoan,
 } from "./api-endpoints";
 export type {
   ApiResponse,

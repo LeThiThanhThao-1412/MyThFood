@@ -30,6 +30,7 @@ import {
   acceptOrder as acceptDispatchOrder,
   friendlyError,
 } from "@/lib/delivery-flow";
+import { driverEarningOf } from "@/lib/order-money";
 
 // ─── Helpers ────────────────────────────────────────────────
 function toNum(v: unknown): number {
@@ -169,12 +170,9 @@ export default function DriverDashboardPage() {
   };
   const todayEarnings = deliveredOrders
     .filter((o) => isToday(o.createdAt))
-    .reduce(
-      (sum, o) => Math.round(sum + toNum(o.deliveryFee || 15000) * 0.8),
-      0,
-    );
+    .reduce((sum, o) => sum + driverEarningOf(o), 0);
   const weekEarnings = deliveredOrders.reduce(
-    (sum, o) => Math.round(sum + toNum(o.deliveryFee || 15000) * 0.8),
+    (sum, o) => sum + driverEarningOf(o),
     0,
   );
   const completedOrders = deliveredOrders.length;

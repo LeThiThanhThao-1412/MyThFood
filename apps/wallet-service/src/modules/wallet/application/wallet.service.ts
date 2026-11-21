@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { WalletRepository } from "../infrastructure/wallet.repository";
 import { SettlementRepository } from "../infrastructure/settlement.repository";
 import { SettlementEntryEntity } from "../infrastructure/settlement-entry.entity";
+import { WalletTransactionEntity } from "../infrastructure/wallet-transaction.entity";
 import { OwnerType } from "../domain/wallet.aggregate";
 import {
   CaseCompensationInput,
@@ -737,6 +738,13 @@ export class WalletService {
       clawbackCategory?: string;
       /** Diễn giải khoản nợ hiển thị cho chủ ví. */
       clawbackDescription?: string;
+      /**
+       * Khoản thiếu này nền tảng ĐÃ ứng trả người nhận (khách/tài xế) ⇒ trừ
+       * tiền thật khỏi ví nền tảng (`DEBIT CLAWBACK_ADVANCE`) để "Tiền chi ra"
+       * khớp đúng số đã ứng. Khi thu hồi nợ, ví nền tảng được ghi có
+       * `CREDIT DEBT_RECOVERY`.
+       */
+      advanceFromPlatform?: boolean;
     },
   ): Promise<{
     id: string;
@@ -809,6 +817,21 @@ export class WalletService {
       referenceId,
     });
 
+    let platformCredit = 0;
+    if (transferToPlatform && payable > 0) {
+      await this.credit(
+        "PLATFORM_DEFAULT",
+        OwnerType.PLATFORM,
+        payable,
+        `Thu tiền phạt/vi phạm — ${description}`,
+        referenceType,
+        referenceId,
+      );
+      platformCredit = payable;
+    }
+
+    // Ghi nợ sau khi đã cộng phần thu được vào ví nền tảng: nếu nền tảng phải
+    // ứng cho người nhận thì dùng luôn số tiền vừa thu từ bên lỗi.
     if (shortfall > 0) {
       await this.createClawback({
         ownerId,
@@ -821,20 +844,8 @@ export class WalletService {
           (referenceId
             ? `${description} (đơn ${referenceId.slice(0, 8)})`
             : description),
+        advanceFromPlatform: opts?.advanceFromPlatform === true,
       });
-    }
-
-    let platformCredit = 0;
-    if (transferToPlatform && payable > 0) {
-      await this.credit(
-        "PLATFORM_DEFAULT",
-        OwnerType.PLATFORM,
-        payable,
-        `Thu tiền phạt/vi phạm — ${description}`,
-        referenceType,
-        referenceId,
-      );
-      platformCredit = payable;
     }
 
     this.logger.log(
@@ -1451,6 +1462,9 @@ export class WalletService {
                 referenceId: orderId,
                 clawbackCategory: "CUSTOMER_REFUND",
                 clawbackDescription: `Hoàn tiền cho khách đơn #${short} (lỗi tài xế)`,
+                // Khách đã được cộng tiền ngay ⇒ phần tài xế thiếu là tiền nền
+                // tảng ứng ra, phải trừ thật khỏi ví nền tảng.
+                advanceFromPlatform: true,
               },
             );
             result.driverDebit += d.platformCredit;
@@ -1502,6 +1516,8 @@ export class WalletService {
                 referenceId: orderId,
                 clawbackCategory: "CUSTOMER_REFUND",
                 clawbackDescription: `Hoàn tiền đơn giao thất bại #${short} (lỗi tài xế)`,
+                // Khách đã được hoàn tiền ⇒ phần tài xế thiếu do nền tảng ứng.
+                advanceFromPlatform: true,
               },
             );
             result.driverDebit += d.platformCredit;
@@ -1554,6 +1570,8 @@ export class WalletService {
                 referenceId: orderId,
                 clawbackCategory: "CUSTOMER_REFUND",
                 clawbackDescription: `Hoàn tiền cho khách đơn #${short}`,
+                // Khách đã nhận tiền ⇒ nhà hàng thiếu bao nhiêu là nền tảng ứng.
+                advanceFromPlatform: true,
               },
             );
             result.merchantDebit += d.platformCredit;
@@ -1599,6 +1617,8 @@ export class WalletService {
               referenceId: orderId,
               clawbackCategory: "CUSTOMER_REFUND",
               clawbackDescription: `Hoàn tiền cho khách đơn #${short}`,
+              // Khách đã nhận tiền ⇒ nhà hàng thiếu bao nhiêu là nền tảng ứng.
+              advanceFromPlatform: true,
             },
           );
           result.merchantDebit += d.platformCredit;
@@ -1617,6 +1637,8 @@ export class WalletService {
               referenceId: orderId,
               clawbackCategory: "DRIVER_COMPENSATION",
               clawbackDescription: `Bồi thường tài xế đơn #${short}`,
+              // Tài xế đã được cộng tiền bồi thường ⇒ nền tảng ứng phần thiếu.
+              advanceFromPlatform: true,
             },
           );
           result.merchantDebit += d.platformCredit;
@@ -1784,6 +1806,9 @@ export class WalletService {
         referenceId: orderId,
         clawbackCategory: "CUSTOMER_COMPENSATION",
         clawbackDescription: `Bồi thường khách đơn #${short}`,
+        // Khách đã được bồi thường đủ ngay ⇒ phần bên lỗi không đủ là tiền nền
+        // tảng ứng, phải trừ thật khỏi ví nền tảng.
+        advanceFromPlatform: true,
       },
     );
 
@@ -2554,13 +2579,20 @@ export class WalletService {
     dryRun?: boolean;
   }): Promise<any> {
     const opts = options || {};
+    // Chỉ lô "recover ngày X" (admin chỉ định period) mới lọc theo cửa sổ; cron
+    // 23:00 và nút chạy thủ công không period quyết toán TẤT CẢ dòng PENDING
+    // (`findAllPending`) để dòng vừa được giải toả không bị kẹt ngoài cửa sổ.
+    const hasCustomPeriod = Boolean(opts.periodStart && opts.periodEnd);
     const window = this.computeSettlementWindow(
       opts.periodStart,
       opts.periodEnd,
     );
 
     if (opts.dryRun) {
-      return this.previewSettlement(window);
+      // Preview phải soi ĐÚNG tập dòng mà lô thật sẽ quyết toán; nếu luôn lọc
+      // cửa sổ thì dòng có `settleOn` = biên `:end` (case chốt lúc 23:00) hiện
+      // thiếu trong preview dù lô thật vẫn trả tiền.
+      return this.previewSettlement(window, { allPending: !hasCustomPeriod });
     }
 
     let batch = await this.settlementRepo.findBatchByPeriod(
@@ -2591,13 +2623,12 @@ export class WalletService {
       // kể cả dòng vừa được giải tỏa (INVALID/rút đơn) có deliveredAt cũ — tránh
       // bị kẹt ngoài cửa sổ quyết toán. Chạy thủ công có period tùy chỉnh thì vẫn
       // chỉ quyết toán đúng cửa sổ đó (phục vụ recover batch ngày X).
-      const entries =
-        opts.periodStart && opts.periodEnd
-          ? await this.settlementRepo.findPendingByPeriod(
-              window.periodStart,
-              window.periodEnd,
-            )
-          : await this.settlementRepo.findAllPending();
+      const entries = hasCustomPeriod
+        ? await this.settlementRepo.findPendingByPeriod(
+            window.periodStart,
+            window.periodEnd,
+          )
+        : await this.settlementRepo.findAllPending();
 
       const groups = new Map<
         string,
@@ -2625,6 +2656,11 @@ export class WalletService {
           g.ownerId,
           g.ownerType,
           batchId,
+        );
+        // Nợ TRƯỚC khi credit — dùng cho cột "Nợ còn lại" của bảng theo đơn.
+        const openDebt = await this.settlementRepo.sumOpenClawback(
+          g.ownerId,
+          g.ownerType,
         );
         let recovered = 0;
         if (!already && g.gross > 0) {
@@ -2654,6 +2690,9 @@ export class WalletService {
           clawback: 0,
           netCredit: g.gross,
           recovered,
+          openDebt,
+          /** Nợ còn lại sau khi lô thu hồi (0 nếu không có nợ). */
+          openDebtAfter: Math.max(0, openDebt - recovered),
         });
       }
 
@@ -2677,6 +2716,13 @@ export class WalletService {
         totalPlatformPayout: sumBy("PLATFORM"),
       });
 
+      // Bảng quyết toán THEO ĐƠN — admin đối soát từng đơn (nhà hàng / tài xế /
+      // nền tảng / quỹ dự phòng / nợ đã thu / nợ còn lại) thay vì chỉ thấy tổng
+      // theo chủ ví. Nợ được phân bổ về đơn theo thứ tự thời gian (đơn cũ trước)
+      // nên Σ "nợ đã thu" theo đơn = `totalRecovered` thật của lô.
+      const orders = this.buildOrderRows(entries, groupResults);
+      const openDebtAfterTotal = this.sumOpenDebtAfter(groupResults);
+
       this.logger.log(
         `Quyết toán ${window.periodStart.toISOString()} hoàn tất: credit=${totalCredit}, recovered=${totalRecovered}, reconciled=${reconciled}`,
       );
@@ -2687,6 +2733,7 @@ export class WalletService {
         periodStart: window.periodStart,
         periodEnd: window.periodEnd,
         groups: groupResults,
+        orders,
         summary: {
           totalGross,
           totalCredit,
@@ -2694,7 +2741,12 @@ export class WalletService {
           totalClawback: 0,
           /** Số nợ đã thu hồi ngay sau khi credit (bút toán riêng). */
           totalRecovered,
+          /** Nợ còn lại của các chủ ví sau lô (không cộng trùng theo đơn). */
+          openDebtAfterTotal,
+          orderCount: orders.length,
+          ownerCount: groupResults.length,
           reconciled,
+          recoveryMode: "PARTIAL_ALWAYS",
         },
         triggeredBy: opts.triggeredBy || "CRON",
       };
@@ -2711,14 +2763,30 @@ export class WalletService {
     }
   }
 
-  private async previewSettlement(window: {
-    periodStart: Date;
-    periodEnd: Date;
-  }): Promise<any> {
-    const entries = await this.settlementRepo.findPendingByPeriod(
-      window.periodStart,
-      window.periodEnd,
-    );
+  /**
+   * Dry-run quyết toán: chỉ ĐỌC, không credit / không mark SETTLED / không ghi batch.
+   *
+   * Trả cùng hình dạng với lô thật (`groups` + `summary`) và bổ sung phần **dự
+   * kiến thu hồi nợ clawback** (`recovered`, `openDebtAfter`,
+   * `netAfterRecovery`) để admin thấy đúng số tiền ví thực tăng sau lô.
+   *
+   * `options.allPending` = true khi lô thật chạy không có period tùy chỉnh
+   * (cron 23:00 / chạy thủ công) — khi đó lô thật dùng `findAllPending`, nên
+   * preview cũng phải soi toàn bộ dòng PENDING thay vì lọc cửa sổ.
+   */
+  private async previewSettlement(
+    window: {
+      periodStart: Date;
+      periodEnd: Date;
+    },
+    options?: { allPending?: boolean },
+  ): Promise<any> {
+    const entries = options?.allPending
+      ? await this.settlementRepo.findAllPending()
+      : await this.settlementRepo.findPendingByPeriod(
+          window.periodStart,
+          window.periodEnd,
+        );
     const groups = new Map<
       string,
       { ownerId: string; ownerType: string; gross: number }
@@ -2736,14 +2804,23 @@ export class WalletService {
     const groupResults: any[] = [];
     let totalGross = 0;
     let totalCredit = 0;
+    let totalRecovered = 0;
     for (const g of groups.values()) {
       totalGross += g.gross;
-      // Dry-run phản ánh luật mới: quyết toán trả ĐỦ doanh thu, nợ thu hồi ở
-      // bút toán riêng ⇒ chỉ hiển thị nợ đang mở để admin biết sẽ thu tiếp.
+      // Quyết toán trả ĐỦ doanh thu, nợ thu hồi ở bút toán riêng
+      // (`CLAWBACK_RECOVERY`). Preview mô phỏng luôn bước thu hồi để admin
+      // không thấy "Credit 150.000" trong khi ví chỉ tăng 23.966.
       const openDebt = await this.settlementRepo.sumOpenClawback(
         g.ownerId,
         g.ownerType,
       );
+      const estimate = await this.estimateRecovery(
+        g.ownerId,
+        g.ownerType,
+        g.gross,
+        openDebt,
+      );
+      totalRecovered += estimate.recovered;
       totalCredit += g.gross;
       groupResults.push({
         ownerId: g.ownerId,
@@ -2751,24 +2828,236 @@ export class WalletService {
         gross: g.gross,
         clawback: 0,
         netCredit: g.gross,
+        recovered: estimate.recovered,
         openDebt,
+        openDebtAfter: estimate.openDebtAfter,
+        /** Số dư ròng tăng thêm sau khi trừ nợ (dự kiến). */
+        netAfterRecovery: g.gross - estimate.recovered,
       });
     }
+    const orders = this.buildOrderRows(entries, groupResults);
+    const openDebtAfterTotal = this.sumOpenDebtAfter(groupResults);
     return {
       batchId: null,
       status: "DRY_RUN",
       periodStart: window.periodStart,
       periodEnd: window.periodEnd,
       groups: groupResults,
+      orders,
       summary: {
         totalGross,
         totalCredit,
         totalClawback: 0,
-        totalRecovered: 0,
+        totalRecovered,
+        /** Tổng số dư ròng tăng thêm sau thu hồi nợ (dự kiến). */
+        netAfterRecovery: totalCredit - totalRecovered,
+        /** Nợ còn lại của các chủ ví sau lô (dự kiến, không cộng trùng theo đơn). */
+        openDebtAfterTotal,
+        orderCount: orders.length,
+        ownerCount: groupResults.length,
         reconciled: totalCredit === totalGross,
-        recoveryMode: this.getDebtRecoveryMode(),
+        // Lô 23:00 luôn credit đủ rồi thu hồi ngay với `PARTIAL_ALWAYS`
+        // (xem `settleDaily`), bất kể `DEBT_RECOVERY_MODE` của cron quét.
+        recoveryMode: "PARTIAL_ALWAYS",
+        debtRecoveryMode: this.getDebtRecoveryMode(),
       },
     };
+  }
+
+  /**
+   * Dựng bảng quyết toán **theo đơn** từ các dòng escrow của lô.
+   *
+   * Vì sao cần: bảng theo chủ ví chỉ cho biết "nhà hàng A nhận 150.000" nhưng
+   * không biết tiền đó đến từ đơn nào, của tài xế nào, và bao nhiêu đã bị trừ
+   * vào nợ clawback. Admin đối soát theo đơn cần đủ 1 dòng/đơn:
+   * `orderId | nhà hàng | tài xế | nền tảng | quỹ dự phòng | nợ đã thu | nợ còn lại`.
+   *
+   * Nợ clawback là số dư của **ví** (không phải của từng đơn), nên phần "nợ đã
+   * thu" được phân bổ về đơn theo thứ tự thời gian — đơn cũ trả nợ trước, mỗi
+   * đơn chỉ gánh tối đa doanh thu của chính nó. Nhờ vậy tổng theo đơn luôn khớp
+   * `summary.totalRecovered` của lô (không bịa ra khoản nợ mới).
+   *
+   * `openDebt` của chủ ví (nếu có) dùng để tính "nợ còn lại" luỹ kế sau từng
+   * đơn; xem lại lô cũ mà không còn số liệu thì trả `null` (UI hiển thị "—").
+   */
+  private buildOrderRows(
+    entries: SettlementEntryEntity[],
+    ownerRecoveries: {
+      ownerId: string;
+      ownerType: string;
+      recovered?: number;
+      openDebt?: number | null;
+    }[],
+  ): any[] {
+    const sortRows = (a: any, b: any) =>
+      (a.firstEntryAt ? new Date(a.firstEntryAt).getTime() : 0) -
+        (b.firstEntryAt ? new Date(b.firstEntryAt).getTime() : 0) ||
+      String(a.orderId).localeCompare(String(b.orderId));
+
+    const rows = new Map<string, any>();
+    for (const e of entries) {
+      // Dòng cũ có thể thiếu `orderId`; dùng id dòng làm khoá để không mất tiền.
+      const orderId = e.orderId || `entry-${e.id}`;
+      const row =
+        rows.get(orderId) ??
+        ({
+          orderId,
+          merchantId: null,
+          driverId: null,
+          merchantAmount: 0,
+          driverAmount: 0,
+          platformAmount: 0,
+          reserveAmount: 0,
+          otherAmount: 0,
+          gross: 0,
+          merchantRecovered: 0,
+          driverRecovered: 0,
+          recovered: 0,
+          merchantOpenDebtAfter: null as number | null,
+          driverOpenDebtAfter: null as number | null,
+          openDebtAfter: null as number | null,
+          hasOpenDebtAfter: false,
+          firstEntryAt: null as Date | null,
+        } as any);
+
+      const amount = Number(e.amount) || 0;
+      row.gross += amount;
+      if (e.ownerType === OwnerType.MERCHANT) row.merchantId = e.ownerId;
+      if (e.ownerType === OwnerType.DRIVER) row.driverId = e.ownerId;
+      switch (e.kind) {
+        case "MERCHANT_FOOD_REVENUE":
+          row.merchantAmount += amount;
+          break;
+        case "DRIVER_SHIPPING_FEE":
+          row.driverAmount += amount;
+          break;
+        case "PLATFORM_COMMISSION":
+          row.platformAmount += amount;
+          break;
+        case "RESERVE_FUND_CONTRIBUTION":
+          row.reserveAmount += amount;
+          break;
+        default:
+          if (!e.kind) {
+            // Dòng rất cũ chưa có `kind`: đoán theo chủ ví để không rơi khỏi
+            // cột tiền tương ứng.
+            if (e.ownerType === OwnerType.MERCHANT) row.merchantAmount += amount;
+            else if (e.ownerType === OwnerType.DRIVER)
+              row.driverAmount += amount;
+            else row.platformAmount += amount;
+          } else {
+            // Giữ tiền của loại dòng lạ trong `gross` để tổng không bị hụt.
+            row.otherAmount += amount;
+          }
+      }
+      if (
+        e.createdAt &&
+        (!row.firstEntryAt || e.createdAt < row.firstEntryAt)
+      ) {
+        row.firstEntryAt = e.createdAt;
+      }
+      rows.set(orderId, row);
+    }
+
+    for (const rec of ownerRecoveries) {
+      const isMerchant = rec.ownerType === OwnerType.MERCHANT;
+      const isDriver = rec.ownerType === OwnerType.DRIVER;
+      // Ví nền tảng / quỹ dự phòng / thuế không bao giờ có nợ ⇒ bỏ qua.
+      if (!isMerchant && !isDriver) continue;
+
+      const amountColumn = isMerchant ? "merchantAmount" : "driverAmount";
+      const recoveredColumn = isMerchant
+        ? "merchantRecovered"
+        : "driverRecovered";
+      const debtColumn = isMerchant
+        ? "merchantOpenDebtAfter"
+        : "driverOpenDebtAfter";
+      const idColumn = isMerchant ? "merchantId" : "driverId";
+
+      const ownRows = [...rows.values()]
+        .filter((r) => r[idColumn] === rec.ownerId && r[amountColumn] > 0)
+        .sort(sortRows);
+
+      let left = Math.max(0, Math.round(Number(rec.recovered) || 0));
+      for (const row of ownRows) {
+        if (left <= 0) break;
+        const take = Math.min(left, Number(row[amountColumn]) || 0);
+        row[recoveredColumn] += take;
+        row.recovered += take;
+        left -= take;
+      }
+
+      if (rec.openDebt != null) {
+        let debtLeft = Math.max(0, Math.round(Number(rec.openDebt) || 0));
+        for (const row of ownRows) {
+          debtLeft = Math.max(0, debtLeft - row[recoveredColumn]);
+          row[debtColumn] = debtLeft;
+        }
+      }
+    }
+
+    return [...rows.values()].sort(sortRows).map((r) => {
+      const parts = [r.merchantOpenDebtAfter, r.driverOpenDebtAfter].filter(
+        (v): v is number => v != null,
+      );
+      const { firstEntryAt, ...rest } = r;
+      return {
+        ...rest,
+        openDebtAfter: parts.length
+          ? parts.reduce((s, v) => s + v, 0)
+          : null,
+        hasOpenDebtAfter: parts.some((v) => v > 0),
+      };
+    });
+  }
+
+  /**
+   * Nợ còn lại SAU lô, cộng theo chủ ví (không cộng theo đơn để tránh đếm trùng
+   * khi một chủ ví có nhiều đơn). Ví nền tảng/thuế không bao giờ là bên nợ.
+   */
+  private sumOpenDebtAfter(
+    groupResults: { ownerType: string; openDebtAfter?: number | null }[],
+  ): number {
+    return groupResults
+      .filter(
+        (g) =>
+          g.ownerType !== OwnerType.PLATFORM &&
+          g.ownerType !== OwnerType.TAX,
+      )
+      .reduce((s, g) => s + Math.max(0, Number(g.openDebtAfter) || 0), 0);
+  }
+
+  /**
+   * Dự kiến số nợ clawback thu được ngay sau khi credit `gross` vào ví.
+   *
+   * Mô phỏng `recoverDebtsUnlocked` với `PARTIAL_ALWAYS` (chế độ lô 23:00 ép
+   * buộc): khả dụng = `balance + gross − heldBalance` (tiền đang giữ cho đơn COD
+   * chưa nộp không được đụng), thu tối đa `min(khả dụng, nợ)`. Ví nền tảng /
+   * thuế không bao giờ là bên nợ.
+   */
+  private async estimateRecovery(
+    ownerId: string,
+    ownerType: string,
+    gross: number,
+    openDebt: number,
+  ): Promise<{ recovered: number; openDebtAfter: number }> {
+    const debt = Math.max(0, Math.round(Number(openDebt) || 0));
+    if (debt <= 0) return { recovered: 0, openDebtAfter: 0 };
+    if (
+      ownerType === OwnerType.PLATFORM ||
+      ownerType === OwnerType.TAX ||
+      !ownerType
+    ) {
+      return { recovered: 0, openDebtAfter: debt };
+    }
+    const wallet = await this.walletRepo.findByOwner(ownerId, ownerType);
+    const balance = Number(wallet?.balance || 0);
+    const heldBalance = Number(wallet?.heldBalance || 0);
+    const available =
+      balance + Math.max(0, Math.round(Number(gross) || 0)) - heldBalance;
+    if (available <= 0) return { recovered: 0, openDebtAfter: debt };
+    const recovered = Math.min(available, debt);
+    return { recovered, openDebtAfter: debt - recovered };
   }
 
   private computeSettlementWindow(
@@ -2846,6 +3135,25 @@ export class WalletService {
   async getSettlementBatchDetail(id: string) {
     const batch = await this.settlementRepo.findBatchById(id);
     if (!batch) throw new Error("Settlement batch không tồn tại");
+
+    // Bảng theo đơn của lô đã chạy: dòng escrow đã SETTLED + nợ đã thu THẬT
+    // (lấy từ `clawback_deductions` gắn `referenceId = batchId`, vì bút toán
+    // CLAWBACK_RECOVERY không mang batch id).
+    const entries = await this.settlementRepo.findEntriesByBatchId(id);
+    const deductions =
+      await this.settlementRepo.sumSettlementDeductionsByOwner(id);
+    const orders = this.buildOrderRows(
+      entries,
+      deductions.map((d) => ({
+        ownerId: d.ownerId,
+        ownerType: d.ownerType,
+        recovered: d.amount,
+        // Xem lại lô cũ: không còn số nợ tại thời điểm đó ⇒ "—".
+        openDebt: null,
+      })),
+    );
+    const totalRecovered = deductions.reduce((s, d) => s + d.amount, 0);
+
     return {
       id: batch.id,
       status: batch.status,
@@ -2857,6 +3165,18 @@ export class WalletService {
       triggeredBy: batch.triggeredBy,
       failureReason: batch.failureReason,
       createdAt: batch.createdAt,
+      orders,
+      summary: {
+        totalGross: orders.reduce((s, o) => s + (Number(o.gross) || 0), 0),
+        totalCredit: orders.reduce((s, o) => s + (Number(o.gross) || 0), 0),
+        totalRecovered,
+        /** Lô lịch sử không còn số nợ tại thời điểm chạy. */
+        openDebtAfterTotal: null,
+        orderCount: orders.length,
+        ownerCount: new Set(
+          entries.map((e) => `${e.ownerType}:${e.ownerId}`),
+        ).size,
+      },
     };
   }
 
@@ -2884,6 +3204,11 @@ export class WalletService {
     category?: string | null;
     /** Diễn giải hiển thị cho chủ ví. */
     description?: string | null;
+    /**
+     * Khoản nợ này phát sinh vì nền tảng đã ứng tiền trả người nhận ⇒ ghi
+     * `DEBIT CLAWBACK_ADVANCE` trên ví nền tảng (tiền ra thật).
+     */
+    advanceFromPlatform?: boolean;
   }) {
     const amount = Number(input.amount);
     if (amount <= 0) throw new Error("Số tiền clawback phải lớn hơn 0");
@@ -2905,6 +3230,15 @@ export class WalletService {
           ? `Khoản nợ phát sinh từ đơn #${input.sourceOrderId.slice(0, 8)}`
           : null),
     });
+    if (input.advanceFromPlatform) {
+      await this.advancePlatformForClawback({
+        clawbackId: id,
+        amount,
+        ownerType: input.ownerType,
+        sourceOrderId: input.sourceOrderId ?? null,
+        category: input.category ?? null,
+      });
+    }
     this.logger.log(
       `Tạo clawback ${id}: ${input.ownerType}:${input.ownerId} nợ ${amount}` +
         (input.category ? ` [${input.category}]` : ""),
@@ -2917,6 +3251,89 @@ export class WalletService {
       category: input.category ?? null,
       description: input.description ?? null,
     };
+  }
+
+  /**
+   * Trừ ví nền tảng đúng số tiền nền tảng vừa ứng cho người nhận, tương ứng với
+   * khoản nợ clawback vừa ghi cho bên vi phạm.
+   *
+   * Nhờ vậy "tiền cho mượn" là tiền **thật rời ví nền tảng** (hiện ở cột "Tiền
+   * chi ra" với `CLAWBACK_ADVANCE`) và số dư ví nền tảng giảm tương ứng. Khi
+   * thu hồi nợ, hệ thống ghi `CREDIT DEBT_RECOVERY` vào ví nền tảng nên vòng
+   * tiền khép kín: `CLAWBACK_ADVANCE` (ra) ↔ `DEBT_RECOVERY` (vào).
+   *
+   * Idempotent theo (PLATFORM_DEFAULT, CLAWBACK_ADVANCE, <id khoản nợ>).
+   */
+  private async advancePlatformForClawback(input: {
+    clawbackId: string;
+    amount: number;
+    ownerType: string;
+    sourceOrderId?: string | null;
+    category?: string | null;
+  }): Promise<{ amount: number; duplicated: boolean }> {
+    const amount = Math.max(0, Math.round(Number(input.amount) || 0));
+    if (amount <= 0) return { amount: 0, duplicated: false };
+
+    const existing = await this.walletRepo.findTransactionByOwnerReference(
+      "PLATFORM_DEFAULT",
+      OwnerType.PLATFORM,
+      "CLAWBACK_ADVANCE",
+      input.clawbackId,
+    );
+    if (existing) return { amount: 0, duplicated: true };
+
+    const platform = await this.getOrCreateWallet(
+      "PLATFORM_DEFAULT",
+      OwnerType.PLATFORM,
+    );
+    const balanceBefore = Number(platform.balance);
+    // Ví không được âm (`chk_wallet_balance_nonneg`): nếu quỹ nền tảng không
+    // đủ thì ứng tối đa phần đang có + log lỗi để admin bổ sung quỹ. Phần chênh
+    // vẫn nằm trong khoản nợ clawback nên không mất dấu.
+    const paid = Math.min(amount, Math.max(0, balanceBefore));
+    const order = input.sourceOrderId
+      ? ` đơn #${input.sourceOrderId.slice(0, 8)}`
+      : "";
+    const label =
+      input.category === "CUSTOMER_REFUND"
+        ? "hoàn tiền khách"
+        : input.category === "CUSTOMER_COMPENSATION"
+          ? "bồi thường khách"
+          : input.category === "DRIVER_COMPENSATION"
+            ? "bồi thường tài xế"
+            : "hoàn/bồi thường";
+
+    if (paid > 0) {
+      platform.balance = balanceBefore - paid;
+      await this.walletRepo.save(platform);
+      await this.walletRepo.recordTransaction({
+        id: randomUUID(),
+        walletId: platform.id,
+        ownerId: "PLATFORM_DEFAULT",
+        ownerType: OwnerType.PLATFORM,
+        type: "DEBIT",
+        amount: paid,
+        balanceBefore,
+        balanceAfter: Number(platform.balance),
+        description:
+          `Ứng ${label}${order} — ${input.ownerType} hoàn lại khi có tiền` +
+          (paid < amount
+            ? ` (thiếu ${amount - paid}: ví nền tảng không đủ)`
+            : ""),
+        referenceType: "CLAWBACK_ADVANCE",
+        referenceId: input.clawbackId,
+      });
+      this.logger.log(
+        `Ứng tiền từ ví nền tảng ${paid}${order} (clawback ${input.clawbackId})`,
+      );
+    }
+    if (paid < amount) {
+      this.logger.error(
+        `Ví nền tảng không đủ tiền ứng ${amount}${order} — chỉ ghi nhận ${paid}. ` +
+          "Cần bổ sung quỹ nền tảng để khoản ứng khớp nợ clawback.",
+      );
+    }
+    return { amount: paid, duplicated: false };
   }
 
   async getOpenClawback(ownerId: string, ownerType: string) {
@@ -3005,6 +3422,220 @@ export class WalletService {
         (balanceByType[w.ownerType] || 0) + Number(w.balance);
     }
     return { totalWallets: allWallets.length, totalBalance, balanceByType };
+  }
+
+  /**
+   * Sổ ví nền tảng cho admin (thay trang "Giao dịch" cũ).
+   *
+   * Gom 4 nhóm số liệu admin cần đối soát:
+   *  1. Tiền **nhận vào** / **chi ra** của ví nền tảng + quỹ dự phòng, tách theo
+   *     nguồn (`referenceType`: hoa hồng, phạt, thu nợ, seed…).
+   *  2. Tiền nền tảng **cho mượn để bồi thường**: nền tảng ứng tiền trả bên bị
+   *     hại trước (ghi `DEBIT CLAWBACK_ADVANCE` trên ví nền tảng), bên vi phạm
+   *     ghi nợ `clawback_liabilities` (`originalAmount` = đã ứng, `remainingAmount`
+   *     = còn phải thu).
+   *  3. Tiền **thu nợ**: `DEBIT CLAWBACK_RECOVERY` ở ví bên nợ, đối ứng
+   *     `CREDIT DEBT_RECOVERY` ở ví nền tảng (bất biến: hai số phải bằng nhau).
+   *  4. Sổ **thu chi ví tài xế**: doanh thu ship, nộp COD, phạt, thu nợ…
+   */
+  async getPlatformLedger(params: {
+    from?: string;
+    to?: string;
+    take?: number;
+    driverId?: string;
+    driverType?: string;
+    driverSearch?: string;
+  }) {
+    const take = Math.min(
+      Math.max(1, Math.round(Number(params.take) || 100)),
+      500,
+    );
+    // Chuẩn hoá khoảng thời gian: Postgres nhận thẳng chuỗi nên `from`/`to` rác
+    // ("not-a-date") sẽ làm câu query nổ 500. Chặn sớm bằng 400 để client biết
+    // mình gửi sai tham số thay vì thấy "Internal server error".
+    const bound = (value: string | undefined, field: string) => {
+      if (!value) return undefined;
+      const at = new Date(value);
+      if (Number.isNaN(at.getTime())) {
+        throw new BadRequestException(
+          `${field} không hợp lệ — cần thời gian dạng ISO 8601 (vd 2026-01-31T00:00:00Z)`,
+        );
+      }
+      return at.toISOString();
+    };
+    const from = bound(params.from, "from");
+    const to = bound(params.to, "to");
+    if (from && to && from > to) {
+      throw new BadRequestException("from phải trước hoặc bằng to");
+    }
+    params = { ...params, from, to };
+    const platformIds = ["PLATFORM_DEFAULT", "RESERVE_FUND"];
+    const range = { from: from ?? null, to: to ?? null };
+
+    const [
+      platformWallet,
+      reserveWallet,
+      inflow,
+      outflow,
+      loanSummary,
+      loanRows,
+      recoveryRows,
+      platformTx,
+      driverLedger,
+      allWallets,
+    ] = await Promise.all([
+      this.walletRepo.findByOwner("PLATFORM_DEFAULT", OwnerType.PLATFORM),
+      this.walletRepo.findByOwner("RESERVE_FUND", OwnerType.PLATFORM),
+      this.walletRepo.sumTransactionsByReference({
+        ownerIds: platformIds,
+        type: "CREDIT",
+        from: params.from,
+        to: params.to,
+      }),
+      this.walletRepo.sumTransactionsByReference({
+        ownerIds: platformIds,
+        type: "DEBIT",
+        from: params.from,
+        to: params.to,
+      }),
+      this.settlementRepo.summarizeClawbacks({
+        from: params.from,
+        to: params.to,
+      }),
+      this.settlementRepo.listClawbacks({
+        from: params.from,
+        to: params.to,
+        take,
+      }),
+      this.walletRepo.findTransactionsByReferenceType({
+        referenceType: "CLAWBACK_RECOVERY",
+        type: "DEBIT",
+        from: params.from,
+        to: params.to,
+        take,
+      }),
+      this.walletRepo.findTransactionsForOwners({
+        ownerIds: platformIds,
+        from: params.from,
+        to: params.to,
+        take,
+      }),
+      this.walletRepo.getDriverLedger({
+        ownerId: params.driverId,
+        type: params.driverType,
+        search: params.driverSearch,
+        from: params.from,
+        to: params.to,
+        take,
+      }),
+      this.walletRepo.findAllWallets(),
+    ]);
+
+    const toTx = (t: WalletTransactionEntity) => ({
+      id: t.id,
+      ownerId: t.ownerId,
+      ownerType: t.ownerType,
+      type: t.type,
+      amount: Number(t.amount),
+      balanceAfter: Number(t.balanceAfter ?? 0),
+      description: t.description,
+      referenceType: t.referenceType,
+      referenceId: t.referenceId,
+      createdAt: t.createdAt,
+    });
+
+    // Tiền thu nợ đã về ví nền tảng (gồm cả phần hoàn lại không phân bổ được).
+    // `count` lấy từ bảng tổng hợp (không bị giới hạn `take`) để khớp với số
+    // tiền đã thu; `items` vẫn là các dòng chi tiết gần nhất.
+    const recoveryCreditRows = inflow.rows.filter(
+      (r) => r.referenceType === "DEBT_RECOVERY",
+    );
+    const recovered = recoveryCreditRows.reduce((s, r) => s + r.total, 0);
+    const recoveredCount = recoveryCreditRows.reduce((s, r) => s + r.count, 0);
+
+    // Tiền nền tảng đã ứng ra để hoàn tiền / bồi thường người nhận, rồi ghi nợ
+    // clawback cho bên vi phạm. Mỗi lần ứng được ghi thật vào ví nền tảng
+    // (`DEBIT CLAWBACK_ADVANCE`) nên tổng chi đã bao gồm khoản này; tách riêng
+    // để UI đọc được "chi ra bao nhiêu, trong đó ứng bao nhiêu".
+    const advanceRow = outflow.rows.find(
+      (r) => r.referenceType === "CLAWBACK_ADVANCE",
+    );
+    const advanceTotal = Number(advanceRow?.total) || 0;
+    const advanceCount = Number(advanceRow?.count) || 0;
+
+    // Số dư ví tài xế để cột "còn trên ví" không phải gọi thêm API.
+    const driverBalances: Record<string, number> = {};
+    for (const w of allWallets) {
+      if (w.ownerType === "DRIVER") {
+        driverBalances[w.ownerId] = Number(w.balance) || 0;
+      }
+    }
+
+    return {
+      generatedAt: new Date().toISOString(),
+      range,
+      wallets: {
+        platform: {
+          ownerId: "PLATFORM_DEFAULT",
+          label: "Ví nền tảng",
+          balance: Number(platformWallet?.balance ?? 0),
+          heldBalance: Number(platformWallet?.heldBalance ?? 0),
+        },
+        reserve: {
+          ownerId: "RESERVE_FUND",
+          label: "Quỹ dự phòng",
+          balance: Number(reserveWallet?.balance ?? 0),
+          heldBalance: Number(reserveWallet?.heldBalance ?? 0),
+        },
+      },
+      inflow: {
+        total: inflow.total,
+        count: inflow.count,
+        byReferenceType: inflow.rows,
+        items: platformTx.filter((t) => t.type === "CREDIT").map(toTx),
+      },
+      // "Tiền chi ra" = mọi bút toán DEBIT trên ví nền tảng + quỹ dự phòng. Khoản
+      // ứng hoàn/bồi thường nay là bút toán thật (`CLAWBACK_ADVANCE`) nên tổng
+      // chi khớp với số dư ví; `advance*` chỉ tách riêng để đối soát.
+      outflow: {
+        total: outflow.total,
+        count: outflow.count,
+        advanceTotal,
+        advanceCount,
+        byReferenceType: outflow.rows,
+        items: platformTx.filter((t) => t.type !== "CREDIT").map(toTx),
+      },
+      loans: {
+        ...loanSummary,
+        items: loanRows.map((c) => ({
+          id: c.id,
+          ownerId: c.ownerId,
+          ownerType: c.ownerType,
+          category: c.category ?? null,
+          sourceOrderId: c.sourceOrderId ?? null,
+          sourceBatchId: c.sourceBatchId ?? null,
+          originalAmount: Number(c.originalAmount),
+          remainingAmount: Number(c.remainingAmount),
+          description: c.description ?? null,
+          status: c.status,
+          createdAt: c.createdAt,
+          settledAt: c.settledAt ?? null,
+        })),
+      },
+      recovery: {
+        total: recovered,
+        count: recoveredCount,
+        items: recoveryRows.map(toTx),
+      },
+      drivers: {
+        totals: driverLedger.totals,
+        byDriver: driverLedger.byDriver.map((d) => ({
+          ...d,
+          balance: driverBalances[d.ownerId] ?? 0,
+        })),
+        items: driverLedger.items.map(toTx),
+      },
+    };
   }
 
   async getEarnings(

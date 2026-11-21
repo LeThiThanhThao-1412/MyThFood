@@ -20,6 +20,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { useAuthStore } from "@mythfood/frontend-shared";
 import DriverShell from "@/components/DriverShell";
 import { driverApi, orderApi, walletApi } from "@mythfood/api-client";
+import { driverEarningOf, isCashOrder } from "@/lib/order-money";
 
 const MIN_COD_BALANCE = 2_000_000;
 const MIN_WITHDRAW = 50_000;
@@ -272,10 +273,6 @@ export default function DriverWalletPage() {
   const availableBalance = Math.max(0, walletBalance - holdAmount);
 
   const deliveredOrders = allOrders.filter((o) => o.status === "DELIVERED");
-  const incomeFromDelivered = deliveredOrders.reduce(
-    (sum, o) => sum + Math.round(toNum(o.deliveryFee || 15000) * 0.75),
-    0,
-  );
 
   if (loading) {
     return (
@@ -602,7 +599,7 @@ export default function DriverWalletPage() {
 
       {/* ─── Delivered Orders (income reference) ─── */}
       <div className="bg-white rounded-2xl shadow-sm p-5">
-        <h3 className="font-bold text-[#1a1a2e] mb-3">📦 Đơn COD đã giao</h3>
+        <h3 className="font-bold text-[#1a1a2e] mb-3">📦 Đơn đã giao</h3>
         <p className="text-xs text-gray-400 mb-3">
           💡 Với đơn COD, phí ship tài xế đã nhận <strong>tiền mặt</strong> từ
           khách. Ví chỉ bị trừ tiền món để trả nhà hàng & nền tảng.
@@ -614,14 +611,12 @@ export default function DriverWalletPage() {
             </p>
           )}
           {deliveredOrders.map((o: any) => {
-            const isCOD = o.paymentMethod === "COD";
-            const foodTotal =
-              o.items?.reduce(
-                (s: number, i: any) =>
-                  s + toNum(i.unitPrice) * (i.quantity || 1),
-                0,
-              ) || 0;
-            const shipFee = toNum(o.deliveryFee || 15000);
+            // `CASH` và `COD` đều là đơn thu tiền mặt (backend coi như nhau).
+            const isCOD = isCashOrder(o);
+            const earn = driverEarningOf(o);
+            // Tiền mặt giữ lại = tổng khách trả − phần ví bị trừ để trả nhà
+            // hàng & nền tảng (món − giảm giá + 20% phí ship + phí dịch vụ).
+            const codPayable = Math.max(0, toNum(o.totalAmount) - earn);
             return (
               <div
                 key={o.id}
@@ -638,15 +633,15 @@ export default function DriverWalletPage() {
                 <div className="flex justify-between text-xs mt-1">
                   <span className="text-gray-400">
                     {isCOD
-                      ? `Tiền mặt: +${(foodTotal + shipFee).toLocaleString("vi-VN")}đ | Ví: -${foodTotal.toLocaleString("vi-VN")}đ`
-                      : `Phí ship: +${Math.round(shipFee * 0.75).toLocaleString("vi-VN")}đ`}
+                      ? `Tiền mặt: +${toNum(o.totalAmount).toLocaleString("vi-VN")}đ | Ví: -${codPayable.toLocaleString("vi-VN")}đ`
+                      : `Phí ship: +${earn.toLocaleString("vi-VN")}đ`}
                   </span>
                   <span
                     className={`font-semibold ${isCOD ? "text-blue-600" : "text-green-600"}`}
                   >
                     {isCOD
-                      ? `Giữ: ${shipFee.toLocaleString("vi-VN")}đ`
-                      : `+${Math.round(shipFee * 0.75).toLocaleString("vi-VN")}đ`}
+                      ? `Giữ: ${earn.toLocaleString("vi-VN")}đ`
+                      : `+${earn.toLocaleString("vi-VN")}đ`}
                   </span>
                 </div>
               </div>

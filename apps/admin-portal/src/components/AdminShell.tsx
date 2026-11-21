@@ -13,7 +13,7 @@ export const ADMIN_NAV = [
   { href: "/price-management", label: "Biến động giá", icon: "📉" },
   { href: "/orders", label: "Đơn hàng", icon: "📋" },
   { href: "/delivery-options", label: "Giao hàng", icon: "🚚" },
-  { href: "/transactions", label: "Giao dịch", icon: "💰" },
+  { href: "/transactions", label: "Ví nền tảng", icon: "🏦" },
   { href: "/settlement", label: "Quyết toán", icon: "💼" },
   { href: "/revenue", label: "Doanh thu", icon: "📈" },
   { href: "/users", label: "Người dùng", icon: "👥" },
