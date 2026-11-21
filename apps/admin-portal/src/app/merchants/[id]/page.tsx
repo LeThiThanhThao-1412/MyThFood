@@ -2,7 +2,12 @@
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { merchantApi } from "@mythfood/api-client";
+import {
+  merchantApi,
+  resolutionApi,
+  httpClient,
+  PORTS,
+} from "@mythfood/api-client";
 import {
   useAuthStore,
   getFoodCategoryLabel,
@@ -29,6 +34,10 @@ export default function AdminMerchantDetailPage() {
   const [merchant, setMerchant] = useState<any>(null);
   const [menu, setMenu] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  /** Sức khỏe khiếu nại tuần (tổng đơn, đơn hủy, khiếu nại hợp lệ/tổng, cảnh báo). */
+  const [health, setHealth] = useState<any>(null);
+  /** Tài khoản đăng nhập của chủ nhà hàng (email/SĐT/khóa) từ identity-service. */
+  const [owner, setOwner] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
@@ -48,14 +57,30 @@ export default function AdminMerchantDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const [mRes, menuRes, statsRes] = await Promise.all([
+      const [mRes, menuRes, statsRes, healthRes] = await Promise.all([
         merchantApi.getById(id),
         merchantApi.getMenu(id, true).catch(() => []),
-        merchantApi.getStats(id).catch(() => null),
+        // `all` = toàn bộ lịch sử để "Tổng đơn"/"Đơn hủy" không chỉ là hôm nay.
+        merchantApi.getStats(id, "all").catch(() => null),
+        resolutionApi.getMerchantHealth(id).catch(() => null),
       ]);
       setMerchant(mRes);
       setMenu(Array.isArray(menuRes) ? menuRes : []);
       if (statsRes) setStats(statsRes);
+      if (healthRes) setHealth(healthRes.data ?? healthRes);
+
+      // Email/SĐT có thể trống trên hồ sơ nhà hàng ⇒ lấy từ tài khoản đăng nhập.
+      if (mRes?.userId) {
+        try {
+          const uRes: any = await httpClient.get<any>(
+            PORTS.IDENTITY,
+            `/auth/users/${mRes.userId}`,
+          );
+          setOwner(uRes?.data ?? uRes ?? null);
+        } catch {
+          /* không chặn trang nếu identity-service không phản hồi */
+        }
+      }
     } catch {
       setError("Không thể tải thông tin nhà hàng");
     } finally {
@@ -102,6 +127,24 @@ export default function AdminMerchantDetailPage() {
     cls: "bg-gray-100 text-gray-600",
   };
 
+  const displayEmail = merchant.email || owner?.email || "—";
+  const displayPhone = merchant.phone || owner?.phone || "—";
+  const ratingValue = stats?.averageRating ?? merchant.rating ?? 0;
+  const ratingCount = stats?.totalRatings ?? merchant.totalRatings ?? 0;
+  const totalOrdersValue = stats?.totalOrders ?? merchant.totalOrders ?? 0;
+  const cancelledOrders =
+    stats?.cancelledOrders ?? health?.cancelledOrders ?? 0;
+  const validComplaints = health?.validComplaints ?? 0;
+  const totalComplaints = health?.totalComplaints ?? 0;
+  const validComplaintsAllTime =
+    health?.validComplaintsAllTime ?? validComplaints;
+  const totalComplaintsAllTime =
+    health?.totalComplaintsAllTime ?? totalComplaints;
+  const complaintRate = Number(health?.complaintRate ?? 0);
+  const warnRate = Number(health?.thresholds?.warnRate ?? 0.05);
+  const lockRate = Number(health?.thresholds?.lockRate ?? 0.15);
+  const lockDays = Number(health?.thresholds?.lockDays ?? 30);
+
   return (
     <AdminShell title="🏪 Chi tiết nhà hàng">
       <div className="space-y-4">
@@ -125,8 +168,8 @@ export default function AdminMerchantDetailPage() {
           </div>
 
           <div className="grid sm:grid-cols-2 gap-3 mt-5 text-sm">
-            <Info label="Email" value={merchant.email} />
-            <Info label="SĐT" value={merchant.phone} />
+            <Info label="Email" value={displayEmail} />
+            <Info label="SĐT" value={displayPhone} />
             <Info label="Địa chỉ" value={merchant.address} />
             <Info
               label="Danh mục"
@@ -151,9 +194,26 @@ export default function AdminMerchantDetailPage() {
             )}
             <Info
               label="Đánh giá"
-              value={`${merchant.rating ?? 0} ⭐ (${merchant.totalRatings ?? 0})`}
+              value={`${Number(ratingValue).toFixed(1)} ⭐ (${ratingCount})`}
             />
-            <Info label="Tổng đơn" value={merchant.totalOrders} />
+            <Info label="Tổng đơn" value={totalOrdersValue} />
+            <Info label="Đơn hủy" value={cancelledOrders} />
+            <Info
+              label="Khiếu nại hợp lệ / tổng (tích lũy)"
+              value={
+                health
+                  ? `${validComplaintsAllTime} / ${totalComplaintsAllTime}`
+                  : "—"
+              }
+            />
+            <Info
+              label={`Khiếu nại ${health?.windowDays ?? 7} ngày`}
+              value={health ? `${validComplaints} / ${totalComplaints}` : "—"}
+            />
+            <Info
+              label={`Tỷ lệ khiếu nại ${health?.windowDays ?? 7} ngày`}
+              value={health ? `${(complaintRate * 100).toFixed(2)}%` : "—"}
+            />
             <Info
               label="Đang mở cửa"
               value={merchant.isOpenNow ? "✅ Có" : "❌ Không"}
@@ -232,19 +292,79 @@ export default function AdminMerchantDetailPage() {
               </p>
             </div>
           )}
+
+          {(owner?.status === "SUSPENDED" ||
+            merchant.status === "SUSPENDED" ||
+            health?.level === "LOCK") && (
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              <p className="font-semibold">🔒 Tài khoản đang bị tạm khóa</p>
+              {owner?.suspendedUntil && (
+                <p className="mt-1">
+                  Khóa đến:{" "}
+                  {new Date(owner.suspendedUntil).toLocaleString("vi-VN")}
+                </p>
+              )}
+              {owner?.suspendReason && (
+                <p className="mt-1">Lý do: {owner.suspendReason}</p>
+              )}
+              <p className="mt-1">
+                Tỷ lệ khiếu nại hợp lệ: {(complaintRate * 100).toFixed(2)}%
+                (ngưỡng khóa {(lockRate * 100).toFixed(0)}% ⇒ khóa {lockDays}{" "}
+                ngày).
+              </p>
+            </div>
+          )}
+
+          {owner?.status !== "SUSPENDED" &&
+            merchant.status !== "SUSPENDED" &&
+            health?.level === "WARNING" && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                <p className="font-semibold">⚠️ Cảnh báo tỉ lệ khiếu nại</p>
+                <p className="mt-1">
+                  {validComplaints}/{health?.totalOrders ?? 0} đơn bị khiếu nại
+                  hợp lệ ({(complaintRate * 100).toFixed(2)}%), vượt ngưỡng{" "}
+                  {(warnRate * 100).toFixed(0)}%. Nếu vượt{" "}
+                  {(lockRate * 100).toFixed(0)}%, tài khoản bị khóa {lockDays}{" "}
+                  ngày.
+                </p>
+                {health?.warnings?.length > 0 && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    Đã ghi nhận {health.warnings.length} cảnh báo trên app nhà
+                    hàng (nhà hàng có thể bấm &quot;Đã hiểu&quot; để ẩn).
+                  </p>
+                )}
+              </div>
+            )}
         </div>
 
         {stats && (
           <div className="bg-white rounded-2xl shadow-sm p-6">
             <h3 className="font-bold text-lg mb-3">📈 Thống kê</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
               <Stat
                 label="Tổng đơn"
                 value={stats.totalOrders ?? stats.completedOrders ?? "—"}
               />
+              <Stat label="Đơn hủy" value={stats.cancelledOrders ?? 0} />
               <Stat label="Doanh thu" value={formatVnd(stats.totalRevenue)} />
-              <Stat label="Đánh giá TB" value={stats.averageRating ?? "—"} />
-              <Stat label="Đang xử lý" value={stats.pendingOrders ?? "—"} />
+              <Stat
+                label="Đánh giá TB"
+                value={`${Number(stats.averageRating ?? 0).toFixed(1)} (${
+                  stats.totalRatings ?? 0
+                })`}
+              />
+              <Stat
+                label="Khiếu nại hợp lệ (tích lũy)"
+                value={
+                  health
+                    ? `${validComplaintsAllTime}/${totalComplaintsAllTime}`
+                    : "—"
+                }
+              />
+              <Stat
+                label={`Tỷ lệ ${health?.windowDays ?? 7} ngày`}
+                value={health ? `${(complaintRate * 100).toFixed(2)}%` : "—"}
+              />
             </div>
           </div>
         )}

@@ -6,6 +6,7 @@ import { PenaltyEntity } from "../modules/penalty/infrastructure/penalty.entity"
 import { AppealEntity } from "../modules/penalty/infrastructure/appeal.entity";
 import { FraudRuleEntity } from "../modules/fraud/fraud-rule.entity";
 import { CaseAiAnalysisEntity } from "../modules/assistant/infrastructure/analysis.entity";
+import { MerchantWarningEntity } from "../modules/monitor/infrastructure/merchant-warning.entity";
 
 export const getDatabaseConfig = (
   configService: ConfigService,
@@ -24,6 +25,8 @@ export const getDatabaseConfig = (
     FraudRuleEntity,
     // Bản phân tích AI đã lưu (AI tự chạy nền khi khiếu nại được tạo).
     CaseAiAnalysisEntity,
+    // Cảnh báo/khóa nhà hàng theo tỉ lệ khiếu nại tuần.
+    MerchantWarningEntity,
   ],
   synchronize: configService.get<string>("NODE_ENV") === "development",
   logging: configService.get<string>("NODE_ENV") === "development",

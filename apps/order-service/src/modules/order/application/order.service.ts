@@ -1542,7 +1542,9 @@ export class OrderService {
         `Bỏ bồi thường ${capLabel} #${short}: yêu cầu ${requested}đ vượt ${capLabel} thực trả ${capAmount}đ`,
       );
       return skipped(
-        capKind === "ITEM" ? "EXCEEDS_PAID_ITEM_VALUE" : "EXCEEDS_PAID_SHIPPING_FEE",
+        capKind === "ITEM"
+          ? "EXCEEDS_PAID_ITEM_VALUE"
+          : "EXCEEDS_PAID_SHIPPING_FEE",
       );
     }
 
@@ -1907,6 +1909,23 @@ export class OrderService {
     endDate?: string,
   ): Promise<any> {
     return this.orderRepository.getMerchantStats(merchantId, {
+      startDate,
+      endDate,
+    });
+  }
+
+  /** Tổng đơn + đơn hủy theo từng nhà hàng (dùng cho đánh giá khiếu nại tuần). */
+  async getMerchantOrderCounts(
+    startDate?: string,
+    endDate?: string,
+  ): Promise<
+    Array<{
+      merchantId: string;
+      totalOrders: number;
+      cancelledOrders: number;
+    }>
+  > {
+    return this.orderRepository.getMerchantOrderCounts({
       startDate,
       endDate,
     });

@@ -927,9 +927,13 @@ export class MerchantService {
       merchantId: id,
       period,
       totalOrders: orderStats?.totalOrders ?? merchant.merchantTotalOrders ?? 0,
+      // Số đơn hủy: admin đối chiếu với số khiếu nại và uy tín nhà hàng.
+      cancelledOrders: orderStats?.cancelledOrders ?? 0,
       totalRevenue: orderStats?.totalRevenue ?? 0,
       averageRating:
         reviewSummary?.averageRating ?? merchant.merchantRating ?? 0,
+      // Tổng lượt đánh giá lấy từ review-service (nguồn chuẩn), fallback cache.
+      totalRatings: reviewSummary?.total ?? merchant.merchantTotalRatings ?? 0,
       pendingOrders: orderStats?.pendingOrders ?? 0,
       revenueByDay: orderStats?.revenueByDay ?? [],
       topItems: orderStats?.topItems ?? [],
@@ -1263,6 +1267,10 @@ export class MerchantService {
       case "30days":
       case "month":
         startDate = new Date(Date.now() - 30 * 86400000).toISOString();
+        break;
+      case "all":
+        // Toàn bộ lịch sử: bỏ mốc bắt đầu (dùng cho hồ sơ admin).
+        startDate = undefined;
         break;
       case "today":
       default:

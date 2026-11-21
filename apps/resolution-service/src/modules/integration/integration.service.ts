@@ -339,6 +339,66 @@ export class IntegrationService {
     );
   }
 
+  /**
+   * Thống kê đơn của **một** nhà hàng trong cửa sổ thời gian (order-service).
+   *
+   * Dùng cho màn hình sức khỏe nhà hàng: tổng đơn làm mẫu số của tỉ lệ khiếu
+   * nại, số đơn hủy để admin đối chiếu.
+   */
+  async getMerchantOrderStats(
+    merchantId: string,
+    since: Date,
+    until: Date,
+  ): Promise<{ totalOrders: number; cancelledOrders: number } | null> {
+    if (!merchantId) return null;
+    const query =
+      `?startDate=${encodeURIComponent(since.toISOString())}` +
+      `&endDate=${encodeURIComponent(until.toISOString())}`;
+    const data = await this.getData(
+      "ORDER_SERVICE_URL",
+      "http://order-service:3004",
+      "http://localhost:3004",
+      `/api/v1/orders/stats/merchant/${merchantId}${query}`,
+    );
+    if (!data || typeof data !== "object") return null;
+    return {
+      totalOrders: Number((data as any).totalOrders ?? 0),
+      cancelledOrders: Number((data as any).cancelledOrders ?? 0),
+    };
+  }
+
+  /**
+   * Tổng số đơn theo từng nhà hàng trong cửa sổ thời gian (order-service).
+   *
+   * Một lời gọi duy nhất thay vì N lời gọi cho N nhà hàng khi đánh giá tỉ lệ
+   * khiếu nại toàn hệ thống. Trả `null` nếu order-service không phản hồi để
+   * người gọi bỏ qua lượt đánh giá thay vì coi mọi tỉ lệ là 0.
+   */
+  async getMerchantOrderCounts(
+    since: Date,
+    until: Date,
+  ): Promise<Array<{
+    merchantId: string;
+    totalOrders: number;
+    cancelledOrders: number;
+  }> | null> {
+    const query =
+      `?startDate=${encodeURIComponent(since.toISOString())}` +
+      `&endDate=${encodeURIComponent(until.toISOString())}`;
+    const data = await this.getData(
+      "ORDER_SERVICE_URL",
+      "http://order-service:3004",
+      "http://localhost:3004",
+      `/api/v1/orders/stats/merchant-order-counts${query}`,
+    );
+    if (!Array.isArray(data)) return null;
+    return data.map((row: any) => ({
+      merchantId: String(row.merchantId ?? ""),
+      totalOrders: Number(row.totalOrders ?? 0),
+      cancelledOrders: Number(row.cancelledOrders ?? 0),
+    }));
+  }
+
   async holdSettlement(orderId: string, caseId?: string | null): Promise<void> {
     if (!orderId) return;
     await this.post(
@@ -512,7 +572,10 @@ export class IntegrationService {
   }
 
   /** Khóa vĩnh viễn tài xế (BAN) kèm lý do hiển thị khi đăng nhập. */
-  async banDriver(driverId: string, reason?: string): Promise<SideEffectResult> {
+  async banDriver(
+    driverId: string,
+    reason?: string,
+  ): Promise<SideEffectResult> {
     return this.patchExpectOk(
       "DRIVER_SERVICE_URL",
       "http://driver-service:3007",

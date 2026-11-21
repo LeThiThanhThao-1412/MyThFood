@@ -231,6 +231,8 @@ services:
           - /api/v1/penalties
           - /api/v1/fraud-rules
           - /api/v1/fraud
+          # Cảnh báo/khóa nhà hàng theo tỉ lệ khiếu nại tuần.
+          - /api/v1/merchant-monitor
         strip_path: false
 
   # --------------------------------------------------------------------------

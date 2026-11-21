@@ -27,6 +27,13 @@ export interface CaseListFilters {
   take: number;
 }
 
+/** Tổng hợp khiếu nại theo nhà hàng trong một cửa sổ thời gian. */
+export interface MerchantComplaintStat {
+  merchantId: string;
+  totalComplaints: number;
+  validComplaints: number;
+}
+
 export interface TimelineInput {
   caseId: string;
   fromStatus: string | null;
@@ -125,6 +132,51 @@ export class CaseRepository {
       .where("c.respondentId = :respondentId", { respondentId })
       .andWhere("c.createdAt >= :since", { since });
     return qb.getCount();
+  }
+
+  /**
+   * Tổng hợp khiếu nại (type COMPLAINT) mà nhà hàng là bên bị khiếu nại.
+   *
+   * Đếm theo `createdAt` để phản ánh đúng các khiếu nại phát sinh trong tuần;
+   * `validComplaints` là số vụ đã có phán quyết `VALID`.
+   *
+   * @param since Mốc bắt đầu cửa sổ đánh giá.
+   * @param merchantId Nếu truyền ⇒ chỉ thống kê đúng nhà hàng này.
+   */
+  async getMerchantComplaintStats(
+    since: Date,
+    merchantId?: string,
+  ): Promise<MerchantComplaintStat[]> {
+    const qb = this.repo
+      .createQueryBuilder("c")
+      .select("c.respondentId", "merchantId")
+      .addSelect("COUNT(*)", "totalComplaints")
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN c.verdict = '${Verdict.VALID}' THEN 1 ELSE 0 END), 0)`,
+        "validComplaints",
+      )
+      .where("c.respondentType = :respondentType", {
+        respondentType: "MERCHANT",
+      })
+      .andWhere("c.type = :type", { type: CaseType.COMPLAINT })
+      .andWhere("c.createdAt >= :since", { since })
+      .groupBy("c.respondentId");
+
+    if (merchantId) {
+      qb.andWhere("c.respondentId = :merchantId", { merchantId });
+    }
+
+    const rows = await qb.getRawMany<{
+      merchantId: string;
+      totalComplaints: string | number;
+      validComplaints: string | number;
+    }>();
+
+    return rows.map((r) => ({
+      merchantId: r.merchantId,
+      totalComplaints: Number(r.totalComplaints ?? 0),
+      validComplaints: Number(r.validComplaints ?? 0),
+    }));
   }
 
   async findStaleActive(olderThanHours: number): Promise<Case[]> {

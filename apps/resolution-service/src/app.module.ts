@@ -10,6 +10,7 @@ import { CaseModule } from "./modules/case/case.module";
 import { PenaltyModule } from "./modules/penalty/penalty.module";
 import { FraudModule } from "./modules/fraud/fraud.module";
 import { AssistantModule } from "./modules/assistant/assistant.module";
+import { MonitorModule } from "./modules/monitor/monitor.module";
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { AssistantModule } from "./modules/assistant/assistant.module";
     PenaltyModule,
     FraudModule,
     AssistantModule,
+    MonitorModule,
   ],
 })
 export class AppModule {}

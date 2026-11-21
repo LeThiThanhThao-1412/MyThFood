@@ -2189,6 +2189,52 @@ export const chatApi = {
 // ============================================================================
 // Resolution Service (Port 3014) — Khiếu nại · Gian lận · Xử phạt
 // ============================================================================
+
+/** Cảnh báo/khóa nhà hàng theo tỉ lệ khiếu nại tuần. */
+export interface MerchantComplaintWarning {
+  id: string;
+  merchantId: string;
+  type: string;
+  level: "WARNING" | "LOCK";
+  periodKey: string;
+  windowDays: number;
+  windowStart: string;
+  windowEnd: string;
+  totalOrders: number;
+  cancelledOrders: number;
+  totalComplaints: number;
+  validComplaints: number;
+  complaintRate: string | number;
+  title: string;
+  message: string;
+  dismissedAt: string | null;
+  dismissedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Số liệu sức khỏe nhà hàng theo cửa sổ khiếu nại. */
+export interface MerchantComplaintHealth {
+  merchantId: string;
+  windowDays: number;
+  windowStart: string;
+  windowEnd: string;
+  totalOrders: number;
+  cancelledOrders: number;
+  totalComplaints: number;
+  validComplaints: number;
+  totalComplaintsAllTime: number;
+  validComplaintsAllTime: number;
+  complaintRate: number;
+  level: "NONE" | "WARNING" | "LOCK";
+  thresholds: {
+    warnRate: number;
+    lockRate: number;
+    lockDays: number;
+  };
+  warnings: MerchantComplaintWarning[];
+}
+
 export const resolutionApi = {
   // ─── Cases ─────────────────────────────────────────────────────────────
   listCases: (params?: {
@@ -2310,6 +2356,38 @@ export const resolutionApi = {
       PORTS.RESOLUTION,
       `/cases/${id}/escalate`,
     ),
+
+  // ─── Merchant complaint monitor (cảnh báo/khóa theo tỉ lệ khiếu nại) ───
+
+  /** Số liệu sức khỏe + cảnh báo còn hiệu lực của nhà hàng (mặc định 7 ngày). */
+  getMerchantHealth: (merchantId: string, days?: number) =>
+    httpClient.get<{ statusCode: number; data: MerchantComplaintHealth }>(
+      PORTS.RESOLUTION,
+      `/merchant-monitor/${merchantId}/health`,
+      { params: days ? { days } : undefined },
+    ),
+
+  /** Nhà hàng bấm "Đã hiểu" — ẩn cảnh báo trong tuần. */
+  dismissMerchantWarning: (warningId: string, merchantId: string) =>
+    httpClient.post<{ statusCode: number; data: MerchantComplaintWarning }>(
+      PORTS.RESOLUTION,
+      `/merchant-monitor/warnings/${warningId}/dismiss`,
+      { merchantId },
+    ),
+
+  /** Admin chạy đánh giá tỉ lệ khiếu nại ngay. */
+  evaluateMerchantComplaints: (days?: number) =>
+    httpClient.post<{
+      statusCode: number;
+      data: {
+        evaluated: number;
+        warned: number;
+        locked: number;
+        skipped: number;
+      };
+    }>(PORTS.RESOLUTION, "/merchant-monitor/evaluate", undefined, {
+      params: days ? { days } : undefined,
+    }),
 
   // ─── Penalties ─────────────────────────────────────────────────────────
   listPenalties: (params?: {

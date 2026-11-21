@@ -8,6 +8,9 @@ import { OrderEntity } from "./order.entity";
 import { OrderItemEntity } from "./order-item.entity";
 import { OrderMapper } from "./order.mapper";
 
+/** Trạng thái đơn được coi là "đã hủy" khi thống kê nhà hàng. */
+const CANCELLED_STATUSES: string[] = ["CANCELLED", "CANCELLED_NO_DRIVER"];
+
 @Injectable()
 export class OrderRepository implements IRepository<Order, OrderId> {
   constructor(
@@ -376,6 +379,17 @@ export class OrderRepository implements IRepository<Order, OrderId> {
       .andWhere("o.status = :pending", { pending: "PENDING" })
       .getCount();
 
+    // Số đơn bị hủy — admin đối chiếu với khiếu nại/uy tín nhà hàng.
+    const cancelledQb = this.repository
+      .createQueryBuilder("o")
+      .where("o.merchant_id = :merchantId", { merchantId })
+      .andWhere("o.deleted_at IS NULL")
+      .andWhere("o.status IN (:...cancelledStatuses)", {
+        cancelledStatuses: CANCELLED_STATUSES,
+      });
+    applyDateRange(cancelledQb);
+    const cancelledOrders = await cancelledQb.getCount();
+
     const byDayQb = this.repository
       .createQueryBuilder("o")
       .select("TO_CHAR(o.created_at, 'YYYY-MM-DD')", "date")
@@ -418,11 +432,63 @@ export class OrderRepository implements IRepository<Order, OrderId> {
     return {
       merchantId,
       totalOrders,
+      cancelledOrders,
       totalRevenue: Number(revenueRow?.revenue ?? 0),
       pendingOrders,
       revenueByDay,
       topItems,
     };
+  }
+
+  /**
+   * Tổng đơn + đơn hủy theo từng nhà hàng trong cửa sổ thời gian.
+   *
+   * Một truy vấn GROUP BY thay vì gọi `getMerchantStats` N lần — resolution-
+   * service dùng làm mẫu số khi đánh giá tỉ lệ khiếu nại tuần.
+   */
+  async getMerchantOrderCounts(options?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<
+    Array<{
+      merchantId: string;
+      totalOrders: number;
+      cancelledOrders: number;
+    }>
+  > {
+    const qb = this.repository
+      .createQueryBuilder("o")
+      .select("o.merchant_id", "merchantId")
+      .addSelect("COUNT(*)", "totalOrders")
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN o.status IN ('CANCELLED', 'CANCELLED_NO_DRIVER') THEN 1 ELSE 0 END), 0)",
+        "cancelledOrders",
+      )
+      .where("o.deleted_at IS NULL")
+      .groupBy("o.merchant_id");
+
+    if (options?.startDate) {
+      qb.andWhere("o.created_at >= :startDate", {
+        startDate: new Date(options.startDate),
+      });
+    }
+    if (options?.endDate) {
+      qb.andWhere("o.created_at <= :endDate", {
+        endDate: new Date(options.endDate),
+      });
+    }
+
+    const rows = await qb.getRawMany<{
+      merchantId: string;
+      totalOrders: string | number;
+      cancelledOrders: string | number;
+    }>();
+
+    return rows.map((row) => ({
+      merchantId: row.merchantId,
+      totalOrders: Number(row.totalOrders ?? 0),
+      cancelledOrders: Number(row.cancelledOrders ?? 0),
+    }));
   }
 
   async getMerchantOrderItems(

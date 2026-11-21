@@ -39,6 +39,8 @@ export type {
   StackingStats,
   PlatformLedgerTx,
   PlatformLedgerLoan,
+  MerchantComplaintHealth,
+  MerchantComplaintWarning,
 } from "./api-endpoints";
 export type {
   ApiResponse,

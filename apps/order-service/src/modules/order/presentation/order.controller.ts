@@ -355,6 +355,19 @@ export class OrderController {
 
   // ===================== Merchant Stats (B7) =====================
 
+  /** Tổng đơn + đơn hủy theo từng nhà hàng — resolution-service đánh giá khiếu nại tuần. */
+  @Get("stats/merchant-order-counts")
+  @Roles("ADMIN")
+  async getMerchantOrderCounts(
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
+  ) {
+    return {
+      statusCode: HttpStatus.OK,
+      data: await this.orderService.getMerchantOrderCounts(startDate, endDate),
+    };
+  }
+
   @Get("stats/delivery-options")
   @Roles("ADMIN")
   async getDeliveryOptionStats(@Query("days") days?: string) {
