@@ -97,5 +97,13 @@ Chạy các file SQL ở thư mục gốc khi `synchronize=false`:
     lưu thông báo vào `sessionStorage` và chuyển về `/login`.
   - `MerchantShell` / `DriverShell` kiểm tra thêm hồ sơ merchant/driver
     (`REJECTED`) để chặn truy cập dashboard ngay cả khi đồng bộ identity lỗi.
+  - Riêng Merchant Portal: hồ sơ merchant `SUSPENDED` (hoặc tài khoản identity
+    `SUSPENDED`/`BANNED`) được hiển thị bằng `MerchantLockScreen` — màn hình
+    toàn trang nêu lý do, thời hạn khóa và số liệu khiếu nại dẫn đến quyết định.
+    Trạng thái được kiểm tra lại mỗi 60 giây và khi quay lại tab.
+  - Cảnh báo tỉ lệ khiếu nại (`WARNING`) hiển thị dạng banner trên mọi trang của
+    Merchant Portal; nhà hàng bấm "Đã hiểu" để ẩn cảnh báo trong tuần.
+- Login Merchant Portal kiểm tra thêm hồ sơ merchant trước khi vào dashboard để
+  chặn ngay cả khi identity chưa kịp đồng bộ trạng thái khóa.
 - Login chỉ cập nhật `last_login_at` bằng UPDATE có mục tiêu, không ghi đè
   trạng thái khóa/từ chối khi admin thao tác đồng thời.

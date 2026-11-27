@@ -27,9 +27,11 @@ export default function AccountBlockNotice({
     info.code === "ACCOUNT_SUSPENDED" || info.code === "ACCOUNT_BANNED";
 
   const lockText = isSuspended
-    ? info.permanent || !info.suspendedUntil
+    ? info.permanent
       ? "Khóa vĩnh viễn"
-      : `Khóa đến ${formatAccountDate(info.suspendedUntil)}`
+      : info.suspendedUntil
+        ? `Khóa đến ${formatAccountDate(info.suspendedUntil)}`
+        : "Đang cập nhật thời hạn khóa"
     : null;
   const rejectedAtText = formatAccountDate(info.rejectedAt);
   const deleteAtText = formatAccountDate(info.deleteAt);

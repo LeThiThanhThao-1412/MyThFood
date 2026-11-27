@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { merchantApi, orderApi, resolutionApi } from "@mythfood/api-client";
+import { merchantApi, orderApi } from "@mythfood/api-client";
 import { useAuthStore, canAccessApp } from "@mythfood/frontend-shared";
 import MerchantShell from "@/components/MerchantShell";
 import OrderDetailDrawer from "@/components/OrderDetailDrawer";
@@ -71,12 +71,7 @@ export default function MerchantDashboardPage() {
   const [merchant, setMerchant] = useState<any>(null);
   const [orders, setOrders] = useState<any[]>([]);
   const [menuItems, setMenuItems] = useState<any[]>([]);
-  /** Cảnh báo tỉ lệ khiếu nại tuần (nếu có) + số liệu đối chiếu. */
-  const [health, setHealth] = useState<any>(null);
-  const [dismissingId, setDismissingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  /** Cảnh báo khiếu nại đổi theo tuần ⇒ chỉ làm mới mỗi 60s thay vì mỗi 10s. */
-  const lastHealthAt = useRef(0);
 
   const [activeTab, setActiveTab] = useState<"overview" | "orders">("overview");
   const [orderFilter, setOrderFilter] = useState<string>("ALL");
@@ -106,15 +101,6 @@ export default function MerchantDashboardPage() {
           ]);
           setOrders(Array.isArray(orderRes) ? orderRes : []);
           setMenuItems(Array.isArray(menuData) ? menuData : []);
-          if (Date.now() - lastHealthAt.current >= 60_000) {
-            lastHealthAt.current = Date.now();
-            try {
-              const healthRes = await resolutionApi.getMerchantHealth(m.id);
-              setHealth(healthRes?.data ?? healthRes ?? null);
-            } catch {
-              /* không chặn dashboard nếu resolution-service không phản hồi */
-            }
-          }
         }
       } catch {
         /* ignore */
@@ -129,29 +115,6 @@ export default function MerchantDashboardPage() {
       if (interval) clearInterval(interval);
     };
   }, [isAuthenticated, user, router]);
-
-  /** Nhà hàng đã đọc cảnh báo ⇒ ẩn ngay, backend ghi dismissedAt. */
-  async function dismissWarning(warningId: string) {
-    if (!merchant?.id) return;
-    setDismissingId(warningId);
-    try {
-      await resolutionApi.dismissMerchantWarning(warningId, merchant.id);
-      setHealth((prev: any) =>
-        prev
-          ? {
-              ...prev,
-              warnings: (prev.warnings || []).filter(
-                (w: any) => w.id !== warningId,
-              ),
-            }
-          : prev,
-      );
-    } catch {
-      /* giữ cảnh báo nếu API lỗi */
-    } finally {
-      setDismissingId(null);
-    }
-  }
 
   // ─── Computed stats ──────────────────────────────────────
   const now = new Date();
@@ -178,12 +141,6 @@ export default function MerchantDashboardPage() {
     (o) => !["DELIVERED", "CANCELLED", "REJECTED"].includes(o.status),
   ).length;
   const pendingCount = orders.filter((o) => o.status === "PENDING").length;
-
-  // Chỉ hiện cảnh báo nhắc nhở; cảnh báo LOCK thuộc về màn hình đăng nhập
-  // (tài khoản bị khóa không thể vào dashboard).
-  const activeWarnings: any[] = (health?.warnings ?? []).filter(
-    (w: any) => w.level !== "LOCK",
-  );
 
   const filteredOrders =
     orderFilter === "ALL"
@@ -322,45 +279,6 @@ export default function MerchantDashboardPage() {
       </header>
 
       <div className="px-4 py-6">
-        {/* ─── CẢNH BÁO TỈ LỆ KHIẾU NẠI (tuần) ─── */}
-        {activeWarnings.length > 0 && (
-          <div className="space-y-3 mb-6">
-            {activeWarnings.map((w: any) => (
-              <div
-                key={w.id}
-                className={`rounded-2xl border p-4 sm:p-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 ${
-                  w.level === "LOCK"
-                    ? "bg-red-50 border-red-200 text-red-800"
-                    : "bg-amber-50 border-amber-200 text-amber-800"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl leading-none">
-                    {w.level === "LOCK" ? "🔒" : "⚠️"}
-                  </span>
-                  <div>
-                    <p className="font-bold">{w.title}</p>
-                    <p className="text-sm mt-1">{w.message}</p>
-                    <p className="text-xs mt-1 opacity-70">
-                      Đơn: {w.totalOrders} · Đơn hủy: {w.cancelledOrders} ·
-                      Khiếu nại hợp lệ: {w.validComplaints}/{w.totalComplaints}
-                    </p>
-                  </div>
-                </div>
-                {w.level !== "LOCK" && (
-                  <button
-                    onClick={() => dismissWarning(w.id)}
-                    disabled={dismissingId === w.id}
-                    className="shrink-0 bg-white border border-amber-300 text-amber-700 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-amber-100 transition disabled:opacity-50"
-                  >
-                    {dismissingId === w.id ? "Đang lưu..." : "Đã hiểu"}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* ─── STATS ─── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {[

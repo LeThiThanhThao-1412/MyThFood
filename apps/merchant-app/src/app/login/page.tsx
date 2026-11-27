@@ -2,12 +2,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { authApi, merchantApi } from "@mythfood/api-client";
 import {
   useAuth,
   canAccessApp,
   AccountBlockNotice,
   getAccountBlockInfo,
   consumeStoredAccountBlock,
+  storeAccountBlock,
 } from "@mythfood/frontend-shared";
 import type { AccountBlockInfo } from "@mythfood/frontend-shared";
 
@@ -39,6 +41,56 @@ export default function MerchantLoginPage() {
         setError("Tài khoản không có quyền truy cập Partner Portal");
         return;
       }
+
+      // Identity có thể chưa kịp đồng bộ trạng thái khóa sang merchant-service
+      // (đồng bộ best-effort) ⇒ kiểm tra thêm hồ sơ nhà hàng trước khi vào portal.
+      try {
+        const mRes: any = await merchantApi
+          .getByUserId(data.user.id)
+          .catch(() => null);
+        const merchant: any = (mRes as any)?.data ?? mRes;
+        if (
+          merchant?.status === "SUSPENDED" ||
+          merchant?.status === "REJECTED"
+        ) {
+          const meRes: any = await authApi.me().catch(() => null);
+          const profile: any = (meRes as any)?.data ?? meRes;
+          const suspended = merchant.status === "SUSPENDED";
+          const info: AccountBlockInfo = suspended
+            ? {
+                code: "ACCOUNT_SUSPENDED",
+                message:
+                  "Tài khoản nhà hàng của bạn đang bị tạm khóa và không thể sử dụng Merchant Portal.",
+                status: "SUSPENDED",
+                reason: profile?.suspendReason ?? null,
+                permanent:
+                  profile?.status === "SUSPENDED" && !profile?.suspendedUntil,
+                suspendedAt: null,
+                suspendedUntil: profile?.suspendedUntil ?? null,
+                rejectedAt: null,
+                deleteAt: null,
+              }
+            : {
+                code: "ACCOUNT_REJECTED",
+                message:
+                  "Hồ sơ đăng ký nhà hàng của bạn đã bị từ chối và không thể sử dụng Merchant Portal.",
+                status: "REJECTED",
+                reason: profile?.rejectReason ?? merchant.rejectReason ?? null,
+                permanent: false,
+                suspendedAt: null,
+                suspendedUntil: null,
+                rejectedAt: profile?.rejectedAt ?? merchant.rejectedAt ?? null,
+                deleteAt: profile?.rejectionDeleteAt ?? null,
+              };
+          storeAccountBlock(info);
+          logout();
+          setBlock(info);
+          return;
+        }
+      } catch {
+        // Không chặn đăng nhập nếu merchant-service tạm thời không phản hồi.
+      }
+
       router.push("/dashboard");
     } catch (err: unknown) {
       const info = getAccountBlockInfo(err);
