@@ -52,8 +52,9 @@ export class UploadController {
         const url = await this.uploadService.getSignedUrl(key);
         res.redirect(url);
       } catch {
-        const bucket = process.env.AWS_S3_BUCKET;
-        const region = process.env.AWS_REGION || "ap-southeast-1";
+        // Dùng cùng thứ tự ưu tiên với UploadService: AWS_BUCKET_NAME → AWS_S3_BUCKET
+        const bucket = process.env.AWS_BUCKET_NAME || process.env.AWS_S3_BUCKET;
+        const region = process.env.AWS_REGION || "ap-southeast-2";
         const url = `https://${bucket}.s3.${region}.amazonaws.com/mythfood/${key}`;
         res.redirect(url);
       }

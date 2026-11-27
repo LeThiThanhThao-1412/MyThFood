@@ -22,7 +22,7 @@ export class UploadService {
     );
     if (storageDriver === "s3") {
       this.s3Client = new S3Client({
-        region: this.configService.get<string>("AWS_REGION", "ap-southeast-1"),
+        region: this.configService.get<string>("AWS_REGION", "ap-southeast-2"),
         credentials: {
           accessKeyId: this.configService.get<string>("AWS_ACCESS_KEY_ID", ""),
           secretAccessKey: this.configService.get<string>(
@@ -31,8 +31,25 @@ export class UploadService {
           ),
         },
       });
-      this.logger.log("S3 client initialized");
+      this.logger.log(
+        `S3 client initialized (region=${this.configService.get<string>(
+          "AWS_REGION",
+          "ap-southeast-2",
+        )}, bucket=${this.getBucketName() || "<missing>"})`,
+      );
     }
+  }
+
+  /**
+   * Tên bucket S3: ưu tiên AWS_BUCKET_NAME, sau đó tới AWS_S3_BUCKET (tên cũ)
+   * để .env cũ vẫn chạy được sau khi đổi tên biến.
+   */
+  private getBucketName(): string {
+    return (
+      this.configService.get<string>("AWS_BUCKET_NAME") ||
+      this.configService.get<string>("AWS_S3_BUCKET") ||
+      ""
+    );
   }
 
   async saveFile(
@@ -92,7 +109,12 @@ export class UploadService {
       );
     }
 
-    const bucket = this.configService.get<string>("AWS_S3_BUCKET", "");
+    const bucket = this.getBucketName();
+    if (!bucket) {
+      throw new BadRequestException(
+        "S3 bucket is not configured (AWS_BUCKET_NAME)",
+      );
+    }
     const ext = extname(file.originalname);
     const safeName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`;
     const key = `mythfood/${folder}/${safeName}`;
@@ -185,7 +207,10 @@ export class UploadService {
     if (!this.s3Client) {
       throw new Error("S3 client not initialized");
     }
-    const bucket = this.configService.get<string>("AWS_S3_BUCKET", "");
+    const bucket = this.getBucketName();
+    if (!bucket) {
+      throw new Error("S3 bucket is not configured (AWS_BUCKET_NAME)");
+    }
     const command = new GetObjectCommand({
       Bucket: bucket,
       Key: `mythfood/${key}`,
